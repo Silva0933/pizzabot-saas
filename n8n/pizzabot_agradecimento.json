@@ -1,0 +1,108 @@
+{
+  "name": "PizzaBot - Mensagem de Agradecimento (status=entregue)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pizzabot-agradecimento",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a01",
+      "name": "Webhook Entregue",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1200, 0],
+      "webhookId": "pizzabot-agradecimento"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst pedido_id = body.pedido_id || body.orderId;\nconst pizzaria_id = body.pizzaria_id || body.pizzeriaId;\nif (!pedido_id || !pizzaria_id) {\n  return [{ json: { skip: true, reason: 'missing_ids' } }];\n}\nreturn [{ json: { skip: false, pedido_id, pizzaria_id } }];"
+      },
+      "id": "a02",
+      "name": "Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1000, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "f1", "leftValue": "={{ $json.skip }}", "rightValue": false, "operator": { "type": "boolean", "operation": "false", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a03",
+      "name": "Pode processar?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [-800, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.numero_pedido, p.valor_total, p.cliente_id, c.nome AS cliente_nome, c.telefone AS cliente_telefone, c.total_pedidos, pz.nome AS pizzaria_nome, pz.instancia, pz.mensagem_entregue, pz.mensagens_status FROM public.pedidos p JOIN public.clientes c ON c.id = p.cliente_id JOIN public.pizzarias pz ON pz.id = p.pizzaria_id WHERE p.id = $1 AND p.pizzaria_id = $2 LIMIT 1;",
+        "options": { "queryReplacement": "={{ $json.pedido_id }},{{ $json.pizzaria_id }}" }
+      },
+      "id": "a04",
+      "name": "Carregar Pedido + Cliente + Pizzaria",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-600, 0],
+      "credentials": { "postgres": { "id": "EDSNFJZJCsKjZ106", "name": "Postgres Supabase" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $json;\nconst statusMsg = row.mensagens_status?.entregue || row.mensagem_entregue || 'Pedido entregue com sucesso! Obrigado pela preferência. 🍕';\n\n// Substitui variáveis disponíveis na mensagem customizada\nlet mensagem = String(statusMsg)\n  .replace(/\\{nome_cliente\\}/g, row.cliente_nome || 'cliente')\n  .replace(/\\{numero_pedido\\}/g, String(row.numero_pedido || ''))\n  .replace(/\\{nome_pizzaria\\}/g, row.pizzaria_nome || '')\n  .replace(/\\{valor_total\\}/g, Number(row.valor_total||0).toFixed(2))\n  .replace(/\\{total_pedidos\\}/g, String(row.total_pedidos || 1));\n\n// Adiciona toque especial se for cliente recorrente\nif (Number(row.total_pedidos) > 1) {\n  mensagem += `\\n\\nVocê já fez ${row.total_pedidos} pedidos com a gente. Obrigado pela parceria! 🙏`;\n}\n\nreturn [{\n  json: {\n    mensagem,\n    instancia: row.instancia,\n    telefone: row.cliente_telefone,\n    pedido_id: row.id,\n    numero_pedido: row.numero_pedido\n  }\n}];"
+      },
+      "id": "a05",
+      "name": "Montar Mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-text",
+        "instanceName": "={{ $json.instancia }}",
+        "remoteJid": "={{ $json.telefone }}",
+        "messageText": "={{ $json.mensagem }}",
+        "options_message": {}
+      },
+      "id": "a06",
+      "name": "Enviar Agradecimento",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [-200, 0],
+      "credentials": { "evolutionApi": { "id": "OfPUfZENlrzqKq0v", "name": "Evolution API" } }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true, \"sent\": true, \"numero_pedido\": \"{{ $('Montar Mensagem').item.json.numero_pedido }}\"}",
+        "options": {}
+      },
+      "id": "a07",
+      "name": "Resposta OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    }
+  ],
+  "connections": {
+    "Webhook Entregue": { "main": [[{ "node": "Validar", "type": "main", "index": 0 }]] },
+    "Validar": { "main": [[{ "node": "Pode processar?", "type": "main", "index": 0 }]] },
+    "Pode processar?": { "main": [[{ "node": "Carregar Pedido + Cliente + Pizzaria", "type": "main", "index": 0 }]] },
+    "Carregar Pedido + Cliente + Pizzaria": { "main": [[{ "node": "Montar Mensagem", "type": "main", "index": 0 }]] },
+    "Montar Mensagem": { "main": [[{ "node": "Enviar Agradecimento", "type": "main", "index": 0 }]] },
+    "Enviar Agradecimento": { "main": [[{ "node": "Resposta OK", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

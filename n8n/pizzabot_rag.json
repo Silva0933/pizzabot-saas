@@ -1,0 +1,130 @@
+{
+  "name": "PizzaBot - RAG Clientes (Atualização Histórico)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pizzabot-rag-finalizar",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "r01_wh",
+      "name": "Webhook Finalizar Pedido",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1200, 0],
+      "webhookId": "pizzabot-rag-finalizar"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst pedido_id = body.pedido_id || body.orderId;\nconst pizzaria_id = body.pizzaria_id || body.pizzeriaId;\nif (!pedido_id || !pizzaria_id) {\n  return [{ json: { skip: true, reason: 'missing_ids' } }];\n}\nreturn [{ json: { skip: false, pedido_id, pizzaria_id } }];"
+      },
+      "id": "r02_validate",
+      "name": "Validar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1000, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "false", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "r03_filter",
+      "name": "Pode Processar?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [-800, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.numero_pedido, p.valor_total, p.itens, p.endereco_entrega, p.created_at, p.cliente_id, p.pizzaria_id, c.telefone, c.nome, c.endereco_padrao, c.preferencias, c.historico_pedidos, c.total_pedidos, c.total_gasto FROM public.pedidos p JOIN public.clientes c ON c.id = p.cliente_id WHERE p.id = $1 AND p.pizzaria_id = $2 LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.pedido_id }},{{ $json.pizzaria_id }}"
+        }
+      },
+      "id": "r04_load",
+      "name": "Carregar Pedido + Cliente",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-600, 0],
+      "credentials": {
+        "postgres": { "id": "EDSNFJZJCsKjZ106", "name": "Postgres Supabase" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $json;\n\nconst itens = Array.isArray(row.itens) ? row.itens : (typeof row.itens === 'string' ? JSON.parse(row.itens) : []);\nconst itensResumo = itens.map(i => `${i.qty || 1}x ${i.name || i.nome || ''}`).join(', ');\n\nconst novoRegistro = {\n  id: row.id,\n  number: row.numero_pedido,\n  date: row.created_at,\n  items: itensResumo,\n  total: Number(row.valor_total)\n};\n\nlet historico = Array.isArray(row.historico_pedidos) ? row.historico_pedidos : (typeof row.historico_pedidos === 'string' ? JSON.parse(row.historico_pedidos || '[]') : []);\nhistorico.push(novoRegistro);\nif (historico.length > 10) historico = historico.slice(-10);\n\nreturn [{\n  json: {\n    cliente_id: row.cliente_id,\n    pizzaria_id: row.pizzaria_id,\n    historico_json: JSON.stringify(historico),\n    valor_total: Number(row.valor_total),\n    endereco_entrega: row.endereco_entrega || '',\n    telefone: row.telefone\n  }\n}];"
+      },
+      "id": "r05_build",
+      "name": "Montar Histórico Atualizado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.clientes SET historico_pedidos = $1::jsonb, total_pedidos = COALESCE(total_pedidos,0) + 1, total_gasto = COALESCE(total_gasto,0) + $2, ultima_visita = NOW(), endereco_padrao = COALESCE(NULLIF($3,''), endereco_padrao) WHERE id = $4 AND pizzaria_id = $5 RETURNING id, total_pedidos, total_gasto;",
+        "options": {
+          "queryReplacement": "={{ $json.historico_json }},{{ $json.valor_total }},{{ $json.endereco_entrega }},{{ $json.cliente_id }},{{ $json.pizzaria_id }}"
+        }
+      },
+      "id": "r06_update",
+      "name": "Atualizar Cliente (RAG)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-200, 0],
+      "credentials": {
+        "postgres": { "id": "EDSNFJZJCsKjZ106", "name": "Postgres Supabase" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true, \"total_pedidos\": {{ $json.total_pedidos }}, \"total_gasto\": {{ $json.total_gasto }}}",
+        "options": {}
+      },
+      "id": "r07_resp",
+      "name": "Resposta",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [0, 0]
+    }
+  ],
+  "connections": {
+    "Webhook Finalizar Pedido": {
+      "main": [[{ "node": "Validar", "type": "main", "index": 0 }]]
+    },
+    "Validar": {
+      "main": [[{ "node": "Pode Processar?", "type": "main", "index": 0 }]]
+    },
+    "Pode Processar?": {
+      "main": [[{ "node": "Carregar Pedido + Cliente", "type": "main", "index": 0 }]]
+    },
+    "Carregar Pedido + Cliente": {
+      "main": [[{ "node": "Montar Histórico Atualizado", "type": "main", "index": 0 }]]
+    },
+    "Montar Histórico Atualizado": {
+      "main": [[{ "node": "Atualizar Cliente (RAG)", "type": "main", "index": 0 }]]
+    },
+    "Atualizar Cliente (RAG)": {
+      "main": [[{ "node": "Resposta", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

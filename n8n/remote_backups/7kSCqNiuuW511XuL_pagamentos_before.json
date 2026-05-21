@@ -1,0 +1,1215 @@
+﻿{
+    "updatedAt":  "2026-05-20T14:17:29.185Z",
+    "createdAt":  "2026-05-20T05:01:53.375Z",
+    "id":  "7kSCqNiuuW511XuL",
+    "name":  "PizzaBot - Pagamentos (Gerar + Webhook)",
+    "description":  null,
+    "active":  true,
+    "isArchived":  false,
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "pizzabot-pagamento",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p01_gen",
+                      "name":  "Webhook Gerar Pagamento",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1200,
+                                       -200
+                                   ],
+                      "webhookId":  "pizzabot-pagamento"
+                  },
+                  {
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "pizzabot-pagamento-confirmacao",
+                                         "responseMode":  "responseNode",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p02_conf",
+                      "name":  "Webhook Confirma??o",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1200,
+                                       200
+                                   ],
+                      "webhookId":  "pizzabot-pagamento-confirmacao"
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "const body = $json.body ?? $json;\nconst pedido_id = body.pedido_id || body.orderId;\nconst pizzaria_id = body.pizzaria_id || body.pizzeriaId;\nif (!pedido_id || !pizzaria_id) {\n  throw new Error(\u0027pedido_id e pizzaria_id s?o obrigat?rios\u0027);\n}\nreturn [{ json: { pedido_id, pizzaria_id, telefone: body.telefone || body.customerPhone || \u0027\u0027, instancia: body.instancia || body.instance || \u0027\u0027 } }];"
+                                     },
+                      "id":  "p03_validate",
+                      "name":  "Validar Input",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1000,
+                                       -200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "SELECT p.id, p.numero_pedido, p.valor_total, p.cliente_id, p.forma_pagamento, p.itens, p.endereco_entrega, c.nome AS cliente_nome, c.telefone AS cliente_telefone, pz.gateway_pagamento, pz.asaas_api_key, pz.mp_access_token, pz.nome AS pizzaria_nome, pz.instancia FROM public.pedidos p JOIN public.clientes c ON c.id = p.cliente_id JOIN public.pizzarias pz ON pz.id = p.pizzaria_id WHERE p.id = $1 AND p.pizzaria_id = $2 LIMIT 1;",
+                                         "options":  {
+                                                         "queryReplacement":  "={{ $json.pedido_id }},{{ $json.pizzaria_id }}"
+                                                     }
+                                     },
+                      "id":  "p04_load",
+                      "name":  "Carregar Pedido",
+                      "type":  "n8n-nodes-base.postgres",
+                      "typeVersion":  2.5,
+                      "position":  [
+                                       -800,
+                                       -200
+                                   ],
+                      "credentials":  {
+                                          "postgres":  {
+                                                           "id":  "3gxY8xTADs50F07C",
+                                                           "name":  "Postgres pizzabot"
+                                                       }
+                                      },
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "rules":  {
+                                                       "values":  [
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "loose",
+                                                                                                             "version":  2
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "id":  "g1",
+                                                                                                                    "leftValue":  "={{ $json.gateway_pagamento }}",
+                                                                                                                    "rightValue":  "asaas",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 }
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "asaas"
+                                                                      },
+                                                                      {
+                                                                          "conditions":  {
+                                                                                             "options":  {
+                                                                                                             "caseSensitive":  true,
+                                                                                                             "leftValue":  "",
+                                                                                                             "typeValidation":  "loose",
+                                                                                                             "version":  2
+                                                                                                         },
+                                                                                             "conditions":  [
+                                                                                                                {
+                                                                                                                    "id":  "g2",
+                                                                                                                    "leftValue":  "={{ $json.gateway_pagamento }}",
+                                                                                                                    "rightValue":  "mercadopago",
+                                                                                                                    "operator":  {
+                                                                                                                                     "type":  "string",
+                                                                                                                                     "operation":  "equals"
+                                                                                                                                 }
+                                                                                                                }
+                                                                                                            ],
+                                                                                             "combinator":  "and"
+                                                                                         },
+                                                                          "renameOutput":  true,
+                                                                          "outputKey":  "mercadopago"
+                                                                      }
+                                                                  ]
+                                                   },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p05_switch",
+                      "name":  "Gateway?",
+                      "type":  "n8n-nodes-base.switch",
+                      "typeVersion":  3.2,
+                      "position":  [
+                                       -600,
+                                       -200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://www.asaas.com/api/v3/payments",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "access_token",
+                                                                                         "value":  "={{ $json.asaas_api_key }}"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"customer\": \"{{ $json.cliente_telefone }}\",\n  \"billingType\": \"PIX\",\n  \"value\": {{ $json.valor_total }},\n  \"dueDate\": \"{{ $now.plus({days:1}).toFormat(\u0027yyyy-MM-dd\u0027) }}\",\n  \"description\": \"Pedido #{{ $json.numero_pedido }} - {{ $json.pizzaria_nome }}\",\n  \"externalReference\": \"{{ $json.id }}\"\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p06_asaas",
+                      "name":  "Asaas Cobran?a",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -400,
+                                       -300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.mercadopago.com/v1/payments",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "=Bearer {{ $json.mp_access_token }}"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "X-Idempotency-Key",
+                                                                                         "value":  "={{ $json.id }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"transaction_amount\": {{ $json.valor_total }},\n  \"description\": \"Pedido #{{ $json.numero_pedido }} - {{ $json.pizzaria_nome }}\",\n  \"payment_method_id\": \"pix\",\n  \"external_reference\": \"{{ $json.id }}\",\n  \"payer\": {\n    \"first_name\": \"{{ $json.cliente_nome.split(\u0027 \u0027)[0] }}\",\n    \"email\": \"cliente{{ $json.cliente_telefone }}@gmail.com\"\n  }\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p07_mp",
+                      "name":  "MercadoPago Cobran?a",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       -400,
+                                       -100
+                                   ],
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Normaliza retorno dos dois gateways em formato unico\n// Tenta obter dados do pedido - pode nao existir se p04 falhou\nlet pedido = {};\ntry { pedido = $(\u0027Carregar Pedido\u0027).first().json; } catch(e) {}\nconst resp = $json;\n\n// Se $json tem \u0027error\u0027 key ou nao tem \u0027id\u0027, a chamada falhou\nlet paymentId = \u0027\u0027, paymentLink = \u0027\u0027, pixCopiaCola = \u0027\u0027;\nif (resp \u0026\u0026 resp.id \u0026\u0026 resp.invoiceUrl) {\n  // Asaas\n  paymentId = String(resp.id);\n  paymentLink = resp.invoiceUrl;\n  pixCopiaCola = resp.encodedImage || \u0027\u0027;\n} else if (resp \u0026\u0026 resp.id \u0026\u0026 resp.point_of_interaction) {\n  // MercadoPago\n  paymentId = String(resp.id);\n  paymentLink = resp.point_of_interaction?.transaction_data?.ticket_url || \u0027\u0027;\n  pixCopiaCola = resp.point_of_interaction?.transaction_data?.qr_code || \u0027\u0027;\n}\n\nconst hasLink = !!(paymentLink \u0026\u0026 paymentLink.length \u003e 0);\n\nreturn [{\n  json: {\n    ok: hasLink,\n    error: hasLink ? null : \u0027Gateway de pagamento nao configurado ou credencial invalida.\u0027,\n    pedido_id: pedido.id || \u0027\u0027,\n    pizzaria_id: pedido.pizzaria_id || \u0027\u0027,\n    telefone: pedido.cliente_telefone || \u0027\u0027,\n    instancia: pedido.instancia || \u0027\u0027,\n    payment_id: paymentId,\n    payment_link: paymentLink,\n    pix_copia_cola: pixCopiaCola,\n    numero_pedido: pedido.numero_pedido || \u0027\u0027,\n    valor_total: pedido.valor_total || 0\n  }\n}];\n"
+                                     },
+                      "id":  "p08_norm",
+                      "name":  "Normalizar Resposta",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -200,
+                                       -200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "UPDATE public.pedidos SET payment_id = $1, link_pagamento = $2, payment_status = \u0027pending\u0027, updated_at = NOW() WHERE id = $3 RETURNING id;",
+                                         "options":  {
+                                                         "queryReplacement":  "={{ $json.payment_id }},{{ $json.payment_link }},{{ $json.pedido_id }}"
+                                                     }
+                                     },
+                      "id":  "p09_update",
+                      "name":  "Atualizar Pedido",
+                      "type":  "n8n-nodes-base.postgres",
+                      "typeVersion":  2.5,
+                      "position":  [
+                                       0,
+                                       -200
+                                   ],
+                      "credentials":  {
+                                          "postgres":  {
+                                                           "id":  "3gxY8xTADs50F07C",
+                                                           "name":  "Postgres pizzabot"
+                                                       }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "messages-api",
+                                         "operation":  "send-text",
+                                         "instanceName":  "={{ $(\u0027Normalizar Resposta\u0027).item.json.instancia }}",
+                                         "remoteJid":  "={{ $(\u0027Normalizar Resposta\u0027).item.json.telefone }}",
+                                         "messageText":  "=?? *Pagamento do Pedido #{{ $(\u0027Normalizar Resposta\u0027).item.json.numero_pedido }}*\n\nValor: R$ {{ $(\u0027Normalizar Resposta\u0027).item.json.valor_total }}\n\n?? Link de pagamento:\n{{ $(\u0027Normalizar Resposta\u0027).item.json.payment_link }}\n\n?? PIX copia-e-cola:\n```\n{{ $(\u0027Normalizar Resposta\u0027).item.json.pix_copia_cola }}\n```\n\nAssim que o pagamento for confirmado, te aviso aqui! ??",
+                                         "options_message":  {
+
+                                                             }
+                                     },
+                      "id":  "p10_send",
+                      "name":  "Enviar Link ao Cliente",
+                      "type":  "n8n-nodes-evolution-api.evolutionApi",
+                      "typeVersion":  1,
+                      "position":  [
+                                       200,
+                                       -200
+                                   ],
+                      "credentials":  {
+                                          "evolutionApi":  {
+                                                               "id":  "OfPUfZENlrzqKq0v",
+                                                               "name":  "Evolution account"
+                                                           }
+                                      },
+                      "continueOnFail":  true
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "={\n  \"ok\": {{ $(\"Normalizar Resposta\").item.json.ok }},\n  \"paymentId\": \"{{ $(\"Normalizar Resposta\").item.json.payment_id }}\",\n  \"paymentLink\": \"{{ $(\"Normalizar Resposta\").item.json.payment_link }}\",\n  \"error\": \"{{ $(\"Normalizar Resposta\").item.json.error || \u0027\u0027 }}\"\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p11_resp",
+                      "name":  "Resposta Gera??o",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       400,
+                                       -200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "jsCode":  "// Aceita formatos de Asaas e MercadoPago\nconst body = $json.body ?? $json;\nlet pedidoExternalRef = \u0027\u0027, status = \u0027\u0027, paymentId = \u0027\u0027;\n\nif (body.event \u0026\u0026 body.payment) {\n  // Asaas: { event: \u0027PAYMENT_RECEIVED\u0027, payment: { id, status, externalReference, value } }\n  paymentId = String(body.payment.id || \u0027\u0027);\n  pedidoExternalRef = String(body.payment.externalReference || \u0027\u0027);\n  const evt = String(body.event).toUpperCase();\n  if (evt.includes(\u0027RECEIVED\u0027) || evt.includes(\u0027CONFIRMED\u0027)) status = \u0027approved\u0027;\n  else if (evt.includes(\u0027REFUND\u0027) || evt.includes(\u0027DELETED\u0027) || evt.includes(\u0027CANCELED\u0027)) status = \u0027cancelled\u0027;\n  else status = \u0027pending\u0027;\n} else if (body.action || body.type) {\n  // MercadoPago: { action, data: { id }, type: \u0027payment\u0027 }\n  paymentId = String(body.data?.id || body.resource || \u0027\u0027);\n  // Para MP precisamos do externalReference no payload completo (alguns webhooks j? enviam, outros n?o)\n  pedidoExternalRef = String(body.external_reference || body.data?.external_reference || \u0027\u0027);\n  status = body.action === \u0027payment.updated\u0027 ? \u0027approved\u0027 : \u0027pending\u0027;\n}\n\nreturn [{\n  json: {\n    skip: !pedidoExternalRef \u0026\u0026 !paymentId,\n    pedido_id: pedidoExternalRef,\n    payment_id: paymentId,\n    payment_status: status\n  }\n}];"
+                                     },
+                      "id":  "p12_parse_webhook",
+                      "name":  "Parsear Webhook Gateway",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -1000,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "UPDATE public.pedidos SET payment_status = $1, status = CASE WHEN $1 = \u0027approved\u0027 THEN \u0027confirmado\u0027 ELSE status END, updated_at = NOW() WHERE (id::text = $2 OR payment_id = $3) RETURNING id, pizzaria_id, cliente_id, numero_pedido, valor_total, status, payment_status, (SELECT telefone FROM public.clientes WHERE id = pedidos.cliente_id) AS cliente_telefone, (SELECT instancia FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS instancia, (SELECT mensagens_status FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS mensagens_status;",
+                                         "options":  {
+                                                         "queryReplacement":  "={{ $json.payment_status }},{{ $json.pedido_id }},{{ $json.payment_id }}"
+                                                     }
+                                     },
+                      "id":  "p13_update_conf",
+                      "name":  "Atualizar Pedido (Confirma??o)",
+                      "type":  "n8n-nodes-base.postgres",
+                      "typeVersion":  2.5,
+                      "position":  [
+                                       -800,
+                                       200
+                                   ],
+                      "credentials":  {
+                                          "postgres":  {
+                                                           "id":  "3gxY8xTADs50F07C",
+                                                           "name":  "Postgres pizzabot"
+                                                       }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "loose",
+                                                                            "version":  2
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "ok1",
+                                                                                   "leftValue":  "={{ $json.payment_status }}",
+                                                                                   "rightValue":  "approved",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p14_only_approved",
+                      "name":  "Pagamento aprovado?",
+                      "type":  "n8n-nodes-base.filter",
+                      "typeVersion":  2,
+                      "position":  [
+                                       -600,
+                                       200
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "messages-api",
+                                         "operation":  "send-text",
+                                         "instanceName":  "={{ $json.instancia }}",
+                                         "remoteJid":  "={{ $json.cliente_telefone }}",
+                                         "messageText":  "=? *Pagamento confirmado!*\n\nPedido #{{ $json.numero_pedido }} (R$ {{ $json.valor_total }}) j? est? na fila de prepara??o. ??\n\n{{ ($json.mensagens_status \u0026\u0026 $json.mensagens_status.confirmado) || \u0027Te aviso quando entrar no forno!\u0027 }}",
+                                         "options_message":  {
+
+                                                             }
+                                     },
+                      "id":  "p15_notify",
+                      "name":  "Notificar Cliente Confirmado",
+                      "type":  "n8n-nodes-evolution-api.evolutionApi",
+                      "typeVersion":  1,
+                      "position":  [
+                                       -400,
+                                       200
+                                   ],
+                      "credentials":  {
+                                          "evolutionApi":  {
+                                                               "id":  "OfPUfZENlrzqKq0v",
+                                                               "name":  "Evolution account"
+                                                           }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "respondWith":  "json",
+                                         "responseBody":  "={\"ok\": true, \"received\": true}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "p16_resp_conf",
+                      "name":  "Resposta Confirma??o",
+                      "type":  "n8n-nodes-base.respondToWebhook",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       -200,
+                                       200
+                                   ]
+                  }
+              ],
+    "connections":  {
+                        "Webhook Gerar Pagamento":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Validar Input",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Validar Input":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Carregar Pedido",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          },
+                        "Carregar Pedido":  {
+                                                "main":  [
+                                                             [
+                                                                 {
+                                                                     "node":  "Gateway?",
+                                                                     "type":  "main",
+                                                                     "index":  0
+                                                                 }
+                                                             ]
+                                                         ]
+                                            },
+                        "Gateway?":  {
+                                         "main":  [
+                                                      [
+                                                          {
+                                                              "node":  "Asaas Cobran?a",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ],
+                                                      [
+                                                          {
+                                                              "node":  "MercadoPago Cobran?a",
+                                                              "type":  "main",
+                                                              "index":  0
+                                                          }
+                                                      ]
+                                                  ]
+                                     },
+                        "Asaas Cobran?a":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Normalizar Resposta",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "MercadoPago Cobran?a":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Normalizar Resposta",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Normalizar Resposta":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Atualizar Pedido",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Atualizar Pedido":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Enviar Link ao Cliente",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Enviar Link ao Cliente":  {
+                                                       "main":  [
+                                                                    [
+                                                                        {
+                                                                            "node":  "Resposta Gera??o",
+                                                                            "type":  "main",
+                                                                            "index":  0
+                                                                        }
+                                                                    ]
+                                                                ]
+                                                   },
+                        "Webhook Confirma??o":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Parsear Webhook Gateway",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Parsear Webhook Gateway":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Atualizar Pedido (Confirma??o)",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Atualizar Pedido (Confirma??o)":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "Pagamento aprovado?",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                        "Pagamento aprovado?":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Notificar Cliente Confirmado",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Notificar Cliente Confirmado":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "Resposta Confirma??o",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "callerPolicy":  "workflowsFromSameOwner",
+                     "availableInMCP":  false
+                 },
+    "staticData":  null,
+    "meta":  null,
+    "pinData":  null,
+    "versionId":  "0400d660-8689-4162-8b4b-6b3a0ac8926c",
+    "activeVersionId":  "0400d660-8689-4162-8b4b-6b3a0ac8926c",
+    "versionCounter":  22,
+    "triggerCount":  2,
+    "shared":  [
+                   {
+                       "updatedAt":  "2026-05-20T05:01:53.375Z",
+                       "createdAt":  "2026-05-20T05:01:53.375Z",
+                       "role":  "workflow:owner",
+                       "workflowId":  "7kSCqNiuuW511XuL",
+                       "projectId":  "X66uwacf75MIIERv",
+                       "project":  {
+                                       "updatedAt":  "2026-03-08T00:07:15.369Z",
+                                       "createdAt":  "2026-03-08T00:05:31.723Z",
+                                       "id":  "X66uwacf75MIIERv",
+                                       "name":  "Jailson jailson.silva0933@gmail.com \u003cjailson.silva0933@gmail.com\u003e",
+                                       "type":  "personal",
+                                       "icon":  null,
+                                       "description":  null,
+                                       "creatorId":  "e61e2231-2621-4e9b-a22d-601150c2fa60"
+                                   }
+                   }
+               ],
+    "tags":  [
+
+             ],
+    "activeVersion":  {
+                          "updatedAt":  "2026-05-20T14:17:29.187Z",
+                          "createdAt":  "2026-05-20T14:17:29.187Z",
+                          "versionId":  "0400d660-8689-4162-8b4b-6b3a0ac8926c",
+                          "workflowId":  "7kSCqNiuuW511XuL",
+                          "nodes":  [
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "pizzabot-pagamento",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p01_gen",
+                                            "name":  "Webhook Gerar Pagamento",
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1200,
+                                                             -200
+                                                         ],
+                                            "webhookId":  "pizzabot-pagamento"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "httpMethod":  "POST",
+                                                               "path":  "pizzabot-pagamento-confirmacao",
+                                                               "responseMode":  "responseNode",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p02_conf",
+                                            "name":  "Webhook Confirma??o",
+                                            "type":  "n8n-nodes-base.webhook",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1200,
+                                                             200
+                                                         ],
+                                            "webhookId":  "pizzabot-pagamento-confirmacao"
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "const body = $json.body ?? $json;\nconst pedido_id = body.pedido_id || body.orderId;\nconst pizzaria_id = body.pizzaria_id || body.pizzeriaId;\nif (!pedido_id || !pizzaria_id) {\n  throw new Error(\u0027pedido_id e pizzaria_id s?o obrigat?rios\u0027);\n}\nreturn [{ json: { pedido_id, pizzaria_id, telefone: body.telefone || body.customerPhone || \u0027\u0027, instancia: body.instancia || body.instance || \u0027\u0027 } }];"
+                                                           },
+                                            "id":  "p03_validate",
+                                            "name":  "Validar Input",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1000,
+                                                             -200
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "executeQuery",
+                                                               "query":  "SELECT p.id, p.numero_pedido, p.valor_total, p.cliente_id, p.forma_pagamento, p.itens, p.endereco_entrega, c.nome AS cliente_nome, c.telefone AS cliente_telefone, pz.gateway_pagamento, pz.asaas_api_key, pz.mp_access_token, pz.nome AS pizzaria_nome, pz.instancia FROM public.pedidos p JOIN public.clientes c ON c.id = p.cliente_id JOIN public.pizzarias pz ON pz.id = p.pizzaria_id WHERE p.id = $1 AND p.pizzaria_id = $2 LIMIT 1;",
+                                                               "options":  {
+                                                                               "queryReplacement":  "={{ $json.pedido_id }},{{ $json.pizzaria_id }}"
+                                                                           }
+                                                           },
+                                            "id":  "p04_load",
+                                            "name":  "Carregar Pedido",
+                                            "type":  "n8n-nodes-base.postgres",
+                                            "typeVersion":  2.5,
+                                            "position":  [
+                                                             -800,
+                                                             -200
+                                                         ],
+                                            "credentials":  {
+                                                                "postgres":  {
+                                                                                 "id":  "3gxY8xTADs50F07C",
+                                                                                 "name":  "Postgres pizzabot"
+                                                                             }
+                                                            },
+                                            "continueOnFail":  true
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "rules":  {
+                                                                             "values":  [
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "loose",
+                                                                                                                                   "version":  2
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "id":  "g1",
+                                                                                                                                          "leftValue":  "={{ $json.gateway_pagamento }}",
+                                                                                                                                          "rightValue":  "asaas",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       }
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "asaas"
+                                                                                            },
+                                                                                            {
+                                                                                                "conditions":  {
+                                                                                                                   "options":  {
+                                                                                                                                   "caseSensitive":  true,
+                                                                                                                                   "leftValue":  "",
+                                                                                                                                   "typeValidation":  "loose",
+                                                                                                                                   "version":  2
+                                                                                                                               },
+                                                                                                                   "conditions":  [
+                                                                                                                                      {
+                                                                                                                                          "id":  "g2",
+                                                                                                                                          "leftValue":  "={{ $json.gateway_pagamento }}",
+                                                                                                                                          "rightValue":  "mercadopago",
+                                                                                                                                          "operator":  {
+                                                                                                                                                           "type":  "string",
+                                                                                                                                                           "operation":  "equals"
+                                                                                                                                                       }
+                                                                                                                                      }
+                                                                                                                                  ],
+                                                                                                                   "combinator":  "and"
+                                                                                                               },
+                                                                                                "renameOutput":  true,
+                                                                                                "outputKey":  "mercadopago"
+                                                                                            }
+                                                                                        ]
+                                                                         },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p05_switch",
+                                            "name":  "Gateway?",
+                                            "type":  "n8n-nodes-base.switch",
+                                            "typeVersion":  3.2,
+                                            "position":  [
+                                                             -600,
+                                                             -200
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://www.asaas.com/api/v3/payments",
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "access_token",
+                                                                                                               "value":  "={{ $json.asaas_api_key }}"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/json"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={\n  \"customer\": \"{{ $json.cliente_telefone }}\",\n  \"billingType\": \"PIX\",\n  \"value\": {{ $json.valor_total }},\n  \"dueDate\": \"{{ $now.plus({days:1}).toFormat(\u0027yyyy-MM-dd\u0027) }}\",\n  \"description\": \"Pedido #{{ $json.numero_pedido }} - {{ $json.pizzaria_nome }}\",\n  \"externalReference\": \"{{ $json.id }}\"\n}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p06_asaas",
+                                            "name":  "Asaas Cobran?a",
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             -400,
+                                                             -300
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "method":  "POST",
+                                                               "url":  "https://api.mercadopago.com/v1/payments",
+                                                               "sendHeaders":  true,
+                                                               "headerParameters":  {
+                                                                                        "parameters":  [
+                                                                                                           {
+                                                                                                               "name":  "Authorization",
+                                                                                                               "value":  "=Bearer {{ $json.mp_access_token }}"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "Content-Type",
+                                                                                                               "value":  "application/json"
+                                                                                                           },
+                                                                                                           {
+                                                                                                               "name":  "X-Idempotency-Key",
+                                                                                                               "value":  "={{ $json.id }}"
+                                                                                                           }
+                                                                                                       ]
+                                                                                    },
+                                                               "sendBody":  true,
+                                                               "specifyBody":  "json",
+                                                               "jsonBody":  "={\n  \"transaction_amount\": {{ $json.valor_total }},\n  \"description\": \"Pedido #{{ $json.numero_pedido }} - {{ $json.pizzaria_nome }}\",\n  \"payment_method_id\": \"pix\",\n  \"external_reference\": \"{{ $json.id }}\",\n  \"payer\": {\n    \"first_name\": \"{{ $json.cliente_nome.split(\u0027 \u0027)[0] }}\",\n    \"email\": \"cliente{{ $json.cliente_telefone }}@gmail.com\"\n  }\n}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p07_mp",
+                                            "name":  "MercadoPago Cobran?a",
+                                            "type":  "n8n-nodes-base.httpRequest",
+                                            "typeVersion":  4.2,
+                                            "position":  [
+                                                             -400,
+                                                             -100
+                                                         ],
+                                            "continueOnFail":  true
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "// Normaliza retorno dos dois gateways em formato unico\n// Tenta obter dados do pedido - pode nao existir se p04 falhou\nlet pedido = {};\ntry { pedido = $(\u0027Carregar Pedido\u0027).first().json; } catch(e) {}\nconst resp = $json;\n\n// Se $json tem \u0027error\u0027 key ou nao tem \u0027id\u0027, a chamada falhou\nlet paymentId = \u0027\u0027, paymentLink = \u0027\u0027, pixCopiaCola = \u0027\u0027;\nif (resp \u0026\u0026 resp.id \u0026\u0026 resp.invoiceUrl) {\n  // Asaas\n  paymentId = String(resp.id);\n  paymentLink = resp.invoiceUrl;\n  pixCopiaCola = resp.encodedImage || \u0027\u0027;\n} else if (resp \u0026\u0026 resp.id \u0026\u0026 resp.point_of_interaction) {\n  // MercadoPago\n  paymentId = String(resp.id);\n  paymentLink = resp.point_of_interaction?.transaction_data?.ticket_url || \u0027\u0027;\n  pixCopiaCola = resp.point_of_interaction?.transaction_data?.qr_code || \u0027\u0027;\n}\n\nconst hasLink = !!(paymentLink \u0026\u0026 paymentLink.length \u003e 0);\n\nreturn [{\n  json: {\n    ok: hasLink,\n    error: hasLink ? null : \u0027Gateway de pagamento nao configurado ou credencial invalida.\u0027,\n    pedido_id: pedido.id || \u0027\u0027,\n    pizzaria_id: pedido.pizzaria_id || \u0027\u0027,\n    telefone: pedido.cliente_telefone || \u0027\u0027,\n    instancia: pedido.instancia || \u0027\u0027,\n    payment_id: paymentId,\n    payment_link: paymentLink,\n    pix_copia_cola: pixCopiaCola,\n    numero_pedido: pedido.numero_pedido || \u0027\u0027,\n    valor_total: pedido.valor_total || 0\n  }\n}];\n"
+                                                           },
+                                            "id":  "p08_norm",
+                                            "name":  "Normalizar Resposta",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -200,
+                                                             -200
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "executeQuery",
+                                                               "query":  "UPDATE public.pedidos SET payment_id = $1, link_pagamento = $2, payment_status = \u0027pending\u0027, updated_at = NOW() WHERE id = $3 RETURNING id;",
+                                                               "options":  {
+                                                                               "queryReplacement":  "={{ $json.payment_id }},{{ $json.payment_link }},{{ $json.pedido_id }}"
+                                                                           }
+                                                           },
+                                            "id":  "p09_update",
+                                            "name":  "Atualizar Pedido",
+                                            "type":  "n8n-nodes-base.postgres",
+                                            "typeVersion":  2.5,
+                                            "position":  [
+                                                             0,
+                                                             -200
+                                                         ],
+                                            "credentials":  {
+                                                                "postgres":  {
+                                                                                 "id":  "3gxY8xTADs50F07C",
+                                                                                 "name":  "Postgres pizzabot"
+                                                                             }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "resource":  "messages-api",
+                                                               "operation":  "send-text",
+                                                               "instanceName":  "={{ $(\u0027Normalizar Resposta\u0027).item.json.instancia }}",
+                                                               "remoteJid":  "={{ $(\u0027Normalizar Resposta\u0027).item.json.telefone }}",
+                                                               "messageText":  "=?? *Pagamento do Pedido #{{ $(\u0027Normalizar Resposta\u0027).item.json.numero_pedido }}*\n\nValor: R$ {{ $(\u0027Normalizar Resposta\u0027).item.json.valor_total }}\n\n?? Link de pagamento:\n{{ $(\u0027Normalizar Resposta\u0027).item.json.payment_link }}\n\n?? PIX copia-e-cola:\n```\n{{ $(\u0027Normalizar Resposta\u0027).item.json.pix_copia_cola }}\n```\n\nAssim que o pagamento for confirmado, te aviso aqui! ??",
+                                                               "options_message":  {
+
+                                                                                   }
+                                                           },
+                                            "id":  "p10_send",
+                                            "name":  "Enviar Link ao Cliente",
+                                            "type":  "n8n-nodes-evolution-api.evolutionApi",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             200,
+                                                             -200
+                                                         ],
+                                            "credentials":  {
+                                                                "evolutionApi":  {
+                                                                                     "id":  "OfPUfZENlrzqKq0v",
+                                                                                     "name":  "Evolution account"
+                                                                                 }
+                                                            },
+                                            "continueOnFail":  true
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "respondWith":  "json",
+                                                               "responseBody":  "={\n  \"ok\": {{ $(\"Normalizar Resposta\").item.json.ok }},\n  \"paymentId\": \"{{ $(\"Normalizar Resposta\").item.json.payment_id }}\",\n  \"paymentLink\": \"{{ $(\"Normalizar Resposta\").item.json.payment_link }}\",\n  \"error\": \"{{ $(\"Normalizar Resposta\").item.json.error || \u0027\u0027 }}\"\n}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p11_resp",
+                                            "name":  "Resposta Gera??o",
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             400,
+                                                             -200
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "jsCode":  "// Aceita formatos de Asaas e MercadoPago\nconst body = $json.body ?? $json;\nlet pedidoExternalRef = \u0027\u0027, status = \u0027\u0027, paymentId = \u0027\u0027;\n\nif (body.event \u0026\u0026 body.payment) {\n  // Asaas: { event: \u0027PAYMENT_RECEIVED\u0027, payment: { id, status, externalReference, value } }\n  paymentId = String(body.payment.id || \u0027\u0027);\n  pedidoExternalRef = String(body.payment.externalReference || \u0027\u0027);\n  const evt = String(body.event).toUpperCase();\n  if (evt.includes(\u0027RECEIVED\u0027) || evt.includes(\u0027CONFIRMED\u0027)) status = \u0027approved\u0027;\n  else if (evt.includes(\u0027REFUND\u0027) || evt.includes(\u0027DELETED\u0027) || evt.includes(\u0027CANCELED\u0027)) status = \u0027cancelled\u0027;\n  else status = \u0027pending\u0027;\n} else if (body.action || body.type) {\n  // MercadoPago: { action, data: { id }, type: \u0027payment\u0027 }\n  paymentId = String(body.data?.id || body.resource || \u0027\u0027);\n  // Para MP precisamos do externalReference no payload completo (alguns webhooks j? enviam, outros n?o)\n  pedidoExternalRef = String(body.external_reference || body.data?.external_reference || \u0027\u0027);\n  status = body.action === \u0027payment.updated\u0027 ? \u0027approved\u0027 : \u0027pending\u0027;\n}\n\nreturn [{\n  json: {\n    skip: !pedidoExternalRef \u0026\u0026 !paymentId,\n    pedido_id: pedidoExternalRef,\n    payment_id: paymentId,\n    payment_status: status\n  }\n}];"
+                                                           },
+                                            "id":  "p12_parse_webhook",
+                                            "name":  "Parsear Webhook Gateway",
+                                            "type":  "n8n-nodes-base.code",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -1000,
+                                                             200
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "operation":  "executeQuery",
+                                                               "query":  "UPDATE public.pedidos SET payment_status = $1, status = CASE WHEN $1 = \u0027approved\u0027 THEN \u0027confirmado\u0027 ELSE status END, updated_at = NOW() WHERE (id::text = $2 OR payment_id = $3) RETURNING id, pizzaria_id, cliente_id, numero_pedido, valor_total, status, payment_status, (SELECT telefone FROM public.clientes WHERE id = pedidos.cliente_id) AS cliente_telefone, (SELECT instancia FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS instancia, (SELECT mensagens_status FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS mensagens_status;",
+                                                               "options":  {
+                                                                               "queryReplacement":  "={{ $json.payment_status }},{{ $json.pedido_id }},{{ $json.payment_id }}"
+                                                                           }
+                                                           },
+                                            "id":  "p13_update_conf",
+                                            "name":  "Atualizar Pedido (Confirma??o)",
+                                            "type":  "n8n-nodes-base.postgres",
+                                            "typeVersion":  2.5,
+                                            "position":  [
+                                                             -800,
+                                                             200
+                                                         ],
+                                            "credentials":  {
+                                                                "postgres":  {
+                                                                                 "id":  "3gxY8xTADs50F07C",
+                                                                                 "name":  "Postgres pizzabot"
+                                                                             }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "conditions":  {
+                                                                                  "options":  {
+                                                                                                  "caseSensitive":  true,
+                                                                                                  "leftValue":  "",
+                                                                                                  "typeValidation":  "loose",
+                                                                                                  "version":  2
+                                                                                              },
+                                                                                  "conditions":  [
+                                                                                                     {
+                                                                                                         "id":  "ok1",
+                                                                                                         "leftValue":  "={{ $json.payment_status }}",
+                                                                                                         "rightValue":  "approved",
+                                                                                                         "operator":  {
+                                                                                                                          "type":  "string",
+                                                                                                                          "operation":  "equals"
+                                                                                                                      }
+                                                                                                     }
+                                                                                                 ],
+                                                                                  "combinator":  "and"
+                                                                              },
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p14_only_approved",
+                                            "name":  "Pagamento aprovado?",
+                                            "type":  "n8n-nodes-base.filter",
+                                            "typeVersion":  2,
+                                            "position":  [
+                                                             -600,
+                                                             200
+                                                         ]
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "resource":  "messages-api",
+                                                               "operation":  "send-text",
+                                                               "instanceName":  "={{ $json.instancia }}",
+                                                               "remoteJid":  "={{ $json.cliente_telefone }}",
+                                                               "messageText":  "=? *Pagamento confirmado!*\n\nPedido #{{ $json.numero_pedido }} (R$ {{ $json.valor_total }}) j? est? na fila de prepara??o. ??\n\n{{ ($json.mensagens_status \u0026\u0026 $json.mensagens_status.confirmado) || \u0027Te aviso quando entrar no forno!\u0027 }}",
+                                                               "options_message":  {
+
+                                                                                   }
+                                                           },
+                                            "id":  "p15_notify",
+                                            "name":  "Notificar Cliente Confirmado",
+                                            "type":  "n8n-nodes-evolution-api.evolutionApi",
+                                            "typeVersion":  1,
+                                            "position":  [
+                                                             -400,
+                                                             200
+                                                         ],
+                                            "credentials":  {
+                                                                "evolutionApi":  {
+                                                                                     "id":  "OfPUfZENlrzqKq0v",
+                                                                                     "name":  "Evolution account"
+                                                                                 }
+                                                            }
+                                        },
+                                        {
+                                            "parameters":  {
+                                                               "respondWith":  "json",
+                                                               "responseBody":  "={\"ok\": true, \"received\": true}",
+                                                               "options":  {
+
+                                                                           }
+                                                           },
+                                            "id":  "p16_resp_conf",
+                                            "name":  "Resposta Confirma??o",
+                                            "type":  "n8n-nodes-base.respondToWebhook",
+                                            "typeVersion":  1.1,
+                                            "position":  [
+                                                             -200,
+                                                             200
+                                                         ]
+                                        }
+                                    ],
+                          "connections":  {
+                                              "Webhook Gerar Pagamento":  {
+                                                                              "main":  [
+                                                                                           [
+                                                                                               {
+                                                                                                   "node":  "Validar Input",
+                                                                                                   "type":  "main",
+                                                                                                   "index":  0
+                                                                                               }
+                                                                                           ]
+                                                                                       ]
+                                                                          },
+                                              "Validar Input":  {
+                                                                    "main":  [
+                                                                                 [
+                                                                                     {
+                                                                                         "node":  "Carregar Pedido",
+                                                                                         "type":  "main",
+                                                                                         "index":  0
+                                                                                     }
+                                                                                 ]
+                                                                             ]
+                                                                },
+                                              "Carregar Pedido":  {
+                                                                      "main":  [
+                                                                                   [
+                                                                                       {
+                                                                                           "node":  "Gateway?",
+                                                                                           "type":  "main",
+                                                                                           "index":  0
+                                                                                       }
+                                                                                   ]
+                                                                               ]
+                                                                  },
+                                              "Gateway?":  {
+                                                               "main":  [
+                                                                            [
+                                                                                {
+                                                                                    "node":  "Asaas Cobran?a",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ],
+                                                                            [
+                                                                                {
+                                                                                    "node":  "MercadoPago Cobran?a",
+                                                                                    "type":  "main",
+                                                                                    "index":  0
+                                                                                }
+                                                                            ]
+                                                                        ]
+                                                           },
+                                              "Asaas Cobran?a":  {
+                                                                     "main":  [
+                                                                                  [
+                                                                                      {
+                                                                                          "node":  "Normalizar Resposta",
+                                                                                          "type":  "main",
+                                                                                          "index":  0
+                                                                                      }
+                                                                                  ]
+                                                                              ]
+                                                                 },
+                                              "MercadoPago Cobran?a":  {
+                                                                           "main":  [
+                                                                                        [
+                                                                                            {
+                                                                                                "node":  "Normalizar Resposta",
+                                                                                                "type":  "main",
+                                                                                                "index":  0
+                                                                                            }
+                                                                                        ]
+                                                                                    ]
+                                                                       },
+                                              "Normalizar Resposta":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Atualizar Pedido",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "Atualizar Pedido":  {
+                                                                       "main":  [
+                                                                                    [
+                                                                                        {
+                                                                                            "node":  "Enviar Link ao Cliente",
+                                                                                            "type":  "main",
+                                                                                            "index":  0
+                                                                                        }
+                                                                                    ]
+                                                                                ]
+                                                                   },
+                                              "Enviar Link ao Cliente":  {
+                                                                             "main":  [
+                                                                                          [
+                                                                                              {
+                                                                                                  "node":  "Resposta Gera??o",
+                                                                                                  "type":  "main",
+                                                                                                  "index":  0
+                                                                                              }
+                                                                                          ]
+                                                                                      ]
+                                                                         },
+                                              "Webhook Confirma??o":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Parsear Webhook Gateway",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "Parsear Webhook Gateway":  {
+                                                                              "main":  [
+                                                                                           [
+                                                                                               {
+                                                                                                   "node":  "Atualizar Pedido (Confirma??o)",
+                                                                                                   "type":  "main",
+                                                                                                   "index":  0
+                                                                                               }
+                                                                                           ]
+                                                                                       ]
+                                                                          },
+                                              "Atualizar Pedido (Confirma??o)":  {
+                                                                                     "main":  [
+                                                                                                  [
+                                                                                                      {
+                                                                                                          "node":  "Pagamento aprovado?",
+                                                                                                          "type":  "main",
+                                                                                                          "index":  0
+                                                                                                      }
+                                                                                                  ]
+                                                                                              ]
+                                                                                 },
+                                              "Pagamento aprovado?":  {
+                                                                          "main":  [
+                                                                                       [
+                                                                                           {
+                                                                                               "node":  "Notificar Cliente Confirmado",
+                                                                                               "type":  "main",
+                                                                                               "index":  0
+                                                                                           }
+                                                                                       ]
+                                                                                   ]
+                                                                      },
+                                              "Notificar Cliente Confirmado":  {
+                                                                                   "main":  [
+                                                                                                [
+                                                                                                    {
+                                                                                                        "node":  "Resposta Confirma??o",
+                                                                                                        "type":  "main",
+                                                                                                        "index":  0
+                                                                                                    }
+                                                                                                ]
+                                                                                            ]
+                                                                               }
+                                          },
+                          "authors":  "Jailson jailson.silva0933@gmail.com",
+                          "name":  null,
+                          "description":  null,
+                          "autosaved":  false,
+                          "workflowPublishHistory":  [
+                                                         {
+                                                             "createdAt":  "2026-05-20T14:17:29.287Z",
+                                                             "id":  520,
+                                                             "workflowId":  "7kSCqNiuuW511XuL",
+                                                             "versionId":  "0400d660-8689-4162-8b4b-6b3a0ac8926c",
+                                                             "event":  "deactivated",
+                                                             "userId":  "e61e2231-2621-4e9b-a22d-601150c2fa60"
+                                                         },
+                                                         {
+                                                             "createdAt":  "2026-05-20T14:17:29.333Z",
+                                                             "id":  521,
+                                                             "workflowId":  "7kSCqNiuuW511XuL",
+                                                             "versionId":  "0400d660-8689-4162-8b4b-6b3a0ac8926c",
+                                                             "event":  "activated",
+                                                             "userId":  "e61e2231-2621-4e9b-a22d-601150c2fa60"
+                                                         }
+                                                     ]
+                      }
+}

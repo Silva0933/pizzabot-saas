@@ -1,0 +1,1581 @@
+{
+  "updatedAt": "2026-05-20T15:03:01.158Z",
+  "createdAt": "2026-05-20T05:01:53.375Z",
+  "id": "7kSCqNiuuW511XuL",
+  "name": "PizzaBot - Pagamentos (Gerar + Webhook)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pizzabot-pagamento",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "p01_gen",
+      "name": "Webhook Gerar Pagamento",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        -200
+      ],
+      "webhookId": "pizzabot-pagamento"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pizzabot-pagamento-confirmacao",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "p02_conf",
+      "name": "Webhook Confirma??o",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1200,
+        200
+      ],
+      "webhookId": "pizzabot-pagamento-confirmacao"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst pedidoIdRaw = String(body.pedido_id || body.orderId || '').trim();\nconst pedido_id = pedidoIdRaw || '__missing__';\nconst pizzaria_id = String(body.pizzaria_id || body.pizzeriaId || '').trim();\nconst telefone = String(body.telefone || body.customerPhone || '').replace(/\\D/g, '');\n\nif (!pizzaria_id) {\n  throw new Error('pizzaria_id e obrigatorio');\n}\nif (pedido_id === '__missing__' && !telefone) {\n  throw new Error('Informe pedido_id ou telefone para localizar o pedido pendente');\n}\n\nreturn [{\n  json: {\n    pedido_id,\n    has_pedido_id: pedido_id !== '__missing__',\n    pizzaria_id,\n    telefone,\n    instancia: body.instancia || body.instance || ''\n  }\n}];"
+      },
+      "id": "p03_validate",
+      "name": "Validar Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.id, p.pizzaria_id, p.numero_pedido, p.valor_total, p.cliente_id, p.forma_pagamento, p.itens, p.endereco_entrega, c.nome AS cliente_nome, c.telefone AS cliente_telefone, pz.gateway_pagamento, pz.asaas_api_key, pz.mp_access_token, pz.nome AS pizzaria_nome, pz.instancia\nFROM public.pedidos p\nJOIN public.clientes c ON c.id = p.cliente_id\nJOIN public.pizzarias pz ON pz.id = p.pizzaria_id\nWHERE p.pizzaria_id = $2\n  AND (\n    ($1 <> '__missing__' AND p.id::text = $1)\n    OR ($1 = '__missing__' AND regexp_replace(c.telefone, '\\D', '', 'g') = $3 AND p.payment_status = 'pending' AND p.status <> 'cancelado')\n  )\nORDER BY p.created_at DESC\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.pedido_id }},{{ $json.pizzaria_id }},{{ $json.telefone }}"
+        }
+      },
+      "id": "p04_load",
+      "name": "Carregar Pedido",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -800,
+        -200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "g1",
+                    "leftValue": "={{ $json.gateway_pagamento }}",
+                    "rightValue": "asaas",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "asaas"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "g2",
+                    "leftValue": "={{ $json.gateway_pagamento }}",
+                    "rightValue": "mercadopago",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "mercadopago"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "p05_switch",
+      "name": "Gateway?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -300,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.asaas.com/api/v3/payments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Carregar Pedido').item.json.asaas_api_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"customer\": \"{{ $('Asaas Cliente').item.json.id }}\",\n  \"billingType\": \"PIX\",\n  \"value\": {{ $('Carregar Pedido').item.json.valor_total }},\n  \"dueDate\": \"{{ $now.plus({days:1}).toFormat('yyyy-MM-dd') }}\",\n  \"description\": \"Pedido #{{ $('Carregar Pedido').item.json.numero_pedido }} - {{ $('Carregar Pedido').item.json.pizzaria_nome }}\",\n  \"externalReference\": \"{{ $('Carregar Pedido').item.json.id }}\"\n}",
+        "options": {}
+      },
+      "id": "p06_asaas",
+      "name": "Asaas Cobran?a",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mercadopago.com/v1/payments",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.mp_access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Idempotency-Key",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"transaction_amount\": {{ $json.valor_total }},\n  \"description\": \"Pedido #{{ $json.numero_pedido }} - {{ $json.pizzaria_nome }}\",\n  \"payment_method_id\": \"pix\",\n  \"external_reference\": \"{{ $json.id }}\",\n  \"payer\": {\n    \"first_name\": \"{{ $json.cliente_nome.split(' ')[0] }}\",\n    \"email\": \"cliente{{ $json.cliente_telefone }}@gmail.com\"\n  }\n}",
+        "options": {}
+      },
+      "id": "p07_mp",
+      "name": "MercadoPago Cobran?a",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        20,
+        -80
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normaliza retorno dos dois gateways em formato unico\nconst pedido = $('Carregar Pedido').first().json;\nconst resp = $json;\n\nlet paymentId = '', paymentLink = '', pixCopiaCola = '';\nif (resp.id && resp.invoiceUrl) {\n  // Asaas\n  paymentId = String(resp.id);\n  paymentLink = resp.invoiceUrl || resp.bankSlipUrl || '';\n  pixCopiaCola = resp.pix?.payload || resp.encodedImage || '';\n} else if (resp.id) {\n  // MercadoPago\n  paymentId = String(resp.id);\n  paymentLink = resp.point_of_interaction?.transaction_data?.ticket_url || '';\n  pixCopiaCola = resp.point_of_interaction?.transaction_data?.qr_code || '';\n}\n\nconst hasLinkOrPix = Boolean(paymentLink || pixCopiaCola);\nreturn [{\n  json: {\n    ok: hasLinkOrPix,\n    error: hasLinkOrPix ? '' : 'Gateway retornou cobranca sem link/PIX. Verifique credenciais e ambiente do provedor.',\n    pedido_id: pedido.id,\n    pizzaria_id: pedido.pizzaria_id,\n    telefone: pedido.cliente_telefone,\n    instancia: pedido.instancia,\n    payment_id: paymentId,\n    payment_link: paymentLink,\n    pix_copia_cola: pixCopiaCola,\n    numero_pedido: pedido.numero_pedido,\n    valor_total: pedido.valor_total\n  }\n}];"
+      },
+      "id": "p08_norm",
+      "name": "Normalizar Resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.pedidos SET payment_id = $1, link_pagamento = $2, payment_status = 'pending', updated_at = NOW() WHERE id = $3 RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $json.payment_id }},{{ $json.payment_link }},{{ $json.pedido_id }}"
+        }
+      },
+      "id": "p09_update",
+      "name": "Atualizar Pedido",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        480,
+        -200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-text",
+        "instanceName": "={{ $('Normalizar Resposta').item.json.instancia }}",
+        "remoteJid": "={{ $('Normalizar Resposta').item.json.telefone }}",
+        "messageText": "=?? *Pagamento do Pedido #{{ $('Normalizar Resposta').item.json.numero_pedido }}*\n\nValor: R$ {{ $('Normalizar Resposta').item.json.valor_total }}\n\n?? Link de pagamento:\n{{ $('Normalizar Resposta').item.json.payment_link }}\n\n?? PIX copia-e-cola:\n```\n{{ $('Normalizar Resposta').item.json.pix_copia_cola }}\n```\n\nAssim que o pagamento for confirmado, te aviso aqui! ??",
+        "options_message": {}
+      },
+      "id": "p10_send",
+      "name": "Enviar Link ao Cliente",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        700,
+        -200
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": {{ $(\"Normalizar Resposta\").item.json.ok }},\n  \"paymentId\": \"{{ $(\"Normalizar Resposta\").item.json.payment_id }}\",\n  \"paymentLink\": \"{{ $(\"Normalizar Resposta\").item.json.payment_link }}\",\n  \"error\": \"{{ $(\"Normalizar Resposta\").item.json.error || '' }}\"\n}",
+        "options": {}
+      },
+      "id": "p11_resp",
+      "name": "Resposta Gera??o",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        920,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aceita formatos de Asaas e MercadoPago\nconst body = $json.body ?? $json;\nlet pedidoExternalRef = '', status = '', paymentId = '';\n\nif (body.event && body.payment) {\n  // Asaas: { event: 'PAYMENT_RECEIVED', payment: { id, status, externalReference, value } }\n  paymentId = String(body.payment.id || '');\n  pedidoExternalRef = String(body.payment.externalReference || '');\n  const evt = String(body.event).toUpperCase();\n  if (evt.includes('RECEIVED') || evt.includes('CONFIRMED')) status = 'approved';\n  else if (evt.includes('REFUND') || evt.includes('DELETED') || evt.includes('CANCELED')) status = 'cancelled';\n  else status = 'pending';\n} else if (body.action || body.type) {\n  // MercadoPago: { action, data: { id }, type: 'payment' }\n  paymentId = String(body.data?.id || body.resource || '');\n  // Para MP precisamos do externalReference no payload completo (alguns webhooks j? enviam, outros n?o)\n  pedidoExternalRef = String(body.external_reference || body.data?.external_reference || '');\n  status = body.action === 'payment.updated' ? 'approved' : 'pending';\n}\n\nreturn [{\n  json: {\n    skip: !pedidoExternalRef && !paymentId,\n    pedido_id: pedidoExternalRef,\n    payment_id: paymentId,\n    payment_status: status\n  }\n}];"
+      },
+      "id": "p12_parse_webhook",
+      "name": "Parsear Webhook Gateway",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1000,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.pedidos SET payment_status = $1, status = CASE WHEN $1 = 'approved' THEN 'confirmado' ELSE status END, updated_at = NOW() WHERE (id::text = $2 OR payment_id = $3) RETURNING id, pizzaria_id, cliente_id, numero_pedido, valor_total, status, payment_status, (SELECT telefone FROM public.clientes WHERE id = pedidos.cliente_id) AS cliente_telefone, (SELECT instancia FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS instancia, (SELECT mensagens_status FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS mensagens_status;",
+        "options": {
+          "queryReplacement": "={{ $json.payment_status }},{{ $json.pedido_id }},{{ $json.payment_id }}"
+        }
+      },
+      "id": "p13_update_conf",
+      "name": "Atualizar Pedido (Confirma??o)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -800,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ok1",
+              "leftValue": "={{ $json.payment_status }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "p14_only_approved",
+      "name": "Pagamento aprovado?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-text",
+        "instanceName": "={{ $json.instancia }}",
+        "remoteJid": "={{ $json.cliente_telefone }}",
+        "messageText": "=? *Pagamento confirmado!*\n\nPedido #{{ $json.numero_pedido }} (R$ {{ $json.valor_total }}) j? est? na fila de prepara??o. ??\n\n{{ ($json.mensagens_status && $json.mensagens_status.confirmado) || 'Te aviso quando entrar no forno!' }}",
+        "options_message": {}
+      },
+      "id": "p15_notify",
+      "name": "Notificar Cliente Confirmado",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        200
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": true, \"received\": true}",
+        "options": {}
+      },
+      "id": "p16_resp_conf",
+      "name": "Resposta Confirma??o",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -200,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pedido = $json;\nif (pedido.error || pedido.message || !pedido.id) {\n  return [{ json: { ...pedido, payment_config_ok: false, payment_error: 'Pedido pendente nao encontrado para este telefone/pizzaria.' } }];\n}\nconst gateway = String(pedido.gateway_pagamento || 'nenhum').toLowerCase().trim();\nconst rawPaymentMethod = String(pedido.forma_pagamento || 'pix').toLowerCase().trim();\nconst paymentAliases = {\n  'pix': 'pix',\n  '3': 'pix',\n  'cartao': 'cartao',\n  'cart?o': 'cartao',\n  '2': 'cartao',\n  'dinheiro': 'dinheiro',\n  '1': 'dinheiro'\n};\nconst paymentMethod = paymentAliases[rawPaymentMethod] || 'pix';\nconst asaasKey = String(pedido.asaas_api_key || '').trim();\nconst mpKey = String(pedido.mp_access_token || '').trim();\n\nlet error = '';\nif (!['pix', 'cartao'].includes(paymentMethod)) {\n  error = 'Forma de pagamento nao exige link automatico.';\n} else if (gateway === 'asaas' && !asaasKey) {\n  error = 'Gateway Asaas selecionado, mas a API Key nao esta configurada.';\n} else if (gateway === 'mercadopago' && !mpKey) {\n  error = 'Gateway MercadoPago selecionado, mas o Access Token nao esta configurado.';\n} else if (!['asaas', 'mercadopago'].includes(gateway)) {\n  error = 'Nenhum gateway de pagamento automatico configurado para esta pizzaria.';\n}\n\nreturn [{ json: { ...pedido, forma_pagamento: paymentMethod, gateway_pagamento: gateway, payment_config_ok: !error, payment_error: error } }];"
+      },
+      "id": "p04b_validate_config",
+      "name": "Validar Configuracao Pagamento",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -650,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "payment-config-ok",
+              "leftValue": "={{ $json.payment_config_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "p04c_if_config",
+      "name": "Pagamento configurado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -475,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error\": \"{{ $json.payment_error }}\", \"paymentLink\": \"\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "p04d_resp_config_error",
+      "name": "Resposta Erro Configuracao",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -250,
+        20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.asaas.com/api/v3/customers",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.asaas_api_key }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": \"{{ $json.cliente_nome || 'Cliente PizzaBot' }}\",\n  \"mobilePhone\": \"{{ String($json.cliente_telefone || '').replace(/\\D/g, '') }}\",\n  \"notificationDisabled\": true\n}",
+        "options": {}
+      },
+      "id": "p05a_asaas_customer",
+      "name": "Asaas Cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -210,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-payment-link-or-pix",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "p08b_if_payment_ok",
+      "name": "Pagamento gerado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        365,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\": false, \"error\": \"{{ $json.error }}\", \"paymentId\": \"{{ $json.payment_id }}\", \"paymentLink\": \"{{ $json.payment_link }}\"}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "p08c_resp_payment_error",
+      "name": "Resposta Erro Pagamento",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        570,
+        20
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Gerar Pagamento": {
+      "main": [
+        [
+          {
+            "node": "Validar Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Input": {
+      "main": [
+        [
+          {
+            "node": "Carregar Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carregar Pedido": {
+      "main": [
+        [
+          {
+            "node": "Validar Configuracao Pagamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gateway?": {
+      "main": [
+        [
+          {
+            "node": "Asaas Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "MercadoPago Cobran?a",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asaas Cobran?a": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MercadoPago Cobran?a": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Resposta": {
+      "main": [
+        [
+          {
+            "node": "Pagamento gerado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Pedido": {
+      "main": [
+        [
+          {
+            "node": "Enviar Link ao Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Link ao Cliente": {
+      "main": [
+        [
+          {
+            "node": "Resposta Gera??o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Confirma??o": {
+      "main": [
+        [
+          {
+            "node": "Parsear Webhook Gateway",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear Webhook Gateway": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Pedido (Confirma??o)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atualizar Pedido (Confirma??o)": {
+      "main": [
+        [
+          {
+            "node": "Pagamento aprovado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagamento aprovado?": {
+      "main": [
+        [
+          {
+            "node": "Notificar Cliente Confirmado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notificar Cliente Confirmado": {
+      "main": [
+        [
+          {
+            "node": "Resposta Confirma??o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validar Configuracao Pagamento": {
+      "main": [
+        [
+          {
+            "node": "Pagamento configurado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagamento configurado?": {
+      "main": [
+        [
+          {
+            "node": "Gateway?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro Configuracao",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Asaas Cliente": {
+      "main": [
+        [
+          {
+            "node": "Asaas Cobran?a",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pagamento gerado?": {
+      "main": [
+        [
+          {
+            "node": "Atualizar Pedido",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resposta Erro Pagamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": null,
+  "versionId": "b047c6df-eeb2-47ca-9394-314b99bcff9f",
+  "activeVersionId": "b047c6df-eeb2-47ca-9394-314b99bcff9f",
+  "versionCounter": 31,
+  "triggerCount": 2,
+  "shared": [
+    {
+      "updatedAt": "2026-05-20T05:01:53.375Z",
+      "createdAt": "2026-05-20T05:01:53.375Z",
+      "role": "workflow:owner",
+      "workflowId": "7kSCqNiuuW511XuL",
+      "projectId": "X66uwacf75MIIERv",
+      "project": {
+        "updatedAt": "2026-03-08T00:07:15.369Z",
+        "createdAt": "2026-03-08T00:05:31.723Z",
+        "id": "X66uwacf75MIIERv",
+        "name": "Jailson jailson.silva0933@gmail.com <jailson.silva0933@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "creatorId": "e61e2231-2621-4e9b-a22d-601150c2fa60"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-20T15:03:01.159Z",
+    "createdAt": "2026-05-20T15:03:01.159Z",
+    "versionId": "b047c6df-eeb2-47ca-9394-314b99bcff9f",
+    "workflowId": "7kSCqNiuuW511XuL",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "pizzabot-pagamento",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "p01_gen",
+        "name": "Webhook Gerar Pagamento",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1200,
+          -200
+        ],
+        "webhookId": "pizzabot-pagamento"
+      },
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "pizzabot-pagamento-confirmacao",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "p02_conf",
+        "name": "Webhook Confirma??o",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -1200,
+          200
+        ],
+        "webhookId": "pizzabot-pagamento-confirmacao"
+      },
+      {
+        "parameters": {
+          "jsCode": "const body = $json.body ?? $json;\nconst pedidoIdRaw = String(body.pedido_id || body.orderId || '').trim();\nconst pedido_id = pedidoIdRaw || '__missing__';\nconst pizzaria_id = String(body.pizzaria_id || body.pizzeriaId || '').trim();\nconst telefone = String(body.telefone || body.customerPhone || '').replace(/\\D/g, '');\n\nif (!pizzaria_id) {\n  throw new Error('pizzaria_id e obrigatorio');\n}\nif (pedido_id === '__missing__' && !telefone) {\n  throw new Error('Informe pedido_id ou telefone para localizar o pedido pendente');\n}\n\nreturn [{\n  json: {\n    pedido_id,\n    has_pedido_id: pedido_id !== '__missing__',\n    pizzaria_id,\n    telefone,\n    instancia: body.instancia || body.instance || ''\n  }\n}];"
+        },
+        "id": "p03_validate",
+        "name": "Validar Input",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1000,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT p.id, p.pizzaria_id, p.numero_pedido, p.valor_total, p.cliente_id, p.forma_pagamento, p.itens, p.endereco_entrega, c.nome AS cliente_nome, c.telefone AS cliente_telefone, pz.gateway_pagamento, pz.asaas_api_key, pz.mp_access_token, pz.nome AS pizzaria_nome, pz.instancia\nFROM public.pedidos p\nJOIN public.clientes c ON c.id = p.cliente_id\nJOIN public.pizzarias pz ON pz.id = p.pizzaria_id\nWHERE p.pizzaria_id = $2\n  AND (\n    ($1 <> '__missing__' AND p.id::text = $1)\n    OR ($1 = '__missing__' AND regexp_replace(c.telefone, '\\D', '', 'g') = $3 AND p.payment_status = 'pending' AND p.status <> 'cancelado')\n  )\nORDER BY p.created_at DESC\nLIMIT 1;",
+          "options": {
+            "queryReplacement": "={{ $json.pedido_id }},{{ $json.pizzaria_id }},{{ $json.telefone }}"
+          }
+        },
+        "id": "p04_load",
+        "name": "Carregar Pedido",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          -800,
+          -200
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "loose",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "g1",
+                      "leftValue": "={{ $json.gateway_pagamento }}",
+                      "rightValue": "asaas",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "asaas"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "loose",
+                    "version": 2
+                  },
+                  "conditions": [
+                    {
+                      "id": "g2",
+                      "leftValue": "={{ $json.gateway_pagamento }}",
+                      "rightValue": "mercadopago",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      }
+                    }
+                  ],
+                  "combinator": "and"
+                },
+                "renameOutput": true,
+                "outputKey": "mercadopago"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "p05_switch",
+        "name": "Gateway?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.2,
+        "position": [
+          -300,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://www.asaas.com/api/v3/payments",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "access_token",
+                "value": "={{ $('Carregar Pedido').item.json.asaas_api_key }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"customer\": \"{{ $('Asaas Cliente').item.json.id }}\",\n  \"billingType\": \"PIX\",\n  \"value\": {{ $('Carregar Pedido').item.json.valor_total }},\n  \"dueDate\": \"{{ $now.plus({days:1}).toFormat('yyyy-MM-dd') }}\",\n  \"description\": \"Pedido #{{ $('Carregar Pedido').item.json.numero_pedido }} - {{ $('Carregar Pedido').item.json.pizzaria_nome }}\",\n  \"externalReference\": \"{{ $('Carregar Pedido').item.json.id }}\"\n}",
+          "options": {}
+        },
+        "id": "p06_asaas",
+        "name": "Asaas Cobran?a",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          20,
+          -320
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.mercadopago.com/v1/payments",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $json.mp_access_token }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "X-Idempotency-Key",
+                "value": "={{ $json.id }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"transaction_amount\": {{ $json.valor_total }},\n  \"description\": \"Pedido #{{ $json.numero_pedido }} - {{ $json.pizzaria_nome }}\",\n  \"payment_method_id\": \"pix\",\n  \"external_reference\": \"{{ $json.id }}\",\n  \"payer\": {\n    \"first_name\": \"{{ $json.cliente_nome.split(' ')[0] }}\",\n    \"email\": \"cliente{{ $json.cliente_telefone }}@gmail.com\"\n  }\n}",
+          "options": {}
+        },
+        "id": "p07_mp",
+        "name": "MercadoPago Cobran?a",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          20,
+          -80
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "// Normaliza retorno dos dois gateways em formato unico\nconst pedido = $('Carregar Pedido').first().json;\nconst resp = $json;\n\nlet paymentId = '', paymentLink = '', pixCopiaCola = '';\nif (resp.id && resp.invoiceUrl) {\n  // Asaas\n  paymentId = String(resp.id);\n  paymentLink = resp.invoiceUrl || resp.bankSlipUrl || '';\n  pixCopiaCola = resp.pix?.payload || resp.encodedImage || '';\n} else if (resp.id) {\n  // MercadoPago\n  paymentId = String(resp.id);\n  paymentLink = resp.point_of_interaction?.transaction_data?.ticket_url || '';\n  pixCopiaCola = resp.point_of_interaction?.transaction_data?.qr_code || '';\n}\n\nconst hasLinkOrPix = Boolean(paymentLink || pixCopiaCola);\nreturn [{\n  json: {\n    ok: hasLinkOrPix,\n    error: hasLinkOrPix ? '' : 'Gateway retornou cobranca sem link/PIX. Verifique credenciais e ambiente do provedor.',\n    pedido_id: pedido.id,\n    pizzaria_id: pedido.pizzaria_id,\n    telefone: pedido.cliente_telefone,\n    instancia: pedido.instancia,\n    payment_id: paymentId,\n    payment_link: paymentLink,\n    pix_copia_cola: pixCopiaCola,\n    numero_pedido: pedido.numero_pedido,\n    valor_total: pedido.valor_total\n  }\n}];"
+        },
+        "id": "p08_norm",
+        "name": "Normalizar Resposta",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          250,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE public.pedidos SET payment_id = $1, link_pagamento = $2, payment_status = 'pending', updated_at = NOW() WHERE id = $3 RETURNING id;",
+          "options": {
+            "queryReplacement": "={{ $json.payment_id }},{{ $json.payment_link }},{{ $json.pedido_id }}"
+          }
+        },
+        "id": "p09_update",
+        "name": "Atualizar Pedido",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          480,
+          -200
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "operation": "send-text",
+          "instanceName": "={{ $('Normalizar Resposta').item.json.instancia }}",
+          "remoteJid": "={{ $('Normalizar Resposta').item.json.telefone }}",
+          "messageText": "=?? *Pagamento do Pedido #{{ $('Normalizar Resposta').item.json.numero_pedido }}*\n\nValor: R$ {{ $('Normalizar Resposta').item.json.valor_total }}\n\n?? Link de pagamento:\n{{ $('Normalizar Resposta').item.json.payment_link }}\n\n?? PIX copia-e-cola:\n```\n{{ $('Normalizar Resposta').item.json.pix_copia_cola }}\n```\n\nAssim que o pagamento for confirmado, te aviso aqui! ??",
+          "options_message": {}
+        },
+        "id": "p10_send",
+        "name": "Enviar Link ao Cliente",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          700,
+          -200
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\n  \"ok\": {{ $(\"Normalizar Resposta\").item.json.ok }},\n  \"paymentId\": \"{{ $(\"Normalizar Resposta\").item.json.payment_id }}\",\n  \"paymentLink\": \"{{ $(\"Normalizar Resposta\").item.json.payment_link }}\",\n  \"error\": \"{{ $(\"Normalizar Resposta\").item.json.error || '' }}\"\n}",
+          "options": {}
+        },
+        "id": "p11_resp",
+        "name": "Resposta Gera??o",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          920,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Aceita formatos de Asaas e MercadoPago\nconst body = $json.body ?? $json;\nlet pedidoExternalRef = '', status = '', paymentId = '';\n\nif (body.event && body.payment) {\n  // Asaas: { event: 'PAYMENT_RECEIVED', payment: { id, status, externalReference, value } }\n  paymentId = String(body.payment.id || '');\n  pedidoExternalRef = String(body.payment.externalReference || '');\n  const evt = String(body.event).toUpperCase();\n  if (evt.includes('RECEIVED') || evt.includes('CONFIRMED')) status = 'approved';\n  else if (evt.includes('REFUND') || evt.includes('DELETED') || evt.includes('CANCELED')) status = 'cancelled';\n  else status = 'pending';\n} else if (body.action || body.type) {\n  // MercadoPago: { action, data: { id }, type: 'payment' }\n  paymentId = String(body.data?.id || body.resource || '');\n  // Para MP precisamos do externalReference no payload completo (alguns webhooks j? enviam, outros n?o)\n  pedidoExternalRef = String(body.external_reference || body.data?.external_reference || '');\n  status = body.action === 'payment.updated' ? 'approved' : 'pending';\n}\n\nreturn [{\n  json: {\n    skip: !pedidoExternalRef && !paymentId,\n    pedido_id: pedidoExternalRef,\n    payment_id: paymentId,\n    payment_status: status\n  }\n}];"
+        },
+        "id": "p12_parse_webhook",
+        "name": "Parsear Webhook Gateway",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1000,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE public.pedidos SET payment_status = $1, status = CASE WHEN $1 = 'approved' THEN 'confirmado' ELSE status END, updated_at = NOW() WHERE (id::text = $2 OR payment_id = $3) RETURNING id, pizzaria_id, cliente_id, numero_pedido, valor_total, status, payment_status, (SELECT telefone FROM public.clientes WHERE id = pedidos.cliente_id) AS cliente_telefone, (SELECT instancia FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS instancia, (SELECT mensagens_status FROM public.pizzarias WHERE id = pedidos.pizzaria_id) AS mensagens_status;",
+          "options": {
+            "queryReplacement": "={{ $json.payment_status }},{{ $json.pedido_id }},{{ $json.payment_id }}"
+          }
+        },
+        "id": "p13_update_conf",
+        "name": "Atualizar Pedido (Confirma??o)",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          -800,
+          200
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "ok1",
+                "leftValue": "={{ $json.payment_status }}",
+                "rightValue": "approved",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "p14_only_approved",
+        "name": "Pagamento aprovado?",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2,
+        "position": [
+          -600,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "operation": "send-text",
+          "instanceName": "={{ $json.instancia }}",
+          "remoteJid": "={{ $json.cliente_telefone }}",
+          "messageText": "=? *Pagamento confirmado!*\n\nPedido #{{ $json.numero_pedido }} (R$ {{ $json.valor_total }}) j? est? na fila de prepara??o. ??\n\n{{ ($json.mensagens_status && $json.mensagens_status.confirmado) || 'Te aviso quando entrar no forno!' }}",
+          "options_message": {}
+        },
+        "id": "p15_notify",
+        "name": "Notificar Cliente Confirmado",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          -400,
+          200
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": true, \"received\": true}",
+          "options": {}
+        },
+        "id": "p16_resp_conf",
+        "name": "Resposta Confirma??o",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          -200,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const pedido = $json;\nif (pedido.error || pedido.message || !pedido.id) {\n  return [{ json: { ...pedido, payment_config_ok: false, payment_error: 'Pedido pendente nao encontrado para este telefone/pizzaria.' } }];\n}\nconst gateway = String(pedido.gateway_pagamento || 'nenhum').toLowerCase().trim();\nconst rawPaymentMethod = String(pedido.forma_pagamento || 'pix').toLowerCase().trim();\nconst paymentAliases = {\n  'pix': 'pix',\n  '3': 'pix',\n  'cartao': 'cartao',\n  'cart?o': 'cartao',\n  '2': 'cartao',\n  'dinheiro': 'dinheiro',\n  '1': 'dinheiro'\n};\nconst paymentMethod = paymentAliases[rawPaymentMethod] || 'pix';\nconst asaasKey = String(pedido.asaas_api_key || '').trim();\nconst mpKey = String(pedido.mp_access_token || '').trim();\n\nlet error = '';\nif (!['pix', 'cartao'].includes(paymentMethod)) {\n  error = 'Forma de pagamento nao exige link automatico.';\n} else if (gateway === 'asaas' && !asaasKey) {\n  error = 'Gateway Asaas selecionado, mas a API Key nao esta configurada.';\n} else if (gateway === 'mercadopago' && !mpKey) {\n  error = 'Gateway MercadoPago selecionado, mas o Access Token nao esta configurado.';\n} else if (!['asaas', 'mercadopago'].includes(gateway)) {\n  error = 'Nenhum gateway de pagamento automatico configurado para esta pizzaria.';\n}\n\nreturn [{ json: { ...pedido, forma_pagamento: paymentMethod, gateway_pagamento: gateway, payment_config_ok: !error, payment_error: error } }];"
+        },
+        "id": "p04b_validate_config",
+        "name": "Validar Configuracao Pagamento",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -650,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "payment-config-ok",
+                "leftValue": "={{ $json.payment_config_ok }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "p04c_if_config",
+        "name": "Pagamento configurado?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -475,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": false, \"error\": \"{{ $json.payment_error }}\", \"paymentLink\": \"\"}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "id": "p04d_resp_config_error",
+        "name": "Resposta Erro Configuracao",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          -250,
+          20
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://www.asaas.com/api/v3/customers",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "access_token",
+                "value": "={{ $json.asaas_api_key }}"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"name\": \"{{ $json.cliente_nome || 'Cliente PizzaBot' }}\",\n  \"mobilePhone\": \"{{ String($json.cliente_telefone || '').replace(/\\D/g, '') }}\",\n  \"notificationDisabled\": true\n}",
+          "options": {}
+        },
+        "id": "p05a_asaas_customer",
+        "name": "Asaas Cliente",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -210,
+          -320
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "has-payment-link-or-pix",
+                "leftValue": "={{ $json.ok }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "p08b_if_payment_ok",
+        "name": "Pagamento gerado?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          365,
+          -200
+        ]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": false, \"error\": \"{{ $json.error }}\", \"paymentId\": \"{{ $json.payment_id }}\", \"paymentLink\": \"{{ $json.payment_link }}\"}",
+          "options": {
+            "responseCode": 200
+          }
+        },
+        "id": "p08c_resp_payment_error",
+        "name": "Resposta Erro Pagamento",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1.1,
+        "position": [
+          570,
+          20
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Gerar Pagamento": {
+        "main": [
+          [
+            {
+              "node": "Validar Input",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validar Input": {
+        "main": [
+          [
+            {
+              "node": "Carregar Pedido",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Carregar Pedido": {
+        "main": [
+          [
+            {
+              "node": "Validar Configuracao Pagamento",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gateway?": {
+        "main": [
+          [
+            {
+              "node": "Asaas Cliente",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "MercadoPago Cobran?a",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Asaas Cobran?a": {
+        "main": [
+          [
+            {
+              "node": "Normalizar Resposta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "MercadoPago Cobran?a": {
+        "main": [
+          [
+            {
+              "node": "Normalizar Resposta",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Normalizar Resposta": {
+        "main": [
+          [
+            {
+              "node": "Pagamento gerado?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Atualizar Pedido": {
+        "main": [
+          [
+            {
+              "node": "Enviar Link ao Cliente",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Enviar Link ao Cliente": {
+        "main": [
+          [
+            {
+              "node": "Resposta Gera??o",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Webhook Confirma??o": {
+        "main": [
+          [
+            {
+              "node": "Parsear Webhook Gateway",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parsear Webhook Gateway": {
+        "main": [
+          [
+            {
+              "node": "Atualizar Pedido (Confirma??o)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Atualizar Pedido (Confirma??o)": {
+        "main": [
+          [
+            {
+              "node": "Pagamento aprovado?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pagamento aprovado?": {
+        "main": [
+          [
+            {
+              "node": "Notificar Cliente Confirmado",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Notificar Cliente Confirmado": {
+        "main": [
+          [
+            {
+              "node": "Resposta Confirma??o",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validar Configuracao Pagamento": {
+        "main": [
+          [
+            {
+              "node": "Pagamento configurado?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pagamento configurado?": {
+        "main": [
+          [
+            {
+              "node": "Gateway?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Erro Configuracao",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Asaas Cliente": {
+        "main": [
+          [
+            {
+              "node": "Asaas Cobran?a",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pagamento gerado?": {
+        "main": [
+          [
+            {
+              "node": "Atualizar Pedido",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resposta Erro Pagamento",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "authors": "Jailson jailson.silva0933@gmail.com",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-05-20T15:03:01.214Z",
+        "id": 536,
+        "workflowId": "7kSCqNiuuW511XuL",
+        "versionId": "b047c6df-eeb2-47ca-9394-314b99bcff9f",
+        "event": "deactivated",
+        "userId": "e61e2231-2621-4e9b-a22d-601150c2fa60"
+      },
+      {
+        "createdAt": "2026-05-20T15:03:01.248Z",
+        "id": 537,
+        "workflowId": "7kSCqNiuuW511XuL",
+        "versionId": "b047c6df-eeb2-47ca-9394-314b99bcff9f",
+        "event": "activated",
+        "userId": "e61e2231-2621-4e9b-a22d-601150c2fa60"
+      }
+    ]
+  }
+}

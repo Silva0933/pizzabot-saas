@@ -1,0 +1,6 @@
+{
+  "name": "PizzaBot",
+  "description": "Plataforma SaaS de Atendimento Inteligente para Pizzarias e Lanchonetes com Delivery",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

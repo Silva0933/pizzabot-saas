@@ -1,0 +1,3517 @@
+{
+  "updatedAt": "2026-05-20T16:27:31.980Z",
+  "createdAt": "2026-05-20T05:20:25.786Z",
+  "id": "eqzbMvnZ7P8uDduU",
+  "name": "PizzaBot - Secretaria IA v3 (Fila + ?udio + TTS)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pizzabot-secretaria",
+        "options": {}
+      },
+      "id": "n01",
+      "name": "Mensagem recebida",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2208,
+        0
+      ],
+      "webhookId": "pizzabot-secretaria"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst data = body.data ?? body;\nconst key = data.key ?? {};\nconst message = data.message ?? {};\n\nconst remoteJid = String(key.remoteJid ?? '');\nconst telefone = remoteJid.replace(/@.*$/, '').replace(/\\D/g, '');\nconst fromMe = Boolean(key.fromMe);\nconst isGroup = remoteJid.endsWith('@g.us');\n\nlet mensagem = '';\nlet mensagem_de_audio = '';\nlet has_audio = false;\nif (message.conversation) mensagem = message.conversation;\nelse if (message.extendedTextMessage?.text) mensagem = message.extendedTextMessage.text;\nelse if (message.audioMessage) { mensagem_de_audio = JSON.stringify(message.audioMessage); has_audio = true; }\nelse if (message.imageMessage?.caption) mensagem = message.imageMessage.caption;\n\nconst instance = String(body.instance ?? data.instance ?? '');\nconst pushName = String(data.pushName ?? '');\nconst idMensagem = String(key.id ?? `m-${Date.now()}`);\nconst timestamp = Number(data.messageTimestamp ?? Math.floor(Date.now()/1000));\n\nreturn [{\n  json: {\n    instancia: instance,\n    telefone,\n    fromMe,\n    is_group: isGroup,\n    mensagem,\n    mensagem_de_audio,\n    has_audio,\n    pushName,\n    id_mensagem: idMensagem,\n    timestamp,\n    remoteJid\n  }\n}];"
+      },
+      "id": "n02",
+      "name": "Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2000,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.is_group }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.telefone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n03",
+      "name": "Mensagem v?lida?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -1808,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, nome, prompt_personalizado, bot_ativo_global, gateway_pagamento, mensagens_status, telefone_admin FROM public.pizzarias WHERE instancia = $1 LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $('Info').item.json.instancia }}"
+        }
+      },
+      "id": "n04",
+      "name": "Carregar Pizzaria",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1600,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "p2",
+              "leftValue": "={{ $json.bot_ativo_global }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n05",
+      "name": "Bot ativo global?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -1408,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat-api",
+        "operation": "read-messages",
+        "instanceName": "={{ $('Info').item.json.instancia }}",
+        "remoteJid": "={{ $('Info').item.json.remoteJid }}",
+        "messageId": "={{ $('Info').item.json.id_mensagem }}",
+        "fromMe": "={{ $('Info').item.json.fromMe }}"
+      },
+      "id": "n06",
+      "name": "Marcar como lida",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        -1200,
+        0
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.conversas (pizzaria_id, cliente_telefone, cliente_nome, last_message, last_timestamp, bot_ativo, status, messages) VALUES ($1, $2, $3, $4, NOW(), true, 'Bot ativo', jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'client', 'content', $4, 'timestamp', to_jsonb(NOW())))) ON CONFLICT (pizzaria_id, cliente_telefone) DO UPDATE SET last_message = EXCLUDED.last_message, last_timestamp = NOW(), cliente_nome = COALESCE(NULLIF(EXCLUDED.cliente_nome,''), public.conversas.cliente_nome), messages = (COALESCE(public.conversas.messages, '[]'::jsonb)) || jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'client', 'content', $4, 'timestamp', to_jsonb(NOW()))), updated_at = NOW() RETURNING id, bot_ativo;",
+        "options": {
+          "queryReplacement": "={{ $('Carregar Pizzaria').item.json.id }},{{ $('Info').item.json.telefone }},{{ $('Info').item.json.pushName }},{{ $('Info').item.json.mensagem || '[?udio]' }},{{ $('Info').item.json.id_mensagem }}"
+        }
+      },
+      "id": "n07",
+      "name": "Upsert Conversa",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1008,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b1",
+              "leftValue": "={{ $json.bot_ativo }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n08",
+      "name": "Bot ativo na conversa?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "t1",
+              "leftValue": "={{ $('Info').item.json.has_audio }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n09",
+      "name": "Tipo de mensagem (in)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -608,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "chat-api",
+        "operation": "get-media-base64",
+        "instanceName": "={{ $('Info').item.json.instancia }}",
+        "messageId": "={{ $('Info').item.json.id_mensagem }}",
+        "convertToMp4": true
+      },
+      "id": "n10",
+      "name": "Download ?udio",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        -208
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "toBinary",
+        "sourceProperty": "base64",
+        "options": {
+          "fileName": "audio.ogg",
+          "mimeType": "audio/ogg"
+        }
+      },
+      "id": "n11",
+      "name": "Base64 para bin?rio",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -208,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {
+          "language": "pt"
+        }
+      },
+      "id": "n12",
+      "name": "Transcrever ?udio",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        0,
+        -208
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "WzNlAYIR87fldWVR",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set1",
+              "name": "mensagem",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n13",
+      "name": "Set transcri??o",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.n8n_fila_mensagens (instancia, telefone, mensagem, id_mensagem, timestamp) VALUES ($1, $2, $3, $4, to_timestamp($5));",
+        "options": {
+          "queryReplacement": "={{ $('Info').item.json.instancia }},{{ $('Info').item.json.telefone }},{{ $json.mensagem || $('Info').item.json.mensagem }},{{ $('Info').item.json.id_mensagem }},{{ $('Info').item.json.timestamp }}"
+        }
+      },
+      "id": "n14",
+      "name": "Enfileirar mensagem",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        400,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 8
+      },
+      "id": "n15",
+      "name": "Wait 8s (debounce)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        608,
+        0
+      ],
+      "webhookId": "wait-debounce"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, instancia, telefone, mensagem, id_mensagem, timestamp FROM public.n8n_fila_mensagens WHERE instancia = $1 AND telefone = $2 ORDER BY timestamp ASC;",
+        "options": {
+          "queryReplacement": "={{ $('Info').item.json.instancia }},{{ $('Info').item.json.telefone }}"
+        }
+      },
+      "id": "n16",
+      "name": "Buscar mensagens",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        800,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ultima = $input.last();\nconst meuId = $('Info').first().json.id_mensagem;\nif (!ultima || ultima.json.id_mensagem !== meuId) {\n  // Mensagem encavalada - outro workflow vai processar\n  return [];\n}\n// Pass-through todas as mensagens da fila\nreturn $input.all();"
+      },
+      "id": "n17",
+      "name": "Mensagem encavalada?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://n8nai.secretariaai.eu.cc/webhook/e56e25c6-d00e-40aa-83b6-4985aea910f1",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"instancia\": \"{{ $('Info').item.json.instancia }}\",\n  \"telefone\": \"{{ $('Info').item.json.telefone }}\",\n  \"status\": \"composing\"\n}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 0
+            }
+          }
+        }
+      },
+      "id": "n18",
+      "name": "Digitando (composing)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -144
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst textos = items.map(i => i.json.mensagem).filter(Boolean);\nreturn [{ json: { mensagem_consolidada: textos.join(' \\n ') } }];"
+      },
+      "id": "n19",
+      "name": "Consolidar mensagens",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.clientes (pizzaria_id, telefone, nome) VALUES ($1, $2, $3) ON CONFLICT (pizzaria_id, telefone) DO UPDATE SET nome = COALESCE(NULLIF(EXCLUDED.nome,''), public.clientes.nome) RETURNING id, nome, endereco_padrao, preferencias, total_pedidos, total_gasto, ultima_visita, historico_pedidos;",
+        "options": {
+          "queryReplacement": "={{ $('Carregar Pizzaria').item.json.id }},{{ $('Info').item.json.telefone }},{{ $('Info').item.json.pushName }}"
+        }
+      },
+      "id": "n20",
+      "name": "Upsert Cliente (RAG)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1408,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, nome, categoria, descricao, preco, arquivo_drive_id FROM public.produtos WHERE pizzaria_id = $1 AND disponivel = true ORDER BY categoria, ordem;",
+        "options": {
+          "queryReplacement": "={{ $('Carregar Pizzaria').item.json.id }}"
+        }
+      },
+      "id": "n21",
+      "name": "Carregar Card?pio",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1600,
+        64
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const produtos = $input.all().map(i => i.json);\nconst cliente = $('Upsert Cliente (RAG)').first().json;\nconst pizzaria = $('Carregar Pizzaria').first().json;\nconst info = $('Info').first().json;\nconst msg = $('Consolidar mensagens').first().json.mensagem_consolidada;\n\nconst byCat = {};\nfor (const p of produtos) {\n  const cat = p.categoria || 'outro';\n  if (!byCat[cat]) byCat[cat] = [];\n  byCat[cat].push(`- ${p.nome} (R$ ${Number(p.preco).toFixed(2)}) [id:${p.id}]${p.arquivo_drive_id ? ` [drive:${p.arquivo_drive_id}]` : ''}${p.descricao ? ` - ${p.descricao}` : ''}`);\n}\nlet cardapio = '';\nfor (const cat of Object.keys(byCat).sort()) {\n  cardapio += `\\n## ${cat.toUpperCase()}\\n${byCat[cat].join('\\n')}\\n`;\n}\nif (!cardapio.trim()) cardapio = '(card?pio vazio)';\n\nlet ragContext = '';\nif (cliente?.total_pedidos > 0) {\n  ragContext = `\\n\\nCLIENTE RECORRENTE:\\nNome: ${cliente.nome || 'sem nome'}\\nEndere?o padr?o: ${cliente.endereco_padrao || 'n?o informado'}\\nPrefer?ncias: ${cliente.preferencias || 'nenhuma'}\\nTotal de pedidos: ${cliente.total_pedidos} | Total gasto: R$ ${Number(cliente.total_gasto||0).toFixed(2)}\\n?ltima visita: ${cliente.ultima_visita || 'nunca'}`;\n  if (Array.isArray(cliente.historico_pedidos) && cliente.historico_pedidos.length) {\n    const last = cliente.historico_pedidos.slice(-3).map(h => `. ${h.date || ''}: ${h.items || ''} (R$ ${Number(h.total||0).toFixed(2)})`).join('\\n');\n    ragContext += `\\n?ltimos pedidos:\\n${last}`;\n  }\n} else {\n  ragContext = `\\n\\nCLIENTE NOVO: primeiro contato (telefone ${info.telefone}).`;\n}\n\nconst basePrompt = pizzaria.prompt_personalizado || 'Voc? ? o PizzaBot, assistente virtual da pizzaria. Seja simp?tico, r?pido e ajude o cliente a fechar o pedido.';\n\nconst systemMessage = `${basePrompt}\\n\\n## CARD?PIO DISPON?VEL${cardapio}\\n${ragContext}\\n\\nINSTRU??ES:\\n- Use APENAS itens do card?pio acima (j? filtrado por dispon?veis).\\n- Ao confirmar o pedido use a tool Registrar_Pedido passando o array de itens com {nome, qtd, preco_unit}.\\n- Apos registrar, se o cliente quiser pagar via PIX/cartao, use Gerar_Pagamento_PIX com o id retornado pelo Registrar_Pedido.\\n- O workflow de pagamento envia o link/PIX em mensagem separada; na sua resposta principal, apenas confirme o pedido e diga que o PIX/link sera enviado.\\n- Se Gerar_Pagamento_PIX retornar ok=false, nao diga que o pagamento automatico esta desativado; diga que a equipe vai conferir o pagamento e acione Escalar_Humano.\\n- Use Escalar_Humano se o cliente pedir falar com atendente.\\n- Use Atualizar_Obs_Pedido para adicionar observa??es ao pedido j? registrado.\\n- Use Enviar_Cardapio_Arquivo passando o file_id do produto (campo arquivo_drive_id) quando o cliente pedir uma imagem do produto.\\n- Use Lembrar_Cliente para salvar nome/endere?o/prefer?ncias do cliente quando identificados.\\n- Sempre confirme endere?o de entrega antes de registrar o pedido.`;\n\nreturn [{\n  json: {\n    systemMessage,\n    userMessage: msg || info.mensagem || '',\n    sessionId: `${pizzaria.id}-${info.telefone}`,\n    pizzaria_id: pizzaria.id,\n    cliente_id: cliente.id,\n    telefone: info.telefone,\n    instancia: info.instancia,\n    has_audio: info.has_audio\n  }\n}];"
+      },
+      "id": "n22",
+      "name": "Montar Contexto",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userMessage }}",
+        "options": {
+          "systemMessage": "={{ $json.systemMessage }}"
+        }
+      },
+      "id": "n23",
+      "name": "Secretaria",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1952,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "n24",
+      "name": "Gemini",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1824,
+        320
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "TBWcK7v2wiGm4s6M",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Montar Contexto').item.json.sessionId }}",
+        "tableName": "n8n_historico_mensagens",
+        "contextWindowLength": 30
+      },
+      "id": "n25",
+      "name": "Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        1936,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Registra um novo pedido. Use quando o cliente confirmou itens, forma de pagamento e endere?o. Par?metros: itens (json array [{nome, qtd, preco_unit, observacao}]), valor_total (number), tipo (delivery|retirada), endereco_entrega, forma_pagamento (use exatamente pix, cartao ou dinheiro; nunca use n?meros), observacoes.",
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.pedidos (pizzaria_id, cliente_id, itens, valor_total, status, tipo, endereco_entrega, forma_pagamento, payment_status, observacoes, bot_ativo) VALUES ('{{ $('Montar Contexto').item.json.pizzaria_id }}', '{{ $('Montar Contexto').item.json.cliente_id }}', $1::jsonb, $2, 'novo', $3, $4, CASE lower($5) WHEN '1' THEN 'dinheiro' WHEN '2' THEN 'cartao' WHEN '3' THEN 'pix' WHEN 'cart?o' THEN 'cartao' ELSE lower($5) END, 'pending', $6, true) RETURNING id, numero_pedido, valor_total;",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($fromAI('itens', 'Array de objetos [{nome, qtd, preco_unit, observacao}]', 'json')) }},{{ $fromAI('valor_total', 'Valor total em R$', 'number') }},{{ $fromAI('tipo', 'delivery ou retirada', 'string') }},{{ $fromAI('endereco_entrega', 'Endere?o completo de entrega ou retirada balc?o', 'string') }},{{ $fromAI('forma_pagamento', 'pix, cartao ou dinheiro', 'string') }},{{ $fromAI('observacoes', 'Observa??es do cliente', 'string') }}"
+        }
+      },
+      "id": "n26",
+      "name": "Tool: Registrar_Pedido",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        2080,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Gera link/PIX de pagamento para um pedido ja registrado. Use apos Registrar_Pedido quando a forma de pagamento for pix ou cartao. Recebe pedido_id (UUID retornado por Registrar_Pedido). Se retornar ok=false, escale para humano.",
+        "method": "POST",
+        "url": "https://n8nai.secretariaai.eu.cc/webhook/pizzabot-pagamento",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event\": \"generate_payment\",\n  \"pedido_id\": \"{{ $fromAI('pedido_id', 'UUID do pedido criado', 'string') }}\",\n  \"pizzaria_id\": \"{{ $('Montar Contexto').item.json.pizzaria_id }}\",\n  \"telefone\": \"{{ $('Montar Contexto').item.json.telefone }}\",\n  \"instancia\": \"{{ $('Montar Contexto').item.json.instancia }}\"\n}"
+      },
+      "id": "n27",
+      "name": "Tool: Gerar_Pagamento_PIX",
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        2208,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Escala o atendimento para um humano. Use quando o cliente solicitar atendente ou estiver insatisfeito.",
+        "operation": "executeQuery",
+        "query": "UPDATE public.conversas SET bot_ativo = false, status = 'Humano necess?rio', updated_at = NOW() WHERE pizzaria_id = $1 AND cliente_telefone = $2 RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $('Montar Contexto').item.json.pizzaria_id }},{{ $('Montar Contexto').item.json.telefone }}"
+        }
+      },
+      "id": "n28",
+      "name": "Tool: Escalar_Humano",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        2368,
+        320
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Adiciona/atualiza observa??es em um pedido existente. Recebe pedido_id e observacoes.",
+        "operation": "executeQuery",
+        "query": "UPDATE public.pedidos SET observacoes = $1, updated_at = NOW() WHERE id = $2 AND pizzaria_id = $3 RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $fromAI('observacoes','Observa??es','string') }},{{ $fromAI('pedido_id','UUID do pedido','string') }},{{ $('Montar Contexto').item.json.pizzaria_id }}"
+        }
+      },
+      "id": "n29",
+      "name": "Tool: Atualizar_Obs_Pedido",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        1872,
+        496
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Atualiza dados do cliente (CRM/RAG). Use quando descobrir nome, endere?o padr?o ou prefer?ncias.",
+        "operation": "executeQuery",
+        "query": "UPDATE public.clientes SET nome = COALESCE(NULLIF($1,''), nome), endereco_padrao = COALESCE(NULLIF($2,''), endereco_padrao), preferencias = COALESCE(NULLIF($3,''), preferencias) WHERE pizzaria_id = $4 AND telefone = $5 RETURNING id;",
+        "options": {
+          "queryReplacement": "={{ $fromAI('nome','Nome do cliente (vazio se n?o alterar)','string') }},{{ $fromAI('endereco','Endere?o padr?o (vazio se n?o alterar)','string') }},{{ $fromAI('preferencias','Prefer?ncias (vazio se n?o alterar)','string') }},{{ $('Montar Contexto').item.json.pizzaria_id }},{{ $('Montar Contexto').item.json.telefone }}"
+        }
+      },
+      "id": "n30",
+      "name": "Tool: Lembrar_Cliente",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        2016,
+        496
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Envia uma imagem ou documento do Google Drive ao cliente via WhatsApp. Use quando o cliente pedir a foto de um produto ou o card?pio em PDF. Par?metros: file_id (ID do arquivo no Drive, vem do campo [drive:...] do card?pio), tipo (imagem|documento), nome_documento (opcional, s? para tipo=documento).",
+        "workflowId": {
+          "__rl": true,
+          "value": "Tr6FTcHuvVVRzjS8",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "file_id": "={{ $fromAI('file_id','ID do arquivo no Google Drive','string') }}",
+            "instancia": "={{ $('Montar Contexto').item.json.instancia }}",
+            "telefone": "={{ $('Montar Contexto').item.json.telefone }}",
+            "tipo": "={{ $fromAI('tipo','imagem ou documento','string') }}",
+            "nome_documento": "={{ $fromAI('nome_documento','Nome do documento (opcional)','string') }}"
+          },
+          "schema": [
+            {
+              "id": "file_id",
+              "displayName": "file_id",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "instancia",
+              "displayName": "instancia",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "telefone",
+              "displayName": "telefone",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "required": true
+            },
+            {
+              "id": "nome_documento",
+              "displayName": "nome_documento",
+              "type": "string",
+              "required": false
+            }
+          ]
+        }
+      },
+      "id": "n31",
+      "name": "Tool: Enviar_Cardapio_Arquivo",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        2176,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM public.n8n_fila_mensagens WHERE instancia = $1 AND telefone = $2;",
+        "options": {
+          "queryReplacement": "={{ $('Info').item.json.instancia }},{{ $('Info').item.json.telefone }}"
+        }
+      },
+      "id": "n32",
+      "name": "Limpar fila de mensagens",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        2240,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "out1",
+              "leftValue": "={{ $('Montar Contexto').item.json.has_audio }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n33",
+      "name": "Resposta em ?udio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2400,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Secretaria').item.json.output }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "Voc? ? especialista em formata??o de WhatsApp. Sua tarefa: receber o texto e retornar apenas a vers?o formatada. Substitua ** por *. Remova # de cabe?alhos. Mantenha emojis. N?O altere o conte?do, apenas a formata??o."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "id": "n34",
+      "name": "Formatar texto WhatsApp",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        2640,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {
+          "temperature": 0.1
+        }
+      },
+      "id": "n35",
+      "name": "Gemini (formatador)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        320
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "TBWcK7v2wiGm4s6M",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "={{ $('Info').item.json.instancia }}",
+        "remoteJid": "={{ $('Info').item.json.telefone }}",
+        "messageText": "={{ $json.text || $('Secretaria').item.json.output }}",
+        "options_message": {}
+      },
+      "id": "n36",
+      "name": "Enviar texto WhatsApp",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        2944,
+        96
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://n8nai.secretariaai.eu.cc/webhook/e56e25c6-d00e-40aa-83b6-4985aea910f1",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"instancia\": \"{{ $('Info').item.json.instancia }}\",\n  \"telefone\": \"{{ $('Info').item.json.telefone }}\",\n  \"status\": \"recording\"\n}",
+        "options": {}
+      },
+      "id": "n37",
+      "name": "Gravando (recording)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2672,
+        -80
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.elevenlabs.io/v1/text-to-speech/33B4UnXyTNbgLmdEDh5P",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "output_format",
+              "value": "mp3_44100_32"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"{{ $('Secretaria').item.json.output.replace(/\"/g, '\\\\\"').replace(/\\n/g, ' ') }}\",\n  \"model_id\": \"eleven_flash_v2_5\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "n38",
+      "name": "Gerar ?udio (ElevenLabs)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2864,
+        -96
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "2vo3rjAWuteKhXYk",
+          "name": "Header Auth account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "options": {
+          "encoding": "base64"
+        }
+      },
+      "id": "n39",
+      "name": "?udio para base64",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        3056,
+        -96
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "operation": "send-audio",
+        "instanceName": "={{ $('Info').item.json.instancia }}",
+        "remoteJid": "={{ $('Info').item.json.telefone }}",
+        "media": "={{ $json.data }}",
+        "options_message": {}
+      },
+      "id": "n40",
+      "name": "Enviar ?udio WhatsApp",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        3248,
+        -96
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.conversas SET messages = COALESCE(messages,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('id', concat('m-', extract(epoch from now())::text), 'sender', 'bot', 'content', $1, 'timestamp', to_jsonb(NOW()))), last_message = $1, last_timestamp = NOW(), updated_at = NOW() WHERE pizzaria_id = $2 AND cliente_telefone = $3;",
+        "options": {
+          "queryReplacement": "={{ [$('Secretaria').first().json.output, $('Montar Contexto').first().json.pizzaria_id, $('Info').first().json.telefone] }}"
+        }
+      },
+      "id": "n41",
+      "name": "Salvar Resposta no DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3792,
+        128
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const texto = ($input.first().json.text || '').trim();\n\n// 1) divide em parágrafos (double newline) — forma mais natural no WhatsApp\nlet partes = texto.split(/\\n\\n+/).map(p => p.trim()).filter(p => p.length > 0);\n\n// 2) se bloco único muito longo, agrupa frases de 2 em 2\nif (partes.length === 1 && partes[0].length > 280) {\n  const frases = partes[0].match(/[^.!?]+[.!?]+\\s*/g);\n  if (frases && frases.length > 1) {\n    const agrupadas = [];\n    for (let i = 0; i < frases.length; i += 2) {\n      agrupadas.push((frases[i] + (frases[i+1] || '')).trim());\n    }\n    partes = agrupadas.filter(p => p.length > 0);\n  }\n}\n\nconst instancia = $('Info').first().json.instancia;\nconst telefone  = $('Info').first().json.telefone;\n\n// delay proporcional: ~55ms/char, min 0.8s, max 5s\nreturn partes.map((parte, i) => ({\n  json: {\n    texto: parte,\n    delay_s: Math.round(Math.min(Math.max(parte.length * 0.055, 0.8), 5) * 10) / 10,\n    indice: i + 1,\n    total: partes.length,\n    instancia,\n    telefone,\n  }\n}));"
+      },
+      "id": "n_split",
+      "name": "Dividir resposta em partes",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://n8nai.secretariaai.eu.cc/webhook/e56e25c6-d00e-40aa-83b6-4985aea910f1",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"instancia\": \"={{ $json.instancia }}\", \"telefone\": \"={{ $json.telefone }}\", \"status\": \"composing\"}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 0
+            }
+          }
+        }
+      },
+      "id": "n_comp2",
+      "name": "Composing por parte",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3008,
+        272
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": "={{ $json.delay_s || 3 }}",
+        "resume": "timeInterval",
+        "unit": "seconds"
+      },
+      "id": "n_wait2",
+      "name": "Pausa natural (digitando)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3200,
+        272
+      ],
+      "webhookId": "wait-typing-natural-01"
+    },
+    {
+      "parameters": {
+        "resource": "messages-api",
+        "instanceName": "={{ $json.instancia }}",
+        "remoteJid": "={{ $json.telefone }}",
+        "messageText": "={{ $json.texto }}",
+        "options_message": {}
+      },
+      "id": "n_sendp",
+      "name": "Enviar parte WhatsApp",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        3392,
+        272
+      ],
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "chat-api",
+        "operation": "send-presence",
+        "instanceName": "={{ $('Info').first().json.instancia }}",
+        "remoteJid": "={{ $('Info').first().json.telefone }}",
+        "presence": "paused",
+        "delay": 0
+      },
+      "id": "n_pause",
+      "name": "Parar de digitar",
+      "type": "n8n-nodes-evolution-api.evolutionApi",
+      "typeVersion": 1,
+      "position": [
+        3584,
+        272
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "evolutionApi": {
+          "id": "OfPUfZENlrzqKq0v",
+          "name": "Evolution account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "n_loop_parts",
+      "name": "Loop mensagens humanas",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        2816,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE public.conversas\nSET messages = COALESCE(messages,'[]'::jsonb) || jsonb_build_array(jsonb_build_object(\n    'id', concat('part-', $3, '-', extract(epoch from now())::text),\n    'sender', 'bot',\n    'content', $1,\n    'timestamp', to_jsonb(NOW())\n  )),\n  last_message = $1,\n  last_timestamp = NOW(),\n  updated_at = NOW()\nWHERE pizzaria_id = $2 AND cliente_telefone = $3;",
+        "options": {
+          "queryReplacement": "={{ [($('Loop mensagens humanas').item.json.texto || $json.texto || ''), $('Montar Contexto').first().json.pizzaria_id, $('Info').first().json.telefone] }}"
+        }
+      },
+      "id": "n_save_part_chat",
+      "name": "Salvar Parte no Chat Central",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3488,
+        432
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "from_me",
+              "leftValue": "={{ $(\"Info\").first().json.fromMe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n_route_from_me",
+      "name": "Mensagem enviada pela equipe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1420,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO public.conversas (pizzaria_id, cliente_telefone, cliente_nome, last_message, last_timestamp, bot_ativo, status, messages)\nVALUES ($1, $2, $3, $4, NOW(), false, 'Humano necess?rio', jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'human', 'content', $4, 'timestamp', to_jsonb(NOW()))))\nON CONFLICT (pizzaria_id, cliente_telefone) DO UPDATE\nSET last_message = EXCLUDED.last_message,\n    last_timestamp = NOW(),\n    cliente_nome = COALESCE(NULLIF(EXCLUDED.cliente_nome,''), public.conversas.cliente_nome),\n    bot_ativo = false,\n    status = 'Humano necess?rio',\n    messages = CASE\n      WHEN EXISTS (\n        SELECT 1 FROM jsonb_array_elements(COALESCE(public.conversas.messages, '[]'::jsonb)) elem\n        WHERE (elem->>'id') = $5\n           OR ((elem->>'content') = $4 AND (elem->>'sender') IN ('bot','human') AND COALESCE((elem->>'timestamp')::timestamptz, NOW()) > NOW() - INTERVAL '2 minutes')\n      ) THEN COALESCE(public.conversas.messages, '[]'::jsonb)\n      ELSE COALESCE(public.conversas.messages, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'human', 'content', $4, 'timestamp', to_jsonb(NOW())))\n    END,\n    updated_at = NOW()\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [$('Carregar Pizzaria').first().json.id, $('Info').first().json.telefone, $('Info').first().json.pushName || 'Atendente', $('Info').first().json.mensagem || '[mensagem enviada pela equipe]', $('Info').first().json.id_mensagem] }}"
+        }
+      },
+      "id": "n_save_manual_chat",
+      "name": "Salvar Mensagem Manual no Chat Central",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1160,
+        -220
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "3gxY8xTADs50F07C",
+          "name": "Postgres pizzabot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Mensagem recebida": {
+      "main": [
+        [
+          {
+            "node": "Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Info": {
+      "main": [
+        [
+          {
+            "node": "Mensagem v?lida?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem v?lida?": {
+      "main": [
+        [
+          {
+            "node": "Carregar Pizzaria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carregar Pizzaria": {
+      "main": [
+        [
+          {
+            "node": "Mensagem enviada pela equipe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot ativo global?": {
+      "main": [
+        [
+          {
+            "node": "Marcar como lida",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar como lida": {
+      "main": [
+        [
+          {
+            "node": "Upsert Conversa",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Conversa": {
+      "main": [
+        [
+          {
+            "node": "Bot ativo na conversa?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bot ativo na conversa?": {
+      "main": [
+        [
+          {
+            "node": "Tipo de mensagem (in)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tipo de mensagem (in)": {
+      "main": [
+        [
+          {
+            "node": "Download ?udio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enfileirar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download ?udio": {
+      "main": [
+        [
+          {
+            "node": "Base64 para bin?rio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 para bin?rio": {
+      "main": [
+        [
+          {
+            "node": "Transcrever ?udio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcrever ?udio": {
+      "main": [
+        [
+          {
+            "node": "Set transcri??o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set transcri??o": {
+      "main": [
+        [
+          {
+            "node": "Enfileirar mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enfileirar mensagem": {
+      "main": [
+        [
+          {
+            "node": "Wait 8s (debounce)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 8s (debounce)": {
+      "main": [
+        [
+          {
+            "node": "Buscar mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar mensagens": {
+      "main": [
+        [
+          {
+            "node": "Mensagem encavalada?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem encavalada?": {
+      "main": [
+        [
+          {
+            "node": "Digitando (composing)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Consolidar mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consolidar mensagens": {
+      "main": [
+        [
+          {
+            "node": "Upsert Cliente (RAG)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Cliente (RAG)": {
+      "main": [
+        [
+          {
+            "node": "Carregar Card?pio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Carregar Card?pio": {
+      "main": [
+        [
+          {
+            "node": "Montar Contexto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar Contexto": {
+      "main": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Registrar_Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Gerar_Pagamento_PIX": {
+      "ai_tool": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Escalar_Humano": {
+      "ai_tool": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Atualizar_Obs_Pedido": {
+      "ai_tool": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Lembrar_Cliente": {
+      "ai_tool": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tool: Enviar_Cardapio_Arquivo": {
+      "ai_tool": [
+        [
+          {
+            "node": "Secretaria",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Secretaria": {
+      "main": [
+        [
+          {
+            "node": "Limpar fila de mensagens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpar fila de mensagens": {
+      "main": [
+        [
+          {
+            "node": "Resposta em ?udio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resposta em ?udio?": {
+      "main": [
+        [
+          {
+            "node": "Gravando (recording)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formatar texto WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar texto WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Dividir resposta em partes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini (formatador)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Formatar texto WhatsApp",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravando (recording)": {
+      "main": [
+        [
+          {
+            "node": "Gerar ?udio (ElevenLabs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar ?udio (ElevenLabs)": {
+      "main": [
+        [
+          {
+            "node": "?udio para base64",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "?udio para base64": {
+      "main": [
+        [
+          {
+            "node": "Enviar ?udio WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar ?udio WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Salvar Resposta no DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dividir resposta em partes": {
+      "main": [
+        [
+          {
+            "node": "Loop mensagens humanas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Composing por parte": {
+      "main": [
+        [
+          {
+            "node": "Pausa natural (digitando)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pausa natural (digitando)": {
+      "main": [
+        [
+          {
+            "node": "Enviar parte WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar parte WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Salvar Parte no Chat Central",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parar de digitar": {
+      "main": [
+        [
+          {
+            "node": "Loop mensagens humanas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop mensagens humanas": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Composing por parte",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Parte no Chat Central": {
+      "main": [
+        [
+          {
+            "node": "Parar de digitar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mensagem enviada pela equipe?": {
+      "main": [
+        [
+          {
+            "node": "Salvar Mensagem Manual no Chat Central",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bot ativo global?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar Mensagem Manual no Chat Central": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": null,
+  "pinData": {},
+  "versionId": "918b2ba4-823d-4fab-ac58-790452cda6f1",
+  "activeVersionId": "918b2ba4-823d-4fab-ac58-790452cda6f1",
+  "versionCounter": 103,
+  "triggerCount": 1,
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-05-20T16:27:31.982Z",
+    "createdAt": "2026-05-20T16:27:31.982Z",
+    "versionId": "918b2ba4-823d-4fab-ac58-790452cda6f1",
+    "workflowId": "eqzbMvnZ7P8uDduU",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "pizzabot-secretaria",
+          "options": {}
+        },
+        "id": "n01",
+        "name": "Mensagem recebida",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2,
+        "position": [
+          -2208,
+          0
+        ],
+        "webhookId": "pizzabot-secretaria"
+      },
+      {
+        "parameters": {
+          "jsCode": "const body = $json.body ?? $json;\nconst data = body.data ?? body;\nconst key = data.key ?? {};\nconst message = data.message ?? {};\n\nconst remoteJid = String(key.remoteJid ?? '');\nconst telefone = remoteJid.replace(/@.*$/, '').replace(/\\D/g, '');\nconst fromMe = Boolean(key.fromMe);\nconst isGroup = remoteJid.endsWith('@g.us');\n\nlet mensagem = '';\nlet mensagem_de_audio = '';\nlet has_audio = false;\nif (message.conversation) mensagem = message.conversation;\nelse if (message.extendedTextMessage?.text) mensagem = message.extendedTextMessage.text;\nelse if (message.audioMessage) { mensagem_de_audio = JSON.stringify(message.audioMessage); has_audio = true; }\nelse if (message.imageMessage?.caption) mensagem = message.imageMessage.caption;\n\nconst instance = String(body.instance ?? data.instance ?? '');\nconst pushName = String(data.pushName ?? '');\nconst idMensagem = String(key.id ?? `m-${Date.now()}`);\nconst timestamp = Number(data.messageTimestamp ?? Math.floor(Date.now()/1000));\n\nreturn [{\n  json: {\n    instancia: instance,\n    telefone,\n    fromMe,\n    is_group: isGroup,\n    mensagem,\n    mensagem_de_audio,\n    has_audio,\n    pushName,\n    id_mensagem: idMensagem,\n    timestamp,\n    remoteJid\n  }\n}];"
+        },
+        "id": "n02",
+        "name": "Info",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -2000,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "c2",
+                "leftValue": "={{ $json.is_group }}",
+                "rightValue": false,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "false",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "c3",
+                "leftValue": "={{ $json.telefone }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "n03",
+        "name": "Mensagem v?lida?",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2,
+        "position": [
+          -1808,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT id, nome, prompt_personalizado, bot_ativo_global, gateway_pagamento, mensagens_status, telefone_admin FROM public.pizzarias WHERE instancia = $1 LIMIT 1;",
+          "options": {
+            "queryReplacement": "={{ $('Info').item.json.instancia }}"
+          }
+        },
+        "id": "n04",
+        "name": "Carregar Pizzaria",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          -1600,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "p1",
+                "leftValue": "={{ $json.id }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              },
+              {
+                "id": "p2",
+                "leftValue": "={{ $json.bot_ativo_global }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "n05",
+        "name": "Bot ativo global?",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2,
+        "position": [
+          -1408,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "chat-api",
+          "operation": "read-messages",
+          "instanceName": "={{ $('Info').item.json.instancia }}",
+          "remoteJid": "={{ $('Info').item.json.remoteJid }}",
+          "messageId": "={{ $('Info').item.json.id_mensagem }}",
+          "fromMe": "={{ $('Info').item.json.fromMe }}"
+        },
+        "id": "n06",
+        "name": "Marcar como lida",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          -1200,
+          0
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.conversas (pizzaria_id, cliente_telefone, cliente_nome, last_message, last_timestamp, bot_ativo, status, messages) VALUES ($1, $2, $3, $4, NOW(), true, 'Bot ativo', jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'client', 'content', $4, 'timestamp', to_jsonb(NOW())))) ON CONFLICT (pizzaria_id, cliente_telefone) DO UPDATE SET last_message = EXCLUDED.last_message, last_timestamp = NOW(), cliente_nome = COALESCE(NULLIF(EXCLUDED.cliente_nome,''), public.conversas.cliente_nome), messages = (COALESCE(public.conversas.messages, '[]'::jsonb)) || jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'client', 'content', $4, 'timestamp', to_jsonb(NOW()))), updated_at = NOW() RETURNING id, bot_ativo;",
+          "options": {
+            "queryReplacement": "={{ $('Carregar Pizzaria').item.json.id }},{{ $('Info').item.json.telefone }},{{ $('Info').item.json.pushName }},{{ $('Info').item.json.mensagem || '[?udio]' }},{{ $('Info').item.json.id_mensagem }}"
+          }
+        },
+        "id": "n07",
+        "name": "Upsert Conversa",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          -1008,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "b1",
+                "leftValue": "={{ $json.bot_ativo }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "n08",
+        "name": "Bot ativo na conversa?",
+        "type": "n8n-nodes-base.filter",
+        "typeVersion": 2,
+        "position": [
+          -800,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "t1",
+                "leftValue": "={{ $('Info').item.json.has_audio }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "n09",
+        "name": "Tipo de mensagem (in)",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -608,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "chat-api",
+          "operation": "get-media-base64",
+          "instanceName": "={{ $('Info').item.json.instancia }}",
+          "messageId": "={{ $('Info').item.json.id_mensagem }}",
+          "convertToMp4": true
+        },
+        "id": "n10",
+        "name": "Download ?udio",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          -400,
+          -208
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "toBinary",
+          "sourceProperty": "base64",
+          "options": {
+            "fileName": "audio.ogg",
+            "mimeType": "audio/ogg"
+          }
+        },
+        "id": "n11",
+        "name": "Base64 para bin?rio",
+        "type": "n8n-nodes-base.convertToFile",
+        "typeVersion": 1.1,
+        "position": [
+          -208,
+          -208
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "audio",
+          "operation": "transcribe",
+          "options": {
+            "language": "pt"
+          }
+        },
+        "id": "n12",
+        "name": "Transcrever ?udio",
+        "type": "@n8n/n8n-nodes-langchain.openAi",
+        "typeVersion": 1.8,
+        "position": [
+          0,
+          -208
+        ],
+        "credentials": {
+          "openAiApi": {
+            "id": "WzNlAYIR87fldWVR",
+            "name": "OpenAi account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "assignments": {
+            "assignments": [
+              {
+                "id": "set1",
+                "name": "mensagem",
+                "value": "={{ $json.text }}",
+                "type": "string"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "n13",
+        "name": "Set transcri??o",
+        "type": "n8n-nodes-base.set",
+        "typeVersion": 3.4,
+        "position": [
+          208,
+          -208
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.n8n_fila_mensagens (instancia, telefone, mensagem, id_mensagem, timestamp) VALUES ($1, $2, $3, $4, to_timestamp($5));",
+          "options": {
+            "queryReplacement": "={{ $('Info').item.json.instancia }},{{ $('Info').item.json.telefone }},{{ $json.mensagem || $('Info').item.json.mensagem }},{{ $('Info').item.json.id_mensagem }},{{ $('Info').item.json.timestamp }}"
+          }
+        },
+        "id": "n14",
+        "name": "Enfileirar mensagem",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          400,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "amount": 8
+        },
+        "id": "n15",
+        "name": "Wait 8s (debounce)",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          608,
+          0
+        ],
+        "webhookId": "wait-debounce"
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT id, instancia, telefone, mensagem, id_mensagem, timestamp FROM public.n8n_fila_mensagens WHERE instancia = $1 AND telefone = $2 ORDER BY timestamp ASC;",
+          "options": {
+            "queryReplacement": "={{ $('Info').item.json.instancia }},{{ $('Info').item.json.telefone }}"
+          }
+        },
+        "id": "n16",
+        "name": "Buscar mensagens",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          800,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const ultima = $input.last();\nconst meuId = $('Info').first().json.id_mensagem;\nif (!ultima || ultima.json.id_mensagem !== meuId) {\n  // Mensagem encavalada - outro workflow vai processar\n  return [];\n}\n// Pass-through todas as mensagens da fila\nreturn $input.all();"
+        },
+        "id": "n17",
+        "name": "Mensagem encavalada?",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1008,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://n8nai.secretariaai.eu.cc/webhook/e56e25c6-d00e-40aa-83b6-4985aea910f1",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"instancia\": \"{{ $('Info').item.json.instancia }}\",\n  \"telefone\": \"{{ $('Info').item.json.telefone }}\",\n  \"status\": \"composing\"\n}",
+          "options": {
+            "batching": {
+              "batch": {
+                "batchSize": 1,
+                "batchInterval": 0
+              }
+            }
+          }
+        },
+        "id": "n18",
+        "name": "Digitando (composing)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1200,
+          -144
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all();\nconst textos = items.map(i => i.json.mensagem).filter(Boolean);\nreturn [{ json: { mensagem_consolidada: textos.join(' \\n ') } }];"
+        },
+        "id": "n19",
+        "name": "Consolidar mensagens",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1200,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.clientes (pizzaria_id, telefone, nome) VALUES ($1, $2, $3) ON CONFLICT (pizzaria_id, telefone) DO UPDATE SET nome = COALESCE(NULLIF(EXCLUDED.nome,''), public.clientes.nome) RETURNING id, nome, endereco_padrao, preferencias, total_pedidos, total_gasto, ultima_visita, historico_pedidos;",
+          "options": {
+            "queryReplacement": "={{ $('Carregar Pizzaria').item.json.id }},{{ $('Info').item.json.telefone }},{{ $('Info').item.json.pushName }}"
+          }
+        },
+        "id": "n20",
+        "name": "Upsert Cliente (RAG)",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          1408,
+          64
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "SELECT id, nome, categoria, descricao, preco, arquivo_drive_id FROM public.produtos WHERE pizzaria_id = $1 AND disponivel = true ORDER BY categoria, ordem;",
+          "options": {
+            "queryReplacement": "={{ $('Carregar Pizzaria').item.json.id }}"
+          }
+        },
+        "id": "n21",
+        "name": "Carregar Card?pio",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          1600,
+          64
+        ],
+        "alwaysOutputData": true,
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const produtos = $input.all().map(i => i.json);\nconst cliente = $('Upsert Cliente (RAG)').first().json;\nconst pizzaria = $('Carregar Pizzaria').first().json;\nconst info = $('Info').first().json;\nconst msg = $('Consolidar mensagens').first().json.mensagem_consolidada;\n\nconst byCat = {};\nfor (const p of produtos) {\n  const cat = p.categoria || 'outro';\n  if (!byCat[cat]) byCat[cat] = [];\n  byCat[cat].push(`- ${p.nome} (R$ ${Number(p.preco).toFixed(2)}) [id:${p.id}]${p.arquivo_drive_id ? ` [drive:${p.arquivo_drive_id}]` : ''}${p.descricao ? ` - ${p.descricao}` : ''}`);\n}\nlet cardapio = '';\nfor (const cat of Object.keys(byCat).sort()) {\n  cardapio += `\\n## ${cat.toUpperCase()}\\n${byCat[cat].join('\\n')}\\n`;\n}\nif (!cardapio.trim()) cardapio = '(card?pio vazio)';\n\nlet ragContext = '';\nif (cliente?.total_pedidos > 0) {\n  ragContext = `\\n\\nCLIENTE RECORRENTE:\\nNome: ${cliente.nome || 'sem nome'}\\nEndere?o padr?o: ${cliente.endereco_padrao || 'n?o informado'}\\nPrefer?ncias: ${cliente.preferencias || 'nenhuma'}\\nTotal de pedidos: ${cliente.total_pedidos} | Total gasto: R$ ${Number(cliente.total_gasto||0).toFixed(2)}\\n?ltima visita: ${cliente.ultima_visita || 'nunca'}`;\n  if (Array.isArray(cliente.historico_pedidos) && cliente.historico_pedidos.length) {\n    const last = cliente.historico_pedidos.slice(-3).map(h => `. ${h.date || ''}: ${h.items || ''} (R$ ${Number(h.total||0).toFixed(2)})`).join('\\n');\n    ragContext += `\\n?ltimos pedidos:\\n${last}`;\n  }\n} else {\n  ragContext = `\\n\\nCLIENTE NOVO: primeiro contato (telefone ${info.telefone}).`;\n}\n\nconst basePrompt = pizzaria.prompt_personalizado || 'Voc? ? o PizzaBot, assistente virtual da pizzaria. Seja simp?tico, r?pido e ajude o cliente a fechar o pedido.';\n\nconst systemMessage = `${basePrompt}\\n\\n## CARD?PIO DISPON?VEL${cardapio}\\n${ragContext}\\n\\nINSTRU??ES:\\n- Use APENAS itens do card?pio acima (j? filtrado por dispon?veis).\\n- Ao confirmar o pedido use a tool Registrar_Pedido passando o array de itens com {nome, qtd, preco_unit}.\\n- Apos registrar, se o cliente quiser pagar via PIX/cartao, use Gerar_Pagamento_PIX com o id retornado pelo Registrar_Pedido.\\n- O workflow de pagamento envia o link/PIX em mensagem separada; na sua resposta principal, apenas confirme o pedido e diga que o PIX/link sera enviado.\\n- Se Gerar_Pagamento_PIX retornar ok=false, nao diga que o pagamento automatico esta desativado; diga que a equipe vai conferir o pagamento e acione Escalar_Humano.\\n- Use Escalar_Humano se o cliente pedir falar com atendente.\\n- Use Atualizar_Obs_Pedido para adicionar observa??es ao pedido j? registrado.\\n- Use Enviar_Cardapio_Arquivo passando o file_id do produto (campo arquivo_drive_id) quando o cliente pedir uma imagem do produto.\\n- Use Lembrar_Cliente para salvar nome/endere?o/prefer?ncias do cliente quando identificados.\\n- Sempre confirme endere?o de entrega antes de registrar o pedido.`;\n\nreturn [{\n  json: {\n    systemMessage,\n    userMessage: msg || info.mensagem || '',\n    sessionId: `${pizzaria.id}-${info.telefone}`,\n    pizzaria_id: pizzaria.id,\n    cliente_id: cliente.id,\n    telefone: info.telefone,\n    instancia: info.instancia,\n    has_audio: info.has_audio\n  }\n}];"
+        },
+        "id": "n22",
+        "name": "Montar Contexto",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1808,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $json.userMessage }}",
+          "options": {
+            "systemMessage": "={{ $json.systemMessage }}"
+          }
+        },
+        "id": "n23",
+        "name": "Secretaria",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 1.7,
+        "position": [
+          1952,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "modelName": "models/gemini-3.1-flash-lite",
+          "options": {
+            "temperature": 0.4
+          }
+        },
+        "id": "n24",
+        "name": "Gemini",
+        "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+        "typeVersion": 1,
+        "position": [
+          1824,
+          320
+        ],
+        "credentials": {
+          "googlePalmApi": {
+            "id": "TBWcK7v2wiGm4s6M",
+            "name": "Google Gemini(PaLM) Api account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "sessionIdType": "customKey",
+          "sessionKey": "={{ $('Montar Contexto').item.json.sessionId }}",
+          "tableName": "n8n_historico_mensagens",
+          "contextWindowLength": 30
+        },
+        "id": "n25",
+        "name": "Memory",
+        "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+        "typeVersion": 1.3,
+        "position": [
+          1936,
+          320
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "descriptionType": "manual",
+          "toolDescription": "Registra um novo pedido. Use quando o cliente confirmou itens, forma de pagamento e endere?o. Par?metros: itens (json array [{nome, qtd, preco_unit, observacao}]), valor_total (number), tipo (delivery|retirada), endereco_entrega, forma_pagamento (use exatamente pix, cartao ou dinheiro; nunca use n?meros), observacoes.",
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.pedidos (pizzaria_id, cliente_id, itens, valor_total, status, tipo, endereco_entrega, forma_pagamento, payment_status, observacoes, bot_ativo) VALUES ('{{ $('Montar Contexto').item.json.pizzaria_id }}', '{{ $('Montar Contexto').item.json.cliente_id }}', $1::jsonb, $2, 'novo', $3, $4, CASE lower($5) WHEN '1' THEN 'dinheiro' WHEN '2' THEN 'cartao' WHEN '3' THEN 'pix' WHEN 'cart?o' THEN 'cartao' ELSE lower($5) END, 'pending', $6, true) RETURNING id, numero_pedido, valor_total;",
+          "options": {
+            "queryReplacement": "={{ JSON.stringify($fromAI('itens', 'Array de objetos [{nome, qtd, preco_unit, observacao}]', 'json')) }},{{ $fromAI('valor_total', 'Valor total em R$', 'number') }},{{ $fromAI('tipo', 'delivery ou retirada', 'string') }},{{ $fromAI('endereco_entrega', 'Endere?o completo de entrega ou retirada balc?o', 'string') }},{{ $fromAI('forma_pagamento', 'pix, cartao ou dinheiro', 'string') }},{{ $fromAI('observacoes', 'Observa??es do cliente', 'string') }}"
+          }
+        },
+        "id": "n26",
+        "name": "Tool: Registrar_Pedido",
+        "type": "n8n-nodes-base.postgresTool",
+        "typeVersion": 2.5,
+        "position": [
+          2080,
+          320
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "toolDescription": "Gera link/PIX de pagamento para um pedido ja registrado. Use apos Registrar_Pedido quando a forma de pagamento for pix ou cartao. Recebe pedido_id (UUID retornado por Registrar_Pedido). Se retornar ok=false, escale para humano.",
+          "method": "POST",
+          "url": "https://n8nai.secretariaai.eu.cc/webhook/pizzabot-pagamento",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"event\": \"generate_payment\",\n  \"pedido_id\": \"{{ $fromAI('pedido_id', 'UUID do pedido criado', 'string') }}\",\n  \"pizzaria_id\": \"{{ $('Montar Contexto').item.json.pizzaria_id }}\",\n  \"telefone\": \"{{ $('Montar Contexto').item.json.telefone }}\",\n  \"instancia\": \"{{ $('Montar Contexto').item.json.instancia }}\"\n}"
+        },
+        "id": "n27",
+        "name": "Tool: Gerar_Pagamento_PIX",
+        "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+        "typeVersion": 1.1,
+        "position": [
+          2208,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "descriptionType": "manual",
+          "toolDescription": "Escala o atendimento para um humano. Use quando o cliente solicitar atendente ou estiver insatisfeito.",
+          "operation": "executeQuery",
+          "query": "UPDATE public.conversas SET bot_ativo = false, status = 'Humano necess?rio', updated_at = NOW() WHERE pizzaria_id = $1 AND cliente_telefone = $2 RETURNING id;",
+          "options": {
+            "queryReplacement": "={{ $('Montar Contexto').item.json.pizzaria_id }},{{ $('Montar Contexto').item.json.telefone }}"
+          }
+        },
+        "id": "n28",
+        "name": "Tool: Escalar_Humano",
+        "type": "n8n-nodes-base.postgresTool",
+        "typeVersion": 2.5,
+        "position": [
+          2368,
+          320
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "descriptionType": "manual",
+          "toolDescription": "Adiciona/atualiza observa??es em um pedido existente. Recebe pedido_id e observacoes.",
+          "operation": "executeQuery",
+          "query": "UPDATE public.pedidos SET observacoes = $1, updated_at = NOW() WHERE id = $2 AND pizzaria_id = $3 RETURNING id;",
+          "options": {
+            "queryReplacement": "={{ $fromAI('observacoes','Observa??es','string') }},{{ $fromAI('pedido_id','UUID do pedido','string') }},{{ $('Montar Contexto').item.json.pizzaria_id }}"
+          }
+        },
+        "id": "n29",
+        "name": "Tool: Atualizar_Obs_Pedido",
+        "type": "n8n-nodes-base.postgresTool",
+        "typeVersion": 2.5,
+        "position": [
+          1872,
+          496
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "descriptionType": "manual",
+          "toolDescription": "Atualiza dados do cliente (CRM/RAG). Use quando descobrir nome, endere?o padr?o ou prefer?ncias.",
+          "operation": "executeQuery",
+          "query": "UPDATE public.clientes SET nome = COALESCE(NULLIF($1,''), nome), endereco_padrao = COALESCE(NULLIF($2,''), endereco_padrao), preferencias = COALESCE(NULLIF($3,''), preferencias) WHERE pizzaria_id = $4 AND telefone = $5 RETURNING id;",
+          "options": {
+            "queryReplacement": "={{ $fromAI('nome','Nome do cliente (vazio se n?o alterar)','string') }},{{ $fromAI('endereco','Endere?o padr?o (vazio se n?o alterar)','string') }},{{ $fromAI('preferencias','Prefer?ncias (vazio se n?o alterar)','string') }},{{ $('Montar Contexto').item.json.pizzaria_id }},{{ $('Montar Contexto').item.json.telefone }}"
+          }
+        },
+        "id": "n30",
+        "name": "Tool: Lembrar_Cliente",
+        "type": "n8n-nodes-base.postgresTool",
+        "typeVersion": 2.5,
+        "position": [
+          2016,
+          496
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "description": "Envia uma imagem ou documento do Google Drive ao cliente via WhatsApp. Use quando o cliente pedir a foto de um produto ou o card?pio em PDF. Par?metros: file_id (ID do arquivo no Drive, vem do campo [drive:...] do card?pio), tipo (imagem|documento), nome_documento (opcional, s? para tipo=documento).",
+          "workflowId": {
+            "__rl": true,
+            "value": "Tr6FTcHuvVVRzjS8",
+            "mode": "id"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "file_id": "={{ $fromAI('file_id','ID do arquivo no Google Drive','string') }}",
+              "instancia": "={{ $('Montar Contexto').item.json.instancia }}",
+              "telefone": "={{ $('Montar Contexto').item.json.telefone }}",
+              "tipo": "={{ $fromAI('tipo','imagem ou documento','string') }}",
+              "nome_documento": "={{ $fromAI('nome_documento','Nome do documento (opcional)','string') }}"
+            },
+            "schema": [
+              {
+                "id": "file_id",
+                "displayName": "file_id",
+                "type": "string",
+                "required": true
+              },
+              {
+                "id": "instancia",
+                "displayName": "instancia",
+                "type": "string",
+                "required": true
+              },
+              {
+                "id": "telefone",
+                "displayName": "telefone",
+                "type": "string",
+                "required": true
+              },
+              {
+                "id": "tipo",
+                "displayName": "tipo",
+                "type": "string",
+                "required": true
+              },
+              {
+                "id": "nome_documento",
+                "displayName": "nome_documento",
+                "type": "string",
+                "required": false
+              }
+            ]
+          }
+        },
+        "id": "n31",
+        "name": "Tool: Enviar_Cardapio_Arquivo",
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          2176,
+          496
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "DELETE FROM public.n8n_fila_mensagens WHERE instancia = $1 AND telefone = $2;",
+          "options": {
+            "queryReplacement": "={{ $('Info').item.json.instancia }},{{ $('Info').item.json.telefone }}"
+          }
+        },
+        "id": "n32",
+        "name": "Limpar fila de mensagens",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          2240,
+          64
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "out1",
+                "leftValue": "={{ $('Montar Contexto').item.json.has_audio }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "n33",
+        "name": "Resposta em ?udio?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          2400,
+          64
+        ]
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ $('Secretaria').item.json.output }}",
+          "messages": {
+            "messageValues": [
+              {
+                "message": "Voc? ? especialista em formata??o de WhatsApp. Sua tarefa: receber o texto e retornar apenas a vers?o formatada. Substitua ** por *. Remova # de cabe?alhos. Mantenha emojis. N?O altere o conte?do, apenas a formata??o."
+              }
+            ]
+          },
+          "batching": {}
+        },
+        "id": "n34",
+        "name": "Formatar texto WhatsApp",
+        "type": "@n8n/n8n-nodes-langchain.chainLlm",
+        "typeVersion": 1.7,
+        "position": [
+          2640,
+          96
+        ]
+      },
+      {
+        "parameters": {
+          "modelName": "models/gemini-3.1-flash-lite",
+          "options": {
+            "temperature": 0.1
+          }
+        },
+        "id": "n35",
+        "name": "Gemini (formatador)",
+        "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+        "typeVersion": 1,
+        "position": [
+          2528,
+          320
+        ],
+        "credentials": {
+          "googlePalmApi": {
+            "id": "TBWcK7v2wiGm4s6M",
+            "name": "Google Gemini(PaLM) Api account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "instanceName": "={{ $('Info').item.json.instancia }}",
+          "remoteJid": "={{ $('Info').item.json.telefone }}",
+          "messageText": "={{ $json.text || $('Secretaria').item.json.output }}",
+          "options_message": {}
+        },
+        "id": "n36",
+        "name": "Enviar texto WhatsApp",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          2944,
+          96
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://n8nai.secretariaai.eu.cc/webhook/e56e25c6-d00e-40aa-83b6-4985aea910f1",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"instancia\": \"{{ $('Info').item.json.instancia }}\",\n  \"telefone\": \"{{ $('Info').item.json.telefone }}\",\n  \"status\": \"recording\"\n}",
+          "options": {}
+        },
+        "id": "n37",
+        "name": "Gravando (recording)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2672,
+          -80
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.elevenlabs.io/v1/text-to-speech/33B4UnXyTNbgLmdEDh5P",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpHeaderAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "output_format",
+                "value": "mp3_44100_32"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={\n  \"text\": \"{{ $('Secretaria').item.json.output.replace(/\"/g, '\\\\\"').replace(/\\n/g, ' ') }}\",\n  \"model_id\": \"eleven_flash_v2_5\"\n}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            }
+          }
+        },
+        "id": "n38",
+        "name": "Gerar ?udio (ElevenLabs)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          2864,
+          -96
+        ],
+        "credentials": {
+          "httpHeaderAuth": {
+            "id": "2vo3rjAWuteKhXYk",
+            "name": "Header Auth account 2"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "binaryToPropery",
+          "options": {
+            "encoding": "base64"
+          }
+        },
+        "id": "n39",
+        "name": "?udio para base64",
+        "type": "n8n-nodes-base.extractFromFile",
+        "typeVersion": 1,
+        "position": [
+          3056,
+          -96
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "operation": "send-audio",
+          "instanceName": "={{ $('Info').item.json.instancia }}",
+          "remoteJid": "={{ $('Info').item.json.telefone }}",
+          "media": "={{ $json.data }}",
+          "options_message": {}
+        },
+        "id": "n40",
+        "name": "Enviar ?udio WhatsApp",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          3248,
+          -96
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE public.conversas SET messages = COALESCE(messages,'[]'::jsonb) || jsonb_build_array(jsonb_build_object('id', concat('m-', extract(epoch from now())::text), 'sender', 'bot', 'content', $1, 'timestamp', to_jsonb(NOW()))), last_message = $1, last_timestamp = NOW(), updated_at = NOW() WHERE pizzaria_id = $2 AND cliente_telefone = $3;",
+          "options": {
+            "queryReplacement": "={{ [$('Secretaria').first().json.output, $('Montar Contexto').first().json.pizzaria_id, $('Info').first().json.telefone] }}"
+          }
+        },
+        "id": "n41",
+        "name": "Salvar Resposta no DB",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          3792,
+          128
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const texto = ($input.first().json.text || '').trim();\n\n// 1) divide em parágrafos (double newline) — forma mais natural no WhatsApp\nlet partes = texto.split(/\\n\\n+/).map(p => p.trim()).filter(p => p.length > 0);\n\n// 2) se bloco único muito longo, agrupa frases de 2 em 2\nif (partes.length === 1 && partes[0].length > 280) {\n  const frases = partes[0].match(/[^.!?]+[.!?]+\\s*/g);\n  if (frases && frases.length > 1) {\n    const agrupadas = [];\n    for (let i = 0; i < frases.length; i += 2) {\n      agrupadas.push((frases[i] + (frases[i+1] || '')).trim());\n    }\n    partes = agrupadas.filter(p => p.length > 0);\n  }\n}\n\nconst instancia = $('Info').first().json.instancia;\nconst telefone  = $('Info').first().json.telefone;\n\n// delay proporcional: ~55ms/char, min 0.8s, max 5s\nreturn partes.map((parte, i) => ({\n  json: {\n    texto: parte,\n    delay_s: Math.round(Math.min(Math.max(parte.length * 0.055, 0.8), 5) * 10) / 10,\n    indice: i + 1,\n    total: partes.length,\n    instancia,\n    telefone,\n  }\n}));"
+        },
+        "id": "n_split",
+        "name": "Dividir resposta em partes",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2704,
+          272
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://n8nai.secretariaai.eu.cc/webhook/e56e25c6-d00e-40aa-83b6-4985aea910f1",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "{\"instancia\": \"={{ $json.instancia }}\", \"telefone\": \"={{ $json.telefone }}\", \"status\": \"composing\"}",
+          "options": {
+            "batching": {
+              "batch": {
+                "batchSize": 1,
+                "batchInterval": 0
+              }
+            }
+          }
+        },
+        "id": "n_comp2",
+        "name": "Composing por parte",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          3008,
+          272
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "amount": "={{ $json.delay_s || 3 }}",
+          "resume": "timeInterval",
+          "unit": "seconds"
+        },
+        "id": "n_wait2",
+        "name": "Pausa natural (digitando)",
+        "type": "n8n-nodes-base.wait",
+        "typeVersion": 1.1,
+        "position": [
+          3200,
+          272
+        ],
+        "webhookId": "wait-typing-natural-01"
+      },
+      {
+        "parameters": {
+          "resource": "messages-api",
+          "instanceName": "={{ $json.instancia }}",
+          "remoteJid": "={{ $json.telefone }}",
+          "messageText": "={{ $json.texto }}",
+          "options_message": {}
+        },
+        "id": "n_sendp",
+        "name": "Enviar parte WhatsApp",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          3392,
+          272
+        ],
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "chat-api",
+          "operation": "send-presence",
+          "instanceName": "={{ $('Info').first().json.instancia }}",
+          "remoteJid": "={{ $('Info').first().json.telefone }}",
+          "presence": "paused",
+          "delay": 0
+        },
+        "id": "n_pause",
+        "name": "Parar de digitar",
+        "type": "n8n-nodes-evolution-api.evolutionApi",
+        "typeVersion": 1,
+        "position": [
+          3584,
+          272
+        ],
+        "executeOnce": true,
+        "credentials": {
+          "evolutionApi": {
+            "id": "OfPUfZENlrzqKq0v",
+            "name": "Evolution account"
+          }
+        },
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "batchSize": 1,
+          "options": {}
+        },
+        "id": "n_loop_parts",
+        "name": "Loop mensagens humanas",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          2816,
+          272
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE public.conversas\nSET messages = COALESCE(messages,'[]'::jsonb) || jsonb_build_array(jsonb_build_object(\n    'id', concat('part-', $3, '-', extract(epoch from now())::text),\n    'sender', 'bot',\n    'content', $1,\n    'timestamp', to_jsonb(NOW())\n  )),\n  last_message = $1,\n  last_timestamp = NOW(),\n  updated_at = NOW()\nWHERE pizzaria_id = $2 AND cliente_telefone = $3;",
+          "options": {
+            "queryReplacement": "={{ [($('Loop mensagens humanas').item.json.texto || $json.texto || ''), $('Montar Contexto').first().json.pizzaria_id, $('Info').first().json.telefone] }}"
+          }
+        },
+        "id": "n_save_part_chat",
+        "name": "Salvar Parte no Chat Central",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          3488,
+          432
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "from_me",
+                "leftValue": "={{ $(\"Info\").first().json.fromMe }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "n_route_from_me",
+        "name": "Mensagem enviada pela equipe?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -1420,
+          -40
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "INSERT INTO public.conversas (pizzaria_id, cliente_telefone, cliente_nome, last_message, last_timestamp, bot_ativo, status, messages)\nVALUES ($1, $2, $3, $4, NOW(), false, 'Humano necess?rio', jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'human', 'content', $4, 'timestamp', to_jsonb(NOW()))))\nON CONFLICT (pizzaria_id, cliente_telefone) DO UPDATE\nSET last_message = EXCLUDED.last_message,\n    last_timestamp = NOW(),\n    cliente_nome = COALESCE(NULLIF(EXCLUDED.cliente_nome,''), public.conversas.cliente_nome),\n    bot_ativo = false,\n    status = 'Humano necess?rio',\n    messages = CASE\n      WHEN EXISTS (\n        SELECT 1 FROM jsonb_array_elements(COALESCE(public.conversas.messages, '[]'::jsonb)) elem\n        WHERE (elem->>'id') = $5\n           OR ((elem->>'content') = $4 AND (elem->>'sender') IN ('bot','human') AND COALESCE((elem->>'timestamp')::timestamptz, NOW()) > NOW() - INTERVAL '2 minutes')\n      ) THEN COALESCE(public.conversas.messages, '[]'::jsonb)\n      ELSE COALESCE(public.conversas.messages, '[]'::jsonb) || jsonb_build_array(jsonb_build_object('id', $5, 'sender', 'human', 'content', $4, 'timestamp', to_jsonb(NOW())))\n    END,\n    updated_at = NOW()\nRETURNING id;",
+          "options": {
+            "queryReplacement": "={{ [$('Carregar Pizzaria').first().json.id, $('Info').first().json.telefone, $('Info').first().json.pushName || 'Atendente', $('Info').first().json.mensagem || '[mensagem enviada pela equipe]', $('Info').first().json.id_mensagem] }}"
+          }
+        },
+        "id": "n_save_manual_chat",
+        "name": "Salvar Mensagem Manual no Chat Central",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.5,
+        "position": [
+          -1160,
+          -220
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "3gxY8xTADs50F07C",
+            "name": "Postgres pizzabot"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Mensagem recebida": {
+        "main": [
+          [
+            {
+              "node": "Info",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Info": {
+        "main": [
+          [
+            {
+              "node": "Mensagem v?lida?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mensagem v?lida?": {
+        "main": [
+          [
+            {
+              "node": "Carregar Pizzaria",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Carregar Pizzaria": {
+        "main": [
+          [
+            {
+              "node": "Mensagem enviada pela equipe?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Bot ativo global?": {
+        "main": [
+          [
+            {
+              "node": "Marcar como lida",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Marcar como lida": {
+        "main": [
+          [
+            {
+              "node": "Upsert Conversa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert Conversa": {
+        "main": [
+          [
+            {
+              "node": "Bot ativo na conversa?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Bot ativo na conversa?": {
+        "main": [
+          [
+            {
+              "node": "Tipo de mensagem (in)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tipo de mensagem (in)": {
+        "main": [
+          [
+            {
+              "node": "Download ?udio",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Enfileirar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Download ?udio": {
+        "main": [
+          [
+            {
+              "node": "Base64 para bin?rio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Base64 para bin?rio": {
+        "main": [
+          [
+            {
+              "node": "Transcrever ?udio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Transcrever ?udio": {
+        "main": [
+          [
+            {
+              "node": "Set transcri??o",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Set transcri??o": {
+        "main": [
+          [
+            {
+              "node": "Enfileirar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Enfileirar mensagem": {
+        "main": [
+          [
+            {
+              "node": "Wait 8s (debounce)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Wait 8s (debounce)": {
+        "main": [
+          [
+            {
+              "node": "Buscar mensagens",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar mensagens": {
+        "main": [
+          [
+            {
+              "node": "Mensagem encavalada?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mensagem encavalada?": {
+        "main": [
+          [
+            {
+              "node": "Digitando (composing)",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Consolidar mensagens",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Consolidar mensagens": {
+        "main": [
+          [
+            {
+              "node": "Upsert Cliente (RAG)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Upsert Cliente (RAG)": {
+        "main": [
+          [
+            {
+              "node": "Carregar Card?pio",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Carregar Card?pio": {
+        "main": [
+          [
+            {
+              "node": "Montar Contexto",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar Contexto": {
+        "main": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Memory": {
+        "ai_memory": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_memory",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tool: Registrar_Pedido": {
+        "ai_tool": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tool: Gerar_Pagamento_PIX": {
+        "ai_tool": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tool: Escalar_Humano": {
+        "ai_tool": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tool: Atualizar_Obs_Pedido": {
+        "ai_tool": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tool: Lembrar_Cliente": {
+        "ai_tool": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tool: Enviar_Cardapio_Arquivo": {
+        "ai_tool": [
+          [
+            {
+              "node": "Secretaria",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Secretaria": {
+        "main": [
+          [
+            {
+              "node": "Limpar fila de mensagens",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Limpar fila de mensagens": {
+        "main": [
+          [
+            {
+              "node": "Resposta em ?udio?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resposta em ?udio?": {
+        "main": [
+          [
+            {
+              "node": "Gravando (recording)",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Formatar texto WhatsApp",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Formatar texto WhatsApp": {
+        "main": [
+          [
+            {
+              "node": "Dividir resposta em partes",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gemini (formatador)": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "Formatar texto WhatsApp",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gravando (recording)": {
+        "main": [
+          [
+            {
+              "node": "Gerar ?udio (ElevenLabs)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Gerar ?udio (ElevenLabs)": {
+        "main": [
+          [
+            {
+              "node": "?udio para base64",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "?udio para base64": {
+        "main": [
+          [
+            {
+              "node": "Enviar ?udio WhatsApp",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Enviar ?udio WhatsApp": {
+        "main": [
+          [
+            {
+              "node": "Salvar Resposta no DB",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Dividir resposta em partes": {
+        "main": [
+          [
+            {
+              "node": "Loop mensagens humanas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Composing por parte": {
+        "main": [
+          [
+            {
+              "node": "Pausa natural (digitando)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pausa natural (digitando)": {
+        "main": [
+          [
+            {
+              "node": "Enviar parte WhatsApp",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Enviar parte WhatsApp": {
+        "main": [
+          [
+            {
+              "node": "Salvar Parte no Chat Central",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Parar de digitar": {
+        "main": [
+          [
+            {
+              "node": "Loop mensagens humanas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Loop mensagens humanas": {
+        "main": [
+          [],
+          [
+            {
+              "node": "Composing por parte",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Salvar Parte no Chat Central": {
+        "main": [
+          [
+            {
+              "node": "Parar de digitar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Mensagem enviada pela equipe?": {
+        "main": [
+          [
+            {
+              "node": "Salvar Mensagem Manual no Chat Central",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Bot ativo global?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Salvar Mensagem Manual no Chat Central": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "authors": "Jailson jailson.silva0933@gmail.com",
+    "name": null,
+    "description": null,
+    "autosaved": false
+  }
+}
