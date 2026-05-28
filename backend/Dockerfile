@@ -36,7 +36,13 @@ USER app
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -fsS http://localhost:8000/health || exit 1
+# Healthcheck condicional ao papel do container:
+#   APP_ROLE=worker  -> ping no Celery
+#   (default/api)     -> HTTP /health do uvicorn
+HEALTHCHECK --interval=30s --timeout=10s --start-period=25s --retries=3 \
+    CMD sh -c 'if [ "$APP_ROLE" = "worker" ]; then celery -A app.workers.celery_app inspect ping -t 8 >/dev/null 2>&1 || exit 1; else curl -fsS http://localhost:8000/health || exit 1; fi'
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# CMD condicional: o mesmo Dockerfile serve API e worker.
+#   APP_ROLE=worker  -> celery worker
+#   (default/api)     -> uvicorn
+CMD ["sh", "-c", "if [ \"$APP_ROLE\" = \"worker\" ]; then exec celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=4; else exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2; fi"]
