@@ -28,8 +28,14 @@ interface Props {
   onLogout: () => void;
 }
 
-type FormState = { nome: string; endereco: string; telefone_admin: string; instancia: string };
-const EMPTY_FORM: FormState = { nome: "", endereco: "", telefone_admin: "", instancia: "" };
+type FormState = {
+  nome: string; endereco: string; telefone_admin: string; instancia: string;
+  owner_nome: string; owner_email: string; owner_senha: string;
+};
+const EMPTY_FORM: FormState = {
+  nome: "", endereco: "", telefone_admin: "", instancia: "",
+  owner_nome: "", owner_email: "", owner_senha: "",
+};
 
 const PERIODOS = [
   { label: "7 dias", value: 7 },
@@ -72,22 +78,38 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     setForm({
       nome: p.nome, endereco: p.endereco ?? "",
       telefone_admin: p.telefone_admin ?? "", instancia: p.instancia ?? "",
+      owner_nome: "", owner_email: "", owner_senha: "",
     });
   }
   function cancel() { setCreating(false); setEditingId(null); setForm(EMPTY_FORM); }
 
   async function save() {
+    // Validação do login do dono (apenas na criação)
+    if (!editingId) {
+      if (!form.owner_email.trim()) { setErr("Informe o e-mail de login do dono."); return; }
+      if (form.owner_senha.trim().length < 8) { setErr("A senha do dono precisa ter ao menos 8 caracteres."); return; }
+    }
     setSaving(true);
     setErr(null);
     try {
-      const body = {
-        nome: form.nome.trim(),
-        endereco: form.endereco.trim() || undefined,
-        telefone_admin: form.telefone_admin.trim() || undefined,
-        instancia: form.instancia.trim() || undefined,
-      };
-      if (editingId) await pizzariasApi.update(editingId, body);
-      else await pizzariasApi.create(body);
+      if (editingId) {
+        await pizzariasApi.update(editingId, {
+          nome: form.nome.trim(),
+          endereco: form.endereco.trim() || undefined,
+          telefone_admin: form.telefone_admin.trim() || undefined,
+          instancia: form.instancia.trim() || undefined,
+        });
+      } else {
+        await pizzariasApi.create({
+          nome: form.nome.trim(),
+          endereco: form.endereco.trim() || undefined,
+          telefone_admin: form.telefone_admin.trim() || undefined,
+          instancia: form.instancia.trim() || undefined,
+          owner_nome: form.owner_nome.trim() || undefined,
+          owner_email: form.owner_email.trim().toLowerCase(),
+          owner_senha: form.owner_senha,
+        });
+      }
       cancel();
       await refreshAll();
     } catch (e: any) { setErr(e.message || "Erro ao salvar."); }
@@ -281,6 +303,37 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                   className={inputCls} placeholder="pizzaria-do-ze" />
               </Field>
             </div>
+
+            {/* Acesso do dono — só na criação */}
+            {!editingId && (
+              <div className="border-t border-slate-100 pt-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <LogIn className="w-3.5 h-3.5 text-orange-500" />
+                  <h4 className="text-xs font-semibold text-slate-700">Acesso do dono ao painel</h4>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">
+                  Crie o login que o dono desta pizzaria vai usar para entrar no painel dele.
+                </p>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <Field label="Nome do dono">
+                    <input value={form.owner_nome} onChange={(e) => setForm({ ...form, owner_nome: e.target.value })}
+                      className={inputCls} placeholder="Ex.: José da Silva" />
+                  </Field>
+                  <Field label="E-mail de login" required>
+                    <input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
+                      className={inputCls} placeholder="dono@pizzaria.com" />
+                  </Field>
+                  <Field label="Senha inicial (mín. 8 caracteres)" required full>
+                    <input type="text" value={form.owner_senha} onChange={(e) => setForm({ ...form, owner_senha: e.target.value })}
+                      className={inputCls} placeholder="Defina uma senha para o dono" />
+                  </Field>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  Anote e repasse essas credenciais ao dono. Ele poderá entrar em {window.location.host} com esse e-mail e senha.
+                </p>
+              </div>
+            )}
+
             <div className="flex gap-2 justify-end">
               <button onClick={cancel} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-md flex items-center gap-1">
                 <X className="w-4 h-4" /> Cancelar

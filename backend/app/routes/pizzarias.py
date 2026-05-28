@@ -2,10 +2,11 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
-from sqlalchemy import select
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import hash_password
 from app.db import get_db
 from app.deps import current_user, membership, require_platform_admin
 from app.models import EquipePizzaria, Pizzaria, Usuario
@@ -18,6 +19,11 @@ class PizzariaIn(BaseModel):
     instancia: str | None = None
     telefone_admin: str | None = None
     endereco: str | None = None
+    # Login do dono da pizzaria (opcional). Se informado, cria/vincula o usuário
+    # proprietário que vai acessar o painel operacional desta pizzaria.
+    owner_email: EmailStr | None = None
+    owner_senha: str | None = Field(default=None, min_length=8)
+    owner_nome: str | None = None
 
 
 class PizzariaPatch(BaseModel):
@@ -99,14 +105,47 @@ async def create_pizzaria(
     db.add(pizz)
     await db.flush()
 
-    # Cria vínculo do admin como proprietário também
-    db.add(EquipePizzaria(
-        pizzaria_id=pizz.id,
-        usuario_id=user.id,
-        email=user.email,
-        role="admin",
-        status="proprietario",
-    ))
+    if body.owner_email:
+        # Cria (ou reutiliza) o usuário dono e o vincula como proprietário.
+        owner_email = body.owner_email.lower()
+        owner = (
+            await db.execute(
+                select(Usuario).where(func.lower(Usuario.email) == owner_email)
+            )
+        ).scalar_one_or_none()
+
+        if owner is None:
+            if not body.owner_senha:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "Senha do dono é obrigatória para criar o login (mínimo 8 caracteres).",
+                )
+            owner = Usuario(
+                email=owner_email,
+                senha_hash=hash_password(body.owner_senha),
+                nome=(body.owner_nome or body.nome).strip(),
+                is_platform_admin=False,
+            )
+            db.add(owner)
+            await db.flush()
+
+        db.add(EquipePizzaria(
+            pizzaria_id=pizz.id,
+            usuario_id=owner.id,
+            email=owner.email,
+            role="admin",
+            status="proprietario",
+        ))
+    else:
+        # Sem dono informado: vincula o admin criador (fallback).
+        db.add(EquipePizzaria(
+            pizzaria_id=pizz.id,
+            usuario_id=user.id,
+            email=user.email,
+            role="admin",
+            status="proprietario",
+        ))
+
     await db.commit()
     await db.refresh(pizz)
     return pizz

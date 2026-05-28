@@ -178,8 +178,10 @@ export interface BackendMensagem {
 export const pizzariasApi = {
   list: () => api.get<BackendPizzaria[]>("/pizzarias"),
   get: (id: string) => api.get<BackendPizzaria>(`/pizzarias/${id}`),
-  create: (body: { nome: string; instancia?: string; telefone_admin?: string; endereco?: string }) =>
-    api.post<BackendPizzaria>("/pizzarias", body),
+  create: (body: {
+    nome: string; instancia?: string; telefone_admin?: string; endereco?: string;
+    owner_email?: string; owner_senha?: string; owner_nome?: string;
+  }) => api.post<BackendPizzaria>("/pizzarias", body),
   update: (id: string, patch: Partial<BackendPizzaria>) =>
     api.patch<BackendPizzaria>(`/pizzarias/${id}`, patch),
   delete: (id: string) => api.delete(`/pizzarias/${id}`),
