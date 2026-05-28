@@ -24,3 +24,6 @@ PizzaBot_PRD_v1.0.pdf
 n8n/
 sql/
 supabase/migrations
+backend/
+docs/
+scripts/
