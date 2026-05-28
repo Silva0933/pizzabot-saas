@@ -182,6 +182,7 @@ export const pizzariasApi = {
     api.post<BackendPizzaria>("/pizzarias", body),
   update: (id: string, patch: Partial<BackendPizzaria>) =>
     api.patch<BackendPizzaria>(`/pizzarias/${id}`, patch),
+  delete: (id: string) => api.delete(`/pizzarias/${id}`),
 };
 
 // ============================================

@@ -18,6 +18,7 @@ import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
 import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
 import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
+import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent,
@@ -40,6 +41,7 @@ export default function App() {
   // Workspace
   // ============================================
   const [pizzaria, setPizzaria] = useState<BackendPizzaria | null>(null);
+  const [pizzarias, setPizzarias] = useState<BackendPizzaria[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
   const [productCount, setProductCount] = useState(0);
@@ -61,13 +63,24 @@ export default function App() {
   // ============================================
   // Carrega pizzaria do usuário
   // ============================================
-  useEffect(() => {
-    if (!user) { setPizzaria(null); return; }
-    pizzariasApi.list()
-      .then((list) => setPizzaria(list[0] ?? null))
+  function loadPizzarias() {
+    return pizzariasApi.list()
+      .then((list) => {
+        setPizzarias(list);
+        // Platform admin NÃO entra automaticamente — escolhe no painel da plataforma.
+        // Operador comum entra direto na sua (única) pizzaria.
+        if (user && !user.is_platform_admin) setPizzaria(list[0] ?? null);
+        return list;
+      })
       .catch((e: ApiError) => {
         if (e.status === 401) { clearTokens(); setUser(null); }
+        return [] as BackendPizzaria[];
       });
+  }
+
+  useEffect(() => {
+    if (!user) { setPizzaria(null); setPizzarias([]); return; }
+    loadPizzarias();
   }, [user]);
 
   // ============================================
@@ -164,7 +177,20 @@ export default function App() {
   );
 
   // ============================================
-  // Render: onboarding (sem pizzaria)
+  // Render: painel da plataforma (admin sem pizzaria ativa)
+  // ============================================
+  if (user.is_platform_admin && !pizzaria) return (
+    <PlatformAdminView
+      userName={user.nome}
+      pizzarias={pizzarias}
+      onRefresh={() => loadPizzarias().then(() => {})}
+      onEnter={(p) => setPizzaria(p)}
+      onLogout={handleLogout}
+    />
+  );
+
+  // ============================================
+  // Render: onboarding (operador sem pizzaria)
   // ============================================
   if (!pizzaria) return (
     <OnboardingScreen
@@ -184,7 +210,16 @@ export default function App() {
   return (
     <AppShell
       activeNav={nav}
-      onNavChange={setNav}
+      onNavChange={(k) => {
+        // Admin: a aba "Admin" volta para o painel da plataforma
+        if (k === "admin" && user.is_platform_admin) {
+          setPizzaria(null);
+          loadPizzarias();
+          setNav("inicio");
+          return;
+        }
+        setNav(k as NavKey);
+      }}
       pageTitle={meta.title}
       pageSubtitle={meta.subtitle}
       badges={{
