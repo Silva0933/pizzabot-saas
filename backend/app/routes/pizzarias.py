@@ -142,3 +142,17 @@ async def update_pizzaria(
     await db.commit()
     await db.refresh(pizz)
     return pizz
+
+
+@router.delete("/{pizzaria_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_pizzaria(
+    pizzaria_id: uuid.UUID,
+    user: Usuario = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Remove pizzaria (e cascateia equipe, produtos, etc). Apenas platform admin."""
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    await db.delete(pizz)
+    await db.commit()
