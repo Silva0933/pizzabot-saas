@@ -19,8 +19,9 @@ dependencies = [
     "redis[hiredis]==5.2.0",
     "celery==5.4.0",
 
-    # Auth
-    "passlib[bcrypt]==1.7.4",
+    # Auth — bcrypt<4.1 obrigatório por bug do passlib lendo __about__.__version__
+    "passlib==1.7.4",
+    "bcrypt==4.0.1",
     "pyjwt==2.10.1",
     "python-multipart==0.0.19",     # form-data para login
 
