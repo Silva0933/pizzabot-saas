@@ -30,7 +30,7 @@ dependencies = [
     "email-validator==2.2.0",
 
     # HTTP client externo (Evolution, MP, Asaas, Gemini)
-    "httpx==0.28.0",
+    "httpx==0.28.1",
 
     # IA (Fase 3)
     "google-genai==1.30.0",
@@ -44,7 +44,7 @@ dependencies = [
 dev = [
     "pytest==8.3.4",
     "pytest-asyncio==0.24.0",
-    "httpx==0.28.0",
+    "httpx==0.28.1",
     "ruff==0.8.2",
 ]
 
