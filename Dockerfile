@@ -47,7 +47,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget -qO- http://localhost/ || exit 1
+# Sem HEALTHCHECK interno — Coolify/Traefik fazem check externo via HTTP.
+# wget e curl não estão garantidos em nginx:alpine novo.
 
 CMD ["nginx", "-g", "daemon off;"]
