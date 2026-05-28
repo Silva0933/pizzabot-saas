@@ -1,16 +1,24 @@
 /**
  * Painel de Administração da Plataforma (platform admin).
  *
- * Tela exclusiva do dono do SaaS — separada do operacional de cada pizzaria.
- * Lista TODAS as pizzarias, permite criar / editar / remover e "Entrar"
- * em qualquer uma para ver o painel operacional dela.
+ * Dashboard do dono do SaaS — separado do operacional de cada pizzaria:
+ *  - KPIs agregados (faturamento, pedidos, ticket, cancelamento) com Δ vs período anterior
+ *  - Indicadores da base (pizzarias ativas, novas, conversas, clientes)
+ *  - Gráfico de faturamento por dia (todas as pizzarias somadas)
+ *  - Ranking de pizzarias por faturamento
+ *  - Distribuição por plano
+ *  - Gestão: listar / criar / editar / remover / "Entrar" em cada pizzaria
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  Pizza, LogOut, Plus, Pencil, Trash2, Save, X, Loader2,
-  AlertCircle, LogIn, Store, Bot, Power,
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
+} from "recharts";
+import {
+  Pizza, LogOut, Plus, Pencil, Trash2, Save, X, Loader2, AlertCircle, LogIn,
+  Store, Bot, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
+  Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
 } from "lucide-react";
-import { BackendPizzaria, pizzariasApi } from "../../lib/api";
+import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview } from "../../lib/api";
 
 interface Props {
   userName: string;
@@ -23,7 +31,19 @@ interface Props {
 type FormState = { nome: string; endereco: string; telefone_admin: string; instancia: string };
 const EMPTY_FORM: FormState = { nome: "", endereco: "", telefone_admin: "", instancia: "" };
 
+const PERIODOS = [
+  { label: "7 dias", value: 7 },
+  { label: "30 dias", value: 30 },
+  { label: "90 dias", value: 90 },
+];
+
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onLogout }: Props) {
+  const [days, setDays] = useState(30);
+  const [ov, setOv] = useState<AdminOverview | null>(null);
+  const [loadingOv, setLoadingOv] = useState(true);
+
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -31,28 +51,30 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const ativas = pizzarias.filter((p) => p.bot_ativo_global).length;
-
-  function startCreate() {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-    setCreating(true);
+  function loadOverview(d = days) {
+    setLoadingOv(true);
+    adminApi.overview(d)
+      .then(setOv)
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoadingOv(false));
   }
+  useEffect(() => { loadOverview(days); }, [days]);
+
+  async function refreshAll() {
+    await onRefresh();
+    loadOverview();
+  }
+
+  function startCreate() { setEditingId(null); setForm(EMPTY_FORM); setCreating(true); }
   function startEdit(p: BackendPizzaria) {
     setCreating(false);
     setEditingId(p.id);
     setForm({
-      nome: p.nome,
-      endereco: p.endereco ?? "",
-      telefone_admin: p.telefone_admin ?? "",
-      instancia: p.instancia ?? "",
+      nome: p.nome, endereco: p.endereco ?? "",
+      telefone_admin: p.telefone_admin ?? "", instancia: p.instancia ?? "",
     });
   }
-  function cancel() {
-    setCreating(false);
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-  }
+  function cancel() { setCreating(false); setEditingId(null); setForm(EMPTY_FORM); }
 
   async function save() {
     setSaving(true);
@@ -64,16 +86,11 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         telefone_admin: form.telefone_admin.trim() || undefined,
         instancia: form.instancia.trim() || undefined,
       };
-      if (editingId) {
-        await pizzariasApi.update(editingId, body);
-      } else {
-        await pizzariasApi.create(body);
-      }
+      if (editingId) await pizzariasApi.update(editingId, body);
+      else await pizzariasApi.create(body);
       cancel();
-      await onRefresh();
-    } catch (e: any) {
-      setErr(e.message || "Erro ao salvar.");
-    }
+      await refreshAll();
+    } catch (e: any) { setErr(e.message || "Erro ao salvar."); }
     setSaving(false);
   }
 
@@ -83,12 +100,14 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     setErr(null);
     try {
       await pizzariasApi.delete(p.id);
-      await onRefresh();
-    } catch (e: any) {
-      setErr(e.message || "Erro ao remover.");
-    }
+      await refreshAll();
+    } catch (e: any) { setErr(e.message || "Erro ao remover."); }
     setBusyId(null);
   }
+
+  const r = ov?.resumo;
+  const c = ov?.comparativo;
+  const maxRank = Math.max(1, ...(ov?.ranking_pizzarias ?? []).map((x) => x.vendido));
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -111,25 +130,21 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6 max-w-5xl w-full mx-auto space-y-5">
-        {/* Resumo */}
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard icon={<Store className="w-4 h-4 text-orange-500" />} label="Pizzarias cadastradas" value={pizzarias.length} />
-          <StatCard icon={<Bot className="w-4 h-4 text-emerald-500" />} label="Com bot ativo" value={ativas} />
-        </div>
-
-        {/* Barra de ações */}
+      <main className="flex-1 p-4 md:p-6 max-w-6xl w-full mx-auto space-y-5">
+        {/* Título + seletor de período */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">Pizzarias</h2>
-            <p className="text-sm text-slate-500">Empresas cadastradas na plataforma.</p>
+            <h2 className="text-xl font-bold text-slate-800">Visão geral</h2>
+            <p className="text-sm text-slate-500">Desempenho consolidado de todas as pizzarias.</p>
           </div>
-          <button
-            onClick={startCreate}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium"
-          >
-            <Plus className="w-4 h-4" /> Nova pizzaria
-          </button>
+          <div className="flex bg-white border border-slate-200 rounded-lg p-0.5">
+            {PERIODOS.map((p) => (
+              <button key={p.value} onClick={() => setDays(p.value)}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                  days === p.value ? "bg-orange-500 text-white" : "text-slate-600 hover:bg-slate-50"
+                }`}>{p.label}</button>
+            ))}
+          </div>
         </div>
 
         {err && (
@@ -138,12 +153,116 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </div>
         )}
 
-        {/* Form criar/editar */}
+        {loadingOv && !ov ? (
+          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
+        ) : r ? (
+          <>
+            {/* KPIs principais */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Kpi icon={<DollarSign className="w-4 h-4 text-emerald-500" />} label="Faturamento"
+                value={brl(r.vendido)} delta={c?.pct_vendido ?? null} />
+              <Kpi icon={<ShoppingBag className="w-4 h-4 text-blue-500" />} label="Pedidos"
+                value={String(r.pedidos)} delta={c?.pct_pedidos ?? null} />
+              <Kpi icon={<Receipt className="w-4 h-4 text-orange-500" />} label="Ticket médio"
+                value={brl(r.ticket_medio)} />
+              <Kpi icon={<Ban className="w-4 h-4 text-red-500" />} label="Cancelamento"
+                value={`${r.taxa_cancelamento}%`} subtle={`${r.cancelados} pedidos`} />
+            </div>
+
+            {/* Indicadores da base */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <MiniStat icon={<Store className="w-4 h-4 text-slate-500" />}
+                value={`${r.pizzarias_ativas}/${r.total_pizzarias}`} label="Pizzarias ativas" />
+              <MiniStat icon={<Sparkles className="w-4 h-4 text-violet-500" />}
+                value={String(r.pizzarias_novas)} label={`Novas (${days}d)`} />
+              <MiniStat icon={<MessageSquare className="w-4 h-4 text-blue-500" />}
+                value={String(r.total_conversas)} label="Conversas" />
+              <MiniStat icon={<Users className="w-4 h-4 text-emerald-500" />}
+                value={String(r.total_clientes)} label="Clientes" />
+            </div>
+
+            {/* Gráfico + ranking */}
+            <div className="grid lg:grid-cols-3 gap-4">
+              {/* Faturamento por dia */}
+              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3">Faturamento por dia</h3>
+                {(ov.serie_diaria.length === 0) ? (
+                  <Empty msg="Sem pedidos no período." />
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={ov.serie_diaria} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#94a3b8" }}
+                        tickFormatter={(d) => String(d).slice(5)} />
+                      <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }}
+                        tickFormatter={(v) => `R$${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
+                      <RTooltip
+                        formatter={(v: any) => [brl(Number(v)), "Faturamento"]}
+                        labelFormatter={(l) => `Dia ${l}`}
+                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                      <Line type="monotone" dataKey="vendido" stroke="#f97316" strokeWidth={2}
+                        dot={false} activeDot={{ r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              {/* Ranking pizzarias */}
+              <div className="bg-white border border-slate-200 rounded-xl p-4">
+                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                  <Trophy className="w-4 h-4 text-amber-500" /> Top pizzarias
+                </h3>
+                {(ov.ranking_pizzarias.filter((x) => x.vendido > 0).length === 0) ? (
+                  <Empty msg="Sem faturamento ainda." />
+                ) : (
+                  <div className="space-y-2.5">
+                    {ov.ranking_pizzarias.filter((x) => x.vendido > 0).map((x, i) => (
+                      <div key={x.id}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-medium text-slate-700 truncate">{i + 1}. {x.nome}</span>
+                          <span className="font-semibold text-slate-800 shrink-0 ml-2">{brl(x.vendido)}</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-orange-400 rounded-full"
+                            style={{ width: `${(x.vendido / maxRank) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Distribuição por plano */}
+                {ov.pizzarias_por_plano.length > 0 && (
+                  <div className="mt-4 pt-3 border-t border-slate-100">
+                    <p className="text-xs font-semibold text-slate-500 mb-2">Por plano</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {ov.pizzarias_por_plano.map((p) => (
+                        <span key={p.plano} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                          {p.plano}: <strong>{p.qtd}</strong>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {/* ====== Gestão de pizzarias ====== */}
+        <div className="flex items-center justify-between flex-wrap gap-2 pt-2">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">Pizzarias</h2>
+            <p className="text-sm text-slate-500">Empresas cadastradas na plataforma.</p>
+          </div>
+          <button onClick={startCreate}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium">
+            <Plus className="w-4 h-4" /> Nova pizzaria
+          </button>
+        </div>
+
         {(creating || editingId) && (
           <div className="bg-white border border-orange-200 rounded-xl p-4 space-y-3 shadow-sm">
-            <h3 className="font-semibold text-sm text-slate-800">
-              {editingId ? "Editar pizzaria" : "Nova pizzaria"}
-            </h3>
+            <h3 className="font-semibold text-sm text-slate-800">{editingId ? "Editar pizzaria" : "Nova pizzaria"}</h3>
             <div className="grid md:grid-cols-2 gap-3">
               <Field label="Nome" required>
                 <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}
@@ -168,14 +287,12 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
               </button>
               <button onClick={save} disabled={saving || !form.nome.trim()}
                 className="px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center gap-1 disabled:opacity-50">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Salvar
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar
               </button>
             </div>
           </div>
         )}
 
-        {/* Lista */}
         <div className="space-y-2">
           {pizzarias.length === 0 && !creating && (
             <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
@@ -185,9 +302,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           {pizzarias.map((p) => (
             <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 hover:shadow-sm transition-shadow">
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                {p.logo_url
-                  ? <img src={p.logo_url} alt="" className="w-full h-full object-cover" />
-                  : <Store className="w-5 h-5 text-slate-400" />}
+                {p.logo_url ? <img src={p.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-5 h-5 text-slate-400" />}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -225,16 +340,43 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   );
 }
 
-function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+function Kpi({ icon, label, value, delta, subtle }: {
+  icon: React.ReactNode; label: string; value: string; delta?: number | null; subtle?: string;
+}) {
+  const up = (delta ?? 0) >= 0;
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-3.5">
+      <div className="flex items-center gap-2 text-xs text-slate-500 mb-1.5">
+        <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center">{icon}</div>
+        {label}
+      </div>
+      <div className="text-xl font-bold text-slate-800 leading-tight">{value}</div>
+      {delta != null ? (
+        <div className={`flex items-center gap-1 text-xs mt-1 ${up ? "text-emerald-600" : "text-red-500"}`}>
+          {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+          {Math.abs(delta)}% <span className="text-slate-400">vs período anterior</span>
+        </div>
+      ) : subtle ? (
+        <div className="text-xs text-slate-400 mt-1">{subtle}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function MiniStat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
   return (
     <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3">
       <div className="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center">{icon}</div>
       <div>
-        <div className="text-xl font-bold text-slate-800 leading-none">{value}</div>
+        <div className="text-lg font-bold text-slate-800 leading-none">{value}</div>
         <div className="text-xs text-slate-500 mt-0.5">{label}</div>
       </div>
     </div>
   );
+}
+
+function Empty({ msg }: { msg: string }) {
+  return <div className="text-xs text-slate-400 text-center py-10">{msg}</div>;
 }
 
 const inputCls = "w-full px-2.5 py-1.5 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none";

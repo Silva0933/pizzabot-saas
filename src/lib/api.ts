@@ -303,6 +303,41 @@ export const metricasApi = {
 };
 
 // ============================================
+// Admin da plataforma (visão agregada — platform admin)
+// ============================================
+export interface AdminOverview {
+  periodo_dias: number;
+  desde: string;
+  resumo: {
+    total_pizzarias: number;
+    pizzarias_ativas: number;
+    pizzarias_novas: number;
+    pedidos: number;
+    vendido: number;
+    ticket_medio: number;
+    cancelados: number;
+    taxa_cancelamento: number;
+    total_conversas: number;
+    total_clientes: number;
+    total_usuarios: number;
+    total_produtos: number;
+  };
+  comparativo: {
+    pedidos_anterior: number;
+    vendido_anterior: number;
+    pct_pedidos: number | null;
+    pct_vendido: number | null;
+  };
+  serie_diaria: Array<{ dia: string; pedidos: number; vendido: number }>;
+  ranking_pizzarias: Array<{ id: string; nome: string; pedidos: number; vendido: number }>;
+  pizzarias_por_plano: Array<{ plano: string; qtd: number }>;
+}
+
+export const adminApi = {
+  overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
+};
+
+// ============================================
 // WebSocket — live updates do painel
 // ============================================
 export interface WsEvent {

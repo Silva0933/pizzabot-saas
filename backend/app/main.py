@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.routes import (
+    admin,
     agente,
     auth,
     cardapio,
@@ -60,6 +61,7 @@ app.add_middleware(
 # Rotas
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(pizzarias.router)
 app.include_router(conversas.router)
 app.include_router(cardapio.router)
