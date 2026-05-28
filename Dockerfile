@@ -42,12 +42,15 @@ RUN npm run build
 # ============================================================
 FROM nginx:alpine
 
+# curl pro HEALTHCHECK (não vem por default no nginx:alpine novo)
+RUN apk add --no-cache curl
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 80
 
-# Sem HEALTHCHECK interno — Coolify/Traefik fazem check externo via HTTP.
-# wget e curl não estão garantidos em nginx:alpine novo.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -fsS http://localhost/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
