@@ -14,6 +14,10 @@ class EvolutionError(Exception):
     pass
 
 
+def _only_digits(s: str) -> str:
+    return "".join(ch for ch in s if ch.isdigit())
+
+
 class EvolutionClient:
     """
     Wrapper minimalista da Evolution API v2.
@@ -40,6 +44,84 @@ class EvolutionClient:
         if self._client:
             await self._client.aclose()
             self._client = None
+
+    # =========================
+    # Gestão de instância (onboarding WhatsApp)
+    # =========================
+    async def create_instance(
+        self,
+        *,
+        instancia: str,
+        webhook_url: str | None = None,
+        numero: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Cria uma instância na Evolution já com o webhook configurado.
+
+        Retorna o payload da Evolution (inclui `qrcode.base64` quando disponível).
+        Se a instância já existir, a Evolution responde 403 — tratamos como
+        "já existe" e seguimos para conectar/gerar QR.
+        """
+        body: dict[str, Any] = {
+            "instanceName": instancia,
+            "integration": "WHATSAPP-BAILEYS",
+            "qrcode": True,
+        }
+        if numero:
+            body["number"] = _only_digits(numero)
+        if webhook_url:
+            body["webhook"] = self._webhook_payload(webhook_url)
+
+        c = await self._http()
+        r = await c.post("/instance/create", json=body)
+        if r.status_code in (401, 403, 409):
+            # Já existe (ou conflito de nome): não é erro fatal no onboarding.
+            log.info("Instância '%s' já existe na Evolution (%s).", instancia, r.status_code)
+            return {"already_exists": True}
+        return self._unwrap(r)
+
+    async def connect_instance(self, *, instancia: str) -> dict[str, Any]:
+        """Dispara a conexão e retorna o QR Code (campo `base64`)."""
+        c = await self._http()
+        r = await c.get(f"/instance/connect/{instancia}")
+        return self._unwrap(r)
+
+    async def connection_state(self, *, instancia: str) -> str:
+        """Retorna o estado: 'open' (conectado), 'connecting' ou 'close'."""
+        c = await self._http()
+        r = await c.get(f"/instance/connectionState/{instancia}")
+        data = self._unwrap(r)
+        inst = data.get("instance") or {}
+        return inst.get("state") or data.get("state") or "close"
+
+    async def set_webhook(self, *, instancia: str, webhook_url: str) -> dict[str, Any]:
+        """(Re)configura o webhook de uma instância existente."""
+        c = await self._http()
+        r = await c.post(
+            f"/webhook/set/{instancia}",
+            json={"webhook": self._webhook_payload(webhook_url)},
+        )
+        return self._unwrap(r)
+
+    async def delete_instance(self, *, instancia: str) -> dict[str, Any]:
+        """Remove a instância da Evolution (logout + delete)."""
+        c = await self._http()
+        try:
+            await c.delete(f"/instance/logout/{instancia}")
+        except Exception:  # noqa: BLE001
+            pass
+        r = await c.delete(f"/instance/delete/{instancia}")
+        return self._unwrap(r)
+
+    @staticmethod
+    def _webhook_payload(url: str) -> dict[str, Any]:
+        return {
+            "enabled": True,
+            "url": url,
+            "webhookByEvents": False,
+            "webhookBase64": False,
+            "events": ["MESSAGES_UPSERT"],
+        }
 
     # =========================
     # Operações públicas

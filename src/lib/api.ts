@@ -185,7 +185,33 @@ export const pizzariasApi = {
   update: (id: string, patch: Partial<BackendPizzaria>) =>
     api.patch<BackendPizzaria>(`/pizzarias/${id}`, patch),
   delete: (id: string) => api.delete(`/pizzarias/${id}`),
+
+  // WhatsApp / Evolution
+  whatsappConectar: (id: string, instancia?: string) =>
+    api.post<WhatsAppConnect>(`/pizzarias/${id}/whatsapp/conectar`, { instancia }),
+  whatsappStatus: (id: string) =>
+    api.get<WhatsAppStatus>(`/pizzarias/${id}/whatsapp/status`),
+  whatsappQrcode: (id: string) =>
+    api.get<WhatsAppConnect>(`/pizzarias/${id}/whatsapp/qrcode`),
 };
+
+export interface WhatsAppQr {
+  base64: string | null;
+  code: string | null;
+  pairingCode: string | null;
+}
+export interface WhatsAppConnect {
+  instancia: string;
+  qrcode: WhatsAppQr | null;
+  state: string;
+  conectado: boolean;
+  webhook_url?: string;
+}
+export interface WhatsAppStatus {
+  instancia: string | null;
+  state: string;
+  conectado: boolean;
+}
 
 // ============================================
 // Cardápio

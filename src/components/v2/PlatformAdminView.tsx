@@ -18,8 +18,9 @@ import {
   Store, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
   Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
+  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2,
 } from "lucide-react";
-import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview } from "../../lib/api";
+import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, WhatsAppConnect } from "../../lib/api";
 
 interface Props {
   userName: string;
@@ -113,7 +114,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           instancia: form.instancia.trim() || undefined,
         });
       } else {
-        await pizzariasApi.create({
+        const created = await pizzariasApi.create({
           nome: form.nome.trim(),
           endereco: form.endereco.trim() || undefined,
           telefone_admin: form.telefone_admin.trim() || undefined,
@@ -122,12 +123,60 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           owner_email: form.owner_email.trim().toLowerCase(),
           owner_senha: form.owner_senha,
         });
+        cancel();
+        await refreshAll();
+        // Onboarding: já abre o QR pra conectar o WhatsApp da nova pizzaria.
+        openWhatsApp(created);
+        setSaving(false);
+        return;
       }
       cancel();
       await refreshAll();
     } catch (e: any) { setErr(e.message || "Erro ao salvar."); }
     setSaving(false);
   }
+
+  // ---- Conexão WhatsApp (Evolution) ----
+  const [qrPizz, setQrPizz] = useState<BackendPizzaria | null>(null);
+  const [qrData, setQrData] = useState<WhatsAppConnect | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrErr, setQrErr] = useState<string | null>(null);
+  const [qrConnected, setQrConnected] = useState(false);
+
+  async function openWhatsApp(p: BackendPizzaria) {
+    setQrPizz(p); setQrData(null); setQrErr(null); setQrConnected(false); setQrLoading(true);
+    try {
+      const res = await pizzariasApi.whatsappConectar(p.id);
+      setQrData(res);
+      setQrConnected(res.conectado);
+    } catch (e: any) { setQrErr(e.message || "Não foi possível conectar à Evolution."); }
+    setQrLoading(false);
+  }
+  function closeWhatsApp() { setQrPizz(null); setQrData(null); setQrErr(null); setQrConnected(false); }
+  async function refreshQr() {
+    if (!qrPizz) return;
+    setQrLoading(true); setQrErr(null);
+    try {
+      const res = await pizzariasApi.whatsappQrcode(qrPizz.id);
+      setQrData(res); setQrConnected(res.conectado);
+    } catch (e: any) { setQrErr(e.message || "Erro ao gerar QR."); }
+    setQrLoading(false);
+  }
+
+  // Polling de status enquanto o QR está aberto e ainda não conectou.
+  useEffect(() => {
+    if (!qrPizz || qrConnected) return;
+    const statusT = setInterval(async () => {
+      try {
+        const st = await pizzariasApi.whatsappStatus(qrPizz.id);
+        if (st.conectado) { setQrConnected(true); refreshAll(); }
+      } catch { /* silencioso */ }
+    }, 3500);
+    // QR da Evolution expira rápido — regenera a cada 28s.
+    const qrT = setInterval(() => { refreshQr(); }, 28000);
+    return () => { clearInterval(statusT); clearInterval(qrT); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qrPizz, qrConnected]);
 
   async function remove(p: BackendPizzaria) {
     if (!confirm(`Remover a pizzaria "${p.nome}"? Isso apaga equipe, cardápio e pedidos dela. Esta ação é irreversível.`)) return;
@@ -409,6 +458,108 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </div>
         )}
 
+        {/* ====== Modal Conectar WhatsApp (QR) ====== */}
+        {qrPizz && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+            onClick={closeWhatsApp}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+              onClick={(e) => e.stopPropagation()}>
+              {/* Cabeçalho */}
+              <div className="relative px-5 py-4 bg-gradient-to-r from-emerald-500 to-green-600 text-white">
+                <button onClick={closeWhatsApp} className="absolute right-3 top-3 p-1.5 rounded-lg hover:bg-white/20 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-base leading-tight truncate">Conectar WhatsApp</h3>
+                    <p className="text-xs text-white/80 truncate">{qrPizz.nome}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-5">
+                {qrConnected ? (
+                  <div className="text-center py-6">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 grid place-items-center mx-auto mb-3">
+                      <CheckCircle2 className="w-9 h-9 text-emerald-600" />
+                    </div>
+                    <p className="font-semibold text-slate-800">WhatsApp conectado!</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      A pizzaria já está recebendo e respondendo mensagens.
+                    </p>
+                    <button onClick={closeWhatsApp}
+                      className="mt-5 px-4 py-2 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium">
+                      Concluir
+                    </button>
+                  </div>
+                ) : qrErr ? (
+                  <div className="text-center py-6">
+                    <div className="w-14 h-14 rounded-full bg-red-100 grid place-items-center mx-auto mb-3">
+                      <WifiOff className="w-7 h-7 text-red-500" />
+                    </div>
+                    <p className="text-sm text-red-600 font-medium">{qrErr}</p>
+                    <button onClick={() => openWhatsApp(qrPizz)}
+                      className="mt-4 px-4 py-2 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium inline-flex items-center gap-1.5">
+                      <RefreshCw className="w-4 h-4" /> Tentar de novo
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Passo a passo */}
+                    <ol className="text-xs text-slate-500 space-y-0.5 mb-3 list-decimal list-inside">
+                      <li>Abra o WhatsApp no celular da pizzaria</li>
+                      <li>Toque em <strong>Aparelhos conectados → Conectar</strong></li>
+                      <li>Aponte a câmera para o QR Code abaixo</li>
+                    </ol>
+
+                    <div className="aspect-square w-full max-w-[260px] mx-auto rounded-xl border-2 border-dashed border-slate-200 grid place-items-center overflow-hidden bg-slate-50">
+                      {qrLoading && !qrData?.qrcode?.base64 ? (
+                        <div className="text-center text-slate-400">
+                          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                          <p className="text-xs">Gerando QR Code…</p>
+                        </div>
+                      ) : qrData?.qrcode?.base64 ? (
+                        <img
+                          src={qrData.qrcode.base64.startsWith("data:")
+                            ? qrData.qrcode.base64
+                            : `data:image/png;base64,${qrData.qrcode.base64}`}
+                          alt="QR Code do WhatsApp"
+                          className="w-full h-full object-contain p-2"
+                        />
+                      ) : (
+                        <div className="text-center text-slate-400 px-4">
+                          <QrCode className="w-8 h-8 mx-auto mb-2" />
+                          <p className="text-xs">QR Code indisponível. Tente gerar novamente.</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {qrData?.qrcode?.pairingCode && (
+                      <p className="text-center text-xs text-slate-500 mt-3">
+                        Ou use o código: <span className="font-mono font-bold text-slate-700 tracking-wider">{qrData.qrcode.pairingCode}</span>
+                      </p>
+                    )}
+
+                    <div className="flex items-center justify-center gap-1.5 mt-4 text-xs text-slate-400">
+                      <Wifi className="w-3.5 h-3.5 animate-pulse" />
+                      Aguardando leitura…
+                    </div>
+
+                    <button onClick={refreshQr} disabled={qrLoading}
+                      className="mt-3 w-full px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50">
+                      {qrLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                      Gerar novo QR
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           {pizzarias.length === 0 && !creating && (
             <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
@@ -436,6 +587,11 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => openWhatsApp(p)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md font-medium"
+                  title="Conectar WhatsApp">
+                  <QrCode className="w-3.5 h-3.5" /> <span className="hidden sm:inline">WhatsApp</span>
+                </button>
                 <button onClick={() => onEnter(p)}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-md font-medium">
                   <LogIn className="w-3.5 h-3.5" /> Entrar

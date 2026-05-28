@@ -4,7 +4,7 @@
  * Cada conversa: 2 colunas. Esquerda: lista. Direita: histórico + input.
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Send, Bot, BotOff, AlertCircle } from "lucide-react";
+import { Loader2, Send, Bot, BotOff, AlertCircle, MessageSquare, User } from "lucide-react";
 import {
   conversasApi,
   BackendConversa,
@@ -105,58 +105,80 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] h-[calc(100vh-120px)] bg-white border-t border-slate-200">
+    <div className="grid grid-cols-1 md:grid-cols-[340px_1fr] h-[calc(100vh-120px)] bg-white border-t border-slate-200">
       {/* Lista */}
-      <aside className="border-r border-slate-200 overflow-y-auto">
+      <aside className="border-r border-slate-200 overflow-y-auto bg-white">
+        <div className="sticky top-0 z-10 px-4 py-3 bg-gradient-to-r from-orange-500 to-rose-500 text-white">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-4 h-4" />
+            <h2 className="text-sm font-bold">Conversas</h2>
+            <span className="ml-auto text-xs bg-white/20 rounded-full px-2 py-0.5 font-medium">{ordered.length}</span>
+          </div>
+        </div>
         {ordered.length === 0 && (
-          <div className="p-6 text-sm text-slate-500 text-center">Sem conversas ainda.</div>
+          <div className="p-8 text-sm text-slate-400 text-center">
+            <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-40" />
+            Nenhuma conversa ainda.
+          </div>
         )}
-        {ordered.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => setActive(c)}
-            className={`w-full text-left p-3 border-b border-slate-100 hover:bg-slate-50 ${
-              active?.id === c.id ? "bg-orange-50" : ""
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-sm text-slate-800 truncate">
-                {c.cliente_nome || c.cliente_telefone}
-              </span>
-              {c.unread_count > 0 && (
-                <span className="bg-orange-500 text-white text-[10px] rounded-full px-1.5 py-0.5">
-                  {c.unread_count}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-slate-500 truncate mt-0.5">{c.last_message}</div>
-            <div className="text-[10px] text-slate-400 mt-0.5">
-              {new Date(c.last_timestamp).toLocaleString("pt-BR")}
-              {c.bot_ativo ? " · 🤖" : " · 👤"}
-            </div>
-          </button>
-        ))}
+        {ordered.map((c) => {
+          const isActive = active?.id === c.id;
+          return (
+            <button
+              key={c.id}
+              onClick={() => setActive(c)}
+              className={`w-full text-left px-3 py-3 border-b border-slate-50 flex gap-3 transition-colors ${
+                isActive ? "bg-orange-50" : "hover:bg-slate-50"
+              }`}
+            >
+              <Avatar name={c.cliente_nome || c.cliente_telefone} botAtivo={c.bot_ativo} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-semibold text-sm text-slate-800 truncate">
+                    {c.cliente_nome || c.cliente_telefone}
+                  </span>
+                  <span className="text-[10px] text-slate-400 shrink-0">
+                    {relTime(c.last_timestamp)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 mt-0.5">
+                  <span className="text-xs text-slate-500 truncate">{c.last_message || "—"}</span>
+                  {c.unread_count > 0 && (
+                    <span className="bg-emerald-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1 grid place-items-center shrink-0">
+                      {c.unread_count}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
       </aside>
 
       {/* Chat panel */}
-      <section className="flex flex-col bg-slate-50">
+      <section className="flex flex-col bg-[#f7f3ee]">
         {!active ? (
-          <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-            Selecione uma conversa
+          <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+            <div className="w-16 h-16 rounded-full bg-orange-100 grid place-items-center mb-3">
+              <MessageSquare className="w-8 h-8 text-orange-400" />
+            </div>
+            <p className="text-sm font-medium text-slate-500">Selecione uma conversa</p>
+            <p className="text-xs text-slate-400 mt-1">As mensagens do WhatsApp aparecem aqui.</p>
           </div>
         ) : (
           <>
-            <header className="p-3 bg-white border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <div className="font-semibold text-sm">{active.cliente_nome || active.cliente_telefone}</div>
-                <div className="text-xs text-slate-500">{active.cliente_telefone}</div>
+            <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm">
+              <Avatar name={active.cliente_nome || active.cliente_telefone} botAtivo={active.bot_ativo} />
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-sm text-slate-800 truncate">{active.cliente_nome || active.cliente_telefone}</div>
+                <div className="text-xs text-slate-500 truncate">{active.cliente_telefone}</div>
               </div>
               <button
                 type="button"
                 onClick={toggleBot}
-                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-md ${
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
                   active.bot_ativo
-                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
               >
@@ -165,25 +187,37 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
               </button>
             </header>
 
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-1.5">
               {mensagens.map((m) => {
                 const isCliente = m.origem === "cliente";
                 const isSistema = m.origem === "sistema";
+                if (isSistema) {
+                  return (
+                    <div key={m.id} className="flex justify-center my-2">
+                      <span className="bg-slate-200/70 text-slate-500 text-[11px] italic px-3 py-1 rounded-full">
+                        {m.conteudo}
+                      </span>
+                    </div>
+                  );
+                }
                 return (
                   <div key={m.id} className={`flex ${isCliente ? "justify-start" : "justify-end"}`}>
                     <div
-                      className={`max-w-[80%] rounded-lg px-3 py-1.5 text-sm whitespace-pre-wrap ${
+                      className={`max-w-[78%] px-3 py-2 text-sm whitespace-pre-wrap shadow-sm ${
                         isCliente
-                          ? "bg-white border border-slate-200 text-slate-800"
-                          : isSistema
-                          ? "bg-slate-100 text-slate-600 italic text-xs"
+                          ? "bg-white text-slate-800 rounded-2xl rounded-tl-md"
                           : m.origem === "bot"
-                          ? "bg-emerald-100 text-emerald-900"
-                          : "bg-orange-500 text-white"
+                          ? "bg-emerald-500 text-white rounded-2xl rounded-tr-md"
+                          : "bg-orange-500 text-white rounded-2xl rounded-tr-md"
                       }`}
                     >
+                      {!isCliente && (
+                        <div className="text-[10px] font-semibold opacity-80 mb-0.5">
+                          {m.origem === "bot" ? "🤖 Atendente IA" : "👤 Você"}
+                        </div>
+                      )}
                       {m.conteudo}
-                      <div className="text-[10px] opacity-60 mt-0.5">
+                      <div className={`text-[10px] mt-0.5 ${isCliente ? "text-slate-400" : "text-white/70"}`}>
                         {new Date(m.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                       </div>
                     </div>
@@ -200,22 +234,21 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
 
             <form
               onSubmit={(e) => { e.preventDefault(); send(); }}
-              className="p-3 bg-white border-t border-slate-200 flex gap-2"
+              className="p-3 bg-white border-t border-slate-200 flex gap-2 items-center"
             >
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="Mensagem como operador humano..."
+                placeholder="Responder como operador humano…"
                 disabled={sending}
-                className="flex-1 px-3 py-2 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none"
+                className="flex-1 px-4 py-2.5 bg-slate-100 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-orange-200 outline-none transition"
               />
               <button
                 type="submit"
                 disabled={sending || !draft.trim()}
-                className="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-md flex items-center gap-1.5 text-sm font-medium disabled:opacity-50"
+                className="bg-gradient-to-br from-orange-500 to-rose-500 hover:opacity-90 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-sm disabled:opacity-50 shrink-0"
               >
-                <Send className="w-4 h-4" />
-                Enviar
+                {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </form>
           </>
@@ -223,4 +256,39 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
       </section>
     </div>
   );
+}
+
+// ============================================
+// Helpers
+// ============================================
+function Avatar({ name, botAtivo }: { name: string; botAtivo: boolean }) {
+  const initials = (name || "?")
+    .split(" ")
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase();
+  const palette = ["from-orange-400 to-rose-400", "from-sky-400 to-blue-500", "from-violet-400 to-fuchsia-500", "from-emerald-400 to-teal-500", "from-amber-400 to-orange-500"];
+  const idx = (name?.charCodeAt(0) || 0) % palette.length;
+  return (
+    <div className="relative shrink-0">
+      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${palette[idx]} text-white grid place-items-center font-semibold text-xs`}>
+        {initials || <User className="w-4 h-4" />}
+      </div>
+      <span
+        className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white ${botAtivo ? "bg-emerald-500" : "bg-slate-300"}`}
+        title={botAtivo ? "Bot ativo" : "Atendimento humano"}
+      />
+    </div>
+  );
+}
+
+function relTime(ts: string): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const diff = (now.getTime() - d.getTime()) / 86400000;
+  if (diff < 2) return "ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 }

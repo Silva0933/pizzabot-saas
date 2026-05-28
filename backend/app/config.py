@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     mp_webhook_secret: str = ""
 
+    # URL pública do backend (usada para configurar o webhook na Evolution).
+    public_base_url: str = "https://api.pizzabot.secretariaai.eu.cc"
+
     # --- Logs ---
     log_level: str = "INFO"
     log_format: Literal["json", "text"] = "json"

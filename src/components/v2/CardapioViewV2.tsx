@@ -3,12 +3,20 @@
  * Conectado ao backend Python.
  */
 import React, { useEffect, useState } from "react";
-import { Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw, UtensilsCrossed, ImageOff } from "lucide-react";
 import { cardapioApi, BackendProduto } from "../../lib/api";
 
 interface Props { pizzariaId: string; }
 
 const CATEGORIAS = ["pizza", "lanche", "bebida", "sobremesa", "outro"] as const;
+
+const CAT_STYLE: Record<string, { emoji: string; chip: string }> = {
+  pizza:     { emoji: "🍕", chip: "bg-orange-100 text-orange-700" },
+  lanche:    { emoji: "🍔", chip: "bg-amber-100 text-amber-700" },
+  bebida:    { emoji: "🥤", chip: "bg-sky-100 text-sky-700" },
+  sobremesa: { emoji: "🍰", chip: "bg-pink-100 text-pink-700" },
+  outro:     { emoji: "🍽️", chip: "bg-slate-100 text-slate-600" },
+};
 
 type Form = Omit<BackendProduto, "id" | "pizzaria_id">;
 
@@ -93,22 +101,27 @@ export function CardapioViewV2({ pizzariaId }: Props) {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto pb-24 md:pb-6 space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800">Cardápio</h2>
-          <p className="text-sm text-slate-500">Itens vendidos pelo seu bot.</p>
+        <div className="flex items-center gap-3">
+          <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-orange-500 to-rose-500 text-white grid place-items-center shadow-sm shadow-orange-500/20">
+            <UtensilsCrossed className="w-5 h-5" />
+          </span>
+          <div>
+            <h2 className="text-xl font-bold text-slate-800">Cardápio</h2>
+            <p className="text-sm text-slate-500">{produtos.length} {produtos.length === 1 ? "item" : "itens"} vendidos pelo seu bot.</p>
+          </div>
         </div>
         <div className="flex gap-2">
           <button
             onClick={reindex}
             disabled={reindexing}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-medium"
           >
             {reindexing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
             Reindexar busca
           </button>
           <button
             onClick={startCreate}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-sm bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 text-white rounded-xl font-medium shadow-sm shadow-orange-500/20"
           >
             <Plus className="w-4 h-4"/> Novo produto
           </button>
@@ -122,7 +135,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
       )}
 
       {(creating || editing) && (
-        <div className="bg-white border border-orange-200 rounded-lg p-4 space-y-3 shadow-sm">
+        <div className="bg-white border-2 border-orange-200 rounded-2xl p-4 space-y-3 shadow-sm">
           <h3 className="font-semibold text-sm text-slate-800">{editing ? "Editar produto" : "Novo produto"}</h3>
           <div className="grid md:grid-cols-2 gap-3">
             <Field label="Nome" required>
@@ -167,51 +180,65 @@ export function CardapioViewV2({ pizzariaId }: Props) {
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50">
-            <tr className="text-left text-xs text-slate-500 uppercase">
-              <th className="px-3 py-2">Nome</th>
-              <th className="px-3 py-2">Categoria</th>
-              <th className="px-3 py-2 text-right">Preço</th>
-              <th className="px-3 py-2 text-center">Disponível</th>
-              <th className="px-3 py-2 w-24"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {produtos.length === 0 && (
-              <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-400">
-                Sem produtos cadastrados. Comece criando o primeiro.
-              </td></tr>
-            )}
-            {produtos.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-2 font-medium text-slate-800">{p.nome}</td>
-                <td className="px-3 py-2 text-slate-500 text-xs">{p.categoria || "—"}</td>
-                <td className="px-3 py-2 text-right font-semibold text-slate-700">
-                  {Number(p.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {p.disponivel ? "✓" : <span className="text-red-500">×</span>}
-                </td>
-                <td className="px-3 py-2 text-right space-x-1">
-                  <button onClick={() => startEdit(p)} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded">
-                    <Pencil className="w-3.5 h-3.5"/>
-                  </button>
-                  <button onClick={() => remove(p)} className="p-1.5 text-red-500 hover:bg-red-50 rounded">
-                    <Trash2 className="w-3.5 h-3.5"/>
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {produtos.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center">
+          <div className="w-14 h-14 rounded-full bg-orange-50 grid place-items-center mx-auto mb-3">
+            <UtensilsCrossed className="w-7 h-7 text-orange-400" />
+          </div>
+          <p className="text-sm font-medium text-slate-600">Cardápio vazio</p>
+          <p className="text-xs text-slate-400 mt-1">Comece criando o primeiro produto.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {produtos.map((p) => {
+            const cat = CAT_STYLE[p.categoria ?? "outro"] || CAT_STYLE.outro;
+            return (
+              <article key={p.id}
+                className={`group bg-white border rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all ${p.disponivel ? "border-slate-200" : "border-slate-200 opacity-70"}`}>
+                <div className="relative h-28 bg-gradient-to-br from-orange-100 to-rose-100 grid place-items-center overflow-hidden">
+                  {p.imagem_url ? (
+                    <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-4xl select-none">{cat.emoji}</span>
+                  )}
+                  <span className={`absolute top-2 left-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cat.chip}`}>
+                    {p.categoria || "outro"}
+                  </span>
+                  {!p.disponivel && (
+                    <span className="absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
+                      <ImageOff className="w-3 h-3" /> Indisponível
+                    </span>
+                  )}
+                </div>
+                <div className="p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h4 className="font-semibold text-sm text-slate-800 leading-tight">{p.nome}</h4>
+                    <span className="text-sm font-bold text-emerald-600 whitespace-nowrap">
+                      {Number(p.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    </span>
+                  </div>
+                  {p.descricao && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{p.descricao}</p>}
+                  <div className="flex gap-1 mt-3 pt-2.5 border-t border-slate-100">
+                    <button onClick={() => startEdit(p)}
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg font-medium">
+                      <Pencil className="w-3.5 h-3.5"/> Editar
+                    </button>
+                    <button onClick={() => remove(p)}
+                      className="flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-red-500 hover:bg-red-50 rounded-lg font-medium">
+                      <Trash2 className="w-3.5 h-3.5"/>
+                    </button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-const inputCls = "w-full px-2.5 py-1.5 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none";
+const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition";
 
 function Field({ label, children, required, full }: any) {
   return (
