@@ -20,6 +20,26 @@ class PizzariaIn(BaseModel):
     endereco: str | None = None
 
 
+class PizzariaPatch(BaseModel):
+    """Todos opcionais — só atualiza o que vier."""
+    nome: str | None = Field(default=None, min_length=2)
+    instancia: str | None = None
+    telefone_admin: str | None = None
+    telefone_contato: str | None = None
+    endereco: str | None = None
+    logo_url: str | None = None
+    bot_ativo_global: bool | None = None
+    horario_funcionamento: dict | None = None
+    formas_pagamento_aceitas: list[str] | None = None
+    mensagens_status: dict | None = None
+    nomes_colunas: dict | None = None
+    gateway_pagamento: str | None = None
+    asaas_api_key: str | None = None
+    mp_access_token: str | None = None
+    tempo_entrega_min: int | None = None
+    tempo_entrega_max: int | None = None
+
+
 class PizzariaOut(BaseModel):
     id: uuid.UUID
     nome: str
@@ -28,6 +48,17 @@ class PizzariaOut(BaseModel):
     bot_ativo_global: bool
     endereco: str | None
     telefone_admin: str | None
+    telefone_contato: str | None
+    logo_url: str | None = None
+    horario_funcionamento: dict | None = None
+    formas_pagamento_aceitas: list[str] | None = None
+    mensagens_status: dict | None = None
+    nomes_colunas: dict | None = None
+    gateway_pagamento: str | None = None
+    asaas_api_key: str | None = None
+    mp_access_token: str | None = None
+    tempo_entrega_min: int | None = None
+    tempo_entrega_max: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -90,4 +121,24 @@ async def get_pizzaria(
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
     if not pizz:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    return pizz
+
+
+@router.patch("/{pizzaria_id}", response_model=PizzariaOut)
+async def update_pizzaria(
+    pizzaria_id: uuid.UUID,
+    body: PizzariaPatch,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> Pizzaria:
+    """Atualiza campos da pizzaria. Aceita qualquer subset dos campos."""
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    updates = body.model_dump(exclude_unset=True, exclude_none=False)
+    for k, v in updates.items():
+        if hasattr(pizz, k):
+            setattr(pizz, k, v)
+    await db.commit()
+    await db.refresh(pizz)
     return pizz

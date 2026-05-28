@@ -1,9 +1,11 @@
 /**
- * Cliente HTTP do novo backend Python (FastAPI).
+ * Cliente HTTP do backend Python (FastAPI).
  *
- * Substitui o uso direto do supabase-js para chamadas de negócio.
- * Continuamos compatíveis durante a transição — esse arquivo só é
- * usado pelos novos componentes (PersonalityBuilder etc).
+ * Substitui completamente o supabase-js no fluxo do painel.
+ *
+ * Padrão: backend usa snake_case, frontend convive com camelCase no UI.
+ * Algumas funções transformam (toCamel/toSnake) para compatibilidade com
+ * tipos antigos em types.ts; outras passam objetos crus do backend.
  */
 
 const API_BASE =
@@ -14,7 +16,7 @@ const TOKEN_KEY = "pizzabot:access_token";
 const REFRESH_KEY = "pizzabot:refresh_token";
 
 // ============================================
-// Auth helpers (token persistido em localStorage)
+// Auth tokens (localStorage)
 // ============================================
 export function getToken(): string | null {
   return typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
@@ -36,19 +38,12 @@ export function clearTokens() {
 // HTTP core
 // ============================================
 export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-    public body?: any,
-  ) {
+  constructor(public status: number, message: string, public body?: any) {
     super(message);
   }
 }
 
-async function request<T = any>(
-  path: string,
-  init: RequestInit = {},
-): Promise<T> {
+async function request<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -70,15 +65,169 @@ async function request<T = any>(
 }
 
 export const api = {
-  get:  <T = any>(p: string)              => request<T>(p, { method: "GET" }),
-  post: <T = any>(p: string, body?: any)  => request<T>(p, { method: "POST",  body: body ? JSON.stringify(body) : undefined }),
-  put:  <T = any>(p: string, body?: any)  => request<T>(p, { method: "PUT",   body: body ? JSON.stringify(body) : undefined }),
-  patch:<T = any>(p: string, body?: any)  => request<T>(p, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
-  delete:<T = any>(p: string)             => request<T>(p, { method: "DELETE" }),
+  get:    <T = any>(p: string)              => request<T>(p, { method: "GET" }),
+  post:   <T = any>(p: string, body?: any)  => request<T>(p, { method: "POST",  body: body ? JSON.stringify(body) : undefined }),
+  put:    <T = any>(p: string, body?: any)  => request<T>(p, { method: "PUT",   body: body ? JSON.stringify(body) : undefined }),
+  patch:  <T = any>(p: string, body?: any)  => request<T>(p, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  delete: <T = any>(p: string)              => request<T>(p, { method: "DELETE" }),
 };
 
 // ============================================
-// Tipos compartilhados com o backend
+// Auth
+// ============================================
+export interface UserMe {
+  id: string;
+  email: string;
+  nome: string;
+  is_platform_admin: boolean;
+}
+
+export const authApi = {
+  login: async (email: string, senha: string) => {
+    const r = await api.post<{ access_token: string; refresh_token: string; user: UserMe }>(
+      "/auth/login",
+      { email, senha },
+    );
+    setTokens(r.access_token, r.refresh_token);
+    return r.user;
+  },
+  me: () => api.get<UserMe>(`/auth/me`),
+  logout: () => clearTokens(),
+};
+
+// ============================================
+// Tipos do backend (raw snake_case)
+// ============================================
+export interface BackendPizzaria {
+  id: string;
+  nome: string;
+  instancia: string | null;
+  plano: string;
+  bot_ativo_global: boolean;
+  endereco: string | null;
+  telefone_admin: string | null;
+  telefone_contato?: string | null;
+  logo_url: string | null;
+  horario_funcionamento: Record<string, string> | null;
+  formas_pagamento_aceitas?: string[] | null;
+  mensagens_status: Record<string, string> | null;
+  nomes_colunas: Record<string, string> | null;
+  gateway_pagamento: string;
+  asaas_api_key: string | null;
+  mp_access_token: string | null;
+  tempo_entrega_min?: number | null;
+  tempo_entrega_max?: number | null;
+}
+
+export interface BackendProduto {
+  id: string;
+  pizzaria_id: string;
+  categoria: string | null;
+  nome: string;
+  descricao: string | null;
+  preco: number;
+  disponivel: boolean;
+  imagem_url: string | null;
+  ordem: number;
+}
+
+export interface BackendPedido {
+  id: string;
+  pizzaria_id: string;
+  cliente_id: string;
+  numero_pedido: number | null;
+  itens: Array<{ nome: string; quantidade: number; preco_unit?: number; observacao?: string }>;
+  valor_total: number;
+  status: string;
+  tipo: string;
+  endereco_entrega: string | null;
+  forma_pagamento: string | null;
+  observacoes: string | null;
+  payment_status: string;
+  link_pagamento: string | null;
+  bot_ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BackendConversa {
+  id: string;
+  pizzaria_id: string;
+  cliente_telefone: string;
+  cliente_nome: string | null;
+  last_message: string | null;
+  last_timestamp: string;
+  bot_ativo: boolean;
+  status: string;
+  unread_count: number;
+}
+
+export interface BackendMensagem {
+  id: string;
+  conversa_id: string;
+  origem: "cliente" | "bot" | "humano" | "sistema";
+  tipo: "texto" | "audio" | "imagem" | "figurinha" | "localizacao";
+  conteudo: string;
+  metadata: Record<string, any>;
+  created_at: string;
+}
+
+// ============================================
+// Pizzarias
+// ============================================
+export const pizzariasApi = {
+  list: () => api.get<BackendPizzaria[]>("/pizzarias"),
+  get: (id: string) => api.get<BackendPizzaria>(`/pizzarias/${id}`),
+  create: (body: { nome: string; instancia?: string; telefone_admin?: string; endereco?: string }) =>
+    api.post<BackendPizzaria>("/pizzarias", body),
+  update: (id: string, patch: Partial<BackendPizzaria>) =>
+    api.patch<BackendPizzaria>(`/pizzarias/${id}`, patch),
+};
+
+// ============================================
+// Cardápio
+// ============================================
+export const cardapioApi = {
+  list: (pizzariaId: string) => api.get<BackendProduto[]>(`/pizzarias/${pizzariaId}/cardapio`),
+  create: (pizzariaId: string, body: Omit<BackendProduto, "id" | "pizzaria_id">) =>
+    api.post<BackendProduto>(`/pizzarias/${pizzariaId}/cardapio`, body),
+  update: (pizzariaId: string, produtoId: string, body: Omit<BackendProduto, "id" | "pizzaria_id">) =>
+    api.patch<BackendProduto>(`/pizzarias/${pizzariaId}/cardapio/${produtoId}`, body),
+  delete: (pizzariaId: string, produtoId: string) =>
+    api.delete(`/pizzarias/${pizzariaId}/cardapio/${produtoId}`),
+  reindex: (pizzariaId: string) =>
+    api.post<{ ok: boolean; produtos: number }>(`/pizzarias/${pizzariaId}/cardapio/reindex`),
+};
+
+// ============================================
+// Pedidos
+// ============================================
+export const pedidosApi = {
+  list: (pizzariaId: string, status?: string) =>
+    api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/pedidos${status ? `?status=${status}` : ""}`),
+  get: (pizzariaId: string, pedidoId: string) =>
+    api.get<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}`),
+  updateStatus: (pizzariaId: string, pedidoId: string, status: string, motivo?: string) =>
+    api.patch<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/status`, { status, motivo }),
+};
+
+// ============================================
+// Conversas + mensagens
+// ============================================
+export const conversasApi = {
+  list: (pizzariaId: string) => api.get<BackendConversa[]>(`/pizzarias/${pizzariaId}/conversas`),
+  mensagens: (pizzariaId: string, conversaId: string) =>
+    api.get<BackendMensagem[]>(`/pizzarias/${pizzariaId}/conversas/${conversaId}/mensagens`),
+  enviar: (pizzariaId: string, conversaId: string, conteudo: string) =>
+    api.post(`/pizzarias/${pizzariaId}/conversas/${conversaId}/enviar`, { conteudo }),
+  toggleBot: (pizzariaId: string, conversaId: string, botAtivo: boolean) =>
+    api.patch(`/pizzarias/${pizzariaId}/conversas/${conversaId}/bot`, { bot_ativo: botAtivo }),
+  marcarLida: (pizzariaId: string, conversaId: string) =>
+    api.post(`/pizzarias/${pizzariaId}/conversas/${conversaId}/lida`),
+};
+
+// ============================================
+// Personalidade do atendente (Fase 4)
 // ============================================
 export type EstiloAtendente = "casual" | "profissional" | "proximo";
 export type NivelEmoji = "nenhum" | "pouco" | "moderado" | "muito";
@@ -107,9 +256,6 @@ export const DEFAULT_PERSONALIDADE: Personalidade = {
   instrucoes_extras: null,
 };
 
-// ============================================
-// Endpoints específicos
-// ============================================
 export const personalityApi = {
   get: (pizzariaId: string) =>
     api.get<Personalidade | null>(`/pizzarias/${pizzariaId}/agente/personalidade`),
@@ -155,15 +301,116 @@ export const metricasApi = {
     api.get<MetricasResponse>(`/pizzarias/${pizzariaId}/metricas?days=${days}`),
 };
 
-export const authApi = {
-  login: async (email: string, senha: string) => {
-    const r = await api.post<{ access_token: string; refresh_token: string; user: any }>(
-      "/auth/login",
-      { email, senha },
-    );
-    setTokens(r.access_token, r.refresh_token);
-    return r.user;
-  },
-  me: () => api.get<{ id: string; email: string; nome: string; is_platform_admin: boolean }>(`/auth/me`),
-  logout: () => clearTokens(),
-};
+// ============================================
+// WebSocket — live updates do painel
+// ============================================
+export interface WsEvent {
+  tipo:
+    | "mensagem.nova"
+    | "conversa.atualizada"
+    | "pedido.novo"
+    | "pedido.atualizado"
+    | "bot.toggled";
+  pizzaria_id: string;
+  payload: Record<string, any>;
+}
+
+export function connectWebSocket(pizzariaId: string, onEvent: (e: WsEvent) => void): WebSocket {
+  const base = API_BASE.replace(/^https/, "wss").replace(/^http/, "ws");
+  const token = getToken();
+  const ws = new WebSocket(`${base}/ws/${pizzariaId}?token=${token ?? ""}`);
+  ws.onmessage = (msg) => {
+    try {
+      const data: WsEvent = JSON.parse(msg.data);
+      onEvent(data);
+    } catch (e) {
+      console.warn("WS payload inválido", e);
+    }
+  };
+  ws.onerror = (e) => console.warn("WS erro", e);
+  return ws;
+}
+
+// ============================================
+// Adapters: backend snake_case → types antigos camelCase
+// (Usado por views v2 que ainda esperam Pizzeria/Product/etc.)
+// ============================================
+import type { Pizzeria, Product, Order, Conversation, ProductGroup, OrderStatus } from "../types";
+
+export function backendToPizzeria(b: BackendPizzaria): Pizzeria {
+  return {
+    id: b.id,
+    name: b.nome,
+    address: b.endereco ?? undefined,
+    logoUrl: b.logo_url ?? undefined,
+    instance: b.instancia ?? "",
+    phoneAdmin: b.telefone_admin ?? "",
+    plan: (b.plano as Pizzeria["plan"]) ?? "basico",
+    botActiveGlobal: b.bot_ativo_global,
+    promptPersonalized: "",
+    asaasApiKey: b.asaas_api_key ?? "",
+    mpAccessToken: b.mp_access_token ?? "",
+    gatewayPayment: (b.gateway_pagamento as Pizzeria["gatewayPayment"]) ?? "nenhum",
+    hoursOfOperation: b.horario_funcionamento ?? {},
+    messageDelivered: (b.mensagens_status as any)?.entregue ?? "",
+    statusMessages: b.mensagens_status ?? {},
+    columnNames: b.nomes_colunas ?? {},
+  };
+}
+
+export function backendToProduct(b: BackendProduto): Product {
+  return {
+    id: b.id,
+    pizzeriaId: b.pizzaria_id,
+    category: (b.categoria as ProductGroup) ?? "outro",
+    name: b.nome,
+    description: b.descricao ?? "",
+    price: Number(b.preco),
+    available: b.disponivel,
+    imageUrl: b.imagem_url ?? "",
+    order: b.ordem,
+  };
+}
+
+export function backendToOrder(b: BackendPedido): Order {
+  return {
+    id: b.id,
+    pizzeriaId: b.pizzaria_id,
+    customerId: b.cliente_id,
+    customerName: "",
+    customerPhone: "",
+    orderNumber: b.numero_pedido ?? 0,
+    items: (b.itens || []).map((it) => ({
+      name: it.nome,
+      qty: it.quantidade,
+      priceUnit: it.preco_unit ?? 0,
+      observation: it.observacao,
+    })),
+    totalValue: Number(b.valor_total),
+    status: b.status as OrderStatus,
+    deliveryType: (b.tipo as Order["deliveryType"]) ?? "delivery",
+    deliveryAddress: b.endereco_entrega ?? "",
+    paymentMethod: (b.forma_pagamento as Order["paymentMethod"]) ?? "pix",
+    paymentStatus: (b.payment_status as Order["paymentStatus"]) ?? "pending",
+    paymentLink: b.link_pagamento ?? undefined,
+    notes: b.observacoes ?? undefined,
+    botActive: b.bot_ativo,
+    createdAt: b.created_at,
+    updatedAt: b.updated_at,
+  };
+}
+
+export function backendToConversation(b: BackendConversa): Conversation & { unreadCount: number } {
+  return {
+    id: b.id,
+    pizzeriaId: b.pizzaria_id,
+    customerName: b.cliente_nome ?? b.cliente_telefone,
+    customerPhone: b.cliente_telefone,
+    lastMessage: b.last_message ?? "",
+    lastTimestamp: b.last_timestamp,
+    botActive: b.bot_ativo,
+    status: b.bot_ativo ? "Bot ativo" : "Humano necessário",
+    messages: [],
+    unreadCount: b.unread_count,
+  } as Conversation & { unreadCount: number };
+}
