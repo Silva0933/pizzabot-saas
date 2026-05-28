@@ -1,0 +1,224 @@
+"""Modelos SQLAlchemy 2.0 (declarativos, type-annotated).
+
+Espelham o schema definido em migrations/001_initial.sql.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+# ============================================
+# Usuarios
+# ============================================
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    senha_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    nome: Mapped[str | None] = mapped_column(String)
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Pizzarias
+# ============================================
+class Pizzaria(Base):
+    __tablename__ = "pizzarias"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    slug: Mapped[str | None] = mapped_column(String, unique=True)
+    logo_url: Mapped[str | None] = mapped_column(Text)
+    plano: Mapped[str] = mapped_column(String, default="basico", nullable=False)
+    bot_ativo_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    endereco: Mapped[str | None] = mapped_column(Text)
+    telefone_admin: Mapped[str | None] = mapped_column(String)
+    telefone_contato: Mapped[str | None] = mapped_column(String)
+    instagram: Mapped[str | None] = mapped_column(String)
+
+    horario_funcionamento: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    formas_pagamento_aceitas: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    taxa_entrega_info: Mapped[str | None] = mapped_column(Text)
+    tempo_entrega_min: Mapped[int | None] = mapped_column(Integer, default=30)
+    tempo_entrega_max: Mapped[int | None] = mapped_column(Integer, default=60)
+    tempo_retirada_min: Mapped[int | None] = mapped_column(Integer, default=15)
+    tempo_retirada_max: Mapped[int | None] = mapped_column(Integer, default=25)
+
+    mensagens_status: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    nomes_colunas: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+
+    instancia: Mapped[str | None] = mapped_column(String, unique=True)
+    gateway_pagamento: Mapped[str] = mapped_column(String, default="mercadopago", nullable=False)
+    mp_access_token: Mapped[str | None] = mapped_column(Text)
+    asaas_api_key: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Equipe (vínculo usuário ↔ pizzaria)
+# ============================================
+class EquipePizzaria(Base):
+    __tablename__ = "equipe_pizzaria"
+    __table_args__ = (UniqueConstraint("pizzaria_id", "email"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    usuario_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    email: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, default="atendente", nullable=False)
+    status: Mapped[str] = mapped_column(String, default="pendente", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Personalidade do Atendente (Fase 4)
+# ============================================
+class PersonalidadeAtendente(Base):
+    __tablename__ = "personalidade_atendente"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), unique=True, nullable=False)
+    nome: Mapped[str] = mapped_column(String, default="Camila", nullable=False)
+    estilo: Mapped[str] = mapped_column(String, default="casual", nullable=False)
+    nivel_emoji: Mapped[str] = mapped_column(String, default="moderado", nullable=False)
+    vocabulario_regional: Mapped[str | None] = mapped_column(Text)
+    diferenciais: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    restricoes: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    exemplos_conversa: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    instrucoes_extras: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Produtos (cardápio com embedding)
+# ============================================
+class Produto(Base):
+    __tablename__ = "produtos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    categoria: Mapped[str | None] = mapped_column(String)
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    descricao: Mapped[str | None] = mapped_column(Text)
+    preco: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    disponivel: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    imagem_url: Mapped[str | None] = mapped_column(Text)
+    ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # embedding: vector(768) — registrado via raw SQL na migration; lemos como array
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Clientes
+# ============================================
+class Cliente(Base):
+    __tablename__ = "clientes"
+    __table_args__ = (UniqueConstraint("pizzaria_id", "telefone"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    telefone: Mapped[str] = mapped_column(String, nullable=False)
+    nome: Mapped[str | None] = mapped_column(String)
+    endereco_padrao: Mapped[str | None] = mapped_column(Text)
+    preferencias: Mapped[str | None] = mapped_column(Text)
+    total_pedidos: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_gasto: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    ultima_visita: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Pedidos
+# ============================================
+class Pedido(Base):
+    __tablename__ = "pedidos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    cliente_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    numero_pedido: Mapped[int | None] = mapped_column(Integer)
+
+    itens: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    valor_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    status: Mapped[str] = mapped_column(String, default="novo", nullable=False)
+    tipo: Mapped[str] = mapped_column(String, default="delivery", nullable=False)
+
+    endereco_entrega: Mapped[str | None] = mapped_column(Text)
+    forma_pagamento: Mapped[str | None] = mapped_column(String)
+    observacoes: Mapped[str | None] = mapped_column(Text)
+
+    payment_id: Mapped[str | None] = mapped_column(String)
+    payment_status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+    link_pagamento: Mapped[str | None] = mapped_column(Text)
+
+    bot_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    cancelado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelamento_motivo: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Conversas + Mensagens
+# ============================================
+class Conversa(Base):
+    __tablename__ = "conversas"
+    __table_args__ = (UniqueConstraint("pizzaria_id", "cliente_telefone"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    cliente_telefone: Mapped[str] = mapped_column(String, nullable=False)
+    cliente_nome: Mapped[str | None] = mapped_column(String)
+    last_message: Mapped[str | None] = mapped_column(Text)
+    last_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    bot_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[str] = mapped_column(String, default="bot_ativo", nullable=False)
+    unread_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Mensagem(Base):
+    __tablename__ = "mensagens"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    conversa_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversas.id", ondelete="CASCADE"), nullable=False)
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    origem: Mapped[str] = mapped_column(String, nullable=False)
+    tipo: Mapped[str] = mapped_column(String, default="texto", nullable=False)
+    conteudo: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

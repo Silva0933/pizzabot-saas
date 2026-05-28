@@ -8,8 +8,7 @@ VALUES (
     '+55 (11) 98888-7777',
     'pro',
     true,
-    'Você é o PizzaBot, o assistente virtual da Don Peppone Pizzaria.
-Seu objetivo é ser simpático, rápido e guiar o cliente no fechamento do pedido.',
+    public.default_pizzabot_prompt(),
     'asaas_api_key_mock_123456',
     'asaas',
     '{"seg-sex": "18:00 - 23:30", "sab-dom": "17:30 - 00:30"}',

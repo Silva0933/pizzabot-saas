@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Operator, Pizzeria } from "../types";
 import { WhatsAppPanel } from "./WhatsAppPanel";
+import { STANDARD_PIZZERIA_ATTENDANCE_PROMPT } from "../lib/defaultPrompts";
 
 const DEFAULT_COLUMN_NAMES: Record<string, string> = {
   novo: "Novos",
@@ -66,7 +67,7 @@ export function SettingsView({
   const [address, setAddress] = useState(pizzeria.address || "");
   const [logoUrl, setLogoUrl] = useState(pizzeria.logoUrl || "");
   const [phone, setPhone] = useState(pizzeria.phoneAdmin);
-  const [botPrompt, setBotPrompt] = useState(pizzeria.promptPersonalized || "");
+  const [botPrompt, setBotPrompt] = useState(pizzeria.promptPersonalized || STANDARD_PIZZERIA_ATTENDANCE_PROMPT);
   const [gateway, setGateway] = useState<Pizzeria['gatewayPayment']>(
     pizzeria.gatewayPayment === 'nenhum' ? 'mercadopago' : pizzeria.gatewayPayment
   );

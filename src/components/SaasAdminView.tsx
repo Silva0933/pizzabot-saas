@@ -379,7 +379,7 @@ export function SaasAdminView({ userEmail, onSignOut }: SaasAdminViewProps) {
                 <div className="relative">
                   <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-slate-500" />
                   <input value={query} onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Buscar por nome, instância ou plano..."
+                    placeholder="Buscar por nome, identificador ou plano..."
                     className="w-full md:w-72 pl-9 pr-3 py-2 text-xs rounded-lg bg-slate-950 border border-slate-700 text-slate-200 outline-none focus:border-orange-500"
                   />
                 </div>
@@ -545,7 +545,7 @@ export function SaasAdminView({ userEmail, onSignOut }: SaasAdminViewProps) {
               </Field>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Instância Evolution">
+                <Field label="Identificador WhatsApp">
                   <input value={createInstance}
                     onChange={(e) => setCreateInstance(e.target.value.replace(/[^a-z0-9-]/gi, "").toLowerCase())}
                     className={`${inputCls} font-mono`} placeholder="pizzabot-nome" />
@@ -591,7 +591,7 @@ export function SaasAdminView({ userEmail, onSignOut }: SaasAdminViewProps) {
                 <Field label="Plano">
                   <PlanSelect value={editPlan} onChange={setEditPlan} />
                 </Field>
-                <Field label="Instância Evolution">
+                <Field label="Identificador WhatsApp">
                   <input value={editInstance} onChange={(e) => setEditInstance(e.target.value.replace(/[^a-z0-9-]/gi, "").toLowerCase())}
                     className={`${inputCls} font-mono`} />
                 </Field>

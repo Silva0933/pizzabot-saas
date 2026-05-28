@@ -1,18 +1,23 @@
 import React, { useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Bot,
   CheckCircle2,
+  ClipboardCheck,
   CreditCard,
+  Headphones,
   KeyRound,
   Loader2,
   MessageSquare,
   Plus,
   Rocket,
+  ShieldCheck,
   Store,
   UtensilsCrossed
 } from "lucide-react";
 import { Pizzeria, Product, ProductGroup } from "../types";
 import { WhatsAppPanel } from "./WhatsAppPanel";
+import { PROMPT_PRESETS } from "../lib/defaultPrompts";
 
 interface QuickSetupViewProps {
   pizzeria: Pizzeria;
@@ -21,37 +26,6 @@ interface QuickSetupViewProps {
   onCreateProduct: (fields: Omit<Product, "id" | "pizzeriaId" | "order">) => Promise<void> | void;
   onOpenTestAgent?: () => void;
 }
-
-const PROMPT_PRESETS = {
-  simpatico: `Você é o atendente da pizzaria. Atenda de forma simpática, natural e objetiva.
-
-Objetivo:
-- Ajudar o cliente a escolher produtos do cardápio.
-- Confirmar endereço, forma de pagamento e observações antes de fechar o pedido.
-- Não inventar produtos ou preços.
-- Se o cliente pedir atendimento humano, encaminhe para a equipe.
-
-Tom:
-- Educado, acolhedor e direto.
-- Sem respostas longas demais.
-- Sempre confirme o pedido antes de registrar.`,
-  rapido: `Você é um atendente de delivery rápido.
-
-Prioridade:
-- Responder curto e claro.
-- Levar o cliente rapidamente para o fechamento do pedido.
-- Confirmar itens, endereço e pagamento.
-- Usar somente produtos disponíveis no cardápio.
-- Acionar humano quando houver dúvida, reclamação ou pedido fora do escopo.`,
-  premium: `Você é um atendente premium de pizzaria.
-
-Atendimento:
-- Seja cordial, consultivo e elegante.
-- Sugira combinações quando fizer sentido.
-- Confirme todos os dados do pedido com cuidado.
-- Use apenas produtos e preços do cardápio.
-- Mantenha uma experiência humana, sem parecer robótico.`
-};
 
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500&auto=format&fit=crop&q=60";
 
@@ -91,6 +65,22 @@ export function QuickSetupView({
   ], [pizzeria, products.length, paymentConfigured]);
 
   const completed = checklist.filter(item => item.done).length;
+  const requiredWebhookUrls = [
+    import.meta.env.VITE_N8N_SECRETARIA_WEBHOOK_URL,
+    import.meta.env.VITE_N8N_PAYMENT_WEBHOOK_URL,
+    import.meta.env.VITE_N8N_STATUS_WEBHOOK_URL
+  ];
+  const operationalChecklist = useMemo(() => [
+    { label: "WhatsApp preparado para conectar", done: Boolean(pizzeria.instance?.trim()) },
+    { label: "Cardapio inicial publicado", done: products.some(product => product.available) },
+    { label: "Prompt de atendimento salvo", done: Boolean(pizzeria.promptPersonalized?.trim()) },
+    { label: "Bot global ativo", done: Boolean(pizzeria.botActiveGlobal) },
+    { label: "Pagamento online configurado", done: paymentConfigured },
+    { label: "Webhooks principais configurados", done: requiredWebhookUrls.every(Boolean) },
+    { label: "Telefone de suporte/admin salvo", done: Boolean(pizzeria.phoneAdmin?.trim()) }
+  ], [pizzeria, products, paymentConfigured, requiredWebhookUrls]);
+  const operationalDone = operationalChecklist.filter(item => item.done).length;
+  const isReadyForFirstClient = operationalDone === operationalChecklist.length;
 
   const showStatus = (message: string) => {
     setStatusMessage(message);
@@ -177,6 +167,60 @@ export function QuickSetupView({
             <span className="text-xs font-semibold text-slate-700">{item.label}</span>
           </div>
         ))}
+      </section>
+
+      <section className={`border rounded-xl p-5 shadow-2xs ${
+        isReadyForFirstClient ? "bg-emerald-50 border-emerald-200" : "bg-white border-amber-200"
+      }`}>
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5">
+          <div className="space-y-3 flex-1">
+            <div className="flex items-center gap-2">
+              <div className={`p-2 rounded-lg ${isReadyForFirstClient ? "bg-emerald-100" : "bg-amber-100"}`}>
+                {isReadyForFirstClient
+                  ? <ShieldCheck className="w-5 h-5 text-emerald-700" />
+                  : <AlertTriangle className="w-5 h-5 text-amber-700" />
+                }
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  {isReadyForFirstClient ? "Pronto para atender o primeiro cliente" : "Checklist antes de colocar cliente real"}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Use esta lista antes de entregar o acesso para uma pizzaria. Ela ajuda a evitar surpresa na primeira venda.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+              {operationalChecklist.map(item => (
+                <div key={item.label} className="flex items-center gap-2 rounded-lg bg-white/80 border border-white px-3 py-2">
+                  <CheckCircle2 className={`w-4 h-4 ${item.done ? "text-emerald-500" : "text-slate-300"}`} />
+                  <span className="text-[11px] font-semibold text-slate-700">{item.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="xl:w-72 rounded-lg bg-slate-900 text-white p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className="w-4 h-4 text-orange-300" />
+              <span className="text-xs font-bold">Teste final recomendado</span>
+            </div>
+            <ol className="space-y-1 text-[11px] text-slate-300 list-decimal list-inside">
+              <li>Enviar uma mensagem pelo WhatsApp conectado.</li>
+              <li>Fechar um pedido pequeno.</li>
+              <li>Gerar link de pagamento.</li>
+              <li>Confirmar que o pedido aparece no Kanban.</li>
+              <li>Responder uma mensagem pela Central Chat.</li>
+            </ol>
+            <div className="flex items-start gap-2 rounded-lg bg-slate-800 p-2">
+              <Headphones className="w-3.5 h-3.5 text-emerald-300 mt-0.5" />
+              <p className="text-[10px] text-slate-300">
+                Se o cliente travar na chave do pagamento, acompanhe por chamada e cole a chave junto com ele.
+              </p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-6">

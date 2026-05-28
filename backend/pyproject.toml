@@ -1,0 +1,57 @@
+[project]
+name = "pizzabot-backend"
+version = "0.1.0"
+description = "Backend Python do PizzaBot — substitui o n8n e o Supabase"
+requires-python = ">=3.11"
+
+dependencies = [
+    # Web framework
+    "fastapi[standard]==0.115.5",
+    "uvicorn[standard]==0.32.1",
+
+    # Database
+    "sqlalchemy[asyncio]==2.0.36",
+    "asyncpg==0.30.0",
+    "psycopg[binary]==3.2.3",      # para migrations sync simples
+    "pgvector==0.3.6",              # busca semantica de cardapio (Fase 3)
+
+    # Cache / fila (Fase 2)
+    "redis[hiredis]==5.2.0",
+    "celery==5.4.0",
+
+    # Auth
+    "passlib[bcrypt]==1.7.4",
+    "pyjwt==2.10.1",
+    "python-multipart==0.0.19",     # form-data para login
+
+    # Validacao / serializacao
+    "pydantic==2.10.3",
+    "pydantic-settings==2.6.1",
+    "email-validator==2.2.0",
+
+    # HTTP client externo (Evolution, MP, Asaas, Gemini)
+    "httpx==0.28.0",
+
+    # IA (Fase 3)
+    "google-genai==1.30.0",
+    "langgraph==0.2.55",
+
+    # Logging
+    "structlog==24.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "pytest-asyncio==0.24.0",
+    "httpx==0.28.0",
+    "ruff==0.8.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

@@ -295,7 +295,7 @@ export function DashboardView({
           </div>
 
           <div className="pt-4 border-t border-slate-100 mt-4 text-[11px] text-slate-400 font-sans">
-            Sistema inteligente ativo conectado via Evolution API e n8n Workflows.
+            Sistema de atendimento ativo e sincronizado com WhatsApp, pedidos e pagamentos.
           </div>
         </div>
 
