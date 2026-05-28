@@ -15,8 +15,9 @@ import {
 } from "recharts";
 import {
   Pizza, LogOut, Plus, Pencil, Trash2, Save, X, Loader2, AlertCircle, LogIn,
-  Store, Bot, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
+  Store, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
   Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
+  Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
 } from "lucide-react";
 import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview } from "../../lib/api";
 
@@ -56,6 +57,17 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [showPwd, setShowPwd] = useState(false);
+
+  const modalOpen = creating || !!editingId;
+
+  function genPassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    let s = "";
+    for (let i = 0; i < 10; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    setForm((f) => ({ ...f, owner_senha: s }));
+    setShowPwd(true);
+  }
 
   function loadOverview(d = days) {
     setLoadingOv(true);
@@ -71,9 +83,10 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     loadOverview();
   }
 
-  function startCreate() { setEditingId(null); setForm(EMPTY_FORM); setCreating(true); }
+  function startCreate() { setEditingId(null); setForm(EMPTY_FORM); setShowPwd(false); setErr(null); setCreating(true); }
   function startEdit(p: BackendPizzaria) {
     setCreating(false);
+    setErr(null);
     setEditingId(p.id);
     setForm({
       nome: p.nome, endereco: p.endereco ?? "",
@@ -81,7 +94,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
       owner_nome: "", owner_email: "", owner_senha: "",
     });
   }
-  function cancel() { setCreating(false); setEditingId(null); setForm(EMPTY_FORM); }
+  function cancel() { setCreating(false); setEditingId(null); setForm(EMPTY_FORM); setShowPwd(false); }
 
   async function save() {
     // Validação do login do dono (apenas na criação)
@@ -282,66 +295,116 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </button>
         </div>
 
-        {(creating || editingId) && (
-          <div className="bg-white border border-orange-200 rounded-xl p-4 space-y-3 shadow-sm">
-            <h3 className="font-semibold text-sm text-slate-800">{editingId ? "Editar pizzaria" : "Nova pizzaria"}</h3>
-            <div className="grid md:grid-cols-2 gap-3">
-              <Field label="Nome" required>
-                <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                  className={inputCls} placeholder="Ex.: Pizzaria do Zé" />
-              </Field>
-              <Field label="WhatsApp do dono">
-                <input value={form.telefone_admin} onChange={(e) => setForm({ ...form, telefone_admin: e.target.value })}
-                  className={inputCls} placeholder="5511999999999" />
-              </Field>
-              <Field label="Endereço" full>
-                <input value={form.endereco} onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                  className={inputCls} placeholder="Rua, número, bairro" />
-              </Field>
-              <Field label="Instância Evolution (opcional)" full>
-                <input value={form.instancia} onChange={(e) => setForm({ ...form, instancia: e.target.value })}
-                  className={inputCls} placeholder="pizzaria-do-ze" />
-              </Field>
-            </div>
-
-            {/* Acesso do dono — só na criação */}
-            {!editingId && (
-              <div className="border-t border-slate-100 pt-3">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <LogIn className="w-3.5 h-3.5 text-orange-500" />
-                  <h4 className="text-xs font-semibold text-slate-700">Acesso do dono ao painel</h4>
+        {/* ====== Modal criar/editar pizzaria ====== */}
+        {modalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+            onClick={cancel}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden animate-[fadeIn_.15s_ease-out]"
+              onClick={(e) => e.stopPropagation()}>
+              {/* Cabeçalho */}
+              <div className="relative px-5 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white">
+                <button onClick={cancel} className="absolute right-3 top-3 p-1.5 rounded-lg hover:bg-white/20 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    {editingId ? <Pencil className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base leading-tight">{editingId ? "Editar pizzaria" : "Nova pizzaria"}</h3>
+                    <p className="text-xs text-white/80">
+                      {editingId ? "Atualize os dados da empresa" : "Cadastre a empresa e o acesso do dono"}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-500 mb-2">
-                  Crie o login que o dono desta pizzaria vai usar para entrar no painel dele.
-                </p>
-                <div className="grid md:grid-cols-2 gap-3">
-                  <Field label="Nome do dono">
-                    <input value={form.owner_nome} onChange={(e) => setForm({ ...form, owner_nome: e.target.value })}
-                      className={inputCls} placeholder="Ex.: José da Silva" />
-                  </Field>
-                  <Field label="E-mail de login" required>
-                    <input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
-                      className={inputCls} placeholder="dono@pizzaria.com" />
-                  </Field>
-                  <Field label="Senha inicial (mín. 8 caracteres)" required full>
-                    <input type="text" value={form.owner_senha} onChange={(e) => setForm({ ...form, owner_senha: e.target.value })}
-                      className={inputCls} placeholder="Defina uma senha para o dono" />
-                  </Field>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  Anote e repasse essas credenciais ao dono. Ele poderá entrar em {window.location.host} com esse e-mail e senha.
-                </p>
               </div>
-            )}
 
-            <div className="flex gap-2 justify-end">
-              <button onClick={cancel} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-md flex items-center gap-1">
-                <X className="w-4 h-4" /> Cancelar
-              </button>
-              <button onClick={save} disabled={saving || !form.nome.trim()}
-                className="px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center gap-1 disabled:opacity-50">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar
-              </button>
+              {/* Corpo (scroll) */}
+              <div className="px-5 py-4 overflow-y-auto space-y-5">
+                {/* Seção: Dados da pizzaria */}
+                <section className="space-y-3">
+                  <SectionTitle icon={<Store className="w-3.5 h-3.5" />} title="Dados da pizzaria" />
+                  <IconField label="Nome da pizzaria" icon={<Building2 className="w-4 h-4" />} required>
+                    <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                      className={inputIcon} placeholder="Ex.: Pizzaria do Zé" />
+                  </IconField>
+                  <div className="grid md:grid-cols-2 gap-3">
+                    <IconField label="WhatsApp do dono" icon={<Phone className="w-4 h-4" />}>
+                      <input value={form.telefone_admin} onChange={(e) => setForm({ ...form, telefone_admin: e.target.value })}
+                        className={inputIcon} placeholder="5511999999999" />
+                    </IconField>
+                    <IconField label="Instância Evolution" icon={<Smartphone className="w-4 h-4" />}>
+                      <input value={form.instancia} onChange={(e) => setForm({ ...form, instancia: e.target.value })}
+                        className={inputIcon} placeholder="pizzaria-do-ze" />
+                    </IconField>
+                  </div>
+                  <IconField label="Endereço" icon={<MapPin className="w-4 h-4" />}>
+                    <input value={form.endereco} onChange={(e) => setForm({ ...form, endereco: e.target.value })}
+                      className={inputIcon} placeholder="Rua, número, bairro" />
+                  </IconField>
+                </section>
+
+                {/* Seção: Acesso do dono — só na criação */}
+                {!editingId && (
+                  <section className="space-y-3">
+                    <SectionTitle icon={<KeyRound className="w-3.5 h-3.5" />} title="Acesso do dono ao painel"
+                      hint="Login que o dono vai usar para entrar" />
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <IconField label="Nome do dono" icon={<User className="w-4 h-4" />}>
+                        <input value={form.owner_nome} onChange={(e) => setForm({ ...form, owner_nome: e.target.value })}
+                          className={inputIcon} placeholder="José da Silva" />
+                      </IconField>
+                      <IconField label="E-mail de login" icon={<Mail className="w-4 h-4" />} required>
+                        <input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
+                          className={inputIcon} placeholder="dono@pizzaria.com" />
+                      </IconField>
+                    </div>
+                    <IconField label="Senha inicial (mín. 8 caracteres)" icon={<KeyRound className="w-4 h-4" />} required>
+                      <div className="relative">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><KeyRound className="w-4 h-4" /></span>
+                        <input type={showPwd ? "text" : "password"} value={form.owner_senha}
+                          onChange={(e) => setForm({ ...form, owner_senha: e.target.value })}
+                          className="w-full pl-9 pr-20 py-2 border border-slate-200 rounded-lg text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none"
+                          placeholder="Defina uma senha" />
+                        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                          <button type="button" onClick={() => setShowPwd((v) => !v)}
+                            className="p-1.5 text-slate-400 hover:text-slate-600 rounded" title={showPwd ? "Ocultar" : "Mostrar"}>
+                            {showPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          <button type="button" onClick={genPassword}
+                            className="p-1.5 text-orange-500 hover:bg-orange-50 rounded" title="Gerar senha">
+                            <Wand2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </IconField>
+                    <div className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>Anote e repasse essas credenciais ao dono. Ele entra em <strong>{window.location.host}</strong> com esse e-mail e senha.</span>
+                    </div>
+                  </section>
+                )}
+
+                {err && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0" /> {err}
+                  </div>
+                )}
+              </div>
+
+              {/* Rodapé */}
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end">
+                <button onClick={cancel}
+                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200/60 rounded-lg font-medium transition-colors">
+                  Cancelar
+                </button>
+                <button onClick={save} disabled={saving || !form.nome.trim()}
+                  className="px-4 py-2 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center gap-1.5 font-medium shadow-sm disabled:opacity-50 transition-colors">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" />
+                    : editingId ? <Save className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                  {editingId ? "Salvar alterações" : "Criar pizzaria"}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -432,13 +495,46 @@ function Empty({ msg }: { msg: string }) {
   return <div className="text-xs text-slate-400 text-center py-10">{msg}</div>;
 }
 
-const inputCls = "w-full px-2.5 py-1.5 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none";
+const inputIcon =
+  "w-full pl-9 pr-2.5 py-2 border border-slate-200 rounded-lg text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition";
 
-function Field({ label, children, required, full }: any) {
+function SectionTitle({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) {
   return (
-    <label className={`block ${full ? "md:col-span-2" : ""}`}>
-      <span className="text-xs text-slate-600 font-medium">{label}{required && " *"}</span>
-      <div className="mt-0.5">{children}</div>
+    <div className="flex items-start gap-2.5 mb-3">
+      <span className="flex-shrink-0 grid place-items-center w-7 h-7 rounded-lg bg-orange-100 text-orange-600">
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <h4 className="text-sm font-semibold text-slate-800 leading-tight">{title}</h4>
+        {hint && <p className="text-xs text-slate-400 leading-snug mt-0.5">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
+function IconField({
+  label,
+  icon,
+  required,
+  children,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="text-xs font-medium text-slate-600">
+        {label}
+        {required && <span className="text-orange-500"> *</span>}
+      </span>
+      <div className="relative mt-1">
+        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+          {icon}
+        </span>
+        {children}
+      </div>
     </label>
   );
 }
