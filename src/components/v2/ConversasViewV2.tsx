@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Loader2, Send, Bot, BotOff, AlertCircle, MessageSquare, User,
-  Bell, X,
+  Bell, X, ArrowLeft,
 } from "lucide-react";
 import {
   conversasApi,
@@ -251,8 +251,8 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-[340px_1fr] h-[calc(100vh-120px)] bg-white border-t border-slate-200">
-        {/* Lista */}
-        <aside className="border-r border-slate-200 overflow-y-auto bg-white">
+        {/* Lista — no mobile esconde quando há conversa aberta */}
+        <aside className={`border-r border-slate-200 overflow-y-auto bg-white ${active ? "hidden md:block" : "block"}`}>
           <div className="sticky top-0 z-10 px-4 py-3 bg-gradient-to-r from-orange-500 to-rose-500 text-white">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
@@ -309,8 +309,8 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
           })}
         </aside>
 
-        {/* Chat panel */}
-        <section className="flex flex-col bg-[#f7f3ee] min-h-0 min-w-0 h-full overflow-hidden">
+        {/* Chat panel — no mobile só aparece quando há conversa aberta */}
+        <section className={`flex-col bg-[#f7f3ee] min-h-0 min-w-0 h-full overflow-hidden ${active ? "flex" : "hidden md:flex"}`}>
           {!active ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
               <div className="w-16 h-16 rounded-full bg-orange-100 grid place-items-center mb-3">
@@ -322,6 +322,14 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
           ) : (
             <>
               <header className="px-4 py-3 bg-white border-b border-slate-200 flex items-center gap-3 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setActive(null)}
+                  className="md:hidden -ml-1 p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 shrink-0"
+                  title="Voltar para conversas"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
                 <Avatar name={active.cliente_nome || active.cliente_telefone} botAtivo={active.bot_ativo} isHumanNeeded={active.status === "humano_necessario"} />
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold text-sm text-slate-800 truncate">{active.cliente_nome || active.cliente_telefone}</div>

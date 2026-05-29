@@ -45,6 +45,7 @@ export function Topbar({
       <div className="flex items-center gap-2 shrink-0">
         {/* Status do bot */}
         <Tooltip
+          position="bottom"
           content={botAtivo
             ? "Bot está respondendo automaticamente. Clique para pausar (atendentes humanos respondem manualmente)."
             : "Bot pausado. Nenhuma mensagem é respondida automaticamente."}
@@ -66,7 +67,7 @@ export function Topbar({
 
         {/* Notificações */}
         {notifPermission && notifPermission !== "granted" && onEnableNotifications && (
-          <Tooltip content="Receber alertas no navegador quando chegar novo pedido">
+          <Tooltip position="bottom" content="Receber alertas no navegador quando chegar novo pedido">
             <button
               type="button"
               onClick={onEnableNotifications}
