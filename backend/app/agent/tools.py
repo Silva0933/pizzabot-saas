@@ -287,6 +287,16 @@ async def registrar_pedido(
         return {"ok": False, "erro": "endereco_entrega é obrigatório para delivery"}
     if not itens:
         return {"ok": False, "erro": "lista de itens vazia"}
+    try:
+        _vt = float(valor_total)
+    except (TypeError, ValueError):
+        _vt = 0.0
+    if _vt <= 0:
+        return {
+            "ok": False,
+            "erro": "valor_total inválido (0). Use buscar_cardapio para pegar os preços reais, "
+                    "some os itens e registre com o valor_total correto.",
+        }
 
     # garante cliente
     cli = ctx.cliente
