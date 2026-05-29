@@ -164,6 +164,13 @@ async def _run_openai_agent(
             provider=provider, api_key=api_key, model=model,
             messages=messages, tools=tools,
         )
+        # Modelos leves (flash-lite) às vezes devolvem resposta vazia.
+        # Uma nova tentativa costuma resolver antes de desistir.
+        if not (res.get("tool_calls") or (res.get("content") or "").strip()):
+            res = await openai_chat(
+                provider=provider, api_key=api_key, model=model,
+                messages=messages, tools=tools, temperature=0.4,
+            )
         u = res.get("usage") or {}
         usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
         usage_acc["completion"] += u.get("completion_tokens", 0) or 0
@@ -195,6 +202,10 @@ async def _run_openai_agent(
         if final_text:
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
         break
+
+    # Rede de segurança: nunca deixar o cliente no vácuo.
+    if not final_text and not tool_calls_made:
+        final_text = "Desculpa, não entendi 😅 Pode repetir, por favor?"
 
     await record_usage(
         db, pizzaria_id=pizzaria_id, provider=provider, model=model,
