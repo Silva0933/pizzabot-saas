@@ -59,3 +59,18 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
             return {"ok": False, "erro": str(e)}
         finally:
             await engine.dispose()
+            try:
+                from app.agent.llm import reset_client
+                await reset_client()
+            except Exception:
+                pass
+            try:
+                from app.services.evolution import evolution
+                await evolution.close()
+            except Exception:
+                pass
+            try:
+                from app.redis_client import redis
+                await redis.aclose()
+            except Exception:
+                pass

@@ -27,6 +27,16 @@ def get_client() -> genai.Client:
     return _client
 
 
+async def reset_client() -> None:
+    global _client
+    if _client is not None:
+        try:
+            await _client.aio.aclose()
+        except Exception:
+            pass
+        _client = None
+
+
 # ============================================
 # Conversão para o formato do SDK
 # ============================================
