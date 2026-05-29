@@ -233,6 +233,13 @@ async def limpar_todas_conversas(
             "Header X-Confirm-Delete: true é obrigatório para confirmar esta ação destrutiva.",
         )
 
+    # Deleta histórico da memória do agente
+    from sqlalchemy import text
+    await db.execute(
+        text("DELETE FROM public.agente_memoria WHERE pizzaria_id = :pid"),
+        {"pid": str(pizzaria_id)},
+    )
+
     # Deleta mensagens primeiro (FK depende de conversas)
     await db.execute(
         delete(Mensagem).where(Mensagem.pizzaria_id == pizzaria_id)
