@@ -108,6 +108,10 @@ async def openai_chat(
             raise RuntimeError(f"{provider} {resp.status_code}: {resp.text[:400]}")
         data = resp.json()
 
+    # OpenRouter às vezes devolve erro no corpo mesmo com HTTP 200.
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(f"{provider}: {str(data['error'])[:400]}")
+
     msg = (data.get("choices") or [{}])[0].get("message", {}) or {}
     tool_calls = []
     for tc in (msg.get("tool_calls") or []):
