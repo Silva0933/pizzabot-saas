@@ -95,10 +95,23 @@ async def load_history(
                 out.append(to_content("function", function_response={"name": tcid or "unknown", "response": response_payload}))
         return out
 
-    # Fallback: reconstitui a partir das mensagens reais
+    # Fallback: reconstitui a partir das mensagens reais — SOMENTE da conversa
+    # deste cliente (isola por telefone, senão mistura conversas de clientes).
+    from app.models import Conversa
+
+    conv_id = (await db.execute(
+        select(Conversa.id).where(
+            Conversa.pizzaria_id == pizzaria_id,
+            Conversa.cliente_telefone == telefone,
+        )
+    )).scalar_one_or_none()
+    if conv_id is None:
+        return []
+
     stmt = (
         select(Mensagem)
         .where(Mensagem.pizzaria_id == pizzaria_id)
+        .where(Mensagem.conversa_id == conv_id)
         .where(Mensagem.created_at.isnot(None))
         .order_by(Mensagem.created_at.desc())
         .limit(limit)
