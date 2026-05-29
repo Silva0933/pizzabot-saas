@@ -27,8 +27,10 @@ class CobrancaResult:
     """Resultado da criação de uma cobrança."""
     payment_id: str
     link_pagamento: str
-    qr_code: str | None = None          # para Pix
+    qr_code: str | None = None          # Pix copia-e-cola
+    qr_code_base64: str | None = None   # imagem PNG do QR (base64)
     expires_at: str | None = None
+    metodo: str = "link"                # "pix" | "link"
 
 
 class PagamentoError(Exception):
@@ -94,8 +96,60 @@ class MercadoPagoClient:
             data = r.json()
 
         return CobrancaResult(
-            payment_id=data["id"],
+            payment_id=str(data["id"]),
             link_pagamento=data.get("init_point") or data.get("sandbox_init_point", ""),
+            metodo="link",
+        )
+
+    async def criar_pix(
+        self,
+        *,
+        valor: Decimal,
+        descricao: str,
+        nome_cliente: str,
+        telefone: str,
+        external_reference: str,
+        notification_url: str | None = None,
+    ) -> CobrancaResult:
+        """Cria um pagamento Pix e devolve o copia-e-cola + QR (base64)."""
+        import re
+        import uuid as _uuid
+
+        first_name = re.sub(r"[^a-zA-ZÀ-ɏ ]", "", (nome_cliente or "Cliente"))[:30].strip() or "Cliente"
+        tel_digits = re.sub(r"\D", "", telefone or "")
+        email = f"cliente{tel_digits}@pizzabot.app" if tel_digits else "cliente@pizzabot.app"
+
+        body: dict[str, Any] = {
+            "transaction_amount": float(valor),
+            "description": descricao[:200],
+            "payment_method_id": "pix",
+            "payer": {"email": email, "first_name": first_name},
+            "external_reference": external_reference,
+        }
+        if notification_url:
+            body["notification_url"] = notification_url
+
+        async with httpx.AsyncClient(timeout=15.0) as c:
+            r = await c.post(
+                f"{self.BASE}/v1/payments",
+                json=body,
+                headers={
+                    "Authorization": f"Bearer {self.token}",
+                    "X-Idempotency-Key": str(_uuid.uuid4()),
+                },
+            )
+            if r.is_error:
+                log.error("MP pix error %s: %s", r.status_code, r.text[:300])
+                raise PagamentoError(f"MP pix {r.status_code}: {r.text[:200]}")
+            data = r.json()
+
+        poi = ((data.get("point_of_interaction") or {}).get("transaction_data")) or {}
+        return CobrancaResult(
+            payment_id=str(data["id"]),
+            link_pagamento=poi.get("ticket_url", ""),
+            qr_code=poi.get("qr_code"),
+            qr_code_base64=poi.get("qr_code_base64"),
+            metodo="pix",
         )
 
     async def consultar_pagamento(self, payment_id: str) -> dict[str, Any]:

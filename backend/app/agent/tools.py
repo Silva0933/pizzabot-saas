@@ -61,6 +61,23 @@ DECL_ENVIAR_CARDAPIO_ARQUIVO = types.FunctionDeclaration(
     parameters=types.Schema(type=types.Type.OBJECT, properties={}, required=[]),
 )
 
+DECL_GERAR_PAGAMENTO = types.FunctionDeclaration(
+    name="gerar_pagamento",
+    description=(
+        "Gera a cobrança do pedido e envia ao cliente: Pix (QR + copia-e-cola) ou link de "
+        "cartão. Use SOMENTE depois de registrar_pedido, quando o cliente escolher pagar "
+        "online (pix ou cartão). Para dinheiro/pagar na entrega, NÃO use. Se não houver "
+        "gateway configurado, retorna sem gerar."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "metodo": types.Schema(type=types.Type.STRING, description="'pix' (padrão) ou 'cartao' (link de checkout)"),
+        },
+        required=[],
+    ),
+)
+
 DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
     name="registrar_pedido",
     description=(
@@ -357,6 +374,87 @@ async def registrar_pedido(
     }
 
 
+async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = "pix") -> dict[str, Any]:
+    """Cria a cobrança do pedido atual e envia Pix (QR) ou link de cartão ao cliente."""
+    from app.config import get_settings
+    from app.services.evolution import evolution
+    from app.services.pagamentos import PagamentoError, gateway_for, MercadoPagoClient
+
+    cli = ctx.cliente
+    if not cli:
+        return {"ok": False, "motivo": "sem_cliente"}
+
+    ped = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["novo", "confirmado"]),
+            Pedido.payment_status != "approved",
+        ).order_by(Pedido.created_at.desc())
+    )).scalars().first()
+    if not ped:
+        return {"ok": False, "motivo": "sem_pedido"}
+
+    gw = gateway_for(ctx.pizzaria)
+    if gw is None:
+        return {"ok": False, "motivo": "sem_gateway"}
+
+    base = (get_settings().public_base_url or "").rstrip("/")
+    notif = f"{base}/webhook/mercadopago" if isinstance(gw, MercadoPagoClient) else f"{base}/webhook/asaas"
+    descricao = f"Pedido #{ped.numero_pedido or ''} - {ctx.pizzaria.nome}".strip()
+    nome = (cli.nome or ctx.cliente_nome or "Cliente")
+
+    try:
+        if isinstance(gw, MercadoPagoClient) and (metodo or "pix").lower() != "pix":
+            cob = await gw.criar_cobranca(
+                valor=ped.valor_total, descricao=descricao, nome_cliente=nome,
+                telefone=ctx.telefone, external_reference=str(ped.id), notification_url=notif,
+            )
+        elif isinstance(gw, MercadoPagoClient):
+            cob = await gw.criar_pix(
+                valor=ped.valor_total, descricao=descricao, nome_cliente=nome,
+                telefone=ctx.telefone, external_reference=str(ped.id), notification_url=notif,
+            )
+        else:  # Asaas (só Pix)
+            cob = await gw.criar_cobranca_pix(
+                valor=ped.valor_total, descricao=descricao, nome_cliente=nome,
+                telefone=ctx.telefone, external_reference=str(ped.id),
+            )
+    except PagamentoError as e:
+        log.warning("Falha ao gerar cobrança: %s", e)
+        return {"ok": False, "motivo": "erro_gateway"}
+
+    ped.payment_id = cob.payment_id
+    ped.link_pagamento = cob.link_pagamento
+    ped.payment_status = "pending"
+    await db.flush()
+
+    # Se tem QR em imagem (Pix MP), manda o QR como imagem direto no WhatsApp.
+    if cob.qr_code_base64 and ctx.pizzaria.instancia:
+        try:
+            await evolution.send_media(
+                instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+                media_url=cob.qr_code_base64, mediatype="image",
+                mimetype="image/png", filename="pix.png",
+                caption="QR Code do Pix 👆",
+            )
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha ao enviar QR como imagem: %s", e)
+
+    return {
+        "ok": True,
+        "metodo": cob.metodo,
+        "valor": float(ped.valor_total),
+        "pix_copia_e_cola": cob.qr_code,
+        "link_pagamento": cob.link_pagamento,
+        "instrucao": (
+            "Pix gerado. Mande ao cliente o código copia-e-cola e avise que o QR foi enviado como imagem."
+            if cob.metodo == "pix"
+            else "Link de pagamento gerado. Envie o link ao cliente."
+        ),
+    }
+
+
 async def atualizar_pedido(
     ctx: AgentContext,
     db: AsyncSession,
@@ -522,6 +620,7 @@ TOOL_DECLARATIONS = [
     DECL_BUSCAR_CARDAPIO,
     DECL_ENVIAR_CARDAPIO_ARQUIVO,
     DECL_REGISTRAR_PEDIDO,
+    DECL_GERAR_PAGAMENTO,
     DECL_ATUALIZAR_PEDIDO,
     DECL_CANCELAR_PEDIDO,
     DECL_ESCALAR_HUMANO,
@@ -532,6 +631,7 @@ TOOL_IMPL: dict[str, ToolFn] = {
     "buscar_cardapio": buscar_cardapio,
     "enviar_cardapio_arquivo": enviar_cardapio_arquivo,
     "registrar_pedido": registrar_pedido,
+    "gerar_pagamento": gerar_pagamento,
     "atualizar_pedido": atualizar_pedido,
     "cancelar_pedido": cancelar_pedido,
     "escalar_humano": escalar_humano,
