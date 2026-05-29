@@ -371,7 +371,7 @@ async def registrar_pedido(
         },
     )
 
-    return {
+    resultado = {
         "ok": True,
         "pedido_id": str(ped.id),
         "numero_pedido": ped.numero_pedido,
@@ -383,36 +383,20 @@ async def registrar_pedido(
         ),
     }
 
+    # Pagamento online → gera a cobrança JÁ AQUI (não depende de 2ª chamada do modelo).
+    metodo = _metodo_online(forma_pagamento)
+    if metodo:
+        cobranca = await _gerar_cobranca(ctx, db, ped, metodo)
+        resultado["pagamento"] = cobranca
 
-async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = "pix") -> dict[str, Any]:
-    """Cria a cobrança do pedido atual e envia Pix (QR) ou link de cartão ao cliente."""
+    return resultado
+
+
+async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, metodo: str = "pix") -> dict[str, Any]:
+    """Núcleo da cobrança: chama o gateway, salva no pedido e envia o QR. Reutilizado."""
     from app.config import get_settings
     from app.services.evolution import evolution
     from app.services.pagamentos import PagamentoError, gateway_for, MercadoPagoClient
-
-    cli = ctx.cliente
-    if not cli:
-        # ctx é carregado no início da conversa; o cliente pode ter sido criado
-        # depois (no registrar_pedido). Busca do banco para não falhar.
-        cli = (await db.execute(
-            select(Cliente).where(
-                Cliente.pizzaria_id == ctx.pizzaria.id,
-                Cliente.telefone == ctx.telefone,
-            )
-        )).scalar_one_or_none()
-    if not cli:
-        return {"ok": False, "motivo": "sem_cliente"}
-
-    ped = (await db.execute(
-        select(Pedido).where(
-            Pedido.pizzaria_id == ctx.pizzaria.id,
-            Pedido.cliente_id == cli.id,
-            Pedido.status.in_(["novo", "confirmado"]),
-            Pedido.payment_status != "approved",
-        ).order_by(Pedido.created_at.desc())
-    )).scalars().first()
-    if not ped:
-        return {"ok": False, "motivo": "sem_pedido"}
 
     gw = gateway_for(ctx.pizzaria)
     if gw is None:
@@ -421,7 +405,7 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
     base = (get_settings().public_base_url or "").rstrip("/")
     notif = f"{base}/webhook/mercadopago" if isinstance(gw, MercadoPagoClient) else f"{base}/webhook/asaas"
     descricao = f"Pedido #{ped.numero_pedido or ''} - {ctx.pizzaria.nome}".strip()
-    nome = (cli.nome or ctx.cliente_nome or "Cliente")
+    nome = (ctx.cliente_nome or "Cliente")
 
     try:
         if isinstance(gw, MercadoPagoClient) and (metodo or "pix").lower() != "pix":
@@ -472,6 +456,41 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
             else "Link de pagamento gerado. Envie o link ao cliente."
         ),
     }
+
+
+async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = "pix") -> dict[str, Any]:
+    """Tool: cria a cobrança do pedido atual e envia Pix (QR) ou link de cartão."""
+    cli = ctx.cliente or (await db.execute(
+        select(Cliente).where(
+            Cliente.pizzaria_id == ctx.pizzaria.id,
+            Cliente.telefone == ctx.telefone,
+        )
+    )).scalar_one_or_none()
+    if not cli:
+        return {"ok": False, "motivo": "sem_cliente"}
+
+    ped = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["novo", "confirmado"]),
+            Pedido.payment_status != "approved",
+        ).order_by(Pedido.created_at.desc())
+    )).scalars().first()
+    if not ped:
+        return {"ok": False, "motivo": "sem_pedido"}
+
+    return await _gerar_cobranca(ctx, db, ped, metodo)
+
+
+def _metodo_online(forma_pagamento: str | None) -> str | None:
+    """Detecta se a forma de pagamento é online; retorna 'pix'|'cartao' ou None."""
+    f = (forma_pagamento or "").lower()
+    if "pix" in f:
+        return "pix"
+    if any(k in f for k in ("cart", "credito", "crédito", "debito", "débito")):
+        return "cartao"
+    return None
 
 
 async def atualizar_pedido(
