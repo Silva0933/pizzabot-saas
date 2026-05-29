@@ -162,10 +162,14 @@ async def process_and_reply(
     # Envia pelo WhatsApp
     try:
         if pizz.instancia:
+            # Calcula delay proporcional ao tamanho do texto (max 8 segundos)
+            tamanho = len(result.texto) if result.texto else 0
+            delay_ms = int(min(max(tamanho * 55, 1500), 8000))
             await evolution.send_text(
                 instancia=pizz.instancia,
                 numero=telefone,
                 texto=result.texto,
+                delay_ms=delay_ms,
             )
     except Exception as e:
         log.exception("Falha enviando pelo Evolution: %s", e)
