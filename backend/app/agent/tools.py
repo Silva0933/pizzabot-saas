@@ -103,6 +103,7 @@ DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
             "tipo": types.Schema(type=types.Type.STRING, description="'delivery' ou 'retirada'"),
             "endereco_entrega": types.Schema(type=types.Type.STRING, description="Endereço completo (obrigatório se delivery)"),
             "forma_pagamento": types.Schema(type=types.Type.STRING, description="pix, cartao, dinheiro etc"),
+            "pagar_agora": types.Schema(type=types.Type.BOOLEAN, description="True só se o cliente escolheu PAGAR AGORA (na conversa) via pix/cartão. False se for pagar na entrega ou dinheiro. Só gera cobrança quando True."),
             "observacoes": types.Schema(type=types.Type.STRING, description="Obs do cliente (sem cebola, troco, etc)"),
             "nome_cliente": types.Schema(type=types.Type.STRING, description="Nome do cliente para o pedido"),
         },
@@ -277,6 +278,7 @@ async def registrar_pedido(
     valor_total: float,
     tipo: str,
     forma_pagamento: str,
+    pagar_agora: bool = False,
     endereco_entrega: str | None = None,
     observacoes: str | None = None,
     nome_cliente: str | None = None,
@@ -401,9 +403,10 @@ async def registrar_pedido(
         ),
     }
 
-    # Pagamento online → gera a cobrança JÁ AQUI (não depende de 2ª chamada do modelo).
+    # Cobrança só é gerada se o cliente escolheu PAGAR AGORA via pix/cartão.
+    # "Na entrega" ou dinheiro → não gera nada.
     metodo = _metodo_online(forma_pagamento)
-    if metodo:
+    if metodo and pagar_agora:
         cobranca = await _gerar_cobranca(ctx, db, ped, metodo)
         resultado["pagamento"] = cobranca
 

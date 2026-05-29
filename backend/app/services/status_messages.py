@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 # Mensagens padrão usadas quando a pizzaria não configurou um template próprio.
 # Placeholders: {numero_pedido}, {nome_cliente}, {valor_total}, {tempo_entrega}
 DEFAULT_STATUS_MESSAGES: dict[str, str] = {
+    "pagamento_aprovado": "✅ Pagamento confirmado, {nome_cliente}! Seu pedido #{numero_pedido} já entrou na fila de preparo. 🍕",
     "confirmado": "Oi {nome_cliente}! ✅ Seu pedido #{numero_pedido} foi confirmado e já vai pra produção. 🍕",
     "no_forno": "🔥 Seu pedido #{numero_pedido} já está no forno, {nome_cliente}! Em breve fica pronto.",
     "a_caminho": "🛵 Saiu pra entrega! Seu pedido #{numero_pedido} chega em aproximadamente {tempo_entrega}.",
@@ -49,7 +50,7 @@ async def enviar_mensagem_status(
 
     Retorna True se enviou, False se não havia template ou outro erro.
     """
-    if novo_status not in ("confirmado", "no_forno", "a_caminho", "entregue", "cancelado"):
+    if novo_status not in ("pagamento_aprovado", "confirmado", "no_forno", "a_caminho", "entregue", "cancelado"):
         return False
 
     # Idempotência: se já enviamos a mensagem desse status para este pedido,

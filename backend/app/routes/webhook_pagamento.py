@@ -48,11 +48,12 @@ async def _aplicar_pagamento(
     pedido.payment_id = payment_id
     pedido.payment_status = payment_status
 
-    # Se aprovou agora, avança status do pedido pra "confirmado"
+    # Se aprovou agora: avisa "Pagamento confirmado" e avança o status.
     if payment_status == "approved" and old_payment != "approved":
         if pedido.status == "novo":
             pedido.status = "confirmado"
-            await enviar_mensagem_status(db, pedido, "confirmado")
+        await db.flush()
+        await enviar_mensagem_status(db, pedido, "pagamento_aprovado")
 
     await db.commit()
     await db.refresh(pedido)
