@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -209,21 +210,34 @@ async def buscar_cardapio(
     lim = max(1, min(int(limit or 12), 40))
 
     q_clean = (query or "").strip().lower()
-    GENERIC = {
-        "", "todas", "todos", "tudo", "cardapio", "cardápio", "menu", "sabores",
-        "sabor", "pizza", "pizzas", "opcoes", "opções", "quais", "lista", "ver", "tem",
+    # Palavras genéricas/irrelevantes que não devem virar filtro de busca.
+    STOP = {
+        "", "a", "o", "os", "as", "de", "do", "da", "dos", "das", "e", "com", "sem", "ou",
+        "pra", "para", "um", "uma", "uns", "umas", "quero", "queria", "gostaria", "vou",
+        "quer", "ver", "me", "manda", "mandar", "por", "favor", "tem", "ter", "qual",
+        "quais", "essa", "esse", "aquela", "aquele", "isso", "ai", "aí",
+        "pizza", "pizzas", "sabor", "sabores", "lanche", "lanches", "bebida", "bebidas",
+        "grande", "media", "média", "pequena", "broto", "tamanho", "p", "m", "g",
     }
-
-    def _is_generic(q: str) -> bool:
-        if q in GENERIC:
-            return True
-        return any(tok in q for tok in ("sabor", "cardap", "menu", "opç", "opc", "todas", "tudo", "quais", "disponiv"))
+    GENERIC_HINT = ("cardap", "menu", "opç", "opc", "sabor", "tudo", "todas", "todos",
+                    "disponiv", "que tem", "o que voce", "o que vc")
 
     where_extra = ""
     params: dict[str, Any] = {"pid": str(ctx.pizzaria.id), "lim": lim}
-    if q_clean and not _is_generic(q_clean):
-        where_extra += " AND (nome ILIKE :q OR descricao ILIKE :q OR categoria ILIKE :q)"
-        params["q"] = f"%{query.strip()}%"
+
+    is_generic = (not q_clean) or any(h in q_clean for h in GENERIC_HINT)
+    tokens: list[str] = []
+    if not is_generic:
+        tokens = [w for w in re.split(r"[^0-9a-zà-ÿ]+", q_clean) if len(w) >= 3 and w not in STOP]
+
+    if tokens:
+        # Casa por QUALQUER palavra significativa (tolerante: "pizza vulcão" acha
+        # "Calabresa Vulcão"; "calabresa" acha todos os tamanhos).
+        ors = []
+        for i, w in enumerate(tokens[:6]):
+            ors.append(f"(nome ILIKE :q{i} OR descricao ILIKE :q{i} OR categoria ILIKE :q{i})")
+            params[f"q{i}"] = f"%{w}%"
+        where_extra += " AND (" + " OR ".join(ors) + ")"
     if categoria:
         where_extra += " AND categoria ILIKE :cat"
         params["cat"] = f"%{categoria}%"
