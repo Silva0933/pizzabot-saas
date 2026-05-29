@@ -85,8 +85,12 @@ DECL_GERAR_PAGAMENTO = types.FunctionDeclaration(
 DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
     name="registrar_pedido",
     description=(
-        "Registra um novo pedido no sistema. Use SOMENTE após confirmação do cliente. "
-        "Itens devem ser array com {nome, qtd, preco_unit}."
+        "Registra um novo pedido no sistema. ANTES de chamar, você PRECISA ter coletado: "
+        "(1) itens com nome/preço exatos do cardápio, (2) entrega ou retirada, "
+        "(3) se entrega: endereço completo, (4) forma de pagamento, "
+        "(5) se pix/cartão: pagar agora ou na entrega. "
+        "NÃO chame sem ter TODOS esses dados — se faltar algo, pergunte ao cliente primeiro. "
+        "Só chame DEPOIS do cliente confirmar o resumo final do pedido."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
@@ -106,7 +110,7 @@ DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
             "valor_total": types.Schema(type=types.Type.NUMBER, description="Valor total em reais"),
             "tipo": types.Schema(type=types.Type.STRING, description="'delivery' ou 'retirada'"),
             "endereco_entrega": types.Schema(type=types.Type.STRING, description="Endereço completo (obrigatório se delivery)"),
-            "forma_pagamento": types.Schema(type=types.Type.STRING, description="pix, cartao, dinheiro etc"),
+            "forma_pagamento": types.Schema(type=types.Type.STRING, description="pix, cartao, dinheiro etc. OBRIGATÓRIO — pergunte ao cliente antes de chamar."),
             "pagar_agora": types.Schema(type=types.Type.BOOLEAN, description="True só se o cliente escolheu PAGAR AGORA (na conversa) via pix/cartão. False se for pagar na entrega ou dinheiro. Só gera cobrança quando True."),
             "observacoes": types.Schema(type=types.Type.STRING, description="Obs do cliente (sem cebola, troco, etc)"),
             "nome_cliente": types.Schema(type=types.Type.STRING, description="Nome do cliente para o pedido"),
@@ -309,9 +313,11 @@ async def registrar_pedido(
     nome_cliente: str | None = None,
 ) -> dict[str, Any]:
     if tipo not in ("delivery", "retirada"):
-        return {"ok": False, "erro": "tipo deve ser 'delivery' ou 'retirada'"}
+        return {"ok": False, "erro": "tipo deve ser 'delivery' ou 'retirada'. Pergunte ao cliente: 'vai ser entrega ou retirada?'"}
     if tipo == "delivery" and not endereco_entrega:
-        return {"ok": False, "erro": "endereco_entrega é obrigatório para delivery"}
+        return {"ok": False, "erro": "endereco_entrega é obrigatório para delivery. Pergunte o endereço completo ao cliente antes de registrar."}
+    if not forma_pagamento or forma_pagamento.strip().lower() in ("", "nao informado", "não informado", "n/a", "none"):
+        return {"ok": False, "erro": "forma_pagamento é obrigatória. Pergunte ao cliente: 'como quer pagar? pix, cartão ou dinheiro?'"}
     if not itens:
         return {"ok": False, "erro": "lista de itens vazia"}
     try:
