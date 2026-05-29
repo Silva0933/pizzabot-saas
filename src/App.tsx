@@ -9,7 +9,7 @@
  *  5. WebSocket pra updates ao vivo
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pizza, Loader2, AlertCircle, LogOut } from "lucide-react";
+import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock } from "lucide-react";
 import {
   AppShell, NAV_PAGE_META, InicioDashboard,
 } from "./components/v2";
@@ -26,6 +26,51 @@ import {
   backendToPizzeria, backendToOrder, backendToConversation,
   clearTokens, getToken, ApiError,
 } from "./lib/api";
+
+// ============================================
+// Sinal sonoro de pedidos (Web Audio API)
+// ============================================
+function playNotificationSound(type: "novo" | "confirmado") {
+  try {
+    // @ts-ignore
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    if (type === "novo") {
+      // Som de novo pedido: tom duplo alegre (D5 seguido de A5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(587.33, now); // D5
+      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+      gain1.gain.setValueAtTime(0.12, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.5);
+    } else {
+      // Som de pedido confirmado: tom de sino ascendente premium (E5 seguido de B5)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(659.25, now); // E5
+      osc1.frequency.setValueAtTime(987.77, now + 0.08); // B5
+      gain1.gain.setValueAtTime(0.12, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.6);
+    }
+  } catch (e) {
+    console.warn("Não foi possível reproduzir o sinal sonoro:", e);
+  }
+}
 
 export default function App() {
   // ============================================
@@ -120,8 +165,17 @@ export default function App() {
     if (!pizzaria) return;
     const ws = connectWebSocket(pizzaria.id, (ev) => {
       setLiveEvent(ev);
-      // Eventos de pedido → refresh
-      if (ev.tipo === "pedido.novo" || ev.tipo === "pedido.atualizado") {
+      // Eventos de pedido → som e refresh
+      if (ev.tipo === "pedido.novo") {
+        playNotificationSound("novo");
+        pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
+      } else if (ev.tipo === "pedido.atualizado") {
+        const statusNovo = ev.payload?.status_novo;
+        if (statusNovo === "confirmado") {
+          playNotificationSound("confirmado");
+        } else if (statusNovo === "novo") {
+          playNotificationSound("novo");
+        }
         pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
       }
       // Mensagem nova → atualização incremental da conversa na lista
@@ -349,46 +403,76 @@ function LoginScreen(props: {
   onSubmit: (e: React.FormEvent) => void;
 }) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-slate-100 p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 rounded-xl bg-orange-500 flex items-center justify-center">
-            <Pizza className="w-5 h-5 text-white"/>
+    <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
+      {/* Elementos de background decorativos (Glows neons sutis) */}
+      <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-orange-600/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+      {/* Card Principal Glassmorphic */}
+      <div className="relative bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-3xl shadow-2xl p-10 w-full max-w-md transition-all duration-300 hover:border-slate-700/60 mx-4">
+        
+        {/* Cabeçalho */}
+        <div className="flex flex-col items-center text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25 mb-4">
+            <Pizza className="w-7 h-7 text-white" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-800">PizzaBot</h1>
-            <p className="text-xs text-slate-500">Painel da pizzaria</p>
-          </div>
+          <h1 className="text-2xl font-extrabold text-white tracking-tight">PizzaBot</h1>
+          <p className="text-sm text-slate-400 mt-1">Gerencie seus pedidos com inteligência</p>
         </div>
-        <form onSubmit={props.onSubmit} className="space-y-3">
-          <label className="block">
-            <span className="text-xs text-slate-600 font-medium">Email</span>
-            <input
-              type="email" required value={props.email}
-              onChange={(e) => props.setEmail(e.target.value)}
-              className="mt-0.5 w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none"
-              placeholder="voce@email.com"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs text-slate-600 font-medium">Senha</span>
-            <input
-              type="password" required value={props.senha}
-              onChange={(e) => props.setSenha(e.target.value)}
-              className="mt-0.5 w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none"
-            />
-          </label>
+
+        {/* Formulário */}
+        <form onSubmit={props.onSubmit} className="space-y-5">
+          <div className="space-y-1.5">
+            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">E-mail</span>
+            <div className="relative group">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 group-focus-within:text-orange-500 transition-colors">
+                <Mail className="w-4 h-4" />
+              </span>
+              <input
+                type="email"
+                required
+                value={props.email}
+                onChange={(e) => props.setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all"
+                placeholder="exemplo@pizzaria.com"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">Senha</span>
+            <div className="relative group">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 group-focus-within:text-orange-500 transition-colors">
+                <Lock className="w-4 h-4" />
+              </span>
+              <input
+                type="password"
+                required
+                value={props.senha}
+                onChange={(e) => props.setSenha(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all"
+                placeholder="••••••••"
+              />
+            </div>
+          </div>
+
           {props.err && (
-            <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 px-2.5 py-2 rounded text-xs">
-              <AlertCircle className="w-3.5 h-3.5"/> {props.err}
+            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-2.5 rounded-xl text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{props.err}</span>
             </div>
           )}
+
           <button
-            type="submit" disabled={props.loading}
-            className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-md py-2 font-medium text-sm disabled:opacity-60 flex items-center justify-center gap-1.5"
+            type="submit"
+            disabled={props.loading}
+            className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white rounded-xl font-bold text-sm tracking-wide shadow-lg shadow-orange-950/40 hover:shadow-orange-500/10 transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
           >
-            {props.loading && <Loader2 className="w-4 h-4 animate-spin"/>}
-            Entrar
+            {props.loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              "Entrar no Painel"
+            )}
           </button>
         </form>
       </div>
