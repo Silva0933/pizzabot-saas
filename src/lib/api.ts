@@ -237,7 +237,39 @@ export const cardapioApi = {
     api.delete(`/pizzarias/${pizzariaId}/cardapio/${produtoId}`),
   reindex: (pizzariaId: string) =>
     api.post<{ ok: boolean; produtos: number }>(`/pizzarias/${pizzariaId}/cardapio/reindex`),
+
+  // Arquivo do cardápio (PDF/imagem)
+  arquivoInfo: (pizzariaId: string) =>
+    api.get<CardapioArquivoInfo>(`/pizzarias/${pizzariaId}/cardapio/arquivo/info`),
+  arquivoUrl: (pizzariaId: string) => `${API_BASE}/pizzarias/${pizzariaId}/cardapio/arquivo`,
+  removerArquivo: (pizzariaId: string) =>
+    api.delete(`/pizzarias/${pizzariaId}/cardapio/arquivo`),
+  uploadArquivo: async (pizzariaId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/pizzarias/${pizzariaId}/cardapio/arquivo`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      let b: any = null;
+      try { b = await res.json(); } catch { /* ignore */ }
+      throw new ApiError(res.status, b?.detail || res.statusText, b);
+    }
+    return res.json() as Promise<{ ok: boolean; filename: string; content_type: string; tamanho: number; url: string }>;
+  },
 };
+
+export interface CardapioArquivoInfo {
+  existe: boolean;
+  filename?: string;
+  content_type?: string;
+  tamanho?: number;
+  atualizado_em?: string | null;
+  url?: string;
+}
 
 // ============================================
 // Pedidos

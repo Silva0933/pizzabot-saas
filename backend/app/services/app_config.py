@@ -45,6 +45,17 @@ _DDL_USAGE_IDX = (
     "ON public.llm_usage (pizzaria_id, created_at)"
 )
 
+_DDL_CARDAPIO_ARQUIVO = """
+CREATE TABLE IF NOT EXISTS public.cardapio_arquivo (
+    pizzaria_id uuid PRIMARY KEY,
+    filename text,
+    content_type text,
+    tamanho integer NOT NULL DEFAULT 0,
+    dados bytea NOT NULL,
+    updated_at timestamptz NOT NULL DEFAULT now()
+)
+"""
+
 
 async def ensure_table() -> None:
     """Cria as tabelas auxiliares se não existirem (chamado no startup)."""
@@ -52,6 +63,7 @@ async def ensure_table() -> None:
         await conn.execute(text(_DDL))
         await conn.execute(text(_DDL_USAGE))
         await conn.execute(text(_DDL_USAGE_IDX))
+        await conn.execute(text(_DDL_CARDAPIO_ARQUIVO))
 
 
 async def record_usage(

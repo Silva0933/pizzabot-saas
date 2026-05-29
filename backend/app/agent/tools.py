@@ -50,6 +50,17 @@ DECL_BUSCAR_CARDAPIO = types.FunctionDeclaration(
     ),
 )
 
+DECL_ENVIAR_CARDAPIO_ARQUIVO = types.FunctionDeclaration(
+    name="enviar_cardapio_arquivo",
+    description=(
+        "Envia o cardápio completo em arquivo (PDF/imagem) para o cliente no WhatsApp. "
+        "Use quando o cliente pedir 'o cardápio completo', 'me manda o cardápio', "
+        "'tem em PDF/foto'. Se não houver arquivo cadastrado, retorna sem enviar — "
+        "nesse caso liste os itens com buscar_cardapio."
+    ),
+    parameters=types.Schema(type=types.Type.OBJECT, properties={}, required=[]),
+)
+
 DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
     name="registrar_pedido",
     description=(
@@ -208,6 +219,37 @@ async def buscar_cardapio(
         for r in rows
     ]
     return {"encontrados": len(items), "items": items}
+
+
+async def enviar_cardapio_arquivo(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
+    """Envia o arquivo (PDF/imagem) de cardápio cadastrado pela pizzaria."""
+    row = (await db.execute(
+        text("SELECT filename, content_type FROM public.cardapio_arquivo WHERE pizzaria_id = :pid"),
+        {"pid": str(ctx.pizzaria.id)},
+    )).first()
+    if not row:
+        return {"ok": False, "motivo": "sem_arquivo"}
+    if not ctx.pizzaria.instancia:
+        return {"ok": False, "motivo": "sem_instancia"}
+
+    from app.config import get_settings
+    from app.services.evolution import evolution
+
+    filename = row[0] or "cardapio"
+    ct = (row[1] or "application/pdf").lower()
+    base = (get_settings().public_base_url or "").rstrip("/")
+    url = f"{base}/pizzarias/{ctx.pizzaria.id}/cardapio/arquivo"
+    mediatype = "image" if ct.startswith("image/") else "document"
+    try:
+        await evolution.send_media(
+            instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+            media_url=url, mediatype=mediatype, mimetype=ct, filename=filename,
+            caption="Aqui está nosso cardápio completo 📋",
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao enviar arquivo de cardápio: %s", e)
+        return {"ok": False, "motivo": "erro_envio"}
+    return {"ok": True, "enviado": True}
 
 
 async def registrar_pedido(
@@ -478,6 +520,7 @@ async def lembrar_cliente(
 # ===============================================================
 TOOL_DECLARATIONS = [
     DECL_BUSCAR_CARDAPIO,
+    DECL_ENVIAR_CARDAPIO_ARQUIVO,
     DECL_REGISTRAR_PEDIDO,
     DECL_ATUALIZAR_PEDIDO,
     DECL_CANCELAR_PEDIDO,
@@ -487,6 +530,7 @@ TOOL_DECLARATIONS = [
 
 TOOL_IMPL: dict[str, ToolFn] = {
     "buscar_cardapio": buscar_cardapio,
+    "enviar_cardapio_arquivo": enviar_cardapio_arquivo,
     "registrar_pedido": registrar_pedido,
     "atualizar_pedido": atualizar_pedido,
     "cancelar_pedido": cancelar_pedido,

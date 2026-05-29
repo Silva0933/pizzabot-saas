@@ -143,6 +143,33 @@ class EvolutionClient:
         r = await c.post(f"/message/sendText/{instancia}", json=body)
         return self._unwrap(r)
 
+    async def send_media(
+        self,
+        *,
+        instancia: str,
+        numero: str,
+        media_url: str,
+        mediatype: str = "document",
+        mimetype: str | None = None,
+        filename: str | None = None,
+        caption: str | None = None,
+    ) -> dict[str, Any]:
+        """Envia um arquivo (documento/imagem) por URL para o cliente."""
+        body: dict[str, Any] = {
+            "number": numero,
+            "mediatype": mediatype,   # 'image' | 'document' | 'video' | 'audio'
+            "media": media_url,
+        }
+        if mimetype:
+            body["mimetype"] = mimetype
+        if filename:
+            body["fileName"] = filename
+        if caption:
+            body["caption"] = caption
+        c = await self._http()
+        r = await c.post(f"/message/sendMedia/{instancia}", json=body)
+        return self._unwrap(r)
+
     async def send_presence(
         self,
         *,

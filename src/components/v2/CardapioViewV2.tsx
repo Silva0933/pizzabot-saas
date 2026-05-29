@@ -3,8 +3,8 @@
  * Conectado ao backend Python.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw, UtensilsCrossed, ImageOff } from "lucide-react";
-import { cardapioApi, BackendProduto } from "../../lib/api";
+import { Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw, UtensilsCrossed, ImageOff, FileText, Upload } from "lucide-react";
+import { cardapioApi, BackendProduto, CardapioArquivoInfo } from "../../lib/api";
 
 interface Props { pizzariaId: string; }
 
@@ -145,6 +145,8 @@ export function CardapioViewV2({ pizzariaId }: Props) {
           <AlertCircle className="w-4 h-4"/> {err}
         </div>
       )}
+
+      <CardapioArquivo pizzariaId={pizzariaId} />
 
       {(creating || editing) && (
         <div className="bg-white border-2 border-orange-200 rounded-2xl p-4 space-y-3 shadow-sm">
@@ -305,6 +307,87 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               </article>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
+  const [info, setInfo] = useState<CardapioArquivoInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  function load() {
+    cardapioApi.arquivoInfo(pizzariaId).then(setInfo).catch(() => setInfo({ existe: false }));
+  }
+  useEffect(load, [pizzariaId]);
+
+  async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setErr(null);
+    try {
+      await cardapioApi.uploadArquivo(pizzariaId, file);
+      load();
+    } catch (e: any) { setErr(e.message || "Falha no upload."); }
+    setBusy(false);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+  async function remover() {
+    if (!confirm("Remover o arquivo de cardápio?")) return;
+    setBusy(true); setErr(null);
+    try { await cardapioApi.removerArquivo(pizzariaId); setInfo({ existe: false }); }
+    catch (e: any) { setErr(e.message); }
+    setBusy(false);
+  }
+
+  const isImg = (info?.content_type || "").startsWith("image/");
+  const url = info?.existe ? `${cardapioApi.arquivoUrl(pizzariaId)}?t=${Date.now()}` : "";
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-blue-500 text-white grid place-items-center shrink-0">
+          <FileText className="w-5 h-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-slate-800">Cardápio em PDF/imagem</h3>
+          <p className="text-xs text-slate-500">
+            {info?.existe
+              ? `Enviado: ${info.filename} · o bot manda este arquivo quando pedem o cardápio completo.`
+              : "Opcional. O bot envia este arquivo quando o cliente pede o cardápio completo."}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <input ref={inputRef} type="file" accept="application/pdf,image/*" onChange={onPick} className="hidden" />
+          <button onClick={() => inputRef.current?.click()} disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl font-medium disabled:opacity-50">
+            {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {info?.existe ? "Trocar" : "Enviar arquivo"}
+          </button>
+          {info?.existe && (
+            <button onClick={remover} disabled={busy}
+              className="p-2 text-red-500 hover:bg-red-50 rounded-xl disabled:opacity-50" title="Remover">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
+
+      {info?.existe && (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {isImg ? (
+            <img src={url} alt="Cardápio" className="max-h-60 rounded-lg border border-slate-200" />
+          ) : (
+            <a href={url} target="_blank" rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs text-sky-600 hover:underline">
+              <FileText className="w-3.5 h-3.5" /> Abrir PDF enviado
+            </a>
+          )}
         </div>
       )}
     </div>
