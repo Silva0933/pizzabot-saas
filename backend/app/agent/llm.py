@@ -13,7 +13,7 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 _settings = get_settings()
 
-DEFAULT_MODEL = "gemini-2.0-flash-exp"
+DEFAULT_MODEL = "gemini-2.5-flash"
 
 _client: genai.Client | None = None
 
