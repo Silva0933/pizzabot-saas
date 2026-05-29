@@ -93,6 +93,7 @@ export function AppShell({
 // Helper para o parent: títulos padrão de cada nav
 export const NAV_PAGE_META: Record<NavKey, { title: string; subtitle?: string }> = {
   inicio:    { title: "Início" },
+  analise:   { title: "Análise", subtitle: "Desempenho e métricas do seu negócio" },
   conversas: { title: "Conversas", subtitle: "Mensagens dos clientes no WhatsApp" },
   pedidos:   { title: "Pedidos",   subtitle: "Acompanhe o fluxo dos pedidos" },
   cardapio:  { title: "Cardápio",  subtitle: "Produtos, categorias e preços" },

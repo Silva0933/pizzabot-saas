@@ -19,6 +19,7 @@ import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
 import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
+import { MetricasView } from "./components/v2/MetricasView";
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent,
@@ -323,6 +324,7 @@ export default function App() {
       )}
 
       {nav === "conversas" && <ConversasViewV2 pizzariaId={pizzaria.id} liveEvent={liveEvent}/>}
+      {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
       {nav === "pedidos"   && <PedidosViewV2 pizzariaId={pizzaria.id} columnNames={pizzaria.nomes_colunas ?? undefined} liveEvent={liveEvent}/>}
       {nav === "cardapio"  && <CardapioViewV2 pizzariaId={pizzaria.id}/>}
       {nav === "negocio"   && (

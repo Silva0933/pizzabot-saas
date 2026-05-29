@@ -52,6 +52,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selectedPedido, setSelectedPedido] = useState<BackendPedido | null>(null);
+  const [activeTabMobile, setActiveTabMobile] = useState<string>("novo");
 
   function load() {
     return pedidosApi.list(pizzariaId).then(setPedidos).catch((e) => setErr(e.message));
@@ -114,13 +115,46 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
           <AlertCircle className="w-4 h-4" /> {err}
         </div>
       )}
-      <div className="flex gap-3 overflow-x-auto pb-3">
+
+      {/* Abas Mobile */}
+      <div className="md:hidden flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-none">
         {colunas.map((col) => {
           const list = grouped[col.key] || [];
+          const isActive = activeTabMobile === col.key;
+          return (
+            <button
+              key={col.key}
+              type="button"
+              onClick={() => setActiveTabMobile(col.key)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 border cursor-pointer ${
+                isActive 
+                  ? "bg-slate-800 text-white border-slate-800 shadow-sm"
+                  : "bg-white text-slate-600 border-slate-200"
+              }`}
+            >
+              <span>{col.titulo}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
+                isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+              }`}>
+                {list.length}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex gap-3 overflow-x-auto pb-3 w-full">
+        {colunas.map((col) => {
+          const list = grouped[col.key] || [];
+          const isMobileActive = activeTabMobile === col.key;
           return (
             <div
               key={col.key}
-              className={`min-w-[270px] flex-1 rounded-2xl border ${col.col} p-2.5 transition-colors`}
+              className={`rounded-2xl border ${col.col} p-2.5 transition-all ${
+                isMobileActive 
+                  ? "w-full min-w-0 flex flex-col" 
+                  : "hidden md:flex md:flex-col md:min-w-[270px] md:flex-1"
+              }`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
                 const id = e.dataTransfer.getData("pedido_id");

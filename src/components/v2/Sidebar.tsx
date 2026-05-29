@@ -13,9 +13,10 @@ import {
   Store,
   Pizza,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 
-export type NavKey = "inicio" | "conversas" | "pedidos" | "cardapio" | "negocio" | "admin";
+export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "admin";
 
 export interface NavBadges {
   conversas?: number;
@@ -33,6 +34,7 @@ export interface SidebarProps {
 
 const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "inicio",    label: "Início",       icon: Home },
+  { key: "analise",   label: "Análise",      icon: TrendingUp },
   { key: "conversas", label: "Conversas",    icon: MessageSquare },
   { key: "pedidos",   label: "Pedidos",      icon: ClipboardList },
   { key: "cardapio",  label: "Cardápio",     icon: UtensilsCrossed },
@@ -128,7 +130,7 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
               key={key}
               type="button"
               onClick={() => onChange(key)}
-              className="flex flex-col items-center gap-0.5 px-2 py-1.5 min-w-0 flex-1 relative"
+              className="flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-0 flex-1 relative"
             >
               <Icon className={`w-5 h-5 ${isActive ? "text-orange-600" : "text-slate-400"}`} />
               <span className={`text-[10px] ${isActive ? "text-orange-700 font-semibold" : "text-slate-500"}`}>

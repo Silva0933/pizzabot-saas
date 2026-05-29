@@ -133,8 +133,9 @@ async def reindex_embeddings(
 
     try:
         vecs = await embed_batch(textos)
-    except RuntimeError as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    except Exception as e:
+        log.exception("Erro ao gerar embeddings para reindexação")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Erro ao gerar embeddings: {e}") from e
 
     # Atualiza um por um via SQL puro (pgvector espera formato '[1.2, 3.4, ...]')
     for p, v in zip(produtos, vecs):
