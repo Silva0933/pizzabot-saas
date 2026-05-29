@@ -51,12 +51,22 @@ async def _authorize(token: str, pizzaria_id: uuid.UUID) -> Usuario | None:
         return user if link else None
 
 
+@router.websocket("/ws/{pizzaria_id}")
+async def panel_ws_path(websocket: WebSocket, pizzaria_id: uuid.UUID, token: str = Query(...)) -> None:
+    """Rota alternativa com pizzaria_id no path (frontend usa esta)."""
+    await _handle_ws(websocket, token, pizzaria_id)
+
+
 @router.websocket("/ws")
 async def panel_ws(
     websocket: WebSocket,
     token: str = Query(...),
     pizzaria_id: uuid.UUID = Query(...),
 ) -> None:
+    await _handle_ws(websocket, token, pizzaria_id)
+
+
+async def _handle_ws(websocket: WebSocket, token: str, pizzaria_id: uuid.UUID) -> None:
     user = await _authorize(token, pizzaria_id)
     if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)

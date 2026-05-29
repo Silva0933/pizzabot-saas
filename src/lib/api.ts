@@ -253,6 +253,11 @@ export const conversasApi = {
     api.patch(`/pizzarias/${pizzariaId}/conversas/${conversaId}/bot`, { bot_ativo: botAtivo }),
   marcarLida: (pizzariaId: string, conversaId: string) =>
     api.post(`/pizzarias/${pizzariaId}/conversas/${conversaId}/lida`),
+  limparTodas: (pizzariaId: string) =>
+    request<{ ok: boolean; conversas_deletadas: number }>(
+      `/pizzarias/${pizzariaId}/conversas/todas`,
+      { method: "DELETE", headers: { "X-Confirm-Delete": "true" } as any },
+    ),
 };
 
 // ============================================
@@ -374,24 +379,86 @@ export interface WsEvent {
     | "conversa.atualizada"
     | "pedido.novo"
     | "pedido.atualizado"
-    | "bot.toggled";
+    | "bot.toggled"
+    | "bot.digitando"
+    | "atendimento.humano"
+    | "conversas.limpas"
+    | "system.hello";
   pizzaria_id: string;
   payload: Record<string, any>;
 }
 
-export function connectWebSocket(pizzariaId: string, onEvent: (e: WsEvent) => void): WebSocket {
+/**
+ * Conecta ao WebSocket com reconexão automática (backoff exponencial).
+ * Heartbeat a cada 30s para manter conexão viva.
+ */
+export function connectWebSocket(
+  pizzariaId: string,
+  onEvent: (e: WsEvent) => void,
+  onStatusChange?: (connected: boolean) => void,
+): WebSocket {
   const base = API_BASE.replace(/^https/, "wss").replace(/^http/, "ws");
   const token = getToken();
-  const ws = new WebSocket(`${base}/ws/${pizzariaId}?token=${token ?? ""}`);
-  ws.onmessage = (msg) => {
-    try {
-      const data: WsEvent = JSON.parse(msg.data);
-      onEvent(data);
-    } catch (e) {
-      console.warn("WS payload inválido", e);
-    }
+  const url = `${base}/ws/${pizzariaId}?token=${token ?? ""}`;
+
+  let ws: WebSocket;
+  let retryCount = 0;
+  const maxRetries = 10;
+  let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  let intentionalClose = false;
+
+  function connect(): WebSocket {
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      console.info("WS conectado");
+      retryCount = 0;
+      onStatusChange?.(true);
+      // Heartbeat a cada 30s
+      heartbeatTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send("ping");
+        }
+      }, 30_000);
+    };
+
+    ws.onmessage = (msg) => {
+      try {
+        const data: WsEvent = JSON.parse(msg.data);
+        onEvent(data);
+      } catch {
+        // pong ou payload inválido
+      }
+    };
+
+    ws.onerror = () => {
+      console.warn("WS erro");
+    };
+
+    ws.onclose = () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      onStatusChange?.(false);
+      if (!intentionalClose && retryCount < maxRetries) {
+        const delay = Math.min(1000 * 2 ** retryCount, 30_000);
+        retryCount++;
+        console.info(`WS reconectando em ${delay}ms (tentativa ${retryCount})`);
+        setTimeout(() => connect(), delay);
+      }
+    };
+
+    return ws;
+  }
+
+  ws = connect();
+
+  // Sobrescreve close para marcar como intencional
+  const originalClose = ws.close.bind(ws);
+  ws.close = (...args: any[]) => {
+    intentionalClose = true;
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    originalClose(...args);
   };
-  ws.onerror = (e) => console.warn("WS erro", e);
+
   return ws;
 }
 

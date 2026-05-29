@@ -1,9 +1,10 @@
 """API do painel para conversas e mensagens."""
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -206,3 +207,64 @@ async def marcar_lida(
     conv.unread_count = 0
     await db.commit()
     return {"ok": True}
+
+
+# ============================================
+# Limpar TODAS as conversas e mensagens
+# ============================================
+log = logging.getLogger(__name__)
+
+
+@router.delete("/conversas/todas")
+async def limpar_todas_conversas(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+    x_confirm_delete: str | None = Header(None),
+) -> dict:
+    """
+    Apaga TODAS as conversas e mensagens de uma pizzaria.
+
+    Requer header `X-Confirm-Delete: true` para confirmar a ação.
+    """
+    if x_confirm_delete != "true":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Header X-Confirm-Delete: true é obrigatório para confirmar esta ação destrutiva.",
+        )
+
+    # Deleta mensagens primeiro (FK depende de conversas)
+    await db.execute(
+        delete(Mensagem).where(Mensagem.pizzaria_id == pizzaria_id)
+    )
+    # Deleta conversas
+    result = await db.execute(
+        delete(Conversa).where(Conversa.pizzaria_id == pizzaria_id)
+    )
+    conversas_deletadas = result.rowcount
+
+    await db.commit()
+
+    # Limpa filas Redis pendentes desta pizzaria
+    try:
+        from app.redis_client import redis as redis_client
+        keys_pending = await redis_client.keys(f"pending:{pizzaria_id}:*")
+        keys_flush = await redis_client.keys(f"flush_at:{pizzaria_id}:*")
+        all_keys = keys_pending + keys_flush
+        if all_keys:
+            await redis_client.delete(*all_keys)
+    except Exception as e:
+        log.warning("Erro ao limpar filas Redis: %s", e)
+
+    # Broadcast para atualizar painel em tempo real
+    await broadcaster.publish(
+        pizzaria_id,
+        {
+            "tipo": "conversas.limpas",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {"conversas_deletadas": conversas_deletadas},
+        },
+    )
+
+    log.info("Todas as conversas da pizzaria %s foram apagadas (%d conversas)", pizzaria_id, conversas_deletadas)
+    return {"ok": True, "conversas_deletadas": conversas_deletadas}

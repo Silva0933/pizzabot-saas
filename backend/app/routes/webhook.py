@@ -125,8 +125,17 @@ async def evolution_webhook(
         # Ainda salvamos a msg pra histórico, mas não processamos com IA
         # (deixa o painel decidir o que fazer)
 
+    # ---- filtra grupos e broadcasts ----
+    remote_jid = key.get("remoteJid", "")
+    if remote_jid.endswith("@g.us"):
+        log.debug("Ignorando mensagem de grupo: %s", remote_jid)
+        return {"ignored": "group_message"}
+    if "@broadcast" in remote_jid:
+        log.debug("Ignorando mensagem de broadcast: %s", remote_jid)
+        return {"ignored": "broadcast_message"}
+
     # ---- extrai dados ----
-    telefone = _extract_phone(key.get("remoteJid", ""))
+    telefone = _extract_phone(remote_jid)
     if not telefone:
         return {"ignored": "no_phone"}
 
@@ -165,11 +174,11 @@ async def evolution_webhook(
             conteudo=conteudo,
             metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
         )
-        # Agenda flush_conversation com countdown=3.2s
+        # Agenda flush_conversation com countdown=10.5s (alinhado ao debounce de 10s)
         from app.workers.tasks import flush_conversation
         flush_conversation.apply_async(
             args=[str(pizz.id), telefone],
-            countdown=3.2,
+            countdown=10.5,
         )
 
     await broadcaster.publish(

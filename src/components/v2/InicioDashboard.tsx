@@ -22,6 +22,7 @@ import {
   UtensilsCrossed,
   Store,
   ArrowRight,
+  Bell,
 } from "lucide-react";
 import type { Order, Conversation, Pizzeria } from "../../types";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
@@ -46,6 +47,10 @@ export function InicioDashboard({
   const stats = useMemo(() => computeTodayStats(orders, conversations), [orders, conversations]);
 
   const showChecklist = onboarding && onboarding.some((i) => !i.done);
+  const humanoNecessario = conversations.filter((c: any) => 
+    c.status === "Humano necessário" || c.status === "humano_necessario" || 
+    (c as any).raw_status === "humano_necessario"
+  ).length;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6">
@@ -76,6 +81,28 @@ export function InicioDashboard({
           </div>
         </div>
       </div>
+
+      {/* Alerta de atendimento humano */}
+      {humanoNecessario > 0 && (
+        <button
+          type="button"
+          onClick={() => onNavigate("conversas")}
+          className="w-full bg-red-50 border-2 border-red-200 rounded-2xl p-4 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-red-300 transition-all group animate-pulse"
+        >
+          <div className="w-12 h-12 rounded-xl bg-red-500 text-white flex items-center justify-center shadow-sm shrink-0">
+            <Bell className="w-6 h-6" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-bold text-red-700">
+              🔴 {humanoNecessario} {humanoNecessario === 1 ? 'cliente precisa' : 'clientes precisam'} de atendimento humano
+            </p>
+            <p className="text-xs text-red-500 mt-0.5">
+              Clique para abrir as conversas e atender
+            </p>
+          </div>
+          <ArrowRight className="w-5 h-5 text-red-400 group-hover:text-red-600 group-hover:translate-x-1 transition-all" />
+        </button>
+      )}
 
       {/* Onboarding (só aparece se faltam passos) */}
       {showChecklist && <OnboardingChecklist items={onboarding!} />}

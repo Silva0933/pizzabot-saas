@@ -346,6 +346,37 @@ async def escalar_humano(
         conv.status = "humano_necessario"
         await db.flush()
 
+        # Broadcast para alertar o painel em tempo real
+        from app.services.broadcaster import broadcaster
+
+        await broadcaster.publish(
+            ctx.pizzaria.id,
+            {
+                "tipo": "atendimento.humano",
+                "pizzaria_id": str(ctx.pizzaria.id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "telefone": ctx.telefone,
+                    "cliente_nome": conv.cliente_nome,
+                    "motivo": motivo_escalonamento,
+                },
+            },
+        )
+        await broadcaster.publish(
+            ctx.pizzaria.id,
+            {
+                "tipo": "conversa.atualizada",
+                "pizzaria_id": str(ctx.pizzaria.id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "telefone": ctx.telefone,
+                    "bot_ativo": False,
+                    "status": "humano_necessario",
+                    "motivo": motivo_escalonamento,
+                },
+            },
+        )
+
     log.info(
         "Escalou: pizzaria=%s tel=%s motivo=%s",
         ctx.pizzaria.id, ctx.telefone, motivo_escalonamento,

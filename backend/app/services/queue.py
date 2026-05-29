@@ -20,7 +20,7 @@ from typing import Any
 
 from app.redis_client import redis
 
-DEBOUNCE_SECONDS = 3.0
+DEBOUNCE_SECONDS = 10.0
 
 
 def _pending_key(pid: uuid.UUID, phone: str) -> str:

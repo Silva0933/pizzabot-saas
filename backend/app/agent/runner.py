@@ -114,13 +114,7 @@ async def process_and_reply(
 
     Esta função é chamada pelo worker Celery.
     """
-    result = await run_agent(db, pizzaria_id, telefone, user_input)
-
-    if not result.texto:
-        log.warning("Agente terminou sem texto (iter=%d)", result.iteracoes)
-        return {"ok": False, "iter": result.iteracoes, "tool_calls": result.tool_calls}
-
-    # Carrega conversa e pizzaria para enviar via Evolution
+    # Carrega conversa e pizzaria
     from sqlalchemy import select
     from app.models import Pizzaria
 
@@ -133,6 +127,37 @@ async def process_and_reply(
             )
         )
     ).scalar_one_or_none()
+
+    # ---- Envia indicador de "digitando" ANTES de processar ----
+    try:
+        if conv:
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "bot.digitando",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": telefone,
+                        "acao": "digitando",
+                    },
+                },
+            )
+        if pizz.instancia:
+            await evolution.send_presence(
+                instancia=pizz.instancia,
+                numero=telefone,
+                tipo="composing",
+            )
+    except Exception as e:
+        log.debug("Falha ao enviar indicador de digitando: %s", e)
+
+    # ---- Roda o agente IA ----
+    result = await run_agent(db, pizzaria_id, telefone, user_input)
+
+    if not result.texto:
+        log.warning("Agente terminou sem texto (iter=%d)", result.iteracoes)
+        return {"ok": False, "iter": result.iteracoes, "tool_calls": result.tool_calls}
 
     # Envia pelo WhatsApp
     try:
@@ -158,8 +183,11 @@ async def process_and_reply(
         db.add(msg)
         conv.last_message = result.texto
         conv.last_timestamp = datetime.now(timezone.utc)
+        # ---- Reset unread_count quando bot responde ----
+        conv.unread_count = 0
         await db.commit()
 
+        # Broadcast nova mensagem do bot
         await broadcaster.publish(
             pizzaria_id,
             {
@@ -173,6 +201,34 @@ async def process_and_reply(
                     "origem": "bot",
                     "created_at": msg.created_at.isoformat() if msg.created_at else None,
                 },
+            },
+        )
+
+        # ---- Broadcast conversa.atualizada (unread_count resetado) ----
+        await broadcaster.publish(
+            pizzaria_id,
+            {
+                "tipo": "conversa.atualizada",
+                "pizzaria_id": str(pizzaria_id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "telefone": telefone,
+                    "unread_count": 0,
+                    "last_message": result.texto,
+                    "bot_ativo": conv.bot_ativo,
+                    "status": conv.status,
+                },
+            },
+        )
+
+    # ---- Broadcast pedido.novo se registrar_pedido foi chamada ----
+    if "registrar_pedido" in result.tool_calls:
+        await broadcaster.publish(
+            pizzaria_id,
+            {
+                "tipo": "pedido.novo",
+                "pizzaria_id": str(pizzaria_id),
+                "payload": {"telefone": telefone},
             },
         )
 

@@ -143,6 +143,30 @@ class EvolutionClient:
         r = await c.post(f"/message/sendText/{instancia}", json=body)
         return self._unwrap(r)
 
+    async def send_presence(
+        self,
+        *,
+        instancia: str,
+        numero: str,
+        tipo: str = "composing",
+    ) -> dict[str, Any]:
+        """
+        Envia indicador de presença (digitando/gravando).
+
+        tipo: 'composing' (digitando) ou 'recording' (gravando áudio).
+        """
+        body = {
+            "number": f"{numero}@s.whatsapp.net",
+            "presence": tipo,  # "composing" ou "recording"
+        }
+        try:
+            c = await self._http()
+            r = await c.post(f"/chat/updatePresence/{instancia}", json=body)
+            return self._unwrap(r)
+        except Exception as e:
+            log.debug("Presença não enviada (não-fatal): %s", e)
+            return {"ok": False}
+
     async def send_reaction(
         self,
         *,

@@ -119,12 +119,55 @@ export default function App() {
     if (!pizzaria) return;
     const ws = connectWebSocket(pizzaria.id, (ev) => {
       setLiveEvent(ev);
-      // Eventos que mexem em dados gerais → refresh
+      // Eventos de pedido → refresh
       if (ev.tipo === "pedido.novo" || ev.tipo === "pedido.atualizado") {
         pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
       }
-      if (ev.tipo === "conversa.atualizada" || ev.tipo === "mensagem.nova") {
+      // Mensagem nova → atualização incremental da conversa na lista
+      if (ev.tipo === "mensagem.nova") {
+        setConversations((prev) => {
+          const p = ev.payload;
+          const idx = prev.findIndex((c: any) => c.id === p?.conversa_id);
+          if (idx >= 0) {
+            const updated = { ...prev[idx] };
+            updated.lastMessage = p.conteudo || updated.lastMessage;
+            updated.lastTimestamp = p.created_at || new Date().toISOString();
+            if (p.origem === "cliente") {
+              (updated as any).unreadCount = ((updated as any).unreadCount || 0) + 1;
+            }
+            const list = [...prev];
+            list[idx] = updated;
+            return list;
+          }
+          // Nova conversa - refetch
+          conversasApi.list(pizzaria.id).then((c) => setConversations(c.map(backendToConversation))).catch(() => {});
+          return prev;
+        });
+      }
+      // Conversa atualizada (unread resetado, bot toggled, etc.)
+      if (ev.tipo === "conversa.atualizada" || ev.tipo === "bot.toggled") {
+        setConversations((prev) => 
+          prev.map((c: any) => {
+            if (c.id !== ev.payload?.conversa_id) return c;
+            return {
+              ...c,
+              unreadCount: ev.payload.unread_count ?? c.unreadCount,
+              lastMessage: ev.payload.last_message ?? c.lastMessage,
+              botActive: ev.payload.bot_ativo ?? c.botActive,
+              status: ev.payload.status === "humano_necessario" ? "Humano necessário" 
+                    : ev.payload.bot_ativo ? "Bot ativo" 
+                    : c.status,
+            };
+          })
+        );
+      }
+      // Atendimento humano → refresh conversas (para badge) 
+      if (ev.tipo === "atendimento.humano") {
         conversasApi.list(pizzaria.id).then((c) => setConversations(c.map(backendToConversation))).catch(() => {});
+      }
+      // Conversas limpas → esvaziar tudo
+      if (ev.tipo === "conversas.limpas") {
+        setConversations([]);
       }
     });
     wsRef.current = ws;
