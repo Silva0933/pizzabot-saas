@@ -6,16 +6,18 @@
  * - Análise: MetricasView
  * - Geral: formulário inline de config da pizzaria (substitui SettingsView)
  */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
-  Bot, Settings as SettingsIcon, Sparkles, TrendingUp, Save, Loader2,
+  Bot, Settings as SettingsIcon, Sparkles, Save, Loader2,
   Store, Smartphone, CreditCard, Clock, X, QrCode, CheckCircle2,
-  RefreshCw, Wifi, WifiOff,
+  RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
 } from "lucide-react";
 import { AttendantPage } from "../AttendantPage";
-import { BackendPizzaria, pizzariasApi, WhatsAppConnect } from "../../lib/api";
+import {
+  BackendPizzaria, BackendPedido, pizzariasApi, pedidosApi, conversasApi, WhatsAppConnect,
+} from "../../lib/api";
 
-export type NegocioTab = "atendente" | "geral";
+export type NegocioTab = "atendente" | "geral" | "historico";
 
 interface Props {
   pizzaria: BackendPizzaria;
@@ -33,12 +35,15 @@ export function MeuNegocioViewV2({ pizzaria, onUpdated, initialTab = "atendente"
           <TabButton active={tab === "atendente"} onClick={() => setTab("atendente")}
             icon={<Bot className="w-4 h-4"/>} label="Atendente"
             badge={<Sparkles className="w-3 h-3 text-orange-500"/>}/>
+          <TabButton active={tab === "historico"} onClick={() => setTab("historico")}
+            icon={<History className="w-4 h-4"/>} label="Histórico"/>
           <TabButton active={tab === "geral"} onClick={() => setTab("geral")}
             icon={<SettingsIcon className="w-4 h-4"/>} label="Geral"/>
         </div>
       </div>
 
       {tab === "atendente" && <AttendantPage pizzariaId={pizzaria.id} />}
+      {tab === "historico" && <HistoricoPedidos pizzaria={pizzaria} />}
       {tab === "geral"     && <ConfigGeral pizzaria={pizzaria} onUpdated={onUpdated} />}
     </div>
   );
@@ -150,6 +155,8 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
       </Card>
 
       {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{err}</div>}
+
+      <ZonaPerigo pizzariaId={pizzaria.id} />
 
       <div className="sticky bottom-2 flex justify-end">
         <button onClick={save} disabled={saving}
@@ -307,6 +314,197 @@ function WhatsAppCard({ pizzaria }: { pizzaria: BackendPizzaria }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================
+// Aba: Histórico — todos os pedidos
+// ============================================
+const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
+  novo:       { label: "Novo",       cls: "bg-blue-100 text-blue-700" },
+  confirmado: { label: "Confirmado", cls: "bg-emerald-100 text-emerald-700" },
+  no_forno:   { label: "No forno",   cls: "bg-amber-100 text-amber-700" },
+  a_caminho:  { label: "A caminho",  cls: "bg-violet-100 text-violet-700" },
+  entregue:   { label: "Entregue",   cls: "bg-slate-200 text-slate-600" },
+  cancelado:  { label: "Cancelado",  cls: "bg-rose-100 text-rose-700" },
+};
+const brl = (n: number) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function HistoricoPedidos({ pizzaria }: { pizzaria: BackendPizzaria }) {
+  const [pedidos, setPedidos] = useState<BackendPedido[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<string>("todos");
+
+  function load() {
+    setLoading(true);
+    pedidosApi.list(pizzaria.id, { limit: 500 })
+      .then(setPedidos)
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+  }
+  useEffect(load, [pizzaria.id]);
+
+  const filtrados = useMemo(
+    () => (filtro === "todos" ? pedidos : pedidos.filter((p) => p.status === filtro)),
+    [pedidos, filtro],
+  );
+  const totalFaturado = useMemo(
+    () => pedidos.filter((p) => p.status !== "cancelado").reduce((s, p) => s + Number(p.valor_total || 0), 0),
+    [pedidos],
+  );
+
+  if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-orange-500"/></div>;
+
+  return (
+    <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
+      <div className="flex items-center gap-3">
+        <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-900 text-white grid place-items-center shadow-sm">
+          <History className="w-5 h-5" />
+        </span>
+        <div>
+          <h2 className="text-xl font-bold text-slate-800">Histórico de pedidos</h2>
+          <p className="text-sm text-slate-500">
+            {pedidos.length} pedido{pedidos.length === 1 ? "" : "s"} no total · {brl(totalFaturado)} faturado
+          </p>
+        </div>
+        <button onClick={load} className="ml-auto p-2 text-slate-500 hover:bg-slate-100 rounded-lg" title="Atualizar">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      </div>
+
+      {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{err}</div>}
+
+      <div className="flex gap-1.5 flex-wrap">
+        {["todos", "novo", "confirmado", "no_forno", "a_caminho", "entregue", "cancelado"].map((s) => (
+          <button key={s} onClick={() => setFiltro(s)}
+            className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+              filtro === s ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+            }`}>
+            {s === "todos" ? "Todos" : STATUS_LABEL[s]?.label || s}
+          </button>
+        ))}
+      </div>
+
+      {filtrados.length === 0 ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center">
+          <div className="w-14 h-14 rounded-full bg-slate-50 grid place-items-center mx-auto mb-3">
+            <Package className="w-7 h-7 text-slate-300" />
+          </div>
+          <p className="text-sm font-medium text-slate-600">Nenhum pedido</p>
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden divide-y divide-slate-100">
+          {filtrados.map((p) => {
+            const st = STATUS_LABEL[p.status] || { label: p.status, cls: "bg-slate-100 text-slate-600" };
+            return (
+              <div key={p.id} className="px-4 py-3 flex items-center gap-3 hover:bg-slate-50/60">
+                <span className="w-10 h-10 rounded-lg bg-slate-100 text-slate-700 grid place-items-center font-bold text-xs shrink-0">
+                  #{p.numero_pedido ?? "—"}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-800 truncate">
+                    {p.cliente?.nome || p.cliente?.telefone || "Cliente"}
+                  </p>
+                  <p className="text-[11px] text-slate-400">
+                    {new Date(p.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {" · "}{(p.itens || []).length} {(p.itens || []).length === 1 ? "item" : "itens"}
+                  </p>
+                </div>
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.cls} shrink-0`}>{st.label}</span>
+                <span className="text-sm font-bold text-emerald-600 shrink-0 w-24 text-right">{brl(p.valor_total)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// Zona de perigo — apagar conversas / pedidos
+// ============================================
+function ZonaPerigo({ pizzariaId }: { pizzariaId: string }) {
+  const [confirm, setConfirm] = useState<null | "conversas" | "pedidos">(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  async function run() {
+    if (!confirm) return;
+    setBusy(true);
+    setMsg(null);
+    try {
+      if (confirm === "conversas") {
+        const r = await conversasApi.limparTodas(pizzariaId);
+        setMsg(`${r.conversas_deletadas} conversa(s) apagada(s).`);
+      } else {
+        const r = await pedidosApi.apagarTodos(pizzariaId);
+        setMsg(`${r.pedidos_deletados} pedido(s) apagado(s).`);
+      }
+      setConfirm(null);
+    } catch (e: any) { setMsg(e.message || "Erro ao apagar."); }
+    setBusy(false);
+  }
+
+  return (
+    <section className="bg-white border border-red-200 rounded-2xl p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-red-700 mb-1 flex items-center gap-2">
+        <span className="w-7 h-7 rounded-lg grid place-items-center bg-red-100 text-red-600"><AlertTriangle className="w-4 h-4" /></span>
+        Zona de perigo
+      </h3>
+      <p className="text-xs text-slate-500 mb-3.5">Ações irreversíveis. Apagam dados do painel e do banco de dados.</p>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="border border-slate-200 rounded-xl p-3">
+          <p className="text-sm font-medium text-slate-700">Apagar todas as conversas</p>
+          <p className="text-xs text-slate-400 mt-0.5 mb-2.5">Conversas, mensagens e filas do bot.</p>
+          <button onClick={() => { setConfirm("conversas"); setMsg(null); }}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 inline-flex items-center gap-1.5">
+            <Trash2 className="w-3.5 h-3.5" /> Apagar conversas
+          </button>
+        </div>
+        <div className="border border-slate-200 rounded-xl p-3">
+          <p className="text-sm font-medium text-slate-700">Apagar todos os pedidos</p>
+          <p className="text-xs text-slate-400 mt-0.5 mb-2.5">Remove pedidos do painel e do servidor.</p>
+          <button onClick={() => { setConfirm("pedidos"); setMsg(null); }}
+            className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 inline-flex items-center gap-1.5">
+            <Trash2 className="w-3.5 h-3.5" /> Apagar pedidos
+          </button>
+        </div>
+      </div>
+
+      {msg && <p className="text-xs text-slate-600 mt-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">{msg}</p>}
+
+      {confirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => !busy && setConfirm(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-12 h-12 rounded-full bg-red-100 grid place-items-center shrink-0">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">
+                  Apagar {confirm === "conversas" ? "todas as conversas" : "todos os pedidos"}?
+                </h3>
+                <p className="text-sm text-slate-500">Esta ação é permanente e irreversível.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end mt-4">
+              <button onClick={() => setConfirm(null)} disabled={busy}
+                className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg">
+                Cancelar
+              </button>
+              <button onClick={run} disabled={busy}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg flex items-center gap-2 disabled:opacity-60">
+                {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+                <Trash2 className="w-4 h-4" /> Sim, apagar tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

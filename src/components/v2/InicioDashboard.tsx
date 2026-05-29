@@ -9,7 +9,7 @@
  *
  * Se quiser análise histórica, vai pro "Financeiro" dentro de "Meu Negócio".
  */
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ShoppingBag,
   DollarSign,
@@ -23,6 +23,8 @@ import {
   Store,
   ArrowRight,
   Bell,
+  Settings,
+  X,
 } from "lucide-react";
 import type { Order, Conversation, Pizzeria } from "../../types";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
@@ -46,7 +48,9 @@ export function InicioDashboard({
 }: InicioDashboardProps) {
   const stats = useMemo(() => computeTodayStats(orders, conversations), [orders, conversations]);
 
-  const showChecklist = onboarding && onboarding.some((i) => !i.done);
+  const [showConfig, setShowConfig] = useState(false);
+  const pendentesConfig = (onboarding ?? []).filter((i) => !i.done).length;
+  const showChecklist = pendentesConfig > 0;
   const humanoNecessario = conversations.filter((c: any) => 
     c.status === "Humano necessário" || c.status === "humano_necessario" || 
     (c as any).raw_status === "humano_necessario"
@@ -60,10 +64,26 @@ export function InicioDashboard({
         <div className="absolute -right-6 -top-8 opacity-20 select-none pointer-events-none">
           <Pizza className="w-40 h-40" />
         </div>
+        {/* Botão pulsante de configuração pendente */}
+        {showChecklist && (
+          <button
+            type="button"
+            onClick={() => setShowConfig((v) => !v)}
+            title={`${pendentesConfig} configuração(ões) pendente(s)`}
+            className="absolute right-4 top-4 z-10 w-11 h-11 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm grid place-items-center transition-colors"
+          >
+            <Settings className="w-5 h-5 text-white" />
+            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-white text-orange-600 text-[11px] font-bold grid place-items-center shadow">
+              {pendentesConfig}
+            </span>
+            <span className="absolute inset-0 rounded-full ring-2 ring-white/60 animate-ping" />
+          </button>
+        )}
+
         <div className="relative">
           <p className="text-xs font-medium text-white/80 uppercase tracking-wide">{todayLabel()}</p>
           <h2 className="text-2xl md:text-3xl font-bold mt-1">
-            {greeting()}, {pizzeria.name?.split(" ")[0] || "tudo bem"}? 👋
+            {greeting()}, {pizzeria.name || "tudo bem"}? 👋
           </h2>
           <p className="text-sm text-white/90 mt-2 max-w-lg">
             {stats.pedidosPendentes > 0
@@ -104,8 +124,20 @@ export function InicioDashboard({
         </button>
       )}
 
-      {/* Onboarding (só aparece se faltam passos) */}
-      {showChecklist && <OnboardingChecklist items={onboarding!} />}
+      {/* Onboarding — só abre ao clicar no ícone pulsante de config */}
+      {showChecklist && showConfig && (
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowConfig(false)}
+            className="absolute right-3 top-3 z-10 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"
+            title="Fechar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+          <OnboardingChecklist items={onboarding!} />
+        </div>
+      )}
 
       {/* Cards de KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -363,9 +395,8 @@ function computeTodayStats(orders: Order[], conversations: Conversation[]) {
   today.setHours(0, 0, 0, 0);
 
   const hoje = orders.filter((o) => new Date(o.createdAt) >= today && o.status !== "cancelado");
-  const vendidoHoje = hoje
-    .filter((o) => (o as any).paymentStatus === "approved" || o.status === "entregue")
-    .reduce((sum, o) => sum + (o.totalValue || 0), 0);
+  // Vendido hoje = soma de todos os pedidos não cancelados do dia (atualiza em tempo real).
+  const vendidoHoje = hoje.reduce((sum, o) => sum + (o.totalValue || 0), 0);
 
   const pendentes = hoje.filter((o) => o.status === "novo" || o.status === "confirmado");
   const naoLidas = conversations.reduce((n, c: any) => n + (c.unreadCount || c.unread_count || 0), 0);

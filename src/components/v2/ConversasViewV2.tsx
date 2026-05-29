@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   Loader2, Send, Bot, BotOff, AlertCircle, MessageSquare, User,
-  Trash2, AlertTriangle, Bell, X,
+  Bell, X,
 } from "lucide-react";
 import {
   conversasApi,
@@ -34,8 +34,6 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
   const [draft, setDraft] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [typing, setTyping] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [humanAlert, setHumanAlert] = useState<{ nome: string; motivo: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -220,21 +218,6 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
     } catch (e: any) { setErr(e.message); }
   }
 
-  async function handleDeleteAll() {
-    setDeleting(true);
-    try {
-      await conversasApi.limparTodas(pizzariaId);
-      setConversas([]);
-      setActive(null);
-      setMensagens([]);
-      setShowDeleteModal(false);
-    } catch (e: any) {
-      setErr(e.message);
-    } finally {
-      setDeleting(false);
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -245,44 +228,6 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
 
   return (
     <>
-      {/* Modal de confirmação para deletar */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full mx-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-red-100 grid place-items-center shrink-0">
-                <AlertTriangle className="w-6 h-6 text-red-600" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Apagar todas as conversas?</h3>
-                <p className="text-sm text-slate-500">Esta ação é permanente e irreversível.</p>
-              </div>
-            </div>
-            <p className="text-sm text-slate-600 bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-              Todas as <strong>conversas</strong> e <strong>mensagens</strong> desta pizzaria serão apagadas permanentemente do banco de dados. As filas de processamento do bot também serão limpas.
-            </p>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowDeleteModal(false)}
-                disabled={deleting}
-                className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={handleDeleteAll}
-                disabled={deleting}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-60"
-              >
-                {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
-                <Trash2 className="w-4 h-4" />
-                Sim, apagar tudo
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Alerta toast de atendimento humano */}
       {humanAlert && (
         <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2 fade-in">
@@ -313,13 +258,6 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
               <MessageSquare className="w-4 h-4" />
               <h2 className="text-sm font-bold">Conversas</h2>
               <span className="ml-auto text-xs bg-white/20 rounded-full px-2 py-0.5 font-medium">{ordered.length}</span>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="ml-1 text-white/80 hover:text-white transition-colors p-1 hover:bg-white/15 rounded-lg"
-                title="Limpar todas as conversas"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
             </div>
           </div>
           {ordered.length === 0 && (
@@ -474,25 +412,42 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
                 </div>
               )}
 
-              <form
-                onSubmit={(e) => { e.preventDefault(); send(); }}
-                className="p-3 bg-white border-t border-slate-200 flex gap-2 items-center"
-              >
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Responder como operador humano…"
-                  disabled={sending}
-                  className="flex-1 px-4 py-2.5 bg-slate-100 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-orange-200 outline-none transition"
-                />
-                <button
-                  type="submit"
-                  disabled={sending || !draft.trim()}
-                  className="bg-gradient-to-br from-orange-500 to-rose-500 hover:opacity-90 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-sm disabled:opacity-50 shrink-0"
+              {active.bot_ativo ? (
+                /* Bot ativo → não deixa responder manualmente; oferece assumir. */
+                <div className="p-3 bg-white border-t border-slate-200 flex items-center gap-3">
+                  <div className="flex-1 flex items-center gap-2 text-xs text-slate-500 bg-slate-50 rounded-full px-4 py-2.5">
+                    <Bot className="w-4 h-4 text-emerald-500 shrink-0" />
+                    O bot está atendendo esta conversa. Assuma para responder manualmente.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleBot}
+                    className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium px-4 py-2.5 rounded-full flex items-center gap-1.5 shrink-0"
+                  >
+                    <BotOff className="w-4 h-4" /> Assumir conversa
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => { e.preventDefault(); send(); }}
+                  className="p-3 bg-white border-t border-slate-200 flex gap-2 items-center"
                 >
-                  {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
-              </form>
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Responder como operador humano…"
+                    disabled={sending}
+                    className="flex-1 px-4 py-2.5 bg-slate-100 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-orange-200 outline-none transition"
+                  />
+                  <button
+                    type="submit"
+                    disabled={sending || !draft.trim()}
+                    className="bg-gradient-to-br from-orange-500 to-rose-500 hover:opacity-90 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-sm disabled:opacity-50 shrink-0"
+                  >
+                    {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
+                </form>
+              )}
             </>
           )}
         </section>

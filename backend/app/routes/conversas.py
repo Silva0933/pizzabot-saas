@@ -96,6 +96,13 @@ async def enviar_manual(
     if not conv:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversa não encontrada")
 
+    # Só permite envio manual quando o bot está desativado nesta conversa.
+    if conv.bot_ativo:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Desative o atendimento do bot nesta conversa para enviar mensagens manualmente.",
+        )
+
     pizz = (
         await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))
     ).scalar_one()

@@ -123,6 +123,7 @@ export interface BackendPizzaria {
   mp_access_token: string | null;
   tempo_entrega_min?: number | null;
   tempo_entrega_max?: number | null;
+  created_at?: string | null;
 }
 
 export interface BackendProduto {
@@ -242,12 +243,24 @@ export const cardapioApi = {
 // Pedidos
 // ============================================
 export const pedidosApi = {
-  list: (pizzariaId: string, status?: string) =>
-    api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/pedidos${status ? `?status=${status}` : ""}`),
+  /** opts.hoje=true → só pedidos de hoje; limit alto p/ histórico. */
+  list: (pizzariaId: string, opts?: { status?: string; hoje?: boolean; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (opts?.status) qs.set("status", opts.status);
+    if (opts?.hoje) qs.set("hoje", "true");
+    if (opts?.limit) qs.set("limit", String(opts.limit));
+    const q = qs.toString();
+    return api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/pedidos${q ? `?${q}` : ""}`);
+  },
   get: (pizzariaId: string, pedidoId: string) =>
     api.get<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}`),
   updateStatus: (pizzariaId: string, pedidoId: string, status: string, motivo?: string) =>
     api.patch<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/status`, { status, motivo }),
+  apagarTodos: (pizzariaId: string) =>
+    request<{ ok: boolean; pedidos_deletados: number }>(
+      `/pizzarias/${pizzariaId}/pedidos/todos`,
+      { method: "DELETE", headers: { "X-Confirm-Delete": "true" } as any },
+    ),
 };
 
 // ============================================
@@ -348,36 +361,53 @@ export const metricasApi = {
 // ============================================
 // Admin da plataforma (visão agregada — platform admin)
 // ============================================
+export interface PlanLimites {
+  produtos: number;
+  conversas_mes: number;
+  mensagens_ia_mes: number;
+  equipe: number;
+}
+export interface PlanCatalogo {
+  id: string;
+  nome: string;
+  preco_mensal: number;
+  ordem: number;
+  limites: PlanLimites;
+}
+export interface Assinatura {
+  id: string;
+  nome: string;
+  plano: string;
+  plano_nome: string;
+  preco_mensal: number;
+  ativa: boolean;
+  instancia_conectada: boolean;
+  created_at: string | null;
+  uso: { produtos: number; conversas: number };
+  limites: PlanLimites;
+}
 export interface AdminOverview {
   periodo_dias: number;
   desde: string;
   resumo: {
     total_pizzarias: number;
     pizzarias_ativas: number;
+    pizzarias_inativas: number;
     pizzarias_novas: number;
-    pedidos: number;
-    vendido: number;
-    ticket_medio: number;
-    cancelados: number;
-    taxa_cancelamento: number;
-    total_conversas: number;
-    total_clientes: number;
-    total_usuarios: number;
-    total_produtos: number;
+    mrr: number;
+    arr: number;
+    ticket_medio_plano: number;
   };
-  comparativo: {
-    pedidos_anterior: number;
-    vendido_anterior: number;
-    pct_pedidos: number | null;
-    pct_vendido: number | null;
-  };
-  serie_diaria: Array<{ dia: string; pedidos: number; vendido: number }>;
-  ranking_pizzarias: Array<{ id: string; nome: string; pedidos: number; vendido: number }>;
-  pizzarias_por_plano: Array<{ plano: string; qtd: number }>;
+  planos: Array<{ plano: string; nome: string; preco: number; qtd: number; subtotal: number }>;
+  catalogo: PlanCatalogo[];
+  assinaturas: Assinatura[];
+  serie_novas: Array<{ dia: string; qtd: number }>;
 }
 
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
+  alterarPlano: (pizzariaId: string, plano: string) =>
+    api.patch<{ ok: boolean; plano: string }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
 };
 
 // ============================================
@@ -393,6 +423,7 @@ export interface WsEvent {
     | "bot.digitando"
     | "atendimento.humano"
     | "conversas.limpas"
+    | "pedidos.limpos"
     | "system.hello";
   pizzaria_id: string;
   payload: Record<string, any>;

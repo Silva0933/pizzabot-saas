@@ -10,9 +10,9 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import delete, desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -67,7 +67,9 @@ class StatusUpdate(BaseModel):
 async def list_pedidos(
     pizzaria_id: uuid.UUID,
     status_filter: str | None = Query(None, alias="status"),
-    limit: int = Query(100, ge=1, le=500),
+    hoje: bool = Query(False, description="Só pedidos de hoje (fuso America/Sao_Paulo)"),
+    desde: datetime | None = Query(None, description="Filtra created_at >= desde"),
+    limit: int = Query(100, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
     _: object = Depends(membership),
 ) -> list[Pedido]:
@@ -79,6 +81,13 @@ async def list_pedidos(
     )
     if status_filter:
         stmt = stmt.where(Pedido.status == status_filter)
+    if hoje:
+        # Início do dia atual no fuso de São Paulo (predicado SQL puro).
+        stmt = stmt.where(text(
+            "pedidos.created_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"
+        ))
+    elif desde:
+        stmt = stmt.where(Pedido.created_at >= desde)
     return list((await db.execute(stmt)).scalars().all())
 
 
@@ -159,3 +168,49 @@ async def update_status(
     )
 
     return p
+
+
+# ============================================
+# Apagar TODOS os pedidos da pizzaria (painel + banco)
+# ============================================
+@router.delete("/todos")
+async def apagar_todos_pedidos(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+    x_confirm_delete: str | None = Header(None),
+) -> dict:
+    """
+    Apaga TODOS os pedidos de uma pizzaria, do painel e do banco de dados.
+
+    Requer header `X-Confirm-Delete: true`. Ação irreversível.
+    """
+    if x_confirm_delete != "true":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Header X-Confirm-Delete: true é obrigatório para confirmar esta ação destrutiva.",
+        )
+
+    result = await db.execute(delete(Pedido).where(Pedido.pizzaria_id == pizzaria_id))
+    deletados = result.rowcount
+
+    # Zera contadores de clientes (total_pedidos/total_gasto) desta pizzaria.
+    await db.execute(
+        text("""
+            UPDATE public.clientes
+            SET total_pedidos = 0, total_gasto = 0
+            WHERE pizzaria_id = :pid
+        """),
+        {"pid": str(pizzaria_id)},
+    )
+    await db.commit()
+
+    await broadcaster.publish(
+        pizzaria_id,
+        {
+            "tipo": "pedidos.limpos",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {"pedidos_deletados": deletados},
+        },
+    )
+    return {"ok": True, "pedidos_deletados": deletados}

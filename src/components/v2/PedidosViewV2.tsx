@@ -55,7 +55,8 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
   const [activeTabMobile, setActiveTabMobile] = useState<string>("novo");
 
   function load() {
-    return pedidosApi.list(pizzariaId).then(setPedidos).catch((e) => setErr(e.message));
+    // Só pedidos de hoje — o fluxo de atendimento começa zerado todo dia.
+    return pedidosApi.list(pizzariaId, { hoje: true }).then(setPedidos).catch((e) => setErr(e.message));
   }
 
   useEffect(() => {
@@ -65,6 +66,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
 
   useEffect(() => {
     if (!liveEvent) return;
+    if (liveEvent.tipo === "pedidos.limpos") { setPedidos([]); setSelectedPedido(null); return; }
     if (liveEvent.tipo === "pedido.novo" || liveEvent.tipo === "pedido.atualizado") {
       load().then(() => {
         if (selectedPedido) {

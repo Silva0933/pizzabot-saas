@@ -2,7 +2,7 @@
  * Cardápio v2 — listagem, criar/editar/remover produtos.
  * Conectado ao backend Python.
  */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw, UtensilsCrossed, ImageOff } from "lucide-react";
 import { cardapioApi, BackendProduto } from "../../lib/api";
 
@@ -34,6 +34,13 @@ export function CardapioViewV2({ pizzariaId }: Props) {
   const [form, setForm] = useState<Form>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+
+  // Categorias = padrões + as que já existem no cardápio (o dono pode digitar novas).
+  const categoriasDisponiveis = useMemo(() => {
+    const set = new Set<string>(CATEGORIAS as readonly string[]);
+    for (const p of produtos) if (p.categoria) set.add(p.categoria);
+    return Array.from(set);
+  }, [produtos]);
 
   function load() {
     setLoading(true);
@@ -142,9 +149,16 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className={inputCls}/>
             </Field>
             <Field label="Categoria">
-              <select value={form.categoria ?? "outro"} onChange={(e) => setForm({ ...form, categoria: e.target.value })} className={inputCls}>
-                {CATEGORIAS.map((c) => <option key={c}>{c}</option>)}
-              </select>
+              <input
+                list="cardapio-categorias"
+                value={form.categoria ?? ""}
+                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                className={inputCls}
+                placeholder="Escolha ou digite uma nova"
+              />
+              <datalist id="cardapio-categorias">
+                {categoriasDisponiveis.map((c) => <option key={c} value={c} />)}
+              </datalist>
             </Field>
             <Field label="Preço (R$)" required>
               <input type="number" step="0.01" value={form.preco}

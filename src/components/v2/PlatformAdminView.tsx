@@ -190,8 +190,17 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   }
 
   const r = ov?.resumo;
-  const c = ov?.comparativo;
-  const maxRank = Math.max(1, ...(ov?.ranking_pizzarias ?? []).map((x) => x.vendido));
+  const assinaturaById = (id: string) => ov?.assinaturas.find((a) => a.id === id);
+
+  async function changePlan(p: BackendPizzaria, plano: string) {
+    setBusyId(p.id);
+    setErr(null);
+    try {
+      await adminApi.alterarPlano(p.id, plano);
+      await refreshAll();
+    } catch (e: any) { setErr(e.message || "Erro ao alterar plano."); }
+    setBusyId(null);
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -241,93 +250,63 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
         ) : r ? (
           <>
-            {/* KPIs principais */}
+            {/* KPIs de faturamento recorrente */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Kpi icon={<DollarSign className="w-4 h-4 text-emerald-500" />} label="Faturamento"
-                value={brl(r.vendido)} delta={c?.pct_vendido ?? null} />
-              <Kpi icon={<ShoppingBag className="w-4 h-4 text-blue-500" />} label="Pedidos"
-                value={String(r.pedidos)} delta={c?.pct_pedidos ?? null} />
-              <Kpi icon={<Receipt className="w-4 h-4 text-orange-500" />} label="Ticket médio"
-                value={brl(r.ticket_medio)} />
-              <Kpi icon={<Ban className="w-4 h-4 text-red-500" />} label="Cancelamento"
-                value={`${r.taxa_cancelamento}%`} subtle={`${r.cancelados} pedidos`} />
+              <Kpi icon={<DollarSign className="w-4 h-4 text-emerald-500" />} label="MRR (receita mensal)"
+                value={brl(r.mrr)} />
+              <Kpi icon={<TrendingUp className="w-4 h-4 text-violet-500" />} label="ARR (anual projetado)"
+                value={brl(r.arr)} />
+              <Kpi icon={<Store className="w-4 h-4 text-orange-500" />} label="Assinantes ativos"
+                value={`${r.pizzarias_ativas}/${r.total_pizzarias}`} subtle={`${r.pizzarias_inativas} inativas`} />
+              <Kpi icon={<Sparkles className="w-4 h-4 text-sky-500" />} label={`Novas (${days}d)`}
+                value={String(r.pizzarias_novas)} subtle={`Ticket médio ${brl(r.ticket_medio_plano)}`} />
             </div>
 
-            {/* Indicadores da base */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <MiniStat icon={<Store className="w-4 h-4 text-slate-500" />}
-                value={`${r.pizzarias_ativas}/${r.total_pizzarias}`} label="Pizzarias ativas" />
-              <MiniStat icon={<Sparkles className="w-4 h-4 text-violet-500" />}
-                value={String(r.pizzarias_novas)} label={`Novas (${days}d)`} />
-              <MiniStat icon={<MessageSquare className="w-4 h-4 text-blue-500" />}
-                value={String(r.total_conversas)} label="Conversas" />
-              <MiniStat icon={<Users className="w-4 h-4 text-emerald-500" />}
-                value={String(r.total_clientes)} label="Clientes" />
-            </div>
-
-            {/* Gráfico + ranking */}
-            <div className="grid lg:grid-cols-3 gap-4">
-              {/* Faturamento por dia */}
-              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Faturamento por dia</h3>
-                {(ov.serie_diaria.length === 0) ? (
-                  <Empty msg="Sem pedidos no período." />
-                ) : (
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={ov.serie_diaria} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                      <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#94a3b8" }}
-                        tickFormatter={(d) => String(d).slice(5)} />
-                      <YAxis tick={{ fontSize: 10, fill: "#94a3b8" }}
-                        tickFormatter={(v) => `R$${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`} />
-                      <RTooltip
-                        formatter={(v: any) => [brl(Number(v)), "Faturamento"]}
-                        labelFormatter={(l) => `Dia ${l}`}
-                        contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
-                      <Line type="monotone" dataKey="vendido" stroke="#f97316" strokeWidth={2}
-                        dot={false} activeDot={{ r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-
-              {/* Ranking pizzarias */}
-              <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-                  <Trophy className="w-4 h-4 text-amber-500" /> Top pizzarias
-                </h3>
-                {(ov.ranking_pizzarias.filter((x) => x.vendido > 0).length === 0) ? (
-                  <Empty msg="Sem faturamento ainda." />
-                ) : (
-                  <div className="space-y-2.5">
-                    {ov.ranking_pizzarias.filter((x) => x.vendido > 0).map((x, i) => (
-                      <div key={x.id}>
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="font-medium text-slate-700 truncate">{i + 1}. {x.nome}</span>
-                          <span className="font-semibold text-slate-800 shrink-0 ml-2">{brl(x.vendido)}</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-orange-400 rounded-full"
-                            style={{ width: `${(x.vendido / maxRank) * 100}%` }} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {/* Distribuição por plano */}
-                {ov.pizzarias_por_plano.length > 0 && (
-                  <div className="mt-4 pt-3 border-t border-slate-100">
-                    <p className="text-xs font-semibold text-slate-500 mb-2">Por plano</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {ov.pizzarias_por_plano.map((p) => (
-                        <span key={p.plano} className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                          {p.plano}: <strong>{p.qtd}</strong>
-                        </span>
-                      ))}
+            {/* Planos e receita por plano */}
+            <div className="grid md:grid-cols-3 gap-3">
+              {ov.planos.map((pl) => {
+                const cat = ov.catalogo.find((c) => c.id === pl.plano);
+                return (
+                  <div key={pl.plano} className="bg-white border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-bold text-slate-800">{pl.nome}</h3>
+                      <span className="text-xs font-semibold text-emerald-600">{brl(pl.preco)}/mês</span>
                     </div>
+                    <div className="flex items-end gap-1 mt-1">
+                      <span className="text-2xl font-bold text-slate-800">{pl.qtd}</span>
+                      <span className="text-xs text-slate-400 mb-1">assinante{pl.qtd === 1 ? "" : "s"}</span>
+                    </div>
+                    <p className="text-xs text-slate-500">Receita: <strong className="text-slate-700">{brl(pl.subtotal)}</strong>/mês</p>
+                    {cat && (
+                      <ul className="mt-2.5 pt-2.5 border-t border-slate-100 text-[11px] text-slate-500 space-y-0.5">
+                        <li>Até <strong>{cat.limites.produtos}</strong> produtos</li>
+                        <li>Até <strong>{cat.limites.conversas_mes}</strong> conversas/mês</li>
+                        <li>Até <strong>{cat.limites.equipe}</strong> na equipe</li>
+                      </ul>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })}
+            </div>
+
+            {/* Novas assinaturas por dia */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">Novas assinaturas por dia</h3>
+              {ov.serie_novas.length === 0 ? (
+                <Empty msg="Sem novas assinaturas no período." />
+              ) : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={ov.serie_novas} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#94a3b8" }}
+                      tickFormatter={(d) => String(d).slice(5)} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94a3b8" }} />
+                    <RTooltip labelFormatter={(l) => `Dia ${l}`} formatter={(v: any) => [v, "Novas"]}
+                      contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                    <Line type="monotone" dataKey="qtd" stroke="#f97316" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </>
         ) : null}
@@ -574,7 +553,18 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800 text-sm truncate">{p.nome}</span>
-                  <span className="text-[10px] uppercase font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{p.plano}</span>
+                  <select
+                    value={p.plano}
+                    disabled={busyId === p.id}
+                    onChange={(e) => changePlan(p, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 outline-none cursor-pointer disabled:opacity-50"
+                    title="Plano de assinatura"
+                  >
+                    {(ov?.catalogo ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>{c.nome}</option>
+                    ))}
+                  </select>
                   <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
                     p.bot_ativo_global ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"
                   }`}>
@@ -582,8 +572,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 truncate">
-                  {p.instancia ? `Instância: ${p.instancia}` : "Sem instância Evolution"}
-                  {p.endereco ? ` · ${p.endereco}` : ""}
+                  {(() => { const a = assinaturaById(p.id); return a ? `${brl(a.preco_mensal)}/mês · ${a.uso.produtos} produtos · ${a.uso.conversas} conversas` : (p.instancia ? `Instância: ${p.instancia}` : "Sem instância Evolution"); })()}
                 </p>
               </div>
               <div className="flex items-center gap-1 shrink-0">

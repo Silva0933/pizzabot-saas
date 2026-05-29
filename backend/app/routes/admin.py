@@ -1,18 +1,21 @@
 """
-Métricas agregadas da plataforma — exclusivo para platform admins.
+Painel do dono do SaaS (platform admin).
 
-Soma dados de TODAS as pizzarias para o dashboard do dono do SaaS:
-faturamento total, pedidos, ranking de pizzarias, evolução diária, etc.
+Foco em ASSINATURAS / PLANOS / FATURAMENTO DA PLATAFORMA — não no
+operacional das pizzarias (faturamento delas, pedidos, ticket, etc.).
+
+MRR = soma do preço mensal do plano de cada pizzaria ativa.
 """
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.deps import require_platform_admin
 from app.models import Usuario
+from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -23,132 +26,123 @@ async def platform_overview(
     db: AsyncSession = Depends(get_db),
     _: Usuario = Depends(require_platform_admin),
 ) -> dict:
-    """Visão geral da plataforma agregando todas as pizzarias."""
+    """Visão de assinaturas e faturamento recorrente da plataforma."""
     desde = datetime.now(timezone.utc) - timedelta(days=days)
-    desde_anterior = desde - timedelta(days=days)
-    params = {"desde": desde, "desde_ant": desde_anterior}
+    params = {"desde": desde}
 
-    # --- Pizzarias (totais) ---
-    pizz_q = await db.execute(text("""
+    # --- Pizzarias com plano, status e uso ---
+    q = await db.execute(text("""
         SELECT
-            COUNT(*) AS total,
-            COUNT(*) FILTER (WHERE bot_ativo_global) AS ativas,
-            COUNT(*) FILTER (WHERE created_at >= :desde) AS novas
-        FROM public.pizzarias
-    """), params)
-    pr = pizz_q.fetchone()
-    total_pizz, pizz_ativas, pizz_novas = pr[0] or 0, pr[1] or 0, pr[2] or 0
-
-    # --- Pizzarias por plano ---
-    plano_q = await db.execute(text("""
-        SELECT plano, COUNT(*) AS qtd
-        FROM public.pizzarias
-        GROUP BY plano
-        ORDER BY qtd DESC
+            p.id,
+            p.nome,
+            COALESCE(p.plano, 'basico') AS plano,
+            p.bot_ativo_global AS ativa,
+            p.instancia,
+            p.created_at,
+            (SELECT COUNT(*) FROM public.produtos pr WHERE pr.pizzaria_id = p.id) AS produtos,
+            (SELECT COUNT(*) FROM public.conversas c WHERE c.pizzaria_id = p.id) AS conversas
+        FROM public.pizzarias p
+        ORDER BY p.created_at DESC
     """))
-    por_plano = [{"plano": r[0], "qtd": r[1]} for r in plano_q.fetchall()]
+    rows = q.fetchall()
 
-    # --- Resumo de pedidos no período (todas pizzarias) ---
-    resumo_q = await db.execute(text("""
-        SELECT
-            COUNT(*) FILTER (WHERE status != 'cancelado') AS pedidos,
-            COALESCE(SUM(valor_total) FILTER (WHERE status != 'cancelado'), 0) AS vendido,
-            COUNT(*) FILTER (WHERE status = 'cancelado') AS cancelados,
-            COUNT(*) AS total
-        FROM public.pedidos
-        WHERE created_at >= :desde
-    """), params)
-    rs = resumo_q.fetchone()
-    pedidos, vendido = rs[0] or 0, float(rs[1] or 0)
-    cancelados, total_ped = rs[2] or 0, rs[3] or 0
-    ticket_medio = (vendido / pedidos) if pedidos else 0
-    taxa_cancelamento = (cancelados / total_ped * 100) if total_ped else 0
+    assinaturas = []
+    mrr = 0.0
+    ativas = 0
+    novas = 0
+    por_plano: dict[str, dict] = {
+        pid: {"plano": pid, "nome": pl["nome"], "preco": pl["preco_mensal"], "qtd": 0, "subtotal": 0.0}
+        for pid, pl in PLANS.items()
+    }
 
-    # --- Período anterior (comparativo) ---
-    ant_q = await db.execute(text("""
-        SELECT
-            COUNT(*) FILTER (WHERE status != 'cancelado') AS pedidos,
-            COALESCE(SUM(valor_total) FILTER (WHERE status != 'cancelado'), 0) AS vendido
-        FROM public.pedidos
-        WHERE created_at >= :desde_ant AND created_at < :desde
-    """), params)
-    ra = ant_q.fetchone()
-    pedidos_ant, vendido_ant = ra[0] or 0, float(ra[1] or 0)
+    for r in rows:
+        plano = (r[2] or DEFAULT_PLAN).lower()
+        info = plan_info(plano)
+        preco = float(info["preco_mensal"])
+        ativa = bool(r[3])
+        created_at = r[5]
 
-    def pct_diff(novo, antigo):
-        if not antigo:
-            return None
-        return round((novo - antigo) / antigo * 100, 1)
+        if ativa:
+            ativas += 1
+            mrr += preco
+        if created_at and created_at >= desde:
+            novas += 1
 
-    # --- Série diária agregada ---
+        bucket = por_plano.setdefault(
+            plano,
+            {"plano": plano, "nome": info["nome"], "preco": preco, "qtd": 0, "subtotal": 0.0},
+        )
+        bucket["qtd"] += 1
+        if ativa:
+            bucket["subtotal"] += preco
+
+        assinaturas.append({
+            "id": str(r[0]),
+            "nome": r[1],
+            "plano": plano,
+            "plano_nome": info["nome"],
+            "preco_mensal": preco,
+            "ativa": ativa,
+            "instancia_conectada": bool(r[4]),
+            "created_at": created_at.isoformat() if created_at else None,
+            "uso": {
+                "produtos": r[6] or 0,
+                "conversas": r[7] or 0,
+            },
+            "limites": info["limites"],
+        })
+
+    total_pizz = len(rows)
+
+    # --- Novas assinaturas por dia (série para gráfico de crescimento) ---
     serie_q = await db.execute(text("""
-        SELECT
-            DATE(created_at AT TIME ZONE 'America/Sao_Paulo') AS dia,
-            COUNT(*) FILTER (WHERE status != 'cancelado') AS pedidos,
-            COALESCE(SUM(valor_total) FILTER (WHERE status != 'cancelado'), 0) AS vendido
-        FROM public.pedidos
+        SELECT DATE(created_at AT TIME ZONE 'America/Sao_Paulo') AS dia, COUNT(*) AS qtd
+        FROM public.pizzarias
         WHERE created_at >= :desde
         GROUP BY dia
         ORDER BY dia
     """), params)
-    serie_diaria = [
-        {"dia": str(r[0]), "pedidos": r[1] or 0, "vendido": float(r[2] or 0)}
-        for r in serie_q.fetchall()
-    ]
-
-    # --- Ranking de pizzarias por faturamento no período ---
-    rank_q = await db.execute(text("""
-        SELECT
-            p.id,
-            p.nome,
-            COUNT(o.*) FILTER (WHERE o.status != 'cancelado') AS pedidos,
-            COALESCE(SUM(o.valor_total) FILTER (WHERE o.status != 'cancelado'), 0) AS vendido
-        FROM public.pizzarias p
-        LEFT JOIN public.pedidos o
-            ON o.pizzaria_id = p.id AND o.created_at >= :desde
-        GROUP BY p.id, p.nome
-        ORDER BY vendido DESC, pedidos DESC
-        LIMIT 10
-    """), params)
-    ranking = [
-        {"id": str(r[0]), "nome": r[1], "pedidos": r[2] or 0, "vendido": float(r[3] or 0)}
-        for r in rank_q.fetchall()
-    ]
-
-    # --- Contadores gerais ---
-    cont_q = await db.execute(text("""
-        SELECT
-            (SELECT COUNT(*) FROM public.conversas) AS conversas,
-            (SELECT COUNT(*) FROM public.clientes) AS clientes,
-            (SELECT COUNT(*) FROM public.usuarios) AS usuarios,
-            (SELECT COUNT(*) FROM public.produtos) AS produtos
-    """))
-    cc = cont_q.fetchone()
+    serie_novas = [{"dia": str(r[0]), "qtd": r[1] or 0} for r in serie_q.fetchall()]
 
     return {
         "periodo_dias": days,
         "desde": desde.isoformat(),
         "resumo": {
             "total_pizzarias": total_pizz,
-            "pizzarias_ativas": pizz_ativas,
-            "pizzarias_novas": pizz_novas,
-            "pedidos": pedidos,
-            "vendido": round(vendido, 2),
-            "ticket_medio": round(ticket_medio, 2),
-            "cancelados": cancelados,
-            "taxa_cancelamento": round(taxa_cancelamento, 1),
-            "total_conversas": cc[0] or 0,
-            "total_clientes": cc[1] or 0,
-            "total_usuarios": cc[2] or 0,
-            "total_produtos": cc[3] or 0,
+            "pizzarias_ativas": ativas,
+            "pizzarias_inativas": total_pizz - ativas,
+            "pizzarias_novas": novas,
+            "mrr": round(mrr, 2),
+            "arr": round(mrr * 12, 2),
+            "ticket_medio_plano": round(mrr / ativas, 2) if ativas else 0.0,
         },
-        "comparativo": {
-            "pedidos_anterior": pedidos_ant,
-            "vendido_anterior": round(vendido_ant, 2),
-            "pct_pedidos": pct_diff(pedidos, pedidos_ant),
-            "pct_vendido": pct_diff(vendido, vendido_ant),
-        },
-        "serie_diaria": serie_diaria,
-        "ranking_pizzarias": ranking,
-        "pizzarias_por_plano": por_plano,
+        "planos": [
+            {**c, "subtotal": round(c["subtotal"], 2)}
+            for c in sorted(por_plano.values(), key=lambda x: PLANS.get(x["plano"], {}).get("ordem", 99))
+        ],
+        "catalogo": plans_catalog(),
+        "assinaturas": assinaturas,
+        "serie_novas": serie_novas,
     }
+
+
+@router.patch("/pizzarias/{pizzaria_id}/plano")
+async def alterar_plano(
+    pizzaria_id: str,
+    plano: str = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Altera o plano de assinatura de uma pizzaria."""
+    plano = (plano or "").lower()
+    if plano not in PLANS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Plano inválido. Use: {list(PLANS)}")
+
+    res = await db.execute(
+        text("UPDATE public.pizzarias SET plano = :plano, updated_at = now() WHERE id = :id RETURNING id"),
+        {"plano": plano, "id": pizzaria_id},
+    )
+    if res.fetchone() is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    await db.commit()
+    return {"ok": True, "plano": plano, "info": plan_info(plano)}

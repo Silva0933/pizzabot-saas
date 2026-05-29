@@ -20,6 +20,16 @@ from app.services.evolution import evolution
 
 log = logging.getLogger(__name__)
 
+# Mensagens padrão usadas quando a pizzaria não configurou um template próprio.
+# Placeholders: {numero_pedido}, {nome_cliente}, {valor_total}, {tempo_entrega}
+DEFAULT_STATUS_MESSAGES: dict[str, str] = {
+    "confirmado": "Oi {nome_cliente}! ✅ Seu pedido #{numero_pedido} foi confirmado e já vai pra produção. 🍕",
+    "no_forno": "🔥 Seu pedido #{numero_pedido} já está no forno, {nome_cliente}! Em breve fica pronto.",
+    "a_caminho": "🛵 Saiu pra entrega! Seu pedido #{numero_pedido} chega em aproximadamente {tempo_entrega}.",
+    "entregue": "🎉 Pedido #{numero_pedido} entregue! Obrigado pela preferência, {nome_cliente}. Bom apetite! 😋",
+    "cancelado": "Seu pedido #{numero_pedido} foi cancelado. Qualquer dúvida é só chamar a gente. 🙏",
+}
+
 
 def _interpolar(template: str, ctx: dict[str, Any]) -> str:
     """Substitui placeholders {chave} no template."""
@@ -49,7 +59,8 @@ async def enviar_mensagem_status(
     if not pizz or not pizz.instancia:
         return False
 
-    template = (pizz.mensagens_status or {}).get(novo_status)
+    # Usa o template configurado pela pizzaria; senão, um padrão sensato.
+    template = (pizz.mensagens_status or {}).get(novo_status) or DEFAULT_STATUS_MESSAGES.get(novo_status)
     if not template:
         return False
 

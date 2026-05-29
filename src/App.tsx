@@ -177,6 +177,8 @@ export default function App() {
           playNotificationSound("novo");
         }
         pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
+      } else if (ev.tipo === "pedidos.limpos") {
+        setOrders([]);
       }
       // Mensagem nova → atualização incremental da conversa na lista
       if (ev.tipo === "mensagem.nova") {
