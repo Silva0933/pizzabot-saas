@@ -298,6 +298,24 @@ async def registrar_pedido(
                     "some os itens e registre com o valor_total correto.",
         }
 
+    # Normaliza os itens (o modelo pode mandar 'qtd'/'preco' em vez de
+    # 'quantidade'/'preco_unit') para o painel exibir certo (evita R$ NaN).
+    def _num(v: Any, default: float = 0.0) -> float:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+    itens_norm = []
+    for it in itens:
+        if not isinstance(it, dict):
+            continue
+        itens_norm.append({
+            "nome": it.get("nome") or it.get("produto") or "Item",
+            "quantidade": int(_num(it.get("quantidade") or it.get("qtd") or 1, 1)),
+            "preco_unit": _num(it.get("preco_unit") or it.get("preco") or it.get("valor")),
+        })
+    itens = itens_norm or itens
+
     # garante cliente
     cli = ctx.cliente
     if not cli:
@@ -432,17 +450,25 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
     ped.payment_status = "pending"
     await db.flush()
 
-    # Se tem QR em imagem (Pix MP), manda o QR como imagem direto no WhatsApp.
-    if cob.qr_code_base64 and ctx.pizzaria.instancia:
+    # Pix: manda QR (imagem) e o copia-e-cola em MENSAGEM SEPARADA (só o código,
+    # pra o cliente conseguir copiar com um toque).
+    if ctx.pizzaria.instancia:
         try:
-            await evolution.send_media(
-                instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
-                media_url=cob.qr_code_base64, mediatype="image",
-                mimetype="image/png", filename="pix.png",
-                caption="QR Code do Pix 👆",
-            )
+            if cob.qr_code_base64:
+                await evolution.send_media(
+                    instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+                    media_url=cob.qr_code_base64, mediatype="image",
+                    mimetype="image/png", filename="pix.png",
+                    caption="QR Code do Pix 👆",
+                )
+            if cob.metodo == "pix" and cob.qr_code:
+                # Mensagem só com o código → fácil de copiar.
+                await evolution.send_text(
+                    instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+                    texto=cob.qr_code,
+                )
         except Exception as e:  # noqa: BLE001
-            log.debug("Falha ao enviar QR como imagem: %s", e)
+            log.debug("Falha ao enviar QR/código Pix: %s", e)
 
     return {
         "ok": True,
@@ -451,9 +477,11 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
         "pix_copia_e_cola": cob.qr_code,
         "link_pagamento": cob.link_pagamento,
         "instrucao": (
-            "Pix gerado. Mande ao cliente o código copia-e-cola e avise que o QR foi enviado como imagem."
+            "Pix JÁ enviado ao cliente: o QR (imagem) e o código copia-e-cola foram "
+            "mandados em mensagens separadas. NÃO repita o código no seu texto — apenas "
+            "confirme o pedido e avise que o QR e o código Pix foram enviados acima."
             if cob.metodo == "pix"
-            else "Link de pagamento gerado. Envie o link ao cliente."
+            else "Link de pagamento gerado. Envie o link_pagamento ao cliente."
         ),
     }
 

@@ -278,6 +278,12 @@ async def process_and_reply(
             # Calcula delay proporcional ao tamanho do texto (max 8 segundos)
             tamanho = len(result.texto) if result.texto else 0
             delay_ms = int(min(max(tamanho * 55, 1500), 8000))
+            # Mostra "digitando…" imediatamente antes de enviar (a presença do
+            # início já expirou após o processamento do agente).
+            try:
+                await evolution.send_presence(instancia=pizz.instancia, numero=telefone, tipo="composing")
+            except Exception:  # noqa: BLE001
+                pass
             await evolution.send_text(
                 instancia=pizz.instancia,
                 numero=telefone,

@@ -200,7 +200,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
                       <ul className="text-xs text-slate-600 space-y-0.5">
                         {(p.itens || []).slice(0, 3).map((it, idx) => (
                           <li key={idx} className="flex gap-1.5">
-                            <span className="text-orange-500 font-semibold">{it.quantidade}×</span>
+                            <span className="text-orange-500 font-semibold">{(it.quantidade ?? (it as any).qtd ?? 1)}×</span>
                             <span className="truncate">{it.nome}</span>
                           </li>
                         ))}
@@ -324,7 +324,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
                       <div key={idx} className="p-3 bg-white flex items-start justify-between gap-3 text-sm">
                         <div className="min-w-0 flex-1">
                           <div className="flex gap-2 items-center">
-                            <span className="text-orange-500 font-bold shrink-0">{it.quantidade}×</span>
+                            <span className="text-orange-500 font-bold shrink-0">{(it.quantidade ?? (it as any).qtd ?? 1)}×</span>
                             <span className="font-medium text-slate-800 truncate">{it.nome}</span>
                           </div>
                           {it.observacao && (
@@ -332,7 +332,11 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
                           )}
                         </div>
                         <span className="font-semibold text-slate-700 shrink-0">
-                          {it.preco_unit ? (it.preco_unit * it.quantidade).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}
+                          {(() => {
+                            const pu = Number((it as any).preco_unit ?? (it as any).preco ?? 0);
+                            const q = Number(it.quantidade ?? (it as any).qtd ?? 1);
+                            return pu > 0 ? (pu * q).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—";
+                          })()}
                         </span>
                       </div>
                     ))

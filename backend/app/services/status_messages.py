@@ -52,6 +52,18 @@ async def enviar_mensagem_status(
     if novo_status not in ("confirmado", "no_forno", "a_caminho", "entregue", "cancelado"):
         return False
 
+    # Idempotência: se já enviamos a mensagem desse status para este pedido,
+    # não envia de novo (evita duplicatas em cliques/atualizações repetidas).
+    from sqlalchemy import text as _text
+    ja_enviou = (await db.execute(_text("""
+        SELECT 1 FROM public.mensagens
+        WHERE pizzaria_id = :pid AND origem = 'sistema'
+          AND metadata->>'trigger' = :trig AND metadata->>'pedido_id' = :ped
+        LIMIT 1
+    """), {"pid": str(pedido.pizzaria_id), "trig": f"status:{novo_status}", "ped": str(pedido.id)})).first()
+    if ja_enviou:
+        return False
+
     # Busca pizzaria
     pizz = (
         await db.execute(select(Pizzaria).where(Pizzaria.id == pedido.pizzaria_id))
@@ -73,7 +85,7 @@ async def enviar_mensagem_status(
     # Monta contexto
     ctx = {
         "numero_pedido": pedido.numero_pedido or "",
-        "nome_cliente": (cliente.nome or "").split(" ")[0] or "",
+        "nome_cliente": (cliente.nome or "").split(" ")[0].lstrip("@").strip() or "cliente",
         "valor_total": f"R$ {float(pedido.valor_total):.2f}".replace(".", ","),
         "tempo_entrega": f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
             if pedido.tipo == "delivery"
