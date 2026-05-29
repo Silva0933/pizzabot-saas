@@ -158,7 +158,7 @@ class EvolutionClient:
         body = {
             "number": f"{numero}@s.whatsapp.net",
             "presence": tipo,  # "composing" ou "recording"
-            "delay": 5000,
+            "delay": 8000,
         }
         try:
             c = await self._http()

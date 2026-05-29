@@ -263,6 +263,7 @@ async def registrar_pedido(
     cli.ultima_visita = datetime.now(timezone.utc)
 
     await db.flush()
+    await db.refresh(ped)
 
     # Dispara o broadcast WebSocket de atualização do pedido para mover de coluna no Kanban
     from app.services.broadcaster import broadcaster
