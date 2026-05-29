@@ -5,7 +5,7 @@ import logging
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select, text
@@ -236,6 +236,100 @@ async def serve_arquivo(
         media_type=ct,
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+class ImportarTextoIn(BaseModel):
+    texto: str | None = None
+
+
+class ProdutoImport(BaseModel):
+    nome: str
+    categoria: str | None = "outro"
+    descricao: str | None = ""
+    preco: Decimal = Decimal("0")
+
+
+class ConfirmarImportIn(BaseModel):
+    produtos: list[ProdutoImport]
+
+
+@router.post("/importar/extrair")
+async def importar_extrair(
+    pizzaria_id: uuid.UUID,
+    file: UploadFile | None = File(default=None),
+    texto: str | None = Form(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """
+    Extrai produtos de uma imagem/PDF (multipart 'file') ou de 'texto' (form),
+    usando a IA configurada. NÃO salva — devolve a lista para revisão.
+    """
+    from app.services.import_cardapio import extrair_produtos, pdf_para_imagens
+
+    imagens: list[bytes] = []
+    if file is not None:
+        ct = (file.content_type or "").lower()
+        dados = await file.read()
+        if len(dados) > 12 * 1024 * 1024:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Arquivo muito grande (máx. 12 MB).")
+        if ct == "application/pdf":
+            try:
+                imagens = pdf_para_imagens(dados)
+            except Exception as e:  # noqa: BLE001
+                log.exception("Falha ao converter PDF")
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Não consegui ler o PDF: {e}") from e
+        elif ct.startswith("image/"):
+            imagens = [dados]
+        else:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Envie uma imagem (PNG/JPG) ou PDF.")
+
+    if not imagens and not (texto and texto.strip()):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Envie uma imagem/PDF ou cole o texto do cardápio.")
+
+    try:
+        produtos = await extrair_produtos(db, texto=texto, imagens=imagens)
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha na extração do cardápio")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Erro na IA: {e}") from e
+
+    return {"produtos": produtos, "total": len(produtos)}
+
+
+@router.post("/importar/confirmar")
+async def importar_confirmar(
+    pizzaria_id: uuid.UUID,
+    body: ConfirmarImportIn,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Cadastra em lote os produtos revisados pelo dono."""
+    criados = 0
+    # Continua a numeração de ordem a partir do que já existe.
+    max_ordem = (await db.execute(
+        text("SELECT COALESCE(MAX(ordem), 0) FROM public.produtos WHERE pizzaria_id = :pid"),
+        {"pid": str(pizzaria_id)},
+    )).scalar() or 0
+
+    for i, p in enumerate(body.produtos, start=1):
+        nome = (p.nome or "").strip()
+        if not nome or Decimal(p.preco) <= 0:
+            continue
+        db.add(Produto(
+            pizzaria_id=pizzaria_id,
+            nome=nome[:120],
+            categoria=(p.categoria or "outro").strip().lower() or "outro",
+            descricao=(p.descricao or "").strip() or None,
+            preco=Decimal(p.preco),
+            disponivel=True,
+            ordem=max_ordem + i,
+        ))
+        criados += 1
+
+    await db.commit()
+    return {"ok": True, "criados": criados}
 
 
 @router.delete("/arquivo", status_code=status.HTTP_204_NO_CONTENT)

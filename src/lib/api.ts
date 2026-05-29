@@ -260,7 +260,34 @@ export const cardapioApi = {
     }
     return res.json() as Promise<{ ok: boolean; filename: string; content_type: string; tamanho: number; url: string }>;
   },
+
+  // Importação de cardápio com IA
+  importarExtrair: async (pizzariaId: string, opts: { file?: File; texto?: string }) => {
+    const fd = new FormData();
+    if (opts.file) fd.append("file", opts.file);
+    if (opts.texto) fd.append("texto", opts.texto);
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/pizzarias/${pizzariaId}/cardapio/importar/extrair`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    });
+    if (!res.ok) {
+      let b: any = null; try { b = await res.json(); } catch { /* */ }
+      throw new ApiError(res.status, b?.detail || res.statusText, b);
+    }
+    return res.json() as Promise<{ produtos: ProdutoImport[]; total: number }>;
+  },
+  importarConfirmar: (pizzariaId: string, produtos: ProdutoImport[]) =>
+    api.post<{ ok: boolean; criados: number }>(`/pizzarias/${pizzariaId}/cardapio/importar/confirmar`, { produtos }),
 };
+
+export interface ProdutoImport {
+  nome: string;
+  categoria?: string;
+  descricao?: string;
+  preco: number;
+}
 
 export interface CardapioArquivoInfo {
   existe: boolean;
