@@ -20,7 +20,7 @@ import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import {
-  authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi,
+  authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent,
   backendToPizzeria, backendToOrder, backendToConversation,
   clearTokens, getToken, ApiError,
@@ -45,6 +45,7 @@ export default function App() {
   const [orders, setOrders] = useState<any[]>([]);
   const [conversations, setConversations] = useState<any[]>([]);
   const [productCount, setProductCount] = useState(0);
+  const [atendenteOk, setAtendenteOk] = useState(false);
   const [nav, setNav] = useState<NavKey>("inicio");
   const [liveEvent, setLiveEvent] = useState<WsEvent | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -88,20 +89,28 @@ export default function App() {
   // ============================================
   async function refreshData(p: BackendPizzaria) {
     try {
-      const [prods, peds, convs] = await Promise.all([
+      const [prods, peds, convs, pers] = await Promise.all([
         cardapioApi.list(p.id),
         pedidosApi.list(p.id),
         conversasApi.list(p.id),
+        personalityApi.get(p.id).catch(() => null),
       ]);
       setProductCount(prods.length);
       setOrders(peds.map(backendToOrder));
       setConversations(convs.map(backendToConversation));
+      setAtendenteOk(Boolean(pers && (pers as any).id));
     } catch (e) { console.warn("refreshData:", e); }
   }
 
   useEffect(() => {
     if (pizzaria) refreshData(pizzaria);
   }, [pizzaria?.id]);
+
+  // Ao voltar pro Início, recarrega os dados para o checklist refletir
+  // configurações concluídas em outras telas (ex.: produtos cadastrados).
+  useEffect(() => {
+    if (pizzaria && nav === "inicio") refreshData(pizzaria);
+  }, [nav]);
 
   // ============================================
   // WebSocket
@@ -264,7 +273,7 @@ export default function App() {
             {
               id: "atendente", title: "Personalize a atendente",
               description: "Defina nome, estilo e diferenciais",
-              done: false, action: () => setNav("negocio"),
+              done: atendenteOk, action: () => setNav("negocio"),
             },
           ]}
         />

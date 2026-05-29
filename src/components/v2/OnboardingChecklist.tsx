@@ -6,7 +6,7 @@
  */
 import React from "react";
 import { motion } from "motion/react";
-import { CheckCircle2, Circle, ChevronRight } from "lucide-react";
+import { Circle, ChevronRight } from "lucide-react";
 
 export interface OnboardingItem {
   id: string;
@@ -25,6 +25,11 @@ export interface OnboardingChecklistProps {
 export function OnboardingChecklist({ items, title = "Vamos terminar a configuração" }: OnboardingChecklistProps) {
   const done = items.filter((i) => i.done).length;
   const pct = items.length > 0 ? Math.round((done / items.length) * 100) : 0;
+  // Mostra só o que falta — itens concluídos somem para não ocupar espaço.
+  const pending = items.filter((i) => !i.done);
+
+  // Nada pendente → não renderiza (o pai também já trata isso).
+  if (pending.length === 0) return null;
 
   return (
     <motion.section
@@ -35,7 +40,9 @@ export function OnboardingChecklist({ items, title = "Vamos terminar a configura
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="text-sm font-bold text-slate-800">{title}</h3>
-          <p className="text-xs text-slate-500 mt-0.5">{done} de {items.length} prontos</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            {done} de {items.length} prontos · falta{pending.length > 1 ? "m" : ""} {pending.length}
+          </p>
         </div>
         <div className="text-xs font-semibold text-orange-700">{pct}%</div>
       </div>
@@ -49,25 +56,17 @@ export function OnboardingChecklist({ items, title = "Vamos terminar a configura
       </div>
 
       <ul className="space-y-2">
-        {items.map((item) => (
+        {pending.map((item) => (
           <li
             key={item.id}
-            className={`flex items-start gap-3 p-2.5 rounded-lg ${
-              item.done ? "bg-emerald-50/60" : "bg-white border border-slate-150"
-            }`}
+            className="flex items-start gap-3 p-2.5 rounded-lg bg-white border border-slate-150"
           >
-            {item.done ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0 mt-0.5" />
-            ) : (
-              <Circle className="w-5 h-5 text-slate-300 shrink-0 mt-0.5" />
-            )}
+            <Circle className="w-5 h-5 text-slate-300 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className={`text-sm font-medium ${item.done ? "text-slate-500 line-through" : "text-slate-800"}`}>
-                {item.title}
-              </p>
+              <p className="text-sm font-medium text-slate-800">{item.title}</p>
               <p className="text-xs text-slate-500">{item.description}</p>
             </div>
-            {!item.done && item.action && (
+            {item.action && (
               <button
                 type="button"
                 onClick={item.action}
