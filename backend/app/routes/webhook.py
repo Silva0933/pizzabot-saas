@@ -203,6 +203,21 @@ async def evolution_webhook(
     evolution_msg_id = key.get("id")
     push_name = data.get("pushName")
 
+    # ---- áudio: transcreve para o agente entender o pedido por voz ----
+    if tipo == "audio" and pizz.instancia:
+        try:
+            from app.services.transcricao import transcrever_audio
+            b64 = await evolution.get_media_base64(instancia=pizz.instancia, key=key)
+            if b64:
+                mtype = (metadata.get("audio") or {}).get("mimetype") or "audio/ogg"
+                texto = await transcrever_audio(db, b64, mtype)
+                if texto:
+                    conteudo = texto
+                    tipo = "texto"
+                    metadata["transcrito_de"] = "audio"
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha na transcrição de áudio: %s", e)
+
     # ---- persiste ----
     conv = await _get_or_create_conversa(db, pizz.id, telefone, push_name)
     msg = Mensagem(

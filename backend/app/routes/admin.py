@@ -35,9 +35,9 @@ LLM_PROVIDERS = {
     "openrouter": {
         "nome": "OpenRouter",
         "modelos": [
-            "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet",
-            "google/gemini-2.0-flash-001", "meta-llama/llama-3.3-70b-instruct",
-            "deepseek/deepseek-chat",
+            "google/gemini-2.5-flash-lite", "google/gemini-2.5-flash",
+            "google/gemini-2.0-flash-001", "openai/gpt-4o-mini",
+            "anthropic/claude-3.5-sonnet", "deepseek/deepseek-chat",
         ],
     },
 }
