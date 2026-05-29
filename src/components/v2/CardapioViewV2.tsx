@@ -204,11 +204,48 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   <span className={`absolute top-2 left-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cat.chip}`}>
                     {p.categoria || "outro"}
                   </span>
-                  {!p.disponivel && (
-                    <span className="absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600 flex items-center gap-1">
-                      <ImageOff className="w-3 h-3" /> Indisponível
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      const originalValue = p.disponivel;
+                      const newValue = !originalValue;
+                      
+                      // Atualização otimista
+                      setProdutos((prev) =>
+                        prev.map((item) => (item.id === p.id ? { ...item, disponivel: newValue } : item))
+                      );
+                      
+                      try {
+                        await cardapioApi.update(pizzariaId, p.id, {
+                          nome: p.nome,
+                          categoria: p.categoria ?? "outro",
+                          descricao: p.descricao ?? "",
+                          preco: Number(p.preco),
+                          imagem_url: p.imagem_url ?? "",
+                          ordem: p.ordem,
+                          disponivel: newValue,
+                        });
+                        // Reindexa silenciosamente no backend
+                        await cardapioApi.reindex(pizzariaId);
+                      } catch (err: any) {
+                        setErr(err.message || "Erro ao atualizar disponibilidade.");
+                        // Reverte em caso de falha
+                        setProdutos((prev) =>
+                          prev.map((item) => (item.id === p.id ? { ...item, disponivel: originalValue } : item))
+                        );
+                      }
+                    }}
+                    className={`absolute top-2 right-2 text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1.5 shadow-sm transition-all cursor-pointer border ${
+                      p.disponivel
+                        ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                        : "bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                    }`}
+                    title={p.disponivel ? "Marcar como Indisponível" : "Marcar como Disponível"}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${p.disponivel ? "bg-emerald-500" : "bg-red-500 animate-pulse"}`} />
+                    {p.disponivel ? "Disponível" : "Indisponível"}
+                  </button>
                 </div>
                 <div className="p-3">
                   <div className="flex items-start justify-between gap-2">

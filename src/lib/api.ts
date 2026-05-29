@@ -54,6 +54,12 @@ async function request<T = any>(path: string, init: RequestInit = {}): Promise<T
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
   if (!res.ok) {
+    if (res.status === 401 && !path.includes("/auth/login")) {
+      clearTokens();
+      if (typeof window !== "undefined") {
+        window.location.reload();
+      }
+    }
     let body: any = null;
     try { body = await res.json(); } catch { body = await res.text(); }
     throw new ApiError(res.status, body?.detail || res.statusText, body);
@@ -148,6 +154,10 @@ export interface BackendPedido {
   bot_ativo: boolean;
   created_at: string;
   updated_at: string;
+  cliente?: {
+    nome: string | null;
+    telefone: string;
+  } | null;
 }
 
 export interface BackendConversa {
@@ -508,8 +518,8 @@ export function backendToOrder(b: BackendPedido): Order {
     id: b.id,
     pizzeriaId: b.pizzaria_id,
     customerId: b.cliente_id,
-    customerName: "",
-    customerPhone: "",
+    customerName: b.cliente?.nome || b.cliente?.telefone || "Cliente Novo",
+    customerPhone: b.cliente?.telefone || "",
     orderNumber: b.numero_pedido ?? 0,
     items: (b.itens || []).map((it) => ({
       name: it.nome,

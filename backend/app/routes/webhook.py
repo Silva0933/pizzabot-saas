@@ -162,6 +162,61 @@ async def evolution_webhook(
     if push_name and not conv.cliente_nome:
         conv.cliente_nome = push_name
 
+    # ---- Garante rascunho de pedido em 'Novos' se não houver pedido ativo ----
+    from app.models import Cliente, Pedido
+    from decimal import Decimal
+
+    stmt_cli = select(Cliente).where(
+        Cliente.pizzaria_id == pizz.id,
+        Cliente.telefone == telefone,
+    )
+    cli = (await db.execute(stmt_cli)).scalar_one_or_none()
+    if not cli:
+        cli = Cliente(
+            pizzaria_id=pizz.id,
+            telefone=telefone,
+            nome=push_name,
+        )
+        db.add(cli)
+        await db.flush()
+    else:
+        if push_name and not cli.nome:
+            cli.nome = push_name
+            await db.flush()
+
+    stmt_ped = select(Pedido).where(
+        Pedido.pizzaria_id == pizz.id,
+        Pedido.cliente_id == cli.id,
+        Pedido.status.in_(["novo", "confirmado", "no_forno", "a_caminho"]),
+    )
+    ped_ativo = (await db.execute(stmt_ped)).scalars().first()
+
+    if not ped_ativo:
+        ped_rascunho = Pedido(
+            pizzaria_id=pizz.id,
+            cliente_id=cli.id,
+            itens=[],
+            valor_total=Decimal("0.00"),
+            status="novo",
+            tipo="delivery",
+        )
+        db.add(ped_rascunho)
+        await db.flush()
+
+        # Dispara o broadcast de novo pedido rascunho para atualizar o painel
+        await broadcaster.publish(
+            pizz.id,
+            {
+                "tipo": "pedido.novo",
+                "pizzaria_id": str(pizz.id),
+                "payload": {
+                    "pedido_id": str(ped_rascunho.id),
+                    "numero_pedido": ped_rascunho.numero_pedido,
+                    "status": ped_rascunho.status,
+                },
+            },
+        )
+
     await db.commit()
     await db.refresh(msg)
 

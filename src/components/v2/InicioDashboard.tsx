@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import type { Order, Conversation, Pizzeria } from "../../types";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
+import { MetricasView } from "./MetricasView";
 
 export interface InicioDashboardProps {
   pizzeria: Pizzeria;
@@ -219,6 +220,11 @@ export function InicioDashboard({
           onClick={() => onNavigate("negocio")}
         />
       </section>
+
+      {/* Análise de Métricas Históricas */}
+      <div className="border-t border-slate-100 pt-6">
+        <MetricasView pizzariaId={pizzeria.id} />
+      </div>
     </div>
   );
 }

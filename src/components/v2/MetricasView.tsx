@@ -142,8 +142,8 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
         {serieFormat.length === 0 ? (
           <Empty msg="Sem pedidos no período." />
         ) : (
-          <div className="h-64">
-            <ResponsiveContainer>
+          <div className="h-64 w-full min-w-0">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart data={serieFormat} margin={{ top: 5, right: 12, left: -8, bottom: 0 }}>
                 <CartesianGrid stroke="#f1f5f9" />
                 <XAxis dataKey="dia_label" tick={{ fontSize: 11 }} stroke="#94a3b8" />
@@ -170,8 +170,8 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
           {horarios_pico.length === 0 ? (
             <Empty msg="Sem dados de horário." />
           ) : (
-            <div className="h-56">
-              <ResponsiveContainer>
+            <div className="h-56 w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart
                   data={horarios_pico.map((h) => ({ ...h, label: `${String(h.hora).padStart(2, "0")}h` }))}
                   margin={{ top: 5, right: 12, left: -8, bottom: 0 }}

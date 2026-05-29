@@ -170,6 +170,8 @@ class Pedido(Base):
     cliente_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
     numero_pedido: Mapped[int | None] = mapped_column(Integer)
 
+    cliente: Mapped[Cliente] = relationship("Cliente", lazy="joined")
+
     itens: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     valor_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     status: Mapped[str] = mapped_column(String, default="novo", nullable=False)

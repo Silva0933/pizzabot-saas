@@ -153,21 +153,23 @@ async def buscar_cardapio(
     categoria: str | None = None,
     limit: int = 8,
 ) -> dict[str, Any]:
-    """Busca híbrida: similaridade textual + (futuramente) vetorial."""
-    # Por enquanto: ILIKE simples. Próxima iteração: pgvector cosine distance.
+    """Busca híbrida de produtos no cardápio."""
     sql = """
         SELECT id, nome, categoria, descricao, preco, disponivel
         FROM public.produtos
         WHERE pizzaria_id = :pid
-          AND disponivel = TRUE
-          AND (
-            nome ILIKE :q OR descricao ILIKE :q OR categoria ILIKE :q
-          )
     """
-    params = {"pid": str(ctx.pizzaria.id), "q": f"%{query}%"}
+    params = {"pid": str(ctx.pizzaria.id)}
+    
+    q_clean = query.strip().lower() if query else ""
+    if q_clean and q_clean not in ("todas", "todos", "cardapio", "cardápio", "pizza", "pizzas", "sabores", "tudo", ""):
+        sql += " AND (nome ILIKE :q OR descricao ILIKE :q OR categoria ILIKE :q)"
+        params["q"] = f"%{query}%"
+        
     if categoria:
         sql += " AND categoria ILIKE :cat"
         params["cat"] = f"%{categoria}%"
+        
     sql += " ORDER BY ordem, nome LIMIT :lim"
     params["lim"] = max(1, min(limit, 20))
 
@@ -180,6 +182,7 @@ async def buscar_cardapio(
             "categoria": r[2],
             "descricao": r[3],
             "preco": float(r[4]),
+            "disponivel": bool(r[5]),
         }
         for r in rows
     ]
@@ -220,23 +223,62 @@ async def registrar_pedido(
         if nome_cliente and not cli.nome:
             cli.nome = nome_cliente
 
-    ped = Pedido(
-        pizzaria_id=ctx.pizzaria.id,
-        cliente_id=cli.id,
-        itens=itens,
-        valor_total=Decimal(str(valor_total)),
-        tipo=tipo,
-        endereco_entrega=endereco_entrega,
-        forma_pagamento=forma_pagamento,
-        observacoes=observacoes,
+    # Busca pedido rascunho existente no status 'novo'
+    stmt = select(Pedido).where(
+        Pedido.pizzaria_id == ctx.pizzaria.id,
+        Pedido.cliente_id == cli.id,
+        Pedido.status == "novo",
     )
-    db.add(ped)
+    ped = (await db.execute(stmt)).scalars().first()
+
+    status_anterior = "novo"
+    if ped:
+        # Atualiza o rascunho e move para confirmado
+        ped.itens = itens
+        ped.valor_total = Decimal(str(valor_total))
+        ped.tipo = tipo
+        ped.endereco_entrega = endereco_entrega
+        ped.forma_pagamento = forma_pagamento
+        ped.observacoes = observacoes
+        ped.status = "confirmado"
+        ped.updated_at = datetime.now(timezone.utc)
+    else:
+        status_anterior = None
+        # Cria um novo em confirmado
+        ped = Pedido(
+            pizzaria_id=ctx.pizzaria.id,
+            cliente_id=cli.id,
+            itens=itens,
+            valor_total=Decimal(str(valor_total)),
+            status="confirmado",
+            tipo=tipo,
+            endereco_entrega=endereco_entrega,
+            forma_pagamento=forma_pagamento,
+            observacoes=observacoes,
+        )
+        db.add(ped)
 
     cli.total_pedidos += 1
     cli.total_gasto = (cli.total_gasto or Decimal(0)) + Decimal(str(valor_total))
     cli.ultima_visita = datetime.now(timezone.utc)
 
     await db.flush()
+
+    # Dispara o broadcast WebSocket de atualização do pedido para mover de coluna no Kanban
+    from app.services.broadcaster import broadcaster
+    await broadcaster.publish(
+        ctx.pizzaria.id,
+        {
+            "tipo": "pedido.atualizado" if status_anterior else "pedido.novo",
+            "pizzaria_id": str(ctx.pizzaria.id),
+            "payload": {
+                "pedido_id": str(ped.id),
+                "numero_pedido": ped.numero_pedido,
+                "status_anterior": status_anterior,
+                "status_novo": ped.status,
+            },
+        },
+    )
 
     return {
         "ok": True,

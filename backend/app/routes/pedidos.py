@@ -26,6 +26,13 @@ router = APIRouter(prefix="/pizzarias/{pizzaria_id}/pedidos", tags=["pedidos"])
 VALID_STATUSES = ("novo", "confirmado", "no_forno", "a_caminho", "entregue", "cancelado")
 
 
+class ClienteMinOut(BaseModel):
+    nome: str | None
+    telefone: str
+
+    model_config = {"from_attributes": True}
+
+
 class PedidoOut(BaseModel):
     id: uuid.UUID
     pizzaria_id: uuid.UUID
@@ -43,6 +50,7 @@ class PedidoOut(BaseModel):
     bot_ativo: bool
     created_at: datetime
     updated_at: datetime
+    cliente: ClienteMinOut | None = None
 
     model_config = {"from_attributes": True}
 

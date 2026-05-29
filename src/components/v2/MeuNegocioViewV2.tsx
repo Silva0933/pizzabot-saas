@@ -13,10 +13,9 @@ import {
   RefreshCw, Wifi, WifiOff,
 } from "lucide-react";
 import { AttendantPage } from "../AttendantPage";
-import { MetricasView } from "./MetricasView";
 import { BackendPizzaria, pizzariasApi, WhatsAppConnect } from "../../lib/api";
 
-export type NegocioTab = "atendente" | "geral" | "analise";
+export type NegocioTab = "atendente" | "geral";
 
 interface Props {
   pizzaria: BackendPizzaria;
@@ -34,15 +33,12 @@ export function MeuNegocioViewV2({ pizzaria, onUpdated, initialTab = "atendente"
           <TabButton active={tab === "atendente"} onClick={() => setTab("atendente")}
             icon={<Bot className="w-4 h-4"/>} label="Atendente"
             badge={<Sparkles className="w-3 h-3 text-orange-500"/>}/>
-          <TabButton active={tab === "analise"} onClick={() => setTab("analise")}
-            icon={<TrendingUp className="w-4 h-4"/>} label="Análise"/>
           <TabButton active={tab === "geral"} onClick={() => setTab("geral")}
             icon={<SettingsIcon className="w-4 h-4"/>} label="Geral"/>
         </div>
       </div>
 
       {tab === "atendente" && <AttendantPage pizzariaId={pizzaria.id} />}
-      {tab === "analise"   && <MetricasView pizzariaId={pizzaria.id} />}
       {tab === "geral"     && <ConfigGeral pizzaria={pizzaria} onUpdated={onUpdated} />}
     </div>
   );
