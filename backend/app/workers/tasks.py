@@ -52,6 +52,11 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
 
         async with AsyncSessionLocal() as db:
             try:
+                from sqlalchemy import text
+                res_prod = await db.execute(text("SELECT COUNT(*) FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = TRUE"), {"pid": str(pizzaria_id)})
+                prod_count = res_prod.scalar()
+                log.info("DIAGNOSTIC: produtos disponiveis count=%s para pizzaria=%s", prod_count, pizzaria_id)
+
                 result = await process_and_reply(db, pizzaria_id, telefone, conteudo)
                 return result
             except Exception as e:
