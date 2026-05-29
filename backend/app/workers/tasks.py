@@ -26,51 +26,52 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
     from app.db import AsyncSessionLocal, engine
     from app.services.queue import drain_pending, should_flush_now
 
-    can_flush, wait = await should_flush_now(pizzaria_id, telefone)
-    if not can_flush:
-        log.info("Aguardando mais %.1fs (pizzaria=%s tel=%s)", wait, pizzaria_id, telefone)
-        flush_conversation.apply_async(
-            args=[str(pizzaria_id), telefone],
-            countdown=max(wait + 0.1, 0.5),
+    try:
+        can_flush, wait = await should_flush_now(pizzaria_id, telefone)
+        if not can_flush:
+            log.info("Aguardando mais %.1fs (pizzaria=%s tel=%s)", wait, pizzaria_id, telefone)
+            flush_conversation.apply_async(
+                args=[str(pizzaria_id), telefone],
+                countdown=max(wait + 0.1, 0.5),
+            )
+            return {"rescheduled": True, "wait": wait}
+
+        pending = await drain_pending(pizzaria_id, telefone)
+        if not pending:
+            return {"empty": True}
+
+        # Concatena as msgs batched
+        conteudo = "\n".join(item["conteudo"] for item in pending if item.get("conteudo"))
+        if not conteudo.strip():
+            return {"empty_content": True}
+
+        log.info(
+            "Flush → agente: pizzaria=%s tel=%s msgs=%d",
+            pizzaria_id, telefone, len(pending),
         )
-        return {"rescheduled": True, "wait": wait}
 
-    pending = await drain_pending(pizzaria_id, telefone)
-    if not pending:
-        return {"empty": True}
-
-    # Concatena as msgs batched
-    conteudo = "\n".join(item["conteudo"] for item in pending if item.get("conteudo"))
-    if not conteudo.strip():
-        return {"empty_content": True}
-
-    log.info(
-        "Flush → agente: pizzaria=%s tel=%s msgs=%d",
-        pizzaria_id, telefone, len(pending),
-    )
-
-    async with AsyncSessionLocal() as db:
+        async with AsyncSessionLocal() as db:
+            try:
+                result = await process_and_reply(db, pizzaria_id, telefone, conteudo)
+                return result
+            except Exception as e:
+                log.exception("Agente falhou: %s", e)
+                await db.rollback()
+                return {"ok": False, "erro": str(e)}
+    finally:
+        await engine.dispose()
         try:
-            result = await process_and_reply(db, pizzaria_id, telefone, conteudo)
-            return result
-        except Exception as e:
-            log.exception("Agente falhou: %s", e)
-            await db.rollback()
-            return {"ok": False, "erro": str(e)}
-        finally:
-            await engine.dispose()
-            try:
-                from app.agent.llm import reset_client
-                await reset_client()
-            except Exception:
-                pass
-            try:
-                from app.services.evolution import evolution
-                await evolution.close()
-            except Exception:
-                pass
-            try:
-                from app.redis_client import redis
-                await redis.aclose()
-            except Exception:
-                pass
+            from app.agent.llm import reset_client
+            await reset_client()
+        except Exception:
+            pass
+        try:
+            from app.services.evolution import evolution
+            await evolution.close()
+        except Exception:
+            pass
+        try:
+            from app.redis_client import redis
+            await redis.aclose()
+        except Exception:
+            pass

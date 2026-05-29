@@ -161,7 +161,7 @@ class EvolutionClient:
         }
         try:
             c = await self._http()
-            r = await c.post(f"/chat/updatePresence/{instancia}", json=body)
+            r = await c.post(f"/chat/sendPresence/{instancia}", json=body)
             return self._unwrap(r)
         except Exception as e:
             log.debug("Presença não enviada (não-fatal): %s", e)
