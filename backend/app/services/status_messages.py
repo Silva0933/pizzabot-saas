@@ -26,7 +26,7 @@ DEFAULT_STATUS_MESSAGES: dict[str, str] = {
     "pagamento_aprovado": "✅ Pagamento confirmado, {nome_cliente}! Seu pedido #{numero_pedido} já entrou na fila de preparo. 🍕",
     "confirmado": "Oi {nome_cliente}! ✅ Seu pedido #{numero_pedido} foi confirmado e já vai pra produção. 🍕",
     "no_forno": "🔥 Seu pedido #{numero_pedido} já está no forno, {nome_cliente}! Em breve fica pronto.",
-    "a_caminho": "🛵 Saiu pra entrega! Seu pedido #{numero_pedido} chega em aproximadamente {tempo_entrega}.",
+    "a_caminho": "🛵 Saiu para entrega! Seu pedido #{numero_pedido} chega em breve. 😋",
     "entregue": "🎉 Pedido #{numero_pedido} entregue! Obrigado pela preferência, {nome_cliente}. Bom apetite! 😋",
     "cancelado": "Seu pedido #{numero_pedido} foi cancelado. Qualquer dúvida é só chamar a gente. 🙏",
 }
@@ -94,12 +94,18 @@ async def enviar_mensagem_status(
     }
     texto = _interpolar(template, ctx)
 
-    # Envia
+    # Envia com "digitando…" (presença + delay proporcional ao tamanho)
     try:
+        delay_ms = int(min(max(len(texto) * 55, 1500), 8000))
+        try:
+            await evolution.send_presence(instancia=pizz.instancia, numero=cliente.telefone, tipo="composing")
+        except Exception:  # noqa: BLE001
+            pass
         await evolution.send_text(
             instancia=pizz.instancia,
             numero=cliente.telefone,
             texto=texto,
+            delay_ms=delay_ms,
         )
     except Exception as e:
         log.exception("Falha ao enviar mensagem de status: %s", e)
