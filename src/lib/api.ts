@@ -454,6 +454,7 @@ export const adminApi = {
   testarLlm: () =>
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),
   llmUsage: (days = 30) => api.get<LLMUsage>(`/admin/llm/usage?days=${days}`),
+  zerarLlmUsage: () => api.delete(`/admin/llm/usage`),
 };
 
 export interface LLMUsage {

@@ -282,6 +282,20 @@ async def llm_usage(
     }
 
 
+@router.delete("/llm/usage")
+async def zerar_llm_usage(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Zera a contagem de consumo de tokens."""
+    try:
+        await db.execute(text("DELETE FROM public.llm_usage"))
+        await db.commit()
+    except Exception:
+        await db.rollback()
+    return {"ok": True}
+
+
 @router.post("/llm/test")
 async def test_llm(
     db: AsyncSession = Depends(get_db),

@@ -761,9 +761,22 @@ function LLMConfigCard() {
             {/* Consumo de tokens */}
             {usage && (
               <div className="pt-4 border-t border-slate-100">
-                <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5 mb-3">
-                  <Coins className="w-4 h-4 text-amber-500" /> Consumo de tokens (30 dias)
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Coins className="w-4 h-4 text-amber-500" /> Consumo de tokens (30 dias)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm("Zerar a contagem de tokens? Os registros de consumo serão apagados.")) return;
+                      try { await adminApi.zerarLlmUsage(); adminApi.llmUsage(30).then(setUsage).catch(() => {}); }
+                      catch (e: any) { setMsg({ ok: false, text: e.message }); }
+                    }}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 inline-flex items-center gap-1"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Zerar contagem
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                   <UsageStat label="Total" value={fmt(usage.total.total)} />
                   <UsageStat label="Entrada" value={fmt(usage.total.prompt)} />
