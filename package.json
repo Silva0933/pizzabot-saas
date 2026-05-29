@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "start": "vite preview",
-    "lint": "tsc --noEmit",
-    "mvp:check": "node scripts/mvp-check.mjs"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

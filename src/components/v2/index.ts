@@ -5,8 +5,6 @@ export type { NavKey, NavBadges, SidebarProps } from "./Sidebar";
 export { Topbar } from "./Topbar";
 export { Tooltip } from "./Tooltip";
 export { InicioDashboard } from "./InicioDashboard";
-export { MeuNegocioView } from "./MeuNegocioView";
-export type { NegocioTab } from "./MeuNegocioView";
 export { MetricasView } from "./MetricasView";
 export { OnboardingChecklist } from "./OnboardingChecklist";
 export type { OnboardingItem } from "./OnboardingChecklist";
