@@ -392,6 +392,15 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
 
     cli = ctx.cliente
     if not cli:
+        # ctx é carregado no início da conversa; o cliente pode ter sido criado
+        # depois (no registrar_pedido). Busca do banco para não falhar.
+        cli = (await db.execute(
+            select(Cliente).where(
+                Cliente.pizzaria_id == ctx.pizzaria.id,
+                Cliente.telefone == ctx.telefone,
+            )
+        )).scalar_one_or_none()
+    if not cli:
         return {"ok": False, "motivo": "sem_cliente"}
 
     ped = (await db.execute(
