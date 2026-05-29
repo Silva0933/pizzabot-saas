@@ -16,8 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.llm import to_content
 from app.models import Mensagem
 
-# Quantos turnos carregamos pra contexto (cada turno = 1 linha em agente_memoria)
-MAX_HISTORY = 24
+# Quantos turnos carregamos pra contexto (cada turno = 1 linha em agente_memoria).
+# Mantido enxuto para economizar tokens de ENTRADA a cada mensagem.
+MAX_HISTORY = 12
 
 
 async def load_history_messages(

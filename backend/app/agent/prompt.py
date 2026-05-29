@@ -108,9 +108,6 @@ def build_system_prompt(
 
     return f"""Você é {nome_atendente}, atendente de WhatsApp da {pizzaria.nome}.
 
-DATA/HORA AGORA: {agora}
-{cliente_block}
-
 PIZZARIA
 - Nome: {pizzaria.nome}
 - Endereço: {pizzaria.endereco or "(não informado)"}
@@ -154,6 +151,8 @@ PEDIDOS
 OUTRAS REGRAS
 - Use escalar_humano em caso de insatisfação, urgência, alergia/restrição séria ou assunto fora do escopo.
 - Se faltar informação ou der erro, diga de forma natural que vai confirmar com a equipe e escale para humano (em vez de inventar).
-
 {extras_block}
+
+CONTEXTO DESTA CONVERSA (parte volátil — fica por último de propósito)
+- Agora: {agora}{cliente_block}
 """.strip()
