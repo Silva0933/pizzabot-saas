@@ -37,7 +37,9 @@ DECL_BUSCAR_CARDAPIO = types.FunctionDeclaration(
         "Consulta o cardápio real da pizzaria. Use SEMPRE antes de citar qualquer "
         "produto/preço/sabor e SEMPRE que o cliente pedir o cardápio, os sabores, "
         "as opções ou o que tem disponível. Para listar tudo, chame sem 'query' "
-        "(ou com 'cardapio'). Para buscar algo específico, passe 'query' (ex: 'calabresa')."
+        "(ou com 'cardapio'). Para buscar algo específico, passe 'query' (ex: 'calabresa'). "
+        "IMPORTANTE: por padrão retorna só nome, categoria e preço (sem descrição/ingredientes). "
+        "Passe incluir_descricao=true SOMENTE quando o cliente perguntar ingredientes de um sabor específico."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
@@ -45,6 +47,7 @@ DECL_BUSCAR_CARDAPIO = types.FunctionDeclaration(
             "query": types.Schema(type=types.Type.STRING, description="Termo de busca específico (ex: 'calabresa', 'doce', 'sem lactose'). Deixe vazio para listar tudo."),
             "categoria": types.Schema(type=types.Type.STRING, description="Filtra por categoria específica (opcional)"),
             "limit": types.Schema(type=types.Type.INTEGER, description="Máximo de resultados (padrão 12)"),
+            "incluir_descricao": types.Schema(type=types.Type.BOOLEAN, description="Se true, inclui descrição/ingredientes dos itens. Use SOMENTE quando o cliente perguntar ingredientes. Padrão: false."),
         },
         required=[],
     ),
@@ -188,12 +191,15 @@ async def buscar_cardapio(
     query: str | None = None,
     categoria: str | None = None,
     limit: int = 12,
+    incluir_descricao: bool = False,
 ) -> dict[str, Any]:
     """
     Busca produtos no cardápio (só os disponíveis). Robusta:
     - pedidos genéricos (cardápio/sabores/menu/etc.) retornam o cardápio inteiro;
     - se uma busca específica não achar nada, cai no cardápio inteiro (nunca
       devolve vazio com produtos existindo).
+    - Por padrão NÃO retorna descrição/ingredientes (economiza tokens).
+      Só retorna descrição quando incluir_descricao=True.
     """
     base = (
         "SELECT id, nome, categoria, descricao, preco, disponivel "
@@ -228,17 +234,19 @@ async def buscar_cardapio(
     # inteiro (isso fazia a atendente "achar" pizzas ao buscar refrigerante).
     # Retorna vazio → a atendente avisa que o item não existe.
 
-    items = [
-        {
+    items = []
+    for r in rows:
+        item: dict[str, Any] = {
             "id": str(r[0]),
             "nome": r[1],
             "categoria": r[2],
-            "descricao": r[3],
             "preco": float(r[4]),
             "disponivel": bool(r[5]),
         }
-        for r in rows
-    ]
+        # Só inclui descrição/ingredientes se explicitamente pedido
+        if incluir_descricao:
+            item["descricao"] = r[3]
+        items.append(item)
     return {"encontrados": len(items), "items": items}
 
 
