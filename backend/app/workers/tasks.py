@@ -23,7 +23,7 @@ def flush_conversation(self, pizzaria_id: str, telefone: str) -> dict:
 
 async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
     from app.agent.runner import process_and_reply
-    from app.db import AsyncSessionLocal
+    from app.db import AsyncSessionLocal, engine
     from app.services.queue import drain_pending, should_flush_now
 
     can_flush, wait = await should_flush_now(pizzaria_id, telefone)
@@ -57,3 +57,5 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
             log.exception("Agente falhou: %s", e)
             await db.rollback()
             return {"ok": False, "erro": str(e)}
+        finally:
+            await engine.dispose()
