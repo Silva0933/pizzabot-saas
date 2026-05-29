@@ -421,7 +421,15 @@ export const adminApi = {
     api.put<{ ok: boolean }>(`/admin/llm`, body),
   testarLlm: () =>
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),
+  llmUsage: (days = 30) => api.get<LLMUsage>(`/admin/llm/usage?days=${days}`),
 };
+
+export interface LLMUsage {
+  periodo_dias: number;
+  total: { prompt: number; completion: number; total: number; calls: number };
+  por_pizzaria: Array<{ pizzaria_id: string | null; nome: string; tokens: number; calls: number }>;
+  por_dia: Array<{ dia: string; tokens: number }>;
+}
 
 // ============================================
 // WebSocket — live updates do painel

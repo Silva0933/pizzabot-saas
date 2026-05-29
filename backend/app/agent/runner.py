@@ -25,7 +25,7 @@ from app.agent.prompt import build_system_prompt
 from app.agent.providers import openai_chat, openai_tools
 from app.agent.tools import execute_tool, get_tools
 from app.models import Conversa, Mensagem
-from app.services.app_config import get_llm_config
+from app.services.app_config import get_llm_config, record_usage
 from app.services.broadcaster import broadcaster
 from app.services.evolution import evolution
 
@@ -78,12 +78,18 @@ async def run_agent(
 
     gemini_key = cfg["keys"].get("gemini") or None
     gemini_model = cfg["model"] if provider == "gemini" else "gemini-2.0-flash"
+    usage_acc = {"prompt": 0, "completion": 0, "total": 0}
     for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
         log.info("Agente iter=%d pizzaria=%s tel=%s", iteration, pizzaria_id, telefone)
         response = await call_gemini(
             system=system, history=history, tools=tools,
             model=gemini_model, api_key=gemini_key,
         )
+        um = getattr(response, "usage_metadata", None)
+        if um:
+            usage_acc["prompt"] += getattr(um, "prompt_token_count", 0) or 0
+            usage_acc["completion"] += getattr(um, "candidates_token_count", 0) or 0
+            usage_acc["total"] += getattr(um, "total_token_count", 0) or 0
 
         fcs = extract_function_calls(response)
         if fcs:
@@ -114,6 +120,11 @@ async def run_agent(
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
         break
 
+    await record_usage(
+        db, pizzaria_id=pizzaria_id, provider="gemini", model=gemini_model,
+        prompt_tokens=usage_acc["prompt"], completion_tokens=usage_acc["completion"],
+        total_tokens=usage_acc["total"], calls=iteration,
+    )
     await db.commit()
     return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made)
 
@@ -145,6 +156,7 @@ async def _run_openai_agent(
     tool_calls_made: list[str] = []
     final_text: str | None = None
     iteration = 0
+    usage_acc = {"prompt": 0, "completion": 0, "total": 0}
 
     for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
         log.info("Agente(%s) iter=%d pizzaria=%s", provider, iteration, pizzaria_id)
@@ -152,6 +164,10 @@ async def _run_openai_agent(
             provider=provider, api_key=api_key, model=model,
             messages=messages, tools=tools,
         )
+        u = res.get("usage") or {}
+        usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0
+        usage_acc["completion"] += u.get("completion_tokens", 0) or 0
+        usage_acc["total"] += u.get("total_tokens", 0) or 0
         calls = res.get("tool_calls") or []
         if calls:
             messages.append({
@@ -180,6 +196,11 @@ async def _run_openai_agent(
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
         break
 
+    await record_usage(
+        db, pizzaria_id=pizzaria_id, provider=provider, model=model,
+        prompt_tokens=usage_acc["prompt"], completion_tokens=usage_acc["completion"],
+        total_tokens=usage_acc["total"], calls=iteration,
+    )
     await db.commit()
     return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made)
 

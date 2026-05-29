@@ -230,6 +230,58 @@ async def put_llm(
             "keys_configuradas": {k: bool(v) for k, v in keys.items()}}
 
 
+@router.get("/llm/usage")
+async def llm_usage(
+    days: int = Query(30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Consumo de tokens da LLM: total, por pizzaria e por dia."""
+    desde = datetime.now(timezone.utc) - timedelta(days=days)
+    p = {"desde": desde}
+
+    try:
+        tot = (await db.execute(text("""
+            SELECT COALESCE(SUM(prompt_tokens),0), COALESCE(SUM(completion_tokens),0),
+                   COALESCE(SUM(total_tokens),0), COALESCE(SUM(calls),0)
+            FROM public.llm_usage WHERE created_at >= :desde
+        """), p)).fetchone()
+
+        por_pizz = (await db.execute(text("""
+            SELECT u.pizzaria_id, COALESCE(pz.nome,'(desconhecida)') AS nome,
+                   SUM(u.total_tokens) AS tokens, SUM(u.calls) AS calls
+            FROM public.llm_usage u
+            LEFT JOIN public.pizzarias pz ON pz.id = u.pizzaria_id
+            WHERE u.created_at >= :desde
+            GROUP BY u.pizzaria_id, pz.nome
+            ORDER BY tokens DESC
+        """), p)).fetchall()
+
+        por_dia = (await db.execute(text("""
+            SELECT DATE(created_at AT TIME ZONE 'America/Sao_Paulo') AS dia,
+                   SUM(total_tokens) AS tokens
+            FROM public.llm_usage WHERE created_at >= :desde
+            GROUP BY dia ORDER BY dia
+        """), p)).fetchall()
+    except Exception:
+        await db.rollback()
+        return {"total": {"prompt": 0, "completion": 0, "total": 0, "calls": 0}, "por_pizzaria": [], "por_dia": []}
+
+    return {
+        "periodo_dias": days,
+        "total": {
+            "prompt": int(tot[0]), "completion": int(tot[1]),
+            "total": int(tot[2]), "calls": int(tot[3]),
+        },
+        "por_pizzaria": [
+            {"pizzaria_id": str(r[0]) if r[0] else None, "nome": r[1],
+             "tokens": int(r[2] or 0), "calls": int(r[3] or 0)}
+            for r in por_pizz
+        ],
+        "por_dia": [{"dia": str(r[0]), "tokens": int(r[1] or 0)} for r in por_dia],
+    }
+
+
 @router.post("/llm/test")
 async def test_llm(
     db: AsyncSession = Depends(get_db),

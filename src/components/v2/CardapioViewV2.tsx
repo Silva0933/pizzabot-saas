@@ -34,13 +34,15 @@ export function CardapioViewV2({ pizzariaId }: Props) {
   const [form, setForm] = useState<Form>(EMPTY);
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [novaCategoria, setNovaCategoria] = useState(false);
 
-  // Categorias = padrões + as que já existem no cardápio (o dono pode digitar novas).
+  // Categorias = padrões + as que já existem no cardápio (o dono pode adicionar novas).
   const categoriasDisponiveis = useMemo(() => {
     const set = new Set<string>(CATEGORIAS as readonly string[]);
     for (const p of produtos) if (p.categoria) set.add(p.categoria);
+    if (form.categoria) set.add(form.categoria);
     return Array.from(set);
-  }, [produtos]);
+  }, [produtos, form.categoria]);
 
   function load() {
     setLoading(true);
@@ -55,10 +57,12 @@ export function CardapioViewV2({ pizzariaId }: Props) {
     setEditing(null);
     setCreating(true);
     setForm(EMPTY);
+    setNovaCategoria(false);
   }
   function startEdit(p: BackendProduto) {
     setCreating(false);
     setEditing(p);
+    setNovaCategoria(false);
     setForm({
       nome: p.nome, categoria: p.categoria ?? "outro", descricao: p.descricao ?? "",
       preco: Number(p.preco), disponivel: p.disponivel, imagem_url: p.imagem_url ?? "", ordem: p.ordem,
@@ -68,6 +72,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
     setCreating(false);
     setEditing(null);
     setForm(EMPTY);
+    setNovaCategoria(false);
   }
 
   async function save() {
@@ -149,16 +154,33 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} className={inputCls}/>
             </Field>
             <Field label="Categoria">
-              <input
-                list="cardapio-categorias"
-                value={form.categoria ?? ""}
-                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
-                className={inputCls}
-                placeholder="Escolha ou digite uma nova"
-              />
-              <datalist id="cardapio-categorias">
-                {categoriasDisponiveis.map((c) => <option key={c} value={c} />)}
-              </datalist>
+              {novaCategoria ? (
+                <div className="flex gap-1.5">
+                  <input
+                    autoFocus
+                    value={form.categoria ?? ""}
+                    onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                    className={inputCls}
+                    placeholder="Nome da nova categoria"
+                  />
+                  <button type="button" onClick={() => setNovaCategoria(false)}
+                    className="px-2 text-xs text-slate-500 hover:bg-slate-100 rounded-lg shrink-0">
+                    Lista
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={form.categoria ?? ""}
+                  onChange={(e) => {
+                    if (e.target.value === "__nova__") { setNovaCategoria(true); setForm({ ...form, categoria: "" }); }
+                    else setForm({ ...form, categoria: e.target.value });
+                  }}
+                  className={inputCls}
+                >
+                  {categoriasDisponiveis.map((c) => <option key={c} value={c}>{c}</option>)}
+                  <option value="__nova__">➕ Nova categoria…</option>
+                </select>
+              )}
             </Field>
             <Field label="Preço (R$)" required>
               <input type="number" step="0.01" value={form.preco}

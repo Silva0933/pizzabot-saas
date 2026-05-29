@@ -18,9 +18,9 @@ import {
   Store, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
   Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
-  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap,
+  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins,
 } from "lucide-react";
-import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, LLMConfig, WhatsAppConnect } from "../../lib/api";
+import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, LLMConfig, LLMUsage, WhatsAppConnect } from "../../lib/api";
 
 interface Props {
   userName: string;
@@ -604,32 +604,54 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   );
 }
 
+const CUSTOM_MODEL = "__custom__";
+
 function LLMConfigCard() {
+  const [open, setOpen] = useState(false);
   const [cfg, setCfg] = useState<LLMConfig | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [provider, setProvider] = useState("gemini");
   const [model, setModel] = useState("");
+  const [customMode, setCustomMode] = useState(false);
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [usage, setUsage] = useState<LLMUsage | null>(null);
+
+  function applyCfg(c: LLMConfig) {
+    setCfg(c); setProvider(c.provider); setKeys({});
+    const modelos = c.providers[c.provider]?.modelos || [];
+    setModel(c.model);
+    setCustomMode(!modelos.includes(c.model));
+  }
 
   function load() {
     setLoading(true);
     adminApi.llm()
-      .then((c) => { setCfg(c); setProvider(c.provider); setModel(c.model); setKeys({}); })
+      .then(applyCfg)
       .catch((e) => setMsg({ ok: false, text: e.message }))
       .finally(() => setLoading(false));
+    adminApi.llmUsage(30).then(setUsage).catch(() => {});
   }
-  useEffect(load, []);
+  // Carrega só quando expande pela 1ª vez.
+  useEffect(() => { if (open && !cfg) load(); /* eslint-disable-next-line */ }, [open]);
 
   const provInfo = cfg?.providers?.[provider];
+  const modelos = provInfo?.modelos || [];
+
+  function onProviderChange(id: string) {
+    setProvider(id);
+    const ms = cfg?.providers[id]?.modelos || [];
+    setModel(ms[0] || "");
+    setCustomMode(false);
+  }
 
   async function save() {
     setSaving(true); setMsg(null);
     try {
-      await adminApi.salvarLlm({ provider, model, keys });
-      setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor." });
+      await adminApi.salvarLlm({ provider, model: model.trim(), keys });
+      setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor/modelo." });
       load();
     } catch (e: any) { setMsg({ ok: false, text: e.message }); }
     setSaving(false);
@@ -645,83 +667,136 @@ function LLMConfigCard() {
     setTesting(false);
   }
 
+  const fmt = (n: number) => n.toLocaleString("pt-BR");
+
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-4 md:p-5">
-      <div className="flex items-center gap-2.5 mb-1">
-        <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white grid place-items-center">
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      {/* Cabeçalho clicável (ícone de configuração de IA) */}
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 p-4 hover:bg-slate-50 transition-colors text-left">
+        <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white grid place-items-center shrink-0">
           <Cpu className="w-5 h-5" />
         </span>
-        <div>
-          <h2 className="text-base font-bold text-slate-800">Inteligência Artificial</h2>
-          <p className="text-xs text-slate-500">Provedor, modelo e chaves que atendem as pizzarias.</p>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-slate-800">Configuração de IA</h2>
+          <p className="text-xs text-slate-500 truncate">
+            {cfg ? `${cfg.providers[cfg.provider]?.nome || cfg.provider} · ${cfg.model}` : "Provedor, modelo e chaves que atendem as pizzarias."}
+          </p>
         </div>
-      </div>
+        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+      </button>
 
-      {loading ? (
-        <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-violet-500" /></div>
-      ) : cfg ? (
-        <div className="mt-3 space-y-4">
-          <div className="grid md:grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-xs font-medium text-slate-600">Provedor</span>
-              <select value={provider} onChange={(e) => { setProvider(e.target.value); setModel(cfg.providers[e.target.value]?.modelos[0] || ""); }}
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
-                {Object.entries(cfg.providers).map(([id, p]) => (
-                  <option key={id} value={id}>{p.nome}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="text-xs font-medium text-slate-600">Modelo</span>
-              <input list="llm-models" value={model} onChange={(e) => setModel(e.target.value)}
-                placeholder="ex.: gemini-2.0-flash"
-                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400" />
-              <datalist id="llm-models">
-                {(provInfo?.modelos || []).map((m) => <option key={m} value={m} />)}
-              </datalist>
-            </label>
-          </div>
-
-          <div className="space-y-2.5">
-            {Object.entries(cfg.providers).map(([id, p]) => (
-              <label key={id} className="block">
-                <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                  Chave de API — {p.nome}
-                  {cfg.keys_configuradas[id]
-                    ? <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">configurada</span>
-                    : <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">vazia</span>}
-                </span>
-                <input
-                  type="password"
-                  value={keys[id] ?? ""}
-                  onChange={(e) => setKeys((k) => ({ ...k, [id]: e.target.value }))}
-                  placeholder={cfg.keys_mascaradas[id] || "Cole a chave aqui"}
-                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
+      {open && (
+        loading && !cfg ? (
+          <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-violet-500" /></div>
+        ) : cfg ? (
+          <div className="px-4 pb-4 md:px-5 md:pb-5 space-y-4 border-t border-slate-100 pt-4">
+            <div className="grid md:grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-xs font-medium text-slate-600">Provedor</span>
+                <select value={provider} onChange={(e) => onProviderChange(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
+                  {Object.entries(cfg.providers).map(([id, p]) => (
+                    <option key={id} value={id}>{p.nome}</option>
+                  ))}
+                </select>
               </label>
-            ))}
-            <p className="text-[11px] text-slate-400">
-              Deixe em branco para manter a chave já salva. As chaves nunca são exibidas — só a máscara.
-            </p>
-          </div>
-
-          {msg && (
-            <div className={`text-sm px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
-              {msg.text}
+              <label className="block">
+                <span className="text-xs font-medium text-slate-600">Modelo</span>
+                <select
+                  value={customMode ? CUSTOM_MODEL : model}
+                  onChange={(e) => {
+                    if (e.target.value === CUSTOM_MODEL) { setCustomMode(true); setModel(""); }
+                    else { setCustomMode(false); setModel(e.target.value); }
+                  }}
+                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
+                  {modelos.map((m) => <option key={m} value={m}>{m}</option>)}
+                  <option value={CUSTOM_MODEL}>✏️ Outro (digitar)…</option>
+                </select>
+                {customMode && (
+                  <input value={model} onChange={(e) => setModel(e.target.value)}
+                    placeholder="Digite o nome exato do modelo"
+                    className="mt-2 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
+                )}
+              </label>
             </div>
-          )}
 
-          <div className="flex gap-2 justify-end">
-            <button onClick={test} disabled={testing || saving}
-              className="px-3.5 py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 inline-flex items-center gap-1.5 disabled:opacity-50">
-              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Testar
-            </button>
-            <button onClick={save} disabled={saving || !model.trim()}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 text-white inline-flex items-center gap-1.5 disabled:opacity-50">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Salvar
-            </button>
+            <div className="space-y-2.5">
+              {Object.entries(cfg.providers).map(([id, p]) => (
+                <label key={id} className="block">
+                  <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                    Chave de API — {p.nome}
+                    {cfg.keys_configuradas[id]
+                      ? <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">configurada</span>
+                      : <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">vazia</span>}
+                  </span>
+                  <input type="password" value={keys[id] ?? ""}
+                    onChange={(e) => setKeys((k) => ({ ...k, [id]: e.target.value }))}
+                    placeholder={cfg.keys_mascaradas[id] || "Cole a chave aqui"}
+                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
+                </label>
+              ))}
+              <p className="text-[11px] text-slate-400">
+                Deixe em branco para manter a chave já salva. As chaves nunca são exibidas — só a máscara.
+              </p>
+            </div>
+
+            {msg && (
+              <div className={`text-sm px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+                {msg.text}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={test} disabled={testing || saving}
+                className="px-3.5 py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 inline-flex items-center gap-1.5 disabled:opacity-50">
+                {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Testar
+              </button>
+              <button onClick={save} disabled={saving || !model.trim()}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 text-white inline-flex items-center gap-1.5 disabled:opacity-50">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Salvar
+              </button>
+            </div>
+
+            {/* Consumo de tokens */}
+            {usage && (
+              <div className="pt-4 border-t border-slate-100">
+                <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5 mb-3">
+                  <Coins className="w-4 h-4 text-amber-500" /> Consumo de tokens (30 dias)
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                  <UsageStat label="Total" value={fmt(usage.total.total)} />
+                  <UsageStat label="Entrada" value={fmt(usage.total.prompt)} />
+                  <UsageStat label="Saída" value={fmt(usage.total.completion)} />
+                  <UsageStat label="Chamadas" value={fmt(usage.total.calls)} />
+                </div>
+                {usage.por_pizzaria.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-semibold text-slate-500">Por pizzaria</p>
+                    {usage.por_pizzaria.map((u, i) => (
+                      <div key={u.pizzaria_id || i} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-1.5">
+                        <span className="text-slate-700 truncate">{u.nome}</span>
+                        <span className="text-slate-500 shrink-0 ml-2">{fmt(u.tokens)} tokens · {u.calls} chamadas</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">Sem consumo registrado ainda.</p>
+                )}
+              </div>
+            )}
           </div>
-        </div>
-      ) : null}
+        ) : null
+      )}
+    </div>
+  );
+}
+
+function UsageStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+      <div className="text-base font-bold text-slate-800 leading-none">{value}</div>
+      <div className="text-[11px] text-slate-500 mt-1">{label}</div>
     </div>
   );
 }

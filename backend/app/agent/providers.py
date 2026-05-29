@@ -119,4 +119,10 @@ async def openai_chat(
             args = {}
         tool_calls.append({"id": tc.get("id") or fn.get("name"), "name": fn.get("name"), "args": args})
 
-    return {"content": msg.get("content"), "tool_calls": tool_calls}
+    u = data.get("usage") or {}
+    usage = {
+        "prompt_tokens": u.get("prompt_tokens", 0) or 0,
+        "completion_tokens": u.get("completion_tokens", 0) or 0,
+        "total_tokens": u.get("total_tokens", 0) or 0,
+    }
+    return {"content": msg.get("content"), "tool_calls": tool_calls, "usage": usage}

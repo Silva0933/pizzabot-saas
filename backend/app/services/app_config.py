@@ -27,11 +27,63 @@ CREATE TABLE IF NOT EXISTS public.app_config (
 )
 """
 
+_DDL_USAGE = """
+CREATE TABLE IF NOT EXISTS public.llm_usage (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    pizzaria_id uuid,
+    provider text NOT NULL,
+    model text NOT NULL,
+    prompt_tokens integer NOT NULL DEFAULT 0,
+    completion_tokens integer NOT NULL DEFAULT 0,
+    total_tokens integer NOT NULL DEFAULT 0,
+    calls integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now()
+)
+"""
+_DDL_USAGE_IDX = (
+    "CREATE INDEX IF NOT EXISTS llm_usage_pizz_idx "
+    "ON public.llm_usage (pizzaria_id, created_at)"
+)
+
 
 async def ensure_table() -> None:
-    """Cria a tabela app_config se não existir (chamado no startup)."""
+    """Cria as tabelas auxiliares se não existirem (chamado no startup)."""
     async with engine.begin() as conn:
         await conn.execute(text(_DDL))
+        await conn.execute(text(_DDL_USAGE))
+        await conn.execute(text(_DDL_USAGE_IDX))
+
+
+async def record_usage(
+    db: AsyncSession,
+    *,
+    pizzaria_id: Any,
+    provider: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    calls: int = 1,
+) -> None:
+    """Registra consumo de tokens de uma rodada do agente (best-effort)."""
+    if not (prompt_tokens or completion_tokens or total_tokens):
+        return
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO public.llm_usage
+                    (pizzaria_id, provider, model, prompt_tokens, completion_tokens, total_tokens, calls)
+                VALUES (:pid, :prov, :model, :pt, :ct, :tt, :calls)
+            """),
+            {
+                "pid": str(pizzaria_id) if pizzaria_id else None,
+                "prov": provider, "model": model,
+                "pt": int(prompt_tokens or 0), "ct": int(completion_tokens or 0),
+                "tt": int(total_tokens or 0), "calls": int(calls or 1),
+            },
+        )
+    except Exception:  # noqa: BLE001
+        await db.rollback()
 
 
 async def get_config(db: AsyncSession, chave: str) -> dict[str, Any]:
