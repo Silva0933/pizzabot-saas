@@ -34,17 +34,19 @@ ToolFn = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
 DECL_BUSCAR_CARDAPIO = types.FunctionDeclaration(
     name="buscar_cardapio",
     description=(
-        "Busca produtos no cardápio da pizzaria. Use SEMPRE antes de citar produto/preço/sabor. "
-        "Aceita busca por nome, categoria ou termo livre (suporta erros de digitação via busca semântica)."
+        "Consulta o cardápio real da pizzaria. Use SEMPRE antes de citar qualquer "
+        "produto/preço/sabor e SEMPRE que o cliente pedir o cardápio, os sabores, "
+        "as opções ou o que tem disponível. Para listar tudo, chame sem 'query' "
+        "(ou com 'cardapio'). Para buscar algo específico, passe 'query' (ex: 'calabresa')."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "query": types.Schema(type=types.Type.STRING, description="Termo de busca (ex: 'calabresa', 'doces', 'sem lactose')"),
+            "query": types.Schema(type=types.Type.STRING, description="Termo de busca específico (ex: 'calabresa', 'doce', 'sem lactose'). Deixe vazio para listar tudo."),
             "categoria": types.Schema(type=types.Type.STRING, description="Filtra por categoria específica (opcional)"),
-            "limit": types.Schema(type=types.Type.INTEGER, description="Máximo de resultados (padrão 8)"),
+            "limit": types.Schema(type=types.Type.INTEGER, description="Máximo de resultados (padrão 12)"),
         },
-        required=["query"],
+        required=[],
     ),
 )
 
@@ -149,31 +151,50 @@ async def buscar_cardapio(
     ctx: AgentContext,
     db: AsyncSession,
     *,
-    query: str,
+    query: str | None = None,
     categoria: str | None = None,
-    limit: int = 8,
+    limit: int = 12,
 ) -> dict[str, Any]:
-    """Busca híbrida de produtos no cardápio."""
-    sql = """
-        SELECT id, nome, categoria, descricao, preco, disponivel
-        FROM public.produtos
-        WHERE pizzaria_id = :pid
     """
-    params = {"pid": str(ctx.pizzaria.id)}
-    
-    q_clean = query.strip().lower() if query else ""
-    if q_clean and q_clean not in ("todas", "todos", "cardapio", "cardápio", "pizza", "pizzas", "sabores", "tudo", ""):
-        sql += " AND (nome ILIKE :q OR descricao ILIKE :q OR categoria ILIKE :q)"
-        params["q"] = f"%{query}%"
-        
-    if categoria:
-        sql += " AND categoria ILIKE :cat"
-        params["cat"] = f"%{categoria}%"
-        
-    sql += " ORDER BY ordem, nome LIMIT :lim"
-    params["lim"] = max(1, min(limit, 20))
+    Busca produtos no cardápio (só os disponíveis). Robusta:
+    - pedidos genéricos (cardápio/sabores/menu/etc.) retornam o cardápio inteiro;
+    - se uma busca específica não achar nada, cai no cardápio inteiro (nunca
+      devolve vazio com produtos existindo).
+    """
+    base = (
+        "SELECT id, nome, categoria, descricao, preco, disponivel "
+        "FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = true"
+    )
+    order = " ORDER BY categoria NULLS LAST, ordem, nome LIMIT :lim"
+    lim = max(1, min(int(limit or 12), 40))
 
-    rows = (await db.execute(text(sql), params)).fetchall()
+    q_clean = (query or "").strip().lower()
+    GENERIC = {
+        "", "todas", "todos", "tudo", "cardapio", "cardápio", "menu", "sabores",
+        "sabor", "pizza", "pizzas", "opcoes", "opções", "quais", "lista", "ver", "tem",
+    }
+
+    def _is_generic(q: str) -> bool:
+        if q in GENERIC:
+            return True
+        return any(tok in q for tok in ("sabor", "cardap", "menu", "opç", "opc", "todas", "tudo", "quais", "disponiv"))
+
+    where_extra = ""
+    params: dict[str, Any] = {"pid": str(ctx.pizzaria.id), "lim": lim}
+    if q_clean and not _is_generic(q_clean):
+        where_extra += " AND (nome ILIKE :q OR descricao ILIKE :q OR categoria ILIKE :q)"
+        params["q"] = f"%{query.strip()}%"
+    if categoria:
+        where_extra += " AND categoria ILIKE :cat"
+        params["cat"] = f"%{categoria}%"
+
+    rows = (await db.execute(text(base + where_extra + order), params)).fetchall()
+
+    # Fallback: filtro não achou nada → devolve o cardápio disponível inteiro.
+    if not rows and where_extra:
+        rows = (await db.execute(
+            text(base + order), {"pid": str(ctx.pizzaria.id), "lim": lim}
+        )).fetchall()
 
     items = [
         {

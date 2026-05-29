@@ -82,6 +82,10 @@ async def call_gemini(
         temperature=temperature,
         max_output_tokens=max_tokens,
         tools=tools,
+        # Desliga o loop automático do SDK — nós controlamos a execução das tools.
+        # Com AFC ligado, o SDK às vezes "consome" a function_call e devolve um
+        # response sem texto nem function_call → o bot travava sem responder.
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
 
     response = await client.aio.models.generate_content(
