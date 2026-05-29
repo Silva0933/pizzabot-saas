@@ -140,7 +140,7 @@ async def reindex_embeddings(
     for p, v in zip(produtos, vecs):
         vec_str = "[" + ",".join(str(x) for x in v) + "]"
         await db.execute(
-            text("UPDATE public.produtos SET embedding = :v::vector WHERE id = :id"),
+            text("UPDATE public.produtos SET embedding = CAST(:v AS vector) WHERE id = :id"),
             {"v": vec_str, "id": str(p.id)},
         )
     await db.commit()

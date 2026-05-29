@@ -97,7 +97,7 @@ async def append_turn(
     from sqlalchemy import text
     await db.execute(text("""
         INSERT INTO public.agente_memoria (pizzaria_id, telefone, role, content, tool_calls, tool_call_id)
-        VALUES (:pid, :tel, :role, :content, :tcs::jsonb, :tcid)
+        VALUES (:pid, :tel, :role, :content, CAST(:tcs AS jsonb), :tcid)
     """), {
         "pid": str(pizzaria_id),
         "tel": telefone,
