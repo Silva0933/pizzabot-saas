@@ -454,6 +454,18 @@ function HorarioFuncionamento({
   msgFora: string;
   onMsgFora: (t: string) => void;
 }) {
+  // Inicializa os 7 dias se ainda não houver config estruturada — assim o que
+  // aparece na tela é exatamente o que será salvo (antes ficava vazio até mexer).
+  useEffect(() => {
+    const temEstrutura = DIAS_SEMANA.some((d) => horarios[d.key] && typeof horarios[d.key] === "object");
+    if (!temEstrutura) {
+      const base: Record<string, DiaHorario> = {};
+      for (const d of DIAS_SEMANA) base[d.key] = { abre: "18:00", fecha: "23:00", fechado: false };
+      onChange(base);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function getDia(key: string): DiaHorario {
     const v = horarios[key];
     if (v && typeof v === "object") return v as DiaHorario;
