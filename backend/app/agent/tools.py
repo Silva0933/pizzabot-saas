@@ -114,33 +114,38 @@ DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
 DECL_ATUALIZAR_PEDIDO = types.FunctionDeclaration(
     name="atualizar_pedido",
     description=(
-        "Atualiza um pedido já registrado (só se ainda não saiu para entrega). "
-        "Use para mudar endereço, forma de pagamento, observações ou valor. "
-        "Para trocar ITENS, prefira cancelar_pedido + registrar_pedido."
+        "Atualiza o pedido ATUAL do cliente (endereço, forma de pagamento, "
+        "observações ou valor). Use para 'mudar a forma de pagamento', 'trocar "
+        "endereço', etc. NÃO precisa de código — age no pedido ativo mais recente "
+        "do cliente. Para trocar ITENS, use cancelar_pedido + registrar_pedido. "
+        "Se mudar para pix/cartão e ainda não houver cobrança, ela é gerada."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "pedido_id_alterar": types.Schema(type=types.Type.STRING, description="UUID do pedido"),
+            "pedido_id_alterar": types.Schema(type=types.Type.STRING, description="Opcional. Deixe vazio para o pedido atual do cliente."),
             "novo_endereco": types.Schema(type=types.Type.STRING),
             "nova_forma_pagamento": types.Schema(type=types.Type.STRING),
             "novas_observacoes": types.Schema(type=types.Type.STRING),
             "novo_valor_total": types.Schema(type=types.Type.NUMBER),
         },
-        required=["pedido_id_alterar"],
+        required=[],
     ),
 )
 
 DECL_CANCELAR_PEDIDO = types.FunctionDeclaration(
     name="cancelar_pedido",
-    description="Cancela um pedido. Só funciona se ainda não saiu para entrega.",
+    description=(
+        "Cancela o pedido ATUAL do cliente (só se ainda não saiu para entrega). "
+        "NÃO precisa de código — cancela o pedido ativo mais recente do cliente."
+    ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
-            "pedido_id_cancelar": types.Schema(type=types.Type.STRING, description="UUID do pedido"),
-            "motivo_cancelamento": types.Schema(type=types.Type.STRING, description="Motivo informado pelo cliente"),
+            "pedido_id_cancelar": types.Schema(type=types.Type.STRING, description="Opcional. Deixe vazio para o pedido atual do cliente."),
+            "motivo_cancelamento": types.Schema(type=types.Type.STRING, description="Motivo informado pelo cliente (opcional)"),
         },
-        required=["pedido_id_cancelar", "motivo_cancelamento"],
+        required=[],
     ),
 )
 
@@ -219,11 +224,9 @@ async def buscar_cardapio(
 
     rows = (await db.execute(text(base + where_extra + order), params)).fetchall()
 
-    # Fallback: filtro não achou nada → devolve o cardápio disponível inteiro.
-    if not rows and where_extra:
-        rows = (await db.execute(
-            text(base + order), {"pid": str(ctx.pizzaria.id), "lim": lim}
-        )).fetchall()
+    # Importante: para busca ESPECÍFICA sem resultado, NÃO devolvemos o cardápio
+    # inteiro (isso fazia a atendente "achar" pizzas ao buscar refrigerante).
+    # Retorna vazio → a atendente avisa que o item não existe.
 
     items = [
         {
@@ -333,15 +336,20 @@ async def registrar_pedido(
         if nome_cliente and not cli.nome:
             cli.nome = nome_cliente
 
-    # Busca pedido rascunho existente no status 'novo'
-    stmt = select(Pedido).where(
-        Pedido.pizzaria_id == ctx.pizzaria.id,
-        Pedido.cliente_id == cli.id,
-        Pedido.status == "novo",
+    # Reaproveita o pedido atual do cliente (rascunho 'novo' OU confirmado ainda
+    # não pago) em vez de criar duplicado a cada chamada.
+    stmt = (
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["novo", "confirmado"]),
+            Pedido.payment_status != "approved",
+        )
+        .order_by(Pedido.created_at.desc())
     )
     ped = (await db.execute(stmt)).scalars().first()
 
-    status_anterior = "novo"
+    status_anterior = ped.status if ped else None
     if ped:
         # Atualiza o rascunho e move para confirmado
         ped.itens = itens
@@ -524,34 +532,51 @@ def _metodo_online(forma_pagamento: str | None) -> str | None:
     return None
 
 
+async def _resolver_pedido(ctx: AgentContext, db: AsyncSession, ref: str | None = None) -> Pedido | None:
+    """
+    Encontra o pedido alvo. Se 'ref' for um UUID válido, usa ele; senão (ou se o
+    modelo passar o número curto/nada), pega o pedido ATIVO mais recente do cliente.
+    """
+    if ref:
+        try:
+            pid = uuid.UUID(str(ref))
+        except (ValueError, TypeError, AttributeError):
+            pid = None
+        if pid:
+            ped = (await db.execute(
+                select(Pedido).where(Pedido.id == pid, Pedido.pizzaria_id == ctx.pizzaria.id)
+            )).scalar_one_or_none()
+            if ped:
+                return ped
+    cli = ctx.cliente or (await db.execute(
+        select(Cliente).where(Cliente.pizzaria_id == ctx.pizzaria.id, Cliente.telefone == ctx.telefone)
+    )).scalar_one_or_none()
+    if not cli:
+        return None
+    return (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["novo", "confirmado", "no_forno"]),
+        ).order_by(Pedido.created_at.desc())
+    )).scalars().first()
+
+
 async def atualizar_pedido(
     ctx: AgentContext,
     db: AsyncSession,
     *,
-    pedido_id_alterar: str,
+    pedido_id_alterar: str | None = None,
     novo_endereco: str | None = None,
     nova_forma_pagamento: str | None = None,
     novas_observacoes: str | None = None,
     novo_valor_total: float | None = None,
 ) -> dict[str, Any]:
-    try:
-        pid = uuid.UUID(pedido_id_alterar)
-    except ValueError:
-        return {"ok": False, "erro": "pedido_id inválido"}
-
-    ped = (
-        await db.execute(
-            select(Pedido).where(
-                Pedido.id == pid,
-                Pedido.pizzaria_id == ctx.pizzaria.id,
-            )
-        )
-    ).scalar_one_or_none()
-
+    ped = await _resolver_pedido(ctx, db, pedido_id_alterar)
     if not ped:
-        return {"ok": False, "erro": "pedido não encontrado"}
+        return {"ok": False, "erro": "nenhum pedido ativo encontrado para este cliente"}
     if ped.status in ("a_caminho", "entregue", "cancelado"):
-        return {"ok": False, "erro": f"pedido com status '{ped.status}' não pode ser alterado"}
+        return {"ok": False, "erro": f"pedido #{ped.numero_pedido} já está '{ped.status}' e não pode ser alterado"}
 
     if novo_endereco:
         ped.endereco_entrega = novo_endereco
@@ -563,40 +588,33 @@ async def atualizar_pedido(
         ped.valor_total = Decimal(str(novo_valor_total))
 
     await db.flush()
-    return {"ok": True, "numero_pedido": ped.numero_pedido}
+
+    # Se passou a ser pagamento online e ainda não há cobrança, gera agora.
+    resultado: dict[str, Any] = {"ok": True, "numero_pedido": ped.numero_pedido}
+    metodo = _metodo_online(nova_forma_pagamento) if nova_forma_pagamento else None
+    if metodo and ped.payment_status != "approved" and not ped.payment_id:
+        resultado["pagamento"] = await _gerar_cobranca(ctx, db, ped, metodo)
+    return resultado
 
 
 async def cancelar_pedido(
     ctx: AgentContext,
     db: AsyncSession,
     *,
-    pedido_id_cancelar: str,
-    motivo_cancelamento: str,
+    pedido_id_cancelar: str | None = None,
+    motivo_cancelamento: str = "Cancelado pelo cliente",
 ) -> dict[str, Any]:
-    try:
-        pid = uuid.UUID(pedido_id_cancelar)
-    except ValueError:
-        return {"ok": False, "erro": "pedido_id inválido"}
-
-    ped = (
-        await db.execute(
-            select(Pedido).where(
-                Pedido.id == pid,
-                Pedido.pizzaria_id == ctx.pizzaria.id,
-            )
-        )
-    ).scalar_one_or_none()
-
+    ped = await _resolver_pedido(ctx, db, pedido_id_cancelar)
     if not ped:
-        return {"ok": False, "erro": "pedido não encontrado"}
+        return {"ok": False, "erro": "nenhum pedido ativo encontrado para este cliente"}
     if ped.status in ("a_caminho", "entregue"):
-        return {"ok": False, "erro": f"pedido com status '{ped.status}' não pode ser cancelado"}
+        return {"ok": False, "erro": f"pedido #{ped.numero_pedido} já está '{ped.status}' e não pode ser cancelado"}
 
     ped.status = "cancelado"
     ped.cancelado_at = datetime.now(timezone.utc)
     ped.cancelamento_motivo = motivo_cancelamento
     await db.flush()
-    return {"ok": True, "numero_pedido": ped.numero_pedido}
+    return {"ok": True, "numero_pedido": ped.numero_pedido, "cancelado": True}
 
 
 async def escalar_humano(
