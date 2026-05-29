@@ -325,6 +325,14 @@ async def registrar_pedido(
                     "some os itens e registre com o valor_total correto.",
         }
 
+    # Trava por cliente (advisory lock) — serializa chamadas concorrentes de
+    # registrar_pedido do mesmo cliente. A 2ª espera, e ao buscar o pedido ativo
+    # encontra o que a 1ª criou → atualiza em vez de duplicar. Liberado no commit.
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"reg:{ctx.pizzaria.id}:{ctx.telefone}"},
+    )
+
     # Normaliza os itens (o modelo pode mandar 'qtd'/'preco' em vez de
     # 'quantidade'/'preco_unit') para o painel exibir certo (evita R$ NaN).
     def _num(v: Any, default: float = 0.0) -> float:
