@@ -49,7 +49,15 @@ def _format_horarios(horarios: dict[str, Any]) -> str:
     }
     lines = []
     for k, label in dias.items():
-        if v := horarios.get(k):
+        v = horarios.get(k)
+        if not v:
+            continue
+        if isinstance(v, dict):
+            if v.get("fechado"):
+                lines.append(f"- {label}: Fechado")
+            elif v.get("abre") and v.get("fecha"):
+                lines.append(f"- {label}: {v['abre']} às {v['fecha']}")
+        else:
             lines.append(f"- {label}: {v}")
     return "\n".join(lines) if lines else "(consultar com a equipe)"
 

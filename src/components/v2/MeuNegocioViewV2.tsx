@@ -154,6 +154,15 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
         </div>
       </Card>
 
+      <Card icon={<Clock className="w-4 h-4" />} title="Horário de funcionamento" accent="emerald">
+        <HorarioFuncionamento
+          horarios={(form.horario_funcionamento as any) || {}}
+          onChange={(h) => setField("horario_funcionamento", h as any)}
+          msgFora={(form.mensagens_status as any)?.fora_horario ?? ""}
+          onMsgFora={(t) => setField("mensagens_status", { ...(form.mensagens_status as any || {}), fora_horario: t } as any)}
+        />
+      </Card>
+
       {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{err}</div>}
 
       <ZonaPerigo pizzariaId={pizzaria.id} />
@@ -418,6 +427,80 @@ function HistoricoPedidos({ pizzaria }: { pizzaria: BackendPizzaria }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================
+// Horário de funcionamento (por dia + msg fora do horário)
+// ============================================
+const DIAS_SEMANA: Array<{ key: string; label: string }> = [
+  { key: "seg", label: "Segunda" },
+  { key: "ter", label: "Terça" },
+  { key: "qua", label: "Quarta" },
+  { key: "qui", label: "Quinta" },
+  { key: "sex", label: "Sexta" },
+  { key: "sab", label: "Sábado" },
+  { key: "dom", label: "Domingo" },
+];
+
+interface DiaHorario { abre?: string; fecha?: string; fechado?: boolean }
+
+function HorarioFuncionamento({
+  horarios, onChange, msgFora, onMsgFora,
+}: {
+  horarios: Record<string, DiaHorario | string>;
+  onChange: (h: Record<string, DiaHorario>) => void;
+  msgFora: string;
+  onMsgFora: (t: string) => void;
+}) {
+  function getDia(key: string): DiaHorario {
+    const v = horarios[key];
+    if (v && typeof v === "object") return v as DiaHorario;
+    return { abre: "18:00", fecha: "23:00", fechado: false };
+  }
+  function setDia(key: string, patch: Partial<DiaHorario>) {
+    const base: Record<string, DiaHorario> = {};
+    for (const d of DIAS_SEMANA) base[d.key] = getDia(d.key);
+    base[key] = { ...base[key], ...patch };
+    onChange(base);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        {DIAS_SEMANA.map((d) => {
+          const dia = getDia(d.key);
+          const fechado = !!dia.fechado;
+          return (
+            <div key={d.key} className="flex items-center gap-2 flex-wrap">
+              <span className="w-20 text-sm text-slate-700 font-medium">{d.label}</span>
+              <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer w-24">
+                <input type="checkbox" checked={!fechado}
+                  onChange={(e) => setDia(d.key, { fechado: !e.target.checked })}
+                  className="w-4 h-4 accent-emerald-500" />
+                {fechado ? "Fechado" : "Aberto"}
+              </label>
+              <input type="time" value={dia.abre ?? "18:00"} disabled={fechado}
+                onChange={(e) => setDia(d.key, { abre: e.target.value })}
+                className={`px-2 py-1 border border-slate-200 rounded-lg text-sm w-28 outline-none focus:border-emerald-400 ${fechado ? "opacity-40" : ""}`} />
+              <span className="text-slate-400 text-xs">às</span>
+              <input type="time" value={dia.fecha ?? "23:00"} disabled={fechado}
+                onChange={(e) => setDia(d.key, { fecha: e.target.value })}
+                className={`px-2 py-1 border border-slate-200 rounded-lg text-sm w-28 outline-none focus:border-emerald-400 ${fechado ? "opacity-40" : ""}`} />
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-slate-400">
+        Dica: para virar a madrugada use, por exemplo, 18:00 às 02:00.
+      </p>
+      <Field label="Mensagem fora do horário (a atendente envia uma única vez quando fechado)" full>
+        <textarea rows={3} value={msgFora}
+          onChange={(e) => onMsgFora(e.target.value)}
+          placeholder="Ex.: Olá! No momento estamos fechados 😴. Funcionamos de seg a sáb, das 18h às 23h. Volte mais tarde!"
+          className={inputCls} />
+      </Field>
     </div>
   );
 }

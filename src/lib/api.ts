@@ -114,7 +114,7 @@ export interface BackendPizzaria {
   telefone_admin: string | null;
   telefone_contato?: string | null;
   logo_url: string | null;
-  horario_funcionamento: Record<string, string> | null;
+  horario_funcionamento: Record<string, any> | null;
   formas_pagamento_aceitas?: string[] | null;
   mensagens_status: Record<string, string> | null;
   nomes_colunas: Record<string, string> | null;

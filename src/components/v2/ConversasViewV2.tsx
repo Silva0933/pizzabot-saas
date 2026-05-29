@@ -310,7 +310,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
         </aside>
 
         {/* Chat panel */}
-        <section className="flex flex-col bg-[#f7f3ee]">
+        <section className="flex flex-col bg-[#f7f3ee] min-h-0 min-w-0 h-full overflow-hidden">
           {!active ? (
             <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
               <div className="w-16 h-16 rounded-full bg-orange-100 grid place-items-center mb-3">
@@ -349,7 +349,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
                 </button>
               </header>
 
-              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-1.5">
+              <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1.5">
                 {mensagens.map((m) => {
                   const isCliente = m.origem === "cliente";
                   const isSistema = m.origem === "sistema";

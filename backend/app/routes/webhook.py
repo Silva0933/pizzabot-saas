@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,6 +25,7 @@ from app.db import get_db
 from app.models import Conversa, Mensagem, Pizzaria
 from app.schemas import EvolutionWebhookPayload
 from app.services.broadcaster import broadcaster
+from app.services.evolution import evolution
 from app.services.queue import enqueue_message
 
 log = logging.getLogger(__name__)
@@ -37,6 +38,65 @@ router = APIRouter(prefix="/webhook", tags=["webhook"])
 def _extract_phone(remote_jid: str) -> str:
     """`5511999999999@s.whatsapp.net` → `5511999999999`."""
     return remote_jid.split("@", 1)[0]
+
+
+async def _responder_fora_horario(
+    db: AsyncSession, pizz: Pizzaria, conv: Conversa, telefone: str
+) -> None:
+    """
+    Envia UMA mensagem de 'fora do horário' por janela de 6h (evita spam),
+    sem acionar a IA.
+    """
+    from app.services.business_hours import mensagem_fora_horario
+
+    # Já avisamos nas últimas 6h? Então fica quieto.
+    ja_avisou = (await db.execute(text("""
+        SELECT 1 FROM public.mensagens
+        WHERE conversa_id = :cid AND origem = 'sistema'
+          AND metadata->>'trigger' = 'fora_horario'
+          AND created_at > now() - interval '6 hours'
+        LIMIT 1
+    """), {"cid": str(conv.id)})).first()
+    if ja_avisou:
+        return
+
+    if not pizz.instancia:
+        return
+
+    texto = mensagem_fora_horario(pizz)
+    try:
+        await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao enviar msg fora do horário: %s", e)
+        return
+
+    msg = Mensagem(
+        conversa_id=conv.id,
+        pizzaria_id=pizz.id,
+        origem="sistema",
+        tipo="texto",
+        conteudo=texto,
+        metadata_json={"trigger": "fora_horario"},
+    )
+    db.add(msg)
+    conv.last_message = texto
+    await db.commit()
+    await db.refresh(msg)
+
+    await broadcaster.publish(
+        pizz.id,
+        {
+            "tipo": "mensagem.nova",
+            "pizzaria_id": str(pizz.id),
+            "payload": {
+                "conversa_id": str(conv.id),
+                "mensagem_id": str(msg.id),
+                "telefone": telefone,
+                "conteudo": texto,
+                "origem": "sistema",
+            },
+        },
+    )
 
 
 def _extract_content(data: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
@@ -222,19 +282,25 @@ async def evolution_webhook(
 
     # ---- fila + broadcast (não bloqueia retorno) ----
     if pizz.bot_ativo_global and conv.bot_ativo:
-        await enqueue_message(
-            pizzaria_id=pizz.id,
-            telefone=telefone,
-            mensagem_id=msg.id,
-            conteudo=conteudo,
-            metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
-        )
-        # Agenda flush_conversation com countdown=10.5s (alinhado ao debounce de 10s)
-        from app.workers.tasks import flush_conversation
-        flush_conversation.apply_async(
-            args=[str(pizz.id), telefone],
-            countdown=10.5,
-        )
+        from app.services.business_hours import esta_aberto
+
+        if not esta_aberto(pizz.horario_funcionamento or {}):
+            # Fora do horário: responde UMA mensagem e NÃO aciona a IA.
+            await _responder_fora_horario(db, pizz, conv, telefone)
+        else:
+            await enqueue_message(
+                pizzaria_id=pizz.id,
+                telefone=telefone,
+                mensagem_id=msg.id,
+                conteudo=conteudo,
+                metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
+            )
+            # Agenda flush_conversation com countdown=10.5s (alinhado ao debounce de 10s)
+            from app.workers.tasks import flush_conversation
+            flush_conversation.apply_async(
+                args=[str(pizz.id), telefone],
+                countdown=10.5,
+            )
 
     await broadcaster.publish(
         pizz.id,

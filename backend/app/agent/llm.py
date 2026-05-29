@@ -13,7 +13,9 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 _settings = get_settings()
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+# gemini-2.0-flash tem cota de free tier bem maior que a 2.5-flash (que é
+# limitada a ~20 req/dia no free tier). Para produção real, habilite billing.
+DEFAULT_MODEL = "gemini-2.0-flash"
 
 _client: genai.Client | None = None
 
