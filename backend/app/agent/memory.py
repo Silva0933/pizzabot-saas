@@ -20,6 +20,36 @@ from app.models import Mensagem
 MAX_HISTORY = 24
 
 
+async def load_history_messages(
+    db: AsyncSession,
+    pizzaria_id: uuid.UUID,
+    telefone: str,
+    limit: int = MAX_HISTORY,
+) -> list[dict[str, str]]:
+    """
+    Histórico conversacional neutro (formato OpenAI) — só user/assistant em
+    texto. Ignora turnos de tool para evitar pareamento estrito de tool_call_id
+    (as tools são executadas ao vivo no loop). Usado pelos providers OpenAI.
+    """
+    from sqlalchemy import text
+
+    rows = (await db.execute(text("""
+        SELECT role, content, tool_calls
+        FROM public.agente_memoria
+        WHERE pizzaria_id = :pid AND telefone = :tel
+        ORDER BY created_at DESC
+        LIMIT :lim
+    """), {"pid": str(pizzaria_id), "tel": telefone, "lim": limit})).fetchall()
+
+    out: list[dict[str, str]] = []
+    for role, content, tcs in reversed(rows):
+        if role == "user" and content:
+            out.append({"role": "user", "content": content})
+        elif role == "assistant" and content and not tcs:
+            out.append({"role": "assistant", "content": content})
+    return out
+
+
 async def load_history(
     db: AsyncSession,
     pizzaria_id: uuid.UUID,

@@ -34,6 +34,11 @@ log = logging.getLogger("pizzabot")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("PizzaBot API iniciada (env=%s)", settings.app_env)
+    try:
+        from app.services.app_config import ensure_table
+        await ensure_table()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao garantir tabela app_config: %s", e)
     yield
     # Cleanup
     await evolution.close()

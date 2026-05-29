@@ -17,26 +17,26 @@ _settings = get_settings()
 # limitada a ~20 req/dia no free tier). Para produção real, habilite billing.
 DEFAULT_MODEL = "gemini-2.0-flash"
 
-_client: genai.Client | None = None
+_clients: dict[str, genai.Client] = {}
 
 
-def get_client() -> genai.Client:
-    global _client
-    if _client is None:
-        if not _settings.gemini_api_key:
-            raise RuntimeError("GEMINI_API_KEY não configurado")
-        _client = genai.Client(api_key=_settings.gemini_api_key)
-    return _client
+def get_client(api_key: str | None = None) -> genai.Client:
+    """Cliente Gemini para a chave informada (ou a do ambiente). Cacheado por chave."""
+    key = api_key or _settings.gemini_api_key
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY não configurado")
+    if key not in _clients:
+        _clients[key] = genai.Client(api_key=key)
+    return _clients[key]
 
 
 async def reset_client() -> None:
-    global _client
-    if _client is not None:
+    for c in list(_clients.values()):
         try:
-            await _client.aio.aclose()
+            await c.aio.aclose()
         except Exception:
             pass
-        _client = None
+    _clients.clear()
 
 
 # ============================================
@@ -72,9 +72,10 @@ async def call_gemini(
     model: str = DEFAULT_MODEL,
     temperature: float = 0.7,
     max_tokens: int = 1024,
+    api_key: str | None = None,
 ) -> types.GenerateContentResponse:
     """Faz uma chamada ao Gemini com tools."""
-    client = get_client()
+    client = get_client(api_key)
 
     config = types.GenerateContentConfig(
         system_instruction=system,

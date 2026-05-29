@@ -18,9 +18,9 @@ import {
   Store, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
   Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
-  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2,
+  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap,
 } from "lucide-react";
-import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, WhatsAppConnect } from "../../lib/api";
+import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, LLMConfig, WhatsAppConnect } from "../../lib/api";
 
 interface Props {
   userName: string;
@@ -311,6 +311,9 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </>
         ) : null}
 
+        {/* ====== Inteligência Artificial (provider/modelo/chaves) ====== */}
+        <LLMConfigCard />
+
         {/* ====== Gestão de pizzarias ====== */}
         <div className="flex items-center justify-between flex-wrap gap-2 pt-2">
           <div>
@@ -597,6 +600,128 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           ))}
         </div>
       </main>
+    </div>
+  );
+}
+
+function LLMConfigCard() {
+  const [cfg, setCfg] = useState<LLMConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [provider, setProvider] = useState("gemini");
+  const [model, setModel] = useState("");
+  const [keys, setKeys] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  function load() {
+    setLoading(true);
+    adminApi.llm()
+      .then((c) => { setCfg(c); setProvider(c.provider); setModel(c.model); setKeys({}); })
+      .catch((e) => setMsg({ ok: false, text: e.message }))
+      .finally(() => setLoading(false));
+  }
+  useEffect(load, []);
+
+  const provInfo = cfg?.providers?.[provider];
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      await adminApi.salvarLlm({ provider, model, keys });
+      setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor." });
+      load();
+    } catch (e: any) { setMsg({ ok: false, text: e.message }); }
+    setSaving(false);
+  }
+  async function test() {
+    setTesting(true); setMsg(null);
+    try {
+      const r = await adminApi.testarLlm();
+      setMsg(r.ok
+        ? { ok: true, text: `OK! ${r.provider}/${r.model} respondeu: "${(r.resposta || "").slice(0, 80)}"` }
+        : { ok: false, text: `Falhou: ${r.erro}` });
+    } catch (e: any) { setMsg({ ok: false, text: e.message }); }
+    setTesting(false);
+  }
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 md:p-5">
+      <div className="flex items-center gap-2.5 mb-1">
+        <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white grid place-items-center">
+          <Cpu className="w-5 h-5" />
+        </span>
+        <div>
+          <h2 className="text-base font-bold text-slate-800">Inteligência Artificial</h2>
+          <p className="text-xs text-slate-500">Provedor, modelo e chaves que atendem as pizzarias.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-violet-500" /></div>
+      ) : cfg ? (
+        <div className="mt-3 space-y-4">
+          <div className="grid md:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="text-xs font-medium text-slate-600">Provedor</span>
+              <select value={provider} onChange={(e) => { setProvider(e.target.value); setModel(cfg.providers[e.target.value]?.modelos[0] || ""); }}
+                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
+                {Object.entries(cfg.providers).map(([id, p]) => (
+                  <option key={id} value={id}>{p.nome}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-600">Modelo</span>
+              <input list="llm-models" value={model} onChange={(e) => setModel(e.target.value)}
+                placeholder="ex.: gemini-2.0-flash"
+                className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400" />
+              <datalist id="llm-models">
+                {(provInfo?.modelos || []).map((m) => <option key={m} value={m} />)}
+              </datalist>
+            </label>
+          </div>
+
+          <div className="space-y-2.5">
+            {Object.entries(cfg.providers).map(([id, p]) => (
+              <label key={id} className="block">
+                <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
+                  Chave de API — {p.nome}
+                  {cfg.keys_configuradas[id]
+                    ? <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">configurada</span>
+                    : <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">vazia</span>}
+                </span>
+                <input
+                  type="password"
+                  value={keys[id] ?? ""}
+                  onChange={(e) => setKeys((k) => ({ ...k, [id]: e.target.value }))}
+                  placeholder={cfg.keys_mascaradas[id] || "Cole a chave aqui"}
+                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
+              </label>
+            ))}
+            <p className="text-[11px] text-slate-400">
+              Deixe em branco para manter a chave já salva. As chaves nunca são exibidas — só a máscara.
+            </p>
+          </div>
+
+          {msg && (
+            <div className={`text-sm px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+              {msg.text}
+            </div>
+          )}
+
+          <div className="flex gap-2 justify-end">
+            <button onClick={test} disabled={testing || saving}
+              className="px-3.5 py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 inline-flex items-center gap-1.5 disabled:opacity-50">
+              {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Testar
+            </button>
+            <button onClick={save} disabled={saving || !model.trim()}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 text-white inline-flex items-center gap-1.5 disabled:opacity-50">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Salvar
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

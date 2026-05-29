@@ -20,10 +20,12 @@ from app.agent.llm import (
     extract_text,
     to_content,
 )
-from app.agent.memory import append_turn, load_history
+from app.agent.memory import append_turn, load_history, load_history_messages
 from app.agent.prompt import build_system_prompt
+from app.agent.providers import openai_chat, openai_tools
 from app.agent.tools import execute_tool, get_tools
 from app.models import Conversa, Mensagem
+from app.services.app_config import get_llm_config
 from app.services.broadcaster import broadcaster
 from app.services.evolution import evolution
 
@@ -55,6 +57,14 @@ async def run_agent(
         cliente_total_pedidos=ctx.cliente_total_pedidos,
     )
 
+    # Provider de LLM configurado pelo admin (gemini | openai | openrouter)
+    cfg = await get_llm_config(db)
+    provider = cfg["provider"]
+    if provider in ("openai", "openrouter") and cfg["keys"].get(provider):
+        return await _run_openai_agent(
+            db, pizzaria_id, telefone, user_input, ctx=ctx, system=system, cfg=cfg,
+        )
+
     history = await load_history(db, pizzaria_id, telefone)
     # Acrescenta a entrada atual
     history.append(to_content("user", text=user_input))
@@ -66,9 +76,14 @@ async def run_agent(
     tool_calls_made: list[str] = []
     final_text: str | None = None
 
+    gemini_key = cfg["keys"].get("gemini") or None
+    gemini_model = cfg["model"] if provider == "gemini" else "gemini-2.0-flash"
     for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
         log.info("Agente iter=%d pizzaria=%s tel=%s", iteration, pizzaria_id, telefone)
-        response = await call_gemini(system=system, history=history, tools=tools)
+        response = await call_gemini(
+            system=system, history=history, tools=tools,
+            model=gemini_model, api_key=gemini_key,
+        )
 
         fcs = extract_function_calls(response)
         if fcs:
@@ -95,6 +110,72 @@ async def run_agent(
 
         # Sem tool calls → resposta final em texto
         final_text = extract_text(response)
+        if final_text:
+            await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
+        break
+
+    await db.commit()
+    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made)
+
+
+async def _run_openai_agent(
+    db: AsyncSession,
+    pizzaria_id: uuid.UUID,
+    telefone: str,
+    user_input: str,
+    *,
+    ctx: Any,
+    system: str,
+    cfg: dict,
+) -> AgentResult:
+    """Loop do agente usando provider OpenAI-compatível (OpenAI/OpenRouter)."""
+    import json as _json
+
+    provider = cfg["provider"]
+    api_key = cfg["keys"][provider]
+    model = cfg["model"]
+    tools = openai_tools()
+
+    messages: list[dict[str, Any]] = [{"role": "system", "content": system}]
+    messages += await load_history_messages(db, pizzaria_id, telefone)
+    messages.append({"role": "user", "content": user_input})
+
+    await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
+
+    tool_calls_made: list[str] = []
+    final_text: str | None = None
+    iteration = 0
+
+    for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
+        log.info("Agente(%s) iter=%d pizzaria=%s", provider, iteration, pizzaria_id)
+        res = await openai_chat(
+            provider=provider, api_key=api_key, model=model,
+            messages=messages, tools=tools,
+        )
+        calls = res.get("tool_calls") or []
+        if calls:
+            messages.append({
+                "role": "assistant",
+                "content": res.get("content"),
+                "tool_calls": [
+                    {"id": c["id"], "type": "function",
+                     "function": {"name": c["name"], "arguments": _json.dumps(c["args"])}}
+                    for c in calls
+                ],
+            })
+            for c in calls:
+                tool_calls_made.append(c["name"])
+                result = await execute_tool(c["name"], c["args"], ctx=ctx, db=db)
+                await append_turn(db, pizzaria_id, telefone, role="assistant", tool_calls=[{"name": c["name"], "args": c["args"]}])
+                await append_turn(db, pizzaria_id, telefone, role="tool", content=_json.dumps(result, default=str), tool_call_id=c["name"])
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": c["id"],
+                    "content": _json.dumps(result, default=str),
+                })
+            continue
+
+        final_text = (res.get("content") or "").strip() or None
         if final_text:
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
         break

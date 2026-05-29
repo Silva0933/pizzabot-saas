@@ -12,12 +12,43 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
+
 from app.db import get_db
 from app.deps import require_platform_admin
 from app.models import Usuario
+from app.services.app_config import LLM_KEY, get_config, get_llm_config, set_config
 from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Provedores de LLM suportados + sugestões de modelo (o admin pode digitar outro).
+LLM_PROVIDERS = {
+    "gemini": {
+        "nome": "Google Gemini",
+        "modelos": ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash-lite"],
+    },
+    "openai": {
+        "nome": "OpenAI",
+        "modelos": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini", "gpt-4.1"],
+    },
+    "openrouter": {
+        "nome": "OpenRouter",
+        "modelos": [
+            "openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet",
+            "google/gemini-2.0-flash-001", "meta-llama/llama-3.3-70b-instruct",
+            "deepseek/deepseek-chat",
+        ],
+    },
+}
+
+
+def _mask(key: str | None) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "••••"
+    return f"{key[:4]}••••{key[-4:]}"
 
 
 @router.get("/overview")
@@ -146,3 +177,91 @@ async def alterar_plano(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
     await db.commit()
     return {"ok": True, "plano": plano, "info": plan_info(plano)}
+
+
+# ============================================
+# Config de LLM (provider / modelo / chaves)
+# ============================================
+class LLMConfigIn(BaseModel):
+    provider: str
+    model: str
+    keys: dict[str, str] = {}
+
+
+@router.get("/llm")
+async def get_llm(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    cfg = await get_llm_config(db)
+    raw = await get_config(db, LLM_KEY)
+    raw_keys = {**{"gemini": "", "openai": "", "openrouter": ""}, **(raw.get("keys") or {})}
+    return {
+        "provider": cfg["provider"],
+        "model": cfg["model"],
+        "providers": LLM_PROVIDERS,
+        # nunca devolve a chave crua — só máscara + flag de configurada
+        "keys_mascaradas": {k: _mask(v) for k, v in raw_keys.items()},
+        "keys_configuradas": {k: bool(v) for k, v in cfg["keys"].items()},
+    }
+
+
+@router.put("/llm")
+async def put_llm(
+    body: LLMConfigIn,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    provider = (body.provider or "").lower()
+    if provider not in LLM_PROVIDERS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Provider inválido. Use: {list(LLM_PROVIDERS)}")
+    if not body.model.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o modelo.")
+
+    raw = await get_config(db, LLM_KEY)
+    keys = {**{"gemini": "", "openai": "", "openrouter": ""}, **(raw.get("keys") or {})}
+    # Só atualiza chaves enviadas não-vazias (mantém as já salvas).
+    for k, v in (body.keys or {}).items():
+        if k in keys and v and v.strip():
+            keys[k] = v.strip()
+
+    await set_config(db, LLM_KEY, {"provider": provider, "model": body.model.strip(), "keys": keys})
+    return {"ok": True, "provider": provider, "model": body.model.strip(),
+            "keys_configuradas": {k: bool(v) for k, v in keys.items()}}
+
+
+@router.post("/llm/test")
+async def test_llm(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Faz uma chamada simples ao provider configurado para validar a chave/modelo."""
+    cfg = await get_llm_config(db)
+    provider = cfg["provider"]
+    model = cfg["model"]
+    try:
+        if provider in ("openai", "openrouter"):
+            from app.agent.providers import openai_chat
+            key = cfg["keys"].get(provider)
+            if not key:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Chave do {provider} não configurada.")
+            res = await openai_chat(
+                provider=provider, api_key=key, model=model,
+                messages=[{"role": "user", "content": "Responda apenas: ok"}],
+                max_tokens=10,
+            )
+            texto = (res.get("content") or "").strip()
+        else:
+            from app.agent.llm import call_gemini, extract_text, to_content
+            resp = await call_gemini(
+                system="Responda apenas: ok",
+                history=[to_content("user", text="ok")],
+                model=model, api_key=cfg["keys"].get("gemini") or None,
+                max_tokens=10,
+            )
+            texto = extract_text(resp)
+        return {"ok": True, "provider": provider, "model": model, "resposta": texto[:200]}
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "provider": provider, "model": model, "erro": str(e)[:400]}

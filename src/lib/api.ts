@@ -404,10 +404,23 @@ export interface AdminOverview {
   serie_novas: Array<{ dia: string; qtd: number }>;
 }
 
+export interface LLMConfig {
+  provider: string;
+  model: string;
+  providers: Record<string, { nome: string; modelos: string[] }>;
+  keys_mascaradas: Record<string, string>;
+  keys_configuradas: Record<string, boolean>;
+}
+
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
   alterarPlano: (pizzariaId: string, plano: string) =>
     api.patch<{ ok: boolean; plano: string }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
+  llm: () => api.get<LLMConfig>(`/admin/llm`),
+  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string> }) =>
+    api.put<{ ok: boolean }>(`/admin/llm`, body),
+  testarLlm: () =>
+    api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),
 };
 
 // ============================================
