@@ -309,14 +309,18 @@ async def buscar_cardapio(
 
     items = []
     for r in rows:
+        # Payload enxuto: só o que o modelo precisa (economiza tokens por busca).
+        # 'id'/'disponivel' foram removidos de propósito — não são usados na conversa.
         item: dict[str, Any] = {
-            "id": str(r[0]),
             "nome": r[1],
             "categoria": r[2],
             "preco": float(r[4]) if r[4] is not None else 0.0,
-            "disponivel": bool(r[5]),
-            "tamanhos": r[6] if len(r) > 6 else None,
         }
+        tamanhos = r[6] if len(r) > 6 else None
+        # Só inclui o campo 'tamanhos' quando ele REALMENTE existe (lista não vazia).
+        # Assim o modelo entende: sem campo = preço único, nunca pergunta tamanho.
+        if tamanhos:
+            item["tamanhos"] = tamanhos
         # Só inclui descrição/ingredientes se explicitamente pedido
         if incluir_descricao:
             item["descricao"] = r[3]
@@ -326,6 +330,20 @@ async def buscar_cardapio(
 
 async def enviar_cardapio_arquivo(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
     """Envia o arquivo (PDF/imagem) de cardápio cadastrado pela pizzaria."""
+    # Trava anti-duplicação: se já enviamos o arquivo nos últimos minutos para este
+    # cliente, não reenvia (o modelo às vezes chama de novo ao pedir um sabor).
+    ja_enviou = (await db.execute(text("""
+        SELECT 1 FROM public.agente_memoria
+        WHERE pizzaria_id = :pid AND telefone = :tel
+          AND tool_call_id = 'enviar_cardapio_arquivo'
+          AND created_at > now() - interval '5 minutes'
+        LIMIT 1
+    """), {"pid": str(ctx.pizzaria.id), "tel": ctx.telefone})).first()
+    if ja_enviou:
+        return {"ok": True, "ja_enviado": True,
+                "instrucao": "O cardápio em arquivo já foi enviado há pouco. NÃO reenvie. "
+                             "Responda por texto usando buscar_cardapio se precisar."}
+
     row = (await db.execute(
         text("SELECT filename, content_type FROM public.cardapio_arquivo WHERE pizzaria_id = :pid"),
         {"pid": str(ctx.pizzaria.id)},

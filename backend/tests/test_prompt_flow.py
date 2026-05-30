@@ -268,6 +268,76 @@ class TestNovasToolsRegistry:
         assert "nota" in list(DECL_REGISTRAR_AVALIACAO.parameters.required)
 
 
+class TestBuscarCardapioPayload:
+    """Garante o payload enxuto e o tamanho data-driven (anti-alucinação)."""
+
+    def _ctx(self):
+        from unittest.mock import MagicMock
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        return ctx
+
+    def _db_com_linhas(self, linhas):
+        from unittest.mock import AsyncMock, MagicMock
+        db = AsyncMock()
+        res = MagicMock()
+        res.fetchall = MagicMock(return_value=linhas)
+        db.execute = AsyncMock(return_value=res)
+        return db
+
+    def test_item_sem_tamanhos_nao_tem_campo_tamanhos(self):
+        import asyncio
+        from app.agent.tools import buscar_cardapio
+        # (id, nome, categoria, descricao, preco, disponivel, tamanhos)
+        linhas = [("id1", "Calabresa Vulcao", "Pizzas", "desc", 50.0, True, None)]
+        r = asyncio.run(buscar_cardapio(self._ctx(), self._db_com_linhas(linhas), query="vulcao"))
+        item = r["items"][0]
+        assert "tamanhos" not in item            # sem tamanhos = preço único
+        assert "id" not in item and "disponivel" not in item  # payload enxuto
+        assert item["preco"] == 50.0
+
+    def test_item_com_tamanhos_mantem_campo(self):
+        import asyncio
+        from app.agent.tools import buscar_cardapio
+        tam = [{"tamanho": "G", "preco": 42.0}, {"tamanho": "M", "preco": 36.0}]
+        linhas = [("id2", "The Pizza", "Pizzas", "desc", 42.0, True, tam)]
+        r = asyncio.run(buscar_cardapio(self._ctx(), self._db_com_linhas(linhas), query="the pizza"))
+        item = r["items"][0]
+        assert item["tamanhos"] == tam
+
+    def test_descricao_so_quando_pedida(self):
+        import asyncio
+        from app.agent.tools import buscar_cardapio
+        linhas = [("id1", "Calabresa", "Pizzas", "molho e calabresa", 40.0, True, None)]
+        sem = asyncio.run(buscar_cardapio(self._ctx(), self._db_com_linhas(linhas), query="calabresa"))
+        com = asyncio.run(buscar_cardapio(self._ctx(), self._db_com_linhas(linhas), query="calabresa", incluir_descricao=True))
+        assert "descricao" not in sem["items"][0]
+        assert com["items"][0]["descricao"] == "molho e calabresa"
+
+
+class TestPromptAntiAlucinacao:
+    def _build(self):
+        from app.agent.prompt import build_system_prompt
+        from unittest.mock import MagicMock
+        p = MagicMock()
+        p.nome = "X"; p.endereco = "R1"
+        p.tempo_entrega_min = 30; p.tempo_entrega_max = 60
+        p.tempo_retirada_min = 15; p.tempo_retirada_max = 25
+        p.taxa_entrega_info = "5"; p.formas_pagamento_aceitas = ["pix"]
+        p.horario_funcionamento = {}
+        return build_system_prompt(p, None)
+
+    def test_principio_nunca_invente(self):
+        assert "PRINCÍPIO Nº 1" in self._build()
+
+    def test_regra_preco_unico(self):
+        s = self._build()
+        assert "PREÇO ÚNICO" in s and "P/M/G/GG" in s
+
+    def test_arquivo_uma_vez(self):
+        assert "ja_enviado" in self._build() or "uma vez por conversa" in self._build()
+
+
 class TestNpsMessage:
     def test_default_nps_interpola(self):
         from app.services.status_messages import DEFAULT_NPS_MESSAGE, _interpolar
