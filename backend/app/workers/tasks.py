@@ -26,6 +26,7 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
     from app.db import AsyncSessionLocal, engine
     from app.services.queue import drain_pending, should_flush_now
 
+    has_lock = False
     try:
         can_flush, wait = await should_flush_now(pizzaria_id, telefone)
         if not can_flush:
@@ -35,6 +36,19 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
                 countdown=max(wait + 0.1, 0.5),
             )
             return {"rescheduled": True, "wait": wait}
+
+        # Trava de concorrência por conversa
+        from app.redis_client import redis
+        lock_key = f"lock:flush:{pizzaria_id}:{telefone}"
+        acquired = await redis.set(lock_key, "1", nx=True, ex=45)
+        if not acquired:
+            log.info("Conversa travada por outro worker, reagendando: pizzaria=%s tel=%s", pizzaria_id, telefone)
+            flush_conversation.apply_async(
+                args=[str(pizzaria_id), telefone],
+                countdown=2.0,  # Tenta novamente em 2s
+            )
+            return {"rescheduled": True, "reason": "locked"}
+        has_lock = True
 
         pending = await drain_pending(pizzaria_id, telefone)
         if not pending:
@@ -64,6 +78,12 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
                 await db.rollback()
                 return {"ok": False, "erro": str(e)}
     finally:
+        if has_lock:
+            try:
+                from app.redis_client import redis
+                await redis.delete(f"lock:flush:{pizzaria_id}:{telefone}")
+            except Exception:
+                pass
         await engine.dispose()
         try:
             from app.agent.llm import reset_client
