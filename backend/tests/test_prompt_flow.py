@@ -337,6 +337,15 @@ class TestPromptAntiAlucinacao:
     def test_arquivo_uma_vez(self):
         assert "ja_enviado" in self._build() or "uma vez por conversa" in self._build()
 
+    def test_proibe_mensagem_de_espera(self):
+        s = self._build()
+        assert "mensagem de espera" in s
+        # a frase-bug que causava o loop tem que estar listada como proibida
+        assert "deixa eu ver/confirmar" in s or "deixa eu" in s.lower()
+
+    def test_fonte_da_verdade_e_a_tool(self):
+        assert "FONTE DA VERDADE" in self._build()
+
 
 class TestNpsMessage:
     def test_default_nps_interpola(self):
