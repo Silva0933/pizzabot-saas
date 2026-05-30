@@ -4,6 +4,7 @@ CRUD do cardápio + reindexação de embeddings.
 import logging
 import uuid
 from decimal import Decimal
+from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import Response
@@ -30,10 +31,11 @@ class ProdutoIn(BaseModel):
     nome: str = Field(min_length=1)
     categoria: str | None = None
     descricao: str | None = None
-    preco: Decimal = Field(gt=0)
+    preco: Decimal = Field(ge=0)
     disponivel: bool = True
     imagem_url: str | None = None
     ordem: int = 0
+    tamanhos: list[dict[str, Any]] | None = None
 
 
 class ProdutoOut(BaseModel):
@@ -46,6 +48,7 @@ class ProdutoOut(BaseModel):
     disponivel: bool
     imagem_url: str | None
     ordem: int
+    tamanhos: list[dict[str, Any]] | None = None
 
     model_config = {"from_attributes": True}
 
@@ -71,7 +74,16 @@ async def create_produto(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(membership),
 ) -> Produto:
-    p = Produto(pizzaria_id=pizzaria_id, **body.model_dump())
+    data = body.model_dump()
+    if data.get("tamanhos") and (data.get("preco") is None or data.get("preco") <= 0):
+        try:
+            precos = [Decimal(str(t.get("preco") or 0)) for t in data["tamanhos"] if t.get("preco")]
+            if precos:
+                data["preco"] = min(precos)
+        except Exception:
+            pass
+
+    p = Produto(pizzaria_id=pizzaria_id, **data)
     db.add(p)
     await db.commit()
     await db.refresh(p)
@@ -93,7 +105,17 @@ async def update_produto(
     ).scalar_one_or_none()
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Produto não encontrado")
-    for k, v in body.model_dump().items():
+    
+    data = body.model_dump()
+    if data.get("tamanhos") and (data.get("preco") is None or data.get("preco") <= 0):
+        try:
+            precos = [Decimal(str(t.get("preco") or 0)) for t in data["tamanhos"] if t.get("preco")]
+            if precos:
+                data["preco"] = min(precos)
+        except Exception:
+            pass
+
+    for k, v in data.items():
         setattr(p, k, v)
     await db.commit()
     await db.refresh(p)
@@ -247,6 +269,7 @@ class ProdutoImport(BaseModel):
     categoria: str | None = "outro"
     descricao: str | None = ""
     preco: Decimal = Decimal("0")
+    tamanhos: list[dict[str, Any]] | None = None
 
 
 class ConfirmarImportIn(BaseModel):
@@ -315,14 +338,27 @@ async def importar_confirmar(
 
     for i, p in enumerate(body.produtos, start=1):
         nome = (p.nome or "").strip()
-        if not nome or Decimal(p.preco) <= 0:
+        tamanhos_list = p.tamanhos
+        preco_calculado = Decimal(p.preco)
+        
+        if tamanhos_list and preco_calculado <= 0:
+            try:
+                precos_tamanhos = [Decimal(str(t.get("preco") or 0)) for t in tamanhos_list if t.get("preco")]
+                if precos_tamanhos:
+                    preco_calculado = min(precos_tamanhos)
+            except Exception:
+                pass
+
+        if not nome or (preco_calculado <= 0 and not p.tamanhos):
             continue
+
         db.add(Produto(
             pizzaria_id=pizzaria_id,
             nome=nome[:120],
             categoria=(p.categoria or "outro").strip().lower() or "outro",
             descricao=(p.descricao or "").strip() or None,
-            preco=Decimal(p.preco),
+            preco=preco_calculado,
+            tamanhos=tamanhos_list,
             disponivel=True,
             ordem=max_ordem + i,
         ))

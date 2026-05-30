@@ -135,6 +135,7 @@ class Produto(Base):
     disponivel: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     imagem_url: Mapped[str | None] = mapped_column(Text)
     ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tamanhos: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True, default=None)
     # embedding: vector(768) — registrado via raw SQL na migration; lemos como array
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

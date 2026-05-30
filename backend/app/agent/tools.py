@@ -40,7 +40,10 @@ DECL_BUSCAR_CARDAPIO = types.FunctionDeclaration(
         "as opções ou o que tem disponível. Para listar tudo, chame sem 'query' "
         "(ou com 'cardapio'). Para buscar algo específico, passe 'query' (ex: 'calabresa'). "
         "IMPORTANTE: por padrão retorna só nome, categoria e preço (sem descrição/ingredientes). "
-        "Passe incluir_descricao=true SOMENTE quando o cliente perguntar ingredientes de um sabor específico."
+        "Passe incluir_descricao=true SOMENTE quando o cliente perguntar ingredientes de um sabor específico. "
+        "Se o produto tiver múltiplos tamanhos, o retorno incluirá um campo 'tamanhos' com opções e preços. "
+        "Nesse caso, pergunte qual tamanho o cliente quer. Ao registrar o pedido, passe o nome formatado "
+        "como 'Nome (Tamanho)' (ex.: 'Calabresa (G)') e o preço correspondente."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
@@ -207,7 +210,7 @@ async def buscar_cardapio(
       Só retorna descrição quando incluir_descricao=True.
     """
     base = (
-        "SELECT id, nome, categoria, descricao, preco, disponivel "
+        "SELECT id, nome, categoria, descricao, preco, disponivel, tamanhos "
         "FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = true"
     )
     order = " ORDER BY categoria NULLS LAST, ordem, nome LIMIT :lim"
@@ -258,8 +261,9 @@ async def buscar_cardapio(
             "id": str(r[0]),
             "nome": r[1],
             "categoria": r[2],
-            "preco": float(r[4]),
+            "preco": float(r[4]) if r[4] is not None else 0.0,
             "disponivel": bool(r[5]),
+            "tamanhos": r[6] if len(r) > 6 else None,
         }
         # Só inclui descrição/ingredientes se explicitamente pedido
         if incluir_descricao:
@@ -291,7 +295,7 @@ async def enviar_cardapio_arquivo(ctx: AgentContext, db: AsyncSession) -> dict[s
         await evolution.send_media(
             instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
             media_url=url, mediatype=mediatype, mimetype=ct, filename=filename,
-            caption="Aqui está nosso cardápio completo 📋",
+            caption="",
         )
     except Exception as e:  # noqa: BLE001
         log.warning("Falha ao enviar arquivo de cardápio: %s", e)

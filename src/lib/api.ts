@@ -136,6 +136,7 @@ export interface BackendProduto {
   disponivel: boolean;
   imagem_url: string | null;
   ordem: number;
+  tamanhos?: Array<{ tamanho: string; preco: number }> | null;
 }
 
 export interface BackendPedido {
@@ -287,6 +288,7 @@ export interface ProdutoImport {
   categoria?: string;
   descricao?: string;
   preco: number;
+  tamanhos?: Array<{ tamanho: string; preco: number }> | null;
 }
 
 export interface CardapioArquivoInfo {
@@ -622,6 +624,7 @@ export function backendToProduct(b: BackendProduto): Product {
     available: b.disponivel,
     imageUrl: b.imagem_url ?? "",
     order: b.ordem,
+    tamanhos: b.tamanhos ?? null,
   };
 }
 

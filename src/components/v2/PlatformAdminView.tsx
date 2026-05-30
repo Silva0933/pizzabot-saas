@@ -696,7 +696,7 @@ function LLMConfigCard() {
                 <span className="text-xs font-medium text-slate-600">Provedor</span>
                 <select value={provider} onChange={(e) => onProviderChange(e.target.value)}
                   className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
-                  {Object.entries(cfg.providers).map(([id, p]) => (
+                  {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
                     <option key={id} value={id}>{p.nome}</option>
                   ))}
                 </select>
@@ -722,7 +722,7 @@ function LLMConfigCard() {
             </div>
 
             <div className="space-y-2.5">
-              {Object.entries(cfg.providers).map(([id, p]) => (
+              {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
                 <label key={id} className="block">
                   <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
                     Chave de API — {p.nome}

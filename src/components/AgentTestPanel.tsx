@@ -216,7 +216,7 @@ export function AgentTestPanel({
 // ============================================
 // Bolha de mensagem
 // ============================================
-function MessageBubble({ msg }: { msg: Mensagem }) {
+const MessageBubble: React.FC<{ msg: Mensagem }> = ({ msg }) => {
   if (msg.origem === "sistema") {
     return (
       <div className="text-center">

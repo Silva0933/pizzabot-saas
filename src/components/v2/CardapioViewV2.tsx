@@ -22,7 +22,7 @@ type Form = Omit<BackendProduto, "id" | "pizzaria_id">;
 
 const EMPTY: Form = {
   nome: "", categoria: "pizza", descricao: "", preco: 0,
-  disponivel: true, imagem_url: "", ordem: 0,
+  disponivel: true, imagem_url: "", ordem: 0, tamanhos: null
 };
 
 export function CardapioViewV2({ pizzariaId }: Props) {
@@ -66,6 +66,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
     setForm({
       nome: p.nome, categoria: p.categoria ?? "outro", descricao: p.descricao ?? "",
       preco: Number(p.preco), disponivel: p.disponivel, imagem_url: p.imagem_url ?? "", ordem: p.ordem,
+      tamanhos: p.tamanhos ? p.tamanhos.map(t => ({ tamanho: t.tamanho, preco: Number(t.preco) })) : null,
     });
   }
   function cancel() {
@@ -185,10 +186,89 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                 </select>
               )}
             </Field>
-            <Field label="Preço (R$)" required>
-              <input type="number" step="0.01" value={form.preco}
+            <Field label="Preço (R$)" required={form.tamanhos === null}>
+              <input type="number" step="0.01" 
+                value={form.tamanhos !== null && form.tamanhos.length > 0 ? Math.min(...form.tamanhos.map(t => t.preco)) : form.preco}
+                disabled={form.tamanhos !== null}
                 onChange={(e) => setForm({ ...form, preco: Number(e.target.value) })} className={inputCls}/>
             </Field>
+
+            <div className="md:col-span-2 border-t border-slate-100 pt-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-2">
+                <input
+                  type="checkbox"
+                  checked={form.tamanhos !== null}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setForm({ ...form, tamanhos: [{ tamanho: "Único", preco: Number(form.preco) || 0 }] });
+                    } else {
+                      setForm({ ...form, tamanhos: null });
+                    }
+                  }}
+                />
+                Este produto tem múltiplos tamanhos / variações
+              </label>
+
+              {form.tamanhos !== null && (
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-600">Tamanhos e Preços</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cur = form.tamanhos || [];
+                        setForm({ ...form, tamanhos: [...cur, { tamanho: "", preco: 0 }] });
+                      }}
+                      className="text-xs text-orange-500 hover:text-orange-600 font-medium inline-flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar Variação
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {(form.tamanhos || []).map((t, idx) => (
+                      <div key={idx} className="flex gap-2 items-center">
+                        <input
+                          placeholder="Nome do tamanho (ex: P, M, G, 2 Litros)"
+                          value={t.tamanho}
+                          onChange={(e) => {
+                            const newT = [...(form.tamanhos || [])];
+                            newT[idx] = { ...newT[idx], tamanho: e.target.value };
+                            setForm({ ...form, tamanhos: newT });
+                          }}
+                          className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:border-orange-400"
+                        />
+                        <div className="relative w-28 shrink-0">
+                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400">R$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            placeholder="Preço"
+                            value={t.preco || ""}
+                            onChange={(e) => {
+                              const newT = [...(form.tamanhos || [])];
+                              newT[idx] = { ...newT[idx], preco: Number(e.target.value) || 0 };
+                              setForm({ ...form, tamanhos: newT });
+                            }}
+                            className="w-full pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:border-orange-400"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newT = (form.tamanhos || []).filter((_, i) => i !== idx);
+                            setForm({ ...form, tamanhos: newT.length > 0 ? newT : [] });
+                          }}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <Field label="Ordem (menor primeiro)">
               <input type="number" value={form.ordem}
                 onChange={(e) => setForm({ ...form, ordem: Number(e.target.value) })} className={inputCls}/>
@@ -289,10 +369,28 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                 <div className="p-3">
                   <div className="flex items-start justify-between gap-2">
                     <h4 className="font-semibold text-sm text-slate-800 leading-tight">{p.nome}</h4>
-                    <span className="text-sm font-bold text-emerald-600 whitespace-nowrap">
-                      {Number(p.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                    <span className="text-sm font-bold text-emerald-600 whitespace-nowrap text-right shrink-0">
+                      {p.tamanhos && p.tamanhos.length > 0 ? (
+                        <span className="text-[10px] text-slate-400 font-normal block">
+                          A partir de{" "}
+                          <span className="text-sm font-bold text-emerald-600 block">
+                            {Math.min(...p.tamanhos.map(t => Number(t.preco))).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        </span>
+                      ) : (
+                        Number(p.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+                      )}
                     </span>
                   </div>
+                  {p.tamanhos && p.tamanhos.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1 mb-2">
+                      {p.tamanhos.map((t, idx) => (
+                        <span key={idx} className="text-[9px] bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-medium">
+                          {t.tamanho}: R${Number(t.preco).toFixed(1)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {p.descricao && <p className="text-xs text-slate-500 mt-1 line-clamp-2">{p.descricao}</p>}
                   <div className="flex gap-1 mt-3 pt-2.5 border-t border-slate-100">
                     <button onClick={() => startEdit(p)}
@@ -553,10 +651,22 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
                           className="px-1 py-1 border border-slate-200 rounded text-xs w-24">
                           {["pizza","lanche","bebida","sobremesa","outro"].map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
-                        <div className="relative w-24">
-                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">R$</span>
-                          <input type="number" step="0.01" value={p.preco} onChange={(e) => setItem(i, { preco: Number(e.target.value) })}
-                            className="w-full pl-7 pr-1 py-1 border border-slate-200 rounded text-sm" />
+                        <div className="w-32 text-right">
+                          {p.tamanhos && p.tamanhos.length > 0 ? (
+                            <span className="text-[10px] text-slate-500 font-medium block">
+                              {p.tamanhos.length} var. (A partir de{" "}
+                              <strong>
+                                {Math.min(...p.tamanhos.map(t => Number(t.preco))).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                              </strong>
+                              )
+                            </span>
+                          ) : (
+                            <div className="relative w-full">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">R$</span>
+                              <input type="number" step="0.01" value={p.preco} onChange={(e) => setItem(i, { preco: Number(e.target.value) })}
+                                className="w-full pl-7 pr-1 py-1 border border-slate-200 rounded text-sm" />
+                            </div>
+                          )}
                         </div>
                         <button onClick={() => removeItem(i)} className="p-1 text-red-400 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>

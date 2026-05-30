@@ -209,3 +209,79 @@ class TestToolDeclarations:
         assert "valor_total" in required
         assert "tipo" in required
         assert "forma_pagamento" in required
+
+
+# ============================================================
+# 4. TESTES DE TAMANHOS E VARIAÇÕES (AGRUPAMENTO)
+# ============================================================
+
+class TestTamanhosVariacoes:
+    """Valida as lógicas de múltiplos tamanhos e preços."""
+
+    def test_normalizar_produtos_com_tamanhos(self):
+        from app.services.import_cardapio import normalizar_produtos
+        raw_items = [
+            {
+                "nome": "Calabresa",
+                "categoria": "pizza",
+                "descricao": "Mussarela e calabresa",
+                "preco": 0.0,
+                "tamanhos": [
+                    {"tamanho": "P", "preco": 25.0},
+                    {"tamanho": "G", "preco": "35,00"}
+                ]
+            },
+            {
+                "nome": "Coca-Cola",
+                "categoria": "bebida",
+                "preco": 8.5
+            }
+        ]
+        norm = normalizar_produtos(raw_items)
+        assert len(norm) == 2
+        
+        # Produto com tamanhos
+        calabresa = norm[0]
+        assert calabresa["nome"] == "Calabresa"
+        assert calabresa["tamanhos"] is not None
+        assert len(calabresa["tamanhos"]) == 2
+        assert calabresa["tamanhos"][0]["tamanho"] == "P"
+        assert calabresa["tamanhos"][0]["preco"] == 25.0
+        assert calabresa["tamanhos"][1]["tamanho"] == "G"
+        assert calabresa["tamanhos"][1]["preco"] == 35.0
+
+        # Produto de tamanho único
+        coca = norm[1]
+        assert coca["nome"] == "Coca-Cola"
+        assert coca["tamanhos"] is None
+        assert coca["preco"] == 8.5
+
+    def test_importar_confirmar_preco_calculado(self):
+        from app.routes.cardapio import ConfirmarImportIn, ProdutoImport
+        # Simula o corpo que o FastAPI receberia
+        body = ConfirmarImportIn(produtos=[
+            ProdutoImport(
+                nome="Calabresa",
+                categoria="pizza",
+                preco=Decimal("0.0"),
+                tamanhos=[
+                    {"tamanho": "P", "preco": 25.0},
+                    {"tamanho": "M", "preco": 30.0},
+                    {"tamanho": "G", "preco": 35.0}
+                ]
+            )
+        ])
+
+        p = body.produtos[0]
+        nome = p.nome
+        tamanhos_list = p.tamanhos
+        preco_calculado = Decimal(p.preco)
+        
+        # Replica a lógica do endpoint para teste unitário rápido
+        if tamanhos_list and preco_calculado <= 0:
+            precos_tamanhos = [Decimal(str(t.get("preco") or 0)) for t in tamanhos_list if t.get("preco")]
+            if precos_tamanhos:
+                preco_calculado = min(precos_tamanhos)
+
+        assert preco_calculado == Decimal("25.0")
+

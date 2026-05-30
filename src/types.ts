@@ -39,6 +39,7 @@ export interface Product {
   available: boolean;
   imageUrl: string;
   order: number;
+  tamanhos?: Array<{ tamanho: string; preco: number }> | null;
 }
 
 export interface Customer {
