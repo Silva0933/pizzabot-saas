@@ -17,6 +17,7 @@ import httpx
 
 from app.config import get_settings
 from app.models import Pizzaria
+from app.services.secrets import decrypt_secret
 
 log = logging.getLogger(__name__)
 _settings = get_settings()
@@ -265,10 +266,12 @@ class AsaasClient:
 def gateway_for(pizzaria: Pizzaria) -> MercadoPagoClient | AsaasClient | None:
     """Retorna o cliente do gateway configurado para a pizzaria."""
     gw = pizzaria.gateway_pagamento
-    if gw == "mercadopago" and pizzaria.mp_access_token:
-        return MercadoPagoClient(pizzaria.mp_access_token)
-    if gw == "asaas" and pizzaria.asaas_api_key:
-        return AsaasClient(pizzaria.asaas_api_key)
+    mp_token = decrypt_secret(pizzaria.mp_access_token)
+    asaas_key = decrypt_secret(pizzaria.asaas_api_key)
+    if gw == "mercadopago" and mp_token:
+        return MercadoPagoClient(mp_token)
+    if gw == "asaas" and asaas_key:
+        return AsaasClient(asaas_key)
     return None
 
 

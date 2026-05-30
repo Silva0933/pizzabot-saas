@@ -19,6 +19,7 @@ from app.deps import require_platform_admin
 from app.models import Usuario
 from app.services.app_config import LLM_KEY, get_config, get_llm_config, set_config
 from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
+from app.services.secrets import decrypt_secret, encrypt_secret, mask_secret
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -44,11 +45,7 @@ LLM_PROVIDERS = {
 
 
 def _mask(key: str | None) -> str:
-    if not key:
-        return ""
-    if len(key) <= 8:
-        return "••••"
-    return f"{key[:4]}••••{key[-4:]}"
+    return mask_secret(key)
 
 
 @router.get("/overview")
@@ -223,11 +220,11 @@ async def put_llm(
     # Só atualiza chaves enviadas não-vazias (mantém as já salvas).
     for k, v in (body.keys or {}).items():
         if k in keys and v and v.strip():
-            keys[k] = v.strip()
+            keys[k] = encrypt_secret(v.strip())
 
     await set_config(db, LLM_KEY, {"provider": provider, "model": body.model.strip(), "keys": keys})
     return {"ok": True, "provider": provider, "model": body.model.strip(),
-            "keys_configuradas": {k: bool(v) for k, v in keys.items()}}
+            "keys_configuradas": {k: bool(decrypt_secret(v) or v) for k, v in keys.items()}}
 
 
 @router.get("/llm/usage")

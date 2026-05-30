@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.db import engine
+from app.services.secrets import decrypt_secret
 
 _settings = get_settings()
 
@@ -146,6 +147,7 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     provider = (cfg.get("provider") or DEFAULT_LLM_CONFIG["provider"]).lower()
     model = cfg.get("model") or DEFAULT_LLM_CONFIG["model"]
     keys = {**DEFAULT_LLM_CONFIG["keys"], **(cfg.get("keys") or {})}
+    keys = {k: (decrypt_secret(v) or "") for k, v in keys.items()}
     if not keys.get("gemini"):
         keys["gemini"] = _settings.gemini_api_key or ""
     return {"provider": provider, "model": model, "keys": keys}

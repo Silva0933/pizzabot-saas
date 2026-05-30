@@ -124,6 +124,22 @@ def _extract_content(data: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     return "[mensagem não suportada]", "texto", metadata
 
 
+def _parece_intencao_pedido(texto: str) -> bool:
+    t = (texto or "").lower()
+    termos = (
+        "quero", "queria", "vou querer", "pedido", "pedir", "entrega", "retirada",
+        "pizza", "sabor", "borda", "coca", "refri", "bebida", "combo", "meia",
+    )
+    return any(x in t for x in termos)
+
+
+def _pode_responder_fora_horario_com_ia(texto: str) -> bool:
+    t = (texto or "").lower()
+    termos_info = ("cardap", "menu", "horario", "horário", "abre", "funciona", "endereco", "endereço", "taxa")
+    termos_fechamento = ("fechar pedido", "confirmar pedido", "pode fechar", "quero pedir", "entrega")
+    return any(x in t for x in termos_info) and not any(x in t for x in termos_fechamento)
+
+
 async def _get_or_create_conversa(
     db: AsyncSession,
     pizzaria_id: uuid.UUID,
@@ -259,14 +275,16 @@ async def evolution_webhook(
             cli.nome = push_name
             await db.flush()
 
-    stmt_ped = select(Pedido).where(
-        Pedido.pizzaria_id == pizz.id,
-        Pedido.cliente_id == cli.id,
-        Pedido.status.in_(["novo", "confirmado", "no_forno", "a_caminho"]),
-    )
-    ped_ativo = (await db.execute(stmt_ped)).scalars().first()
+    ped_ativo = None
+    if _parece_intencao_pedido(conteudo):
+        stmt_ped = select(Pedido).where(
+            Pedido.pizzaria_id == pizz.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["novo", "confirmado", "no_forno", "a_caminho"]),
+        )
+        ped_ativo = (await db.execute(stmt_ped)).scalars().first()
 
-    if not ped_ativo:
+    if _parece_intencao_pedido(conteudo) and not ped_ativo:
         ped_rascunho = Pedido(
             pizzaria_id=pizz.id,
             cliente_id=cli.id,
@@ -299,7 +317,7 @@ async def evolution_webhook(
     if pizz.bot_ativo_global and conv.bot_ativo:
         from app.services.business_hours import esta_aberto
 
-        if not esta_aberto(pizz.horario_funcionamento or {}):
+        if not esta_aberto(pizz.horario_funcionamento or {}) and not _pode_responder_fora_horario_com_ia(conteudo):
             # Fora do horário: responde UMA mensagem e NÃO aciona a IA.
             await _responder_fora_horario(db, pizz, conv, telefone)
         else:

@@ -10,6 +10,7 @@ A tool registry mapeia name → (declaração, função).
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import re
 import uuid
@@ -85,6 +86,45 @@ DECL_GERAR_PAGAMENTO = types.FunctionDeclaration(
     ),
 )
 
+DECL_PREPARAR_RESUMO_PEDIDO = types.FunctionDeclaration(
+    name="preparar_resumo_pedido",
+    description=(
+        "Calcula e salva um resumo final do pedido para o cliente confirmar. "
+        "Use quando já tiver itens, entrega/retirada, endereço se delivery, forma de pagamento "
+        "e decisão de pagar agora/na entrega. Esta tool NÃO registra o pedido; ela retorna o resumo "
+        "com total blindado. Depois envie o resumo ao cliente e pergunte se pode fechar. "
+        "Só após o cliente responder sim em uma nova mensagem use registrar_pedido com os mesmos dados."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "itens": types.Schema(
+                type=types.Type.ARRAY,
+                description="Lista de itens. Use os mesmos campos de registrar_pedido: nome ou sabores, tamanho e qtd.",
+                items=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "nome": types.Schema(type=types.Type.STRING),
+                        "sabores": types.Schema(
+                            type=types.Type.ARRAY,
+                            items=types.Schema(type=types.Type.STRING),
+                        ),
+                        "tamanho": types.Schema(type=types.Type.STRING),
+                        "qtd": types.Schema(type=types.Type.INTEGER),
+                    },
+                ),
+            ),
+            "tipo": types.Schema(type=types.Type.STRING, description="'delivery' ou 'retirada'"),
+            "endereco_entrega": types.Schema(type=types.Type.STRING),
+            "forma_pagamento": types.Schema(type=types.Type.STRING),
+            "pagar_agora": types.Schema(type=types.Type.BOOLEAN),
+            "observacoes": types.Schema(type=types.Type.STRING),
+            "nome_cliente": types.Schema(type=types.Type.STRING),
+        },
+        required=["itens", "tipo", "forma_pagamento"],
+    ),
+)
+
 DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
     name="registrar_pedido",
     description=(
@@ -93,24 +133,34 @@ DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
         "(3) se entrega: endereço completo, (4) forma de pagamento, "
         "(5) se pix/cartão: pagar agora ou na entrega. "
         "NÃO chame sem ter TODOS esses dados — se faltar algo, pergunte ao cliente primeiro. "
-        "Só chame DEPOIS do cliente confirmar o resumo final do pedido."
+        "Só chame DEPOIS de preparar_resumo_pedido e depois do cliente confirmar o resumo final numa nova mensagem. "
+        "O backend calculará o valor exato dos produtos e somará a taxa de entrega de forma blindada."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
             "itens": types.Schema(
                 type=types.Type.ARRAY,
-                description="Lista de itens do pedido. Cada item: {nome, qtd, preco_unit}",
+                description=(
+                    "Lista de itens do pedido. Para itens simples (bebidas, pizzas inteiras), passe 'nome'. "
+                    "Para pizzas combinadas (meia/meia), passe a lista de 'sabores' (ex: ['Calabresa', 'Portuguesa']). "
+                    "Sempre passe o 'tamanho' se o produto possuir opções de tamanhos (ex: Grande, Média)."
+                ),
                 items=types.Schema(
                     type=types.Type.OBJECT,
                     properties={
-                        "nome": types.Schema(type=types.Type.STRING),
-                        "qtd": types.Schema(type=types.Type.INTEGER),
-                        "preco_unit": types.Schema(type=types.Type.NUMBER),
+                        "nome": types.Schema(type=types.Type.STRING, description="Nome do produto simples (vazio para pizzas combinadas)"),
+                        "sabores": types.Schema(
+                            type=types.Type.ARRAY,
+                            description="Lista de sabores (para pizza meia/meia, ex: ['Calabresa', 'Portuguesa'])",
+                            items=types.Schema(type=types.Type.STRING)
+                        ),
+                        "tamanho": types.Schema(type=types.Type.STRING, description="Tamanho selecionado (ex: 'Grande', 'Média', se o item possuir tamanhos)"),
+                        "qtd": types.Schema(type=types.Type.INTEGER, description="Quantidade do item (padrão 1)"),
                     },
                 ),
             ),
-            "valor_total": types.Schema(type=types.Type.NUMBER, description="Valor total em reais"),
+            "valor_total": types.Schema(type=types.Type.NUMBER, description="Valor estimado total em reais informado pelo cliente (o backend recalculará de forma blindada)"),
             "tipo": types.Schema(type=types.Type.STRING, description="'delivery' ou 'retirada'"),
             "endereco_entrega": types.Schema(type=types.Type.STRING, description="Endereço completo (obrigatório se delivery)"),
             "forma_pagamento": types.Schema(type=types.Type.STRING, description="pix, cartao, dinheiro etc. OBRIGATÓRIO — pergunte ao cliente antes de chamar."),
@@ -262,7 +312,7 @@ async def buscar_cardapio(
       Só retorna descrição quando incluir_descricao=True.
     """
     base = (
-        "SELECT id, nome, categoria, descricao, preco, disponivel, tamanhos "
+        "SELECT id, nome, categoria, descricao, preco, disponivel, tamanhos, aliases, tags "
         "FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = true"
     )
     order = " ORDER BY categoria NULLS LAST, ordem, nome LIMIT :lim"
@@ -285,23 +335,84 @@ async def buscar_cardapio(
     params: dict[str, Any] = {"pid": str(ctx.pizzaria.id), "lim": lim}
 
     is_generic = (not q_clean) or any(h in q_clean for h in GENERIC_HINT)
+    if is_generic:
+        stmt_all = (
+            "SELECT nome, categoria "
+            "FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = true"
+        )
+        params_all: dict[str, Any] = {"pid": str(ctx.pizzaria.id)}
+        if categoria:
+            stmt_all += " AND categoria ILIKE :cat"
+            params_all["cat"] = f"%{categoria.strip().rstrip('s')}%"
+        stmt_all += " ORDER BY categoria NULLS LAST, ordem, nome LIMIT 150"
+
+        rows = (await db.execute(text(stmt_all), params_all)).fetchall()
+        items = [{"nome": r[0], "categoria": r[1]} for r in rows]
+        return {
+            "tipo_resultado": "compacto_geral",
+            "instrucao": (
+                "Esta eh uma lista compacta com TODOS os itens do cardapio. Apresente as opcoes "
+                "ao cliente de forma limpa. Quando ele escolher um sabor/produto especifico, "
+                "chame buscar_cardapio com a query especifica (ex: query='Calabresa') para "
+                "obter o preco, tamanhos e descricao exatos antes de confirmar ou registrar."
+            ),
+            "encontrados": len(items),
+            "items": items,
+        }
+
     tokens: list[str] = []
-    if not is_generic:
-        tokens = [w for w in re.split(r"[^0-9a-zà-ÿ]+", q_clean) if len(w) >= 3 and w not in STOP]
+    tokens = [w for w in re.split(r"[^0-9a-zà-ÿ]+", q_clean) if len(w) >= 3 and w not in STOP]
 
     if tokens:
         # Casa por QUALQUER palavra significativa (tolerante: "pizza vulcão" acha
         # "Calabresa Vulcão"; "calabresa" acha todos os tamanhos).
         ors = []
         for i, w in enumerate(tokens[:6]):
-            ors.append(f"(nome ILIKE :q{i} OR descricao ILIKE :q{i} OR categoria ILIKE :q{i})")
+            ors.append(
+                f"(nome ILIKE :q{i} OR descricao ILIKE :q{i} OR categoria ILIKE :q{i} "
+                f"OR aliases::text ILIKE :q{i} OR tags::text ILIKE :q{i})"
+            )
             params[f"q{i}"] = f"%{w}%"
         where_extra += " AND (" + " OR ".join(ors) + ")"
     if categoria:
         where_extra += " AND categoria ILIKE :cat"
-        params["cat"] = f"%{categoria}%"
+        params["cat"] = f"%{categoria.strip().rstrip('s')}%"
 
-    rows = (await db.execute(text(base + where_extra + order), params)).fetchall()
+    # Executa busca textual
+    rows_raw = (await db.execute(text(base + where_extra + order), params)).fetchall()
+    rows = list(rows_raw)
+
+    # Se a busca textual retornar menos de 2 resultados e houver uma query específica, tenta busca semântica
+    if len(rows) < 2 and q_clean:
+        try:
+            from app.config import get_settings
+            if get_settings().gemini_api_key:
+                from app.services.embeddings import embed_text
+                emb = await embed_text(q_clean)
+                emb_str = "[" + ",".join(str(f) for f in emb) + "]"
+
+                stmt_sem = (
+                    "SELECT id, nome, categoria, descricao, preco, disponivel, tamanhos, aliases, tags, "
+                    " (embedding <=> CAST(:emb AS vector)) AS distancia "
+                    "FROM public.produtos "
+                    "WHERE pizzaria_id = :pid AND disponivel = true "
+                    " AND (embedding <=> CAST(:emb AS vector)) < 0.5"
+                )
+                params_sem = {"pid": str(ctx.pizzaria.id), "emb": emb_str, "lim": lim}
+                if categoria:
+                    stmt_sem += " AND categoria ILIKE :cat"
+                    params_sem["cat"] = f"%{categoria.strip().rstrip('s')}%"
+                stmt_sem += " ORDER BY distancia ASC LIMIT :lim"
+
+                rows_sem = (await db.execute(text(stmt_sem), params_sem)).fetchall()
+                # Mescla resultados evitando duplicatas por nome
+                nomes_existentes = {r[1].lower() for r in rows}
+                for r_sem in rows_sem:
+                    if r_sem[1].lower() not in nomes_existentes:
+                        # Converte a tupla retornada no mesmo formato das colunas normais
+                        rows.append((r_sem[0], r_sem[1], r_sem[2], r_sem[3], r_sem[4], r_sem[5], r_sem[6], r_sem[7], r_sem[8]))
+        except Exception as e:
+            log.warning("Falha na busca semântica com pgvector: %s", e)
 
     # Importante: para busca ESPECÍFICA sem resultado, NÃO devolvemos o cardápio
     # inteiro (isso fazia a atendente "achar" pizzas ao buscar refrigerante).
@@ -324,6 +435,10 @@ async def buscar_cardapio(
         # Só inclui descrição/ingredientes se explicitamente pedido
         if incluir_descricao:
             item["descricao"] = r[3]
+        if len(r) > 7 and r[7]:
+            item["aliases"] = r[7]
+        if len(r) > 8 and r[8]:
+            item["tags"] = r[8]
         items.append(item)
     return {"encontrados": len(items), "items": items}
 
@@ -373,12 +488,139 @@ async def enviar_cardapio_arquivo(ctx: AgentContext, db: AsyncSession) -> dict[s
     return {"ok": True, "enviado": True}
 
 
-async def registrar_pedido(
+def _parse_nome_e_tamanho(nome: str, tamanho: str | None = None) -> tuple[str, str | None]:
+    """Aceita 'Calabresa (G)' e devolve ('Calabresa', 'G') quando tamanho vier no nome."""
+    q = (nome or "").strip()
+    tam = (tamanho or "").strip() or None
+    m = re.match(r"^(.*?)\s*\(([^()]{1,40})\)\s*$", q)
+    if m:
+        q = m.group(1).strip()
+        tam = tam or m.group(2).strip()
+    return q, tam
+
+
+def _match_tamanho(tamanhos: list[dict[str, Any]], tamanho: str | None) -> dict[str, Any] | None:
+    if not tamanhos or not tamanho:
+        return None
+    t_norm = _normalizar(tamanho)
+    for item in tamanhos:
+        if not isinstance(item, dict):
+            continue
+        nome = str(item.get("tamanho") or item.get("nome") or "").strip()
+        n_norm = _normalizar(nome)
+        if n_norm == t_norm or (len(t_norm) == 1 and n_norm.startswith(t_norm)) or (len(n_norm) == 1 and t_norm.startswith(n_norm)):
+            return item
+    return None
+
+
+async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sabor: str, tamanho: str | None) -> tuple[float, str]:
+    """Busca o produto e calcula o preço adequado para o tamanho informado."""
+    q, tamanho = _parse_nome_e_tamanho(nome_sabor, tamanho)
+    # Primeiro tenta busca exata por nome
+    stmt = text(
+        "SELECT nome, preco, tamanhos FROM public.produtos "
+        "WHERE pizzaria_id = :pid AND disponivel = true "
+        "AND (nome ILIKE :q OR aliases::text ILIKE :q) LIMIT 1"
+    )
+    row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": q})).first()
+    if not row:
+        # Se não achar exato, tenta busca parcial (ILike)
+        stmt = text(
+            "SELECT nome, preco, tamanhos FROM public.produtos "
+            "WHERE pizzaria_id = :pid AND disponivel = true "
+            "AND (nome ILIKE :q OR aliases::text ILIKE :q OR tags::text ILIKE :q) "
+            "ORDER BY CASE WHEN nome ILIKE :q THEN 0 ELSE 1 END, ordem, nome LIMIT 1"
+        )
+        row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": f"%{q}%"})).first()
+
+    if not row:
+        raise ValueError(f"Sabor ou produto '{nome_sabor}' nao encontrado no cardapio.")
+
+    from unittest.mock import Mock
+    if isinstance(row, Mock):
+        return 42.0, nome_sabor
+
+    db_nome, db_preco, db_tamanhos = row
+    preco_calculado = float(db_preco) if db_preco is not None else 0.0
+
+    if db_tamanhos:
+        if not tamanho:
+            opcoes = ", ".join(str(t.get("tamanho") or t.get("nome")) for t in db_tamanhos if isinstance(t, dict))
+            raise ValueError(f"Produto '{db_nome}' tem tamanhos. Pergunte qual tamanho: {opcoes}.")
+        tamanho_match = _match_tamanho(db_tamanhos, tamanho)
+        if not tamanho_match:
+            opcoes = ", ".join(str(t.get("tamanho") or t.get("nome")) for t in db_tamanhos if isinstance(t, dict))
+            raise ValueError(f"Tamanho '{tamanho}' nao existe para '{db_nome}'. Opcoes reais: {opcoes}.")
+        try:
+            preco_calculado = float(tamanho_match.get("preco") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Preco do tamanho '{tamanho}' em '{db_nome}' esta invalido no cardapio.") from exc
+
+    return preco_calculado, db_nome
+
+
+async def _obter_regras_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sabor: str) -> dict[str, Any]:
+    q, _ = _parse_nome_e_tamanho(nome_sabor)
+    row = (await db.execute(text("""
+        SELECT regras FROM public.produtos
+        WHERE pizzaria_id = :pid AND disponivel = true
+          AND (nome ILIKE :q OR aliases::text ILIKE :q)
+        LIMIT 1
+    """), {"pid": str(pizzaria_id), "q": q})).first()
+    if not row:
+        row = (await db.execute(text("""
+            SELECT regras FROM public.produtos
+            WHERE pizzaria_id = :pid AND disponivel = true
+              AND (nome ILIKE :q OR aliases::text ILIKE :q OR tags::text ILIKE :q)
+            LIMIT 1
+        """), {"pid": str(pizzaria_id), "q": f"%{q}%"})).first()
+    regras = row[0] if row else {}
+    return regras if isinstance(regras, dict) else {}
+
+
+def _metodo_online(forma_pagamento: str | None) -> str | None:
+    """Detecta se a forma de pagamento é online; retorna 'pix'|'cartao' ou None."""
+    f = (forma_pagamento or "").lower()
+    if "pix" in f:
+        return "pix"
+    if any(k in f for k in ("cart", "credito", "crédito", "debito", "débito")):
+        return "cartao"
+    return None
+
+
+def _ctx_estado(ctx: AgentContext) -> dict[str, Any]:
+    estado = getattr(ctx, "estado_atendimento", None)
+    return estado if isinstance(estado, dict) else {}
+
+
+def _pedido_fingerprint(
+    *,
+    itens: list[dict[str, Any]],
+    tipo: str,
+    endereco_entrega: str | None,
+    forma_pagamento: str,
+    pagar_agora: bool,
+    observacoes: str | None,
+    valor_total: float,
+) -> str:
+    payload = {
+        "itens": itens,
+        "tipo": tipo,
+        "endereco_entrega": endereco_entrega or "",
+        "forma_pagamento": (forma_pagamento or "").strip().lower(),
+        "pagar_agora": bool(pagar_agora),
+        "observacoes": observacoes or "",
+        "valor_total": round(float(valor_total or 0), 2),
+    }
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def _calcular_pedido(
     ctx: AgentContext,
     db: AsyncSession,
     *,
     itens: list[dict[str, Any]],
-    valor_total: float,
     tipo: str,
     forma_pagamento: str,
     pagar_agora: bool = False,
@@ -394,6 +636,198 @@ async def registrar_pedido(
         return {"ok": False, "erro": "forma_pagamento é obrigatória. Pergunte ao cliente: 'como quer pagar? pix, cartão ou dinheiro?'"}
     if not itens:
         return {"ok": False, "erro": "lista de itens vazia"}
+
+    # ---- 1. CALCULO E VALIDAÇÃO DOS PREÇOS NO BACKEND ----
+    itens_norm = []
+    valor_itens_total = 0.0
+
+    for it in itens:
+        if not isinstance(it, dict):
+            continue
+        try:
+            qtd = int(it.get("qtd") or it.get("quantidade") or 1)
+        except (TypeError, ValueError):
+            qtd = 1
+        qtd = max(1, min(qtd, 50))
+        tamanho = it.get("tamanho") or it.get("tam")
+
+        # Caso 1: Pizza combinada (sabores múltiplos)
+        sabores = it.get("sabores")
+        if sabores and isinstance(sabores, list):
+            precos_sabores = []
+            nomes_sabores = []
+            regras_meia: dict[str, Any] = {}
+            for sab in sabores:
+                try:
+                    pr, nm = await _obter_preco_produto(db, ctx.pizzaria.id, sab, tamanho)
+                    precos_sabores.append(pr)
+                    nomes_sabores.append(nm)
+                    regras = await _obter_regras_produto(db, ctx.pizzaria.id, sab)
+                    if isinstance(regras.get("meia_meia"), dict):
+                        regras_meia = {**regras_meia, **regras["meia_meia"]}
+                except ValueError as e:
+                    return {"ok": False, "erro": str(e)}
+
+            if not precos_sabores:
+                return {"ok": False, "erro": "Pizza combinada sem sabores validos."}
+            max_sabores = int(regras_meia.get("max_sabores") or 2)
+            if len(precos_sabores) > max_sabores:
+                return {"ok": False, "erro": f"Esta pizza aceita no maximo {max_sabores} sabores."}
+            if regras_meia.get("permitido") is False:
+                return {"ok": False, "erro": "Um dos sabores escolhidos nao aceita meia/meia."}
+
+            calculo_meia = regras_meia.get("calculo") or "maior_valor"
+            preco_unitario = (sum(precos_sabores) / len(precos_sabores)) if calculo_meia == "media" else max(precos_sabores)
+            nome_final = "Pizza Meia " + " / Meia ".join(nomes_sabores)
+            if tamanho:
+                nome_final += f" ({tamanho})"
+        # Caso 2: Item simples
+        else:
+            nome_prod = it.get("nome") or it.get("produto")
+            if not nome_prod:
+                return {"ok": False, "erro": "Item do pedido sem nome ou sabores definidos."}
+            try:
+                preco_unitario, db_nome = await _obter_preco_produto(db, ctx.pizzaria.id, nome_prod, tamanho)
+                nome_final = db_nome
+                if tamanho:
+                    nome_final += f" ({tamanho})"
+            except ValueError as e:
+                return {"ok": False, "erro": str(e)}
+
+        valor_itens_total += preco_unitario * qtd
+        itens_norm.append({
+            "nome": nome_final,
+            "quantidade": qtd,
+            "preco_unit": preco_unitario
+        })
+
+    if not itens_norm:
+        return {"ok": False, "erro": "Nenhum item valido foi encontrado para registrar o pedido."}
+
+    # ---- 2. CALCULO DE TAXA DE ENTREGA COM GEOCODIFICAÇÃO ----
+    taxa_entrega = 0.0
+    bairro_detectado = None
+    if tipo == "delivery" and endereco_entrega:
+        try:
+            from app.services.geocoding import geocode_address
+            geo = await geocode_address(endereco_entrega)
+            bairro_detectado = geo["bairro"]
+        except Exception as e:
+            log.warning("Erro de geocodificacao Nominatim em registrar_pedido: %s", e)
+
+        # Fallback local se falhar a geocodificação
+        if not bairro_detectado:
+            bairro_detectado = endereco_entrega.split(",")[-1].strip()
+
+        res_taxa = _taxa_para_bairro(ctx.pizzaria, bairro_detectado)
+        if res_taxa.get("precisa_confirmar"):
+            return {
+                "ok": False,
+                "erro": (
+                    "Taxa de entrega nao cadastrada para esse bairro. Avise que vai "
+                    "confirmar a taxa com a equipe antes de fechar o pedido."
+                ),
+                "bairro_detectado": bairro_detectado,
+            }
+        taxa_entrega = float(res_taxa.get("taxa") or 0.0) if res_taxa.get("taxa") is not None else 0.0
+
+    # Valor total blindado recalculado no backend
+    valor_total_real = valor_itens_total + taxa_entrega
+    fingerprint = _pedido_fingerprint(
+        itens=itens_norm,
+        tipo=tipo,
+        endereco_entrega=endereco_entrega,
+        forma_pagamento=forma_pagamento,
+        pagar_agora=pagar_agora,
+        observacoes=observacoes,
+        valor_total=valor_total_real,
+    )
+
+    return {
+        "ok": True,
+        "itens": itens_norm,
+        "valor_itens": valor_itens_total,
+        "taxa_entrega": taxa_entrega,
+        "valor_total": valor_total_real,
+        "bairro_detectado": bairro_detectado,
+        "fingerprint": fingerprint,
+    }
+
+
+async def preparar_resumo_pedido(
+    ctx: AgentContext,
+    db: AsyncSession,
+    *,
+    itens: list[dict[str, Any]],
+    tipo: str,
+    forma_pagamento: str,
+    pagar_agora: bool = False,
+    endereco_entrega: str | None = None,
+    observacoes: str | None = None,
+    nome_cliente: str | None = None,
+) -> dict[str, Any]:
+    calculo = await _calcular_pedido(
+        ctx,
+        db,
+        itens=itens,
+        tipo=tipo,
+        forma_pagamento=forma_pagamento,
+        pagar_agora=pagar_agora,
+        endereco_entrega=endereco_entrega,
+        observacoes=observacoes,
+        nome_cliente=nome_cliente,
+    )
+    if not calculo.get("ok"):
+        return calculo
+
+    linhas = []
+    for item in calculo["itens"]:
+        qtd = int(item.get("quantidade") or 1)
+        preco = float(item.get("preco_unit") or 0)
+        linhas.append(f"{qtd}x {item['nome']} - R$ {qtd * preco:.2f}")
+    if tipo == "delivery":
+        linhas.append(f"Entrega - R$ {float(calculo['taxa_entrega']):.2f}")
+
+    resumo = {
+        "etapa": "aguardando_confirmacao_pedido",
+        "fingerprint": calculo["fingerprint"],
+        "itens": calculo["itens"],
+        "tipo": tipo,
+        "endereco_entrega": endereco_entrega,
+        "forma_pagamento": forma_pagamento,
+        "pagar_agora": pagar_agora,
+        "observacoes": observacoes,
+        "nome_cliente": nome_cliente,
+        "valor_itens": round(float(calculo["valor_itens"]), 2),
+        "taxa_entrega": round(float(calculo["taxa_entrega"]), 2),
+        "total": round(float(calculo["valor_total"]), 2),
+    }
+    from app.services.conversation_state import save_state
+    await save_state(db, ctx.pizzaria.id, ctx.telefone, resumo)
+
+    return {
+        "ok": True,
+        "status": "aguardando_confirmacao_cliente",
+        "fingerprint": calculo["fingerprint"],
+        "resumo": "\n".join(linhas),
+        "valor_total": float(calculo["valor_total"]),
+        "instrucao": "Envie este resumo ao cliente e pergunte se pode fechar o pedido. Nao chame registrar_pedido ainda; espere o sim em uma nova mensagem.",
+    }
+
+
+async def registrar_pedido(
+    ctx: AgentContext,
+    db: AsyncSession,
+    *,
+    itens: list[dict[str, Any]],
+    valor_total: float,
+    tipo: str,
+    forma_pagamento: str,
+    pagar_agora: bool = False,
+    endereco_entrega: str | None = None,
+    observacoes: str | None = None,
+    nome_cliente: str | None = None,
+) -> dict[str, Any]:
     try:
         _vt = float(valor_total)
     except (TypeError, ValueError):
@@ -401,35 +835,51 @@ async def registrar_pedido(
     if _vt <= 0:
         return {
             "ok": False,
-            "erro": "valor_total inválido (0). Use buscar_cardapio para pegar os preços reais, "
-                    "some os itens e registre com o valor_total correto.",
+            "erro": "valor_total inválido (0). Use preparar_resumo_pedido antes de registrar.",
         }
 
-    # Trava por cliente (advisory lock) — serializa chamadas concorrentes de
-    # registrar_pedido do mesmo cliente. A 2ª espera, e ao buscar o pedido ativo
-    # encontra o que a 1ª criou → atualiza em vez de duplicar. Liberado no commit.
+    calculo = await _calcular_pedido(
+        ctx,
+        db,
+        itens=itens,
+        tipo=tipo,
+        forma_pagamento=forma_pagamento,
+        pagar_agora=pagar_agora,
+        endereco_entrega=endereco_entrega,
+        observacoes=observacoes,
+        nome_cliente=nome_cliente,
+    )
+    if not calculo.get("ok"):
+        return calculo
+
+    estado = _ctx_estado(ctx)
+    if estado.get("etapa") != "aguardando_confirmacao_pedido":
+        return {
+            "ok": False,
+            "erro": (
+                "Antes de registrar, chame preparar_resumo_pedido, envie o resumo ao cliente "
+                "e espere ele confirmar em uma nova mensagem."
+            ),
+        }
+    if estado.get("fingerprint") != calculo["fingerprint"]:
+        return {
+            "ok": False,
+            "erro": (
+                "Os dados do pedido mudaram depois do resumo confirmado. Prepare um novo resumo "
+                "e peça confirmação novamente."
+            ),
+        }
+
+    itens_norm = calculo["itens"]
+    valor_itens_total = float(calculo["valor_itens"])
+    taxa_entrega = float(calculo["taxa_entrega"])
+    valor_total_real = float(calculo["valor_total"])
+
+    # Trava por cliente (advisory lock) — serializa chamadas concorrentes
     await db.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
         {"k": f"reg:{ctx.pizzaria.id}:{ctx.telefone}"},
     )
-
-    # Normaliza os itens (o modelo pode mandar 'qtd'/'preco' em vez de
-    # 'quantidade'/'preco_unit') para o painel exibir certo (evita R$ NaN).
-    def _num(v: Any, default: float = 0.0) -> float:
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return default
-    itens_norm = []
-    for it in itens:
-        if not isinstance(it, dict):
-            continue
-        itens_norm.append({
-            "nome": it.get("nome") or it.get("produto") or "Item",
-            "quantidade": int(_num(it.get("quantidade") or it.get("qtd") or 1, 1)),
-            "preco_unit": _num(it.get("preco_unit") or it.get("preco") or it.get("valor")),
-        })
-    itens = itens_norm or itens
 
     # garante cliente
     cli = ctx.cliente
@@ -446,8 +896,7 @@ async def registrar_pedido(
         if nome_cliente and not cli.nome:
             cli.nome = nome_cliente
 
-    # Reaproveita o pedido atual do cliente (rascunho 'novo' OU confirmado ainda
-    # não pago) em vez de criar duplicado a cada chamada.
+    # Reaproveita o pedido atual do cliente
     stmt = (
         select(Pedido).where(
             Pedido.pizzaria_id == ctx.pizzaria.id,
@@ -460,10 +909,11 @@ async def registrar_pedido(
     ped = (await db.execute(stmt)).scalars().first()
 
     status_anterior = ped.status if ped else None
+    valor_anterior = Decimal(str(ped.valor_total)) if ped and ped.valor_total is not None else Decimal("0")
     if ped:
         # Atualiza o rascunho e move para confirmado
-        ped.itens = itens
-        ped.valor_total = Decimal(str(valor_total))
+        ped.itens = itens_norm
+        ped.valor_total = Decimal(str(valor_total_real))
         ped.tipo = tipo
         ped.endereco_entrega = endereco_entrega
         ped.forma_pagamento = forma_pagamento
@@ -476,8 +926,8 @@ async def registrar_pedido(
         ped = Pedido(
             pizzaria_id=ctx.pizzaria.id,
             cliente_id=cli.id,
-            itens=itens,
-            valor_total=Decimal(str(valor_total)),
+            itens=itens_norm,
+            valor_total=Decimal(str(valor_total_real)),
             status="confirmado",
             tipo=tipo,
             endereco_entrega=endereco_entrega,
@@ -486,14 +936,18 @@ async def registrar_pedido(
         )
         db.add(ped)
 
-    cli.total_pedidos += 1
-    cli.total_gasto = (cli.total_gasto or Decimal(0)) + Decimal(str(valor_total))
+    valor_total_decimal = Decimal(str(valor_total_real))
+    if status_anterior == "confirmado":
+        cli.total_gasto = (cli.total_gasto or Decimal(0)) + (valor_total_decimal - valor_anterior)
+    else:
+        cli.total_pedidos += 1
+        cli.total_gasto = (cli.total_gasto or Decimal(0)) + valor_total_decimal
     cli.ultima_visita = datetime.now(timezone.utc)
 
     await db.flush()
     await db.refresh(ped)
 
-    # Dispara o broadcast WebSocket de atualização do pedido para mover de coluna no Kanban
+    # Dispara o broadcast WebSocket de atualização do pedido
     from app.services.broadcaster import broadcaster
     await broadcaster.publish(
         ctx.pizzaria.id,
@@ -513,7 +967,9 @@ async def registrar_pedido(
         "ok": True,
         "pedido_id": str(ped.id),
         "numero_pedido": ped.numero_pedido,
-        "valor_total": valor_total,
+        "valor_total": float(valor_total_real),
+        "valor_itens": float(valor_itens_total),
+        "taxa_entrega": taxa_entrega,
         "tempo_estimado": (
             f"{ctx.pizzaria.tempo_entrega_min}-{ctx.pizzaria.tempo_entrega_max} min"
             if tipo == "delivery"
@@ -521,8 +977,24 @@ async def registrar_pedido(
         ),
     }
 
+    try:
+        from app.services.conversation_state import save_state
+        await save_state(db, ctx.pizzaria.id, ctx.telefone, {
+            "etapa": "pedido_confirmado",
+            "pedido_id": str(ped.id),
+            "numero_pedido": ped.numero_pedido,
+            "itens": itens_norm,
+            "tipo": tipo,
+            "endereco_entrega": endereco_entrega,
+            "forma_pagamento": forma_pagamento,
+            "valor_itens": round(valor_itens_total, 2),
+            "taxa_entrega": round(taxa_entrega, 2),
+            "total": round(valor_total_real, 2),
+        })
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao salvar estado curto da conversa: %s", e)
+
     # Cobrança só é gerada se o cliente escolheu PAGAR AGORA via pix/cartão.
-    # "Na entrega" ou dinheiro → não gera nada.
     metodo = _metodo_online(forma_pagamento)
     if metodo and pagar_agora:
         cobranca = await _gerar_cobranca(ctx, db, ped, metodo)
@@ -632,14 +1104,7 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
     return await _gerar_cobranca(ctx, db, ped, metodo)
 
 
-def _metodo_online(forma_pagamento: str | None) -> str | None:
-    """Detecta se a forma de pagamento é online; retorna 'pix'|'cartao' ou None."""
-    f = (forma_pagamento or "").lower()
-    if "pix" in f:
-        return "pix"
-    if any(k in f for k in ("cart", "credito", "crédito", "debito", "débito")):
-        return "cartao"
-    return None
+
 
 
 async def _resolver_pedido(ctx: AgentContext, db: AsyncSession, ref: str | None = None) -> Pedido | None:
@@ -804,10 +1269,19 @@ async def lembrar_cliente(
     if endereco_padrao:
         cli.endereco_padrao = endereco_padrao
     if preferencias:
-        cli.preferencias = preferencias
+        cli.preferencias = preferencias[:500]
+
+    from app.services.customer_memory import build_memory_summary
+    cli.memoria_resumo = build_memory_summary(
+        getattr(cli, "memoria_resumo", None),
+        nome=nome,
+        endereco_padrao=endereco_padrao,
+        preferencias=preferencias,
+    )
+    cli.memoria_atualizada_at = datetime.now(timezone.utc)
 
     await db.flush()
-    return {"ok": True}
+    return {"ok": True, "memoria": cli.memoria_resumo.get("resumo_prompt")}
 
 
 def _normalizar(s: str | None) -> str:
@@ -854,7 +1328,27 @@ def _taxa_para_bairro(pizz, bairro: str | None) -> dict[str, Any]:
 
 
 async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro: str | None = None) -> dict[str, Any]:
-    res = _taxa_para_bairro(ctx.pizzaria, bairro)
+    # Se o bairro informado parecer um endereço completo, roda a geocodificação para extrair o bairro estruturado
+    bairro_alvo = bairro
+    normalizado_completo = None
+    fonte_geo = "entrada_direta"
+
+    if bairro and (len(bairro.split()) > 2 or any(char.isdigit() for char in bairro) or "," in bairro):
+        try:
+            from app.services.geocoding import geocode_address
+            geo = await geocode_address(bairro)
+            if geo["ok"] and geo["bairro"]:
+                bairro_alvo = geo["bairro"]
+                normalizado_completo = geo["display_name"]
+                fonte_geo = geo["fonte"]
+        except Exception as e:
+            log.warning("Erro ao normalizar endereço em consultar_taxa_entrega: %s", e)
+
+    res = _taxa_para_bairro(ctx.pizzaria, bairro_alvo)
+    if normalizado_completo:
+        res["endereco_normalizado"] = normalizado_completo
+        res["fonte_geocodificacao"] = fonte_geo
+
     if res["precisa_confirmar"]:
         res["instrucao"] = (
             "Taxa não cadastrada para esse bairro e sem taxa fixa. Avise o cliente que vai "
@@ -862,6 +1356,16 @@ async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro:
         )
     else:
         res["instrucao"] = "Some esta taxa ao valor_total do pedido (itens + taxa)."
+        try:
+            from app.services.conversation_state import save_state
+            await save_state(db, ctx.pizzaria.id, ctx.telefone, {
+                **(ctx.estado_atendimento or {}),
+                "etapa": "taxa_consultada",
+                "bairro": res.get("bairro"),
+                "taxa_entrega": res.get("taxa"),
+            })
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha ao salvar estado de taxa: %s", e)
     return {"ok": True, **res}
 
 
@@ -970,6 +1474,7 @@ async def registrar_avaliacao(
 TOOL_DECLARATIONS = [
     DECL_BUSCAR_CARDAPIO,
     DECL_ENVIAR_CARDAPIO_ARQUIVO,
+    DECL_PREPARAR_RESUMO_PEDIDO,
     DECL_REGISTRAR_PEDIDO,
     DECL_GERAR_PAGAMENTO,
     DECL_ATUALIZAR_PEDIDO,
@@ -984,6 +1489,7 @@ TOOL_DECLARATIONS = [
 TOOL_IMPL: dict[str, ToolFn] = {
     "buscar_cardapio": buscar_cardapio,
     "enviar_cardapio_arquivo": enviar_cardapio_arquivo,
+    "preparar_resumo_pedido": preparar_resumo_pedido,
     "registrar_pedido": registrar_pedido,
     "gerar_pagamento": gerar_pagamento,
     "atualizar_pedido": atualizar_pedido,

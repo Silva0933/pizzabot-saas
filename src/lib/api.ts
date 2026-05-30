@@ -140,6 +140,10 @@ export interface BackendProduto {
   imagem_url: string | null;
   ordem: number;
   tamanhos?: Array<{ tamanho: string; preco: number }> | null;
+  aliases?: string[];
+  tags?: string[];
+  opcoes?: Record<string, unknown>;
+  regras?: Record<string, unknown>;
 }
 
 export interface BackendPedido {

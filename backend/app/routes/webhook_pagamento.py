@@ -21,6 +21,7 @@ from app.services.pagamentos import (
     asaas_status_para_interno,
     mp_status_para_interno,
 )
+from app.services.secrets import decrypt_secret
 from app.services.status_messages import enviar_mensagem_status
 
 log = logging.getLogger(__name__)
@@ -124,10 +125,11 @@ async def webhook_mp(
         return {"queued": True}
 
     pizzaria = (await db.execute(select(Pizzaria).where(Pizzaria.id == pedido.pizzaria_id))).scalar_one()
-    if not pizzaria.mp_access_token:
+    mp_token = decrypt_secret(pizzaria.mp_access_token)
+    if not mp_token:
         return {"ignored": "no_mp_token"}
 
-    mp = MercadoPagoClient(pizzaria.mp_access_token)
+    mp = MercadoPagoClient(mp_token)
     try:
         payment_data = await mp.consultar_pagamento(str(data_id))
     except Exception as e:

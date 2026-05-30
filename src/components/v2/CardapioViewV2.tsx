@@ -22,8 +22,17 @@ type Form = Omit<BackendProduto, "id" | "pizzaria_id">;
 
 const EMPTY: Form = {
   nome: "", categoria: "pizza", descricao: "", preco: 0,
-  disponivel: true, imagem_url: "", ordem: 0, tamanhos: null
+  disponivel: true, imagem_url: "", ordem: 0, tamanhos: null,
+  aliases: [], tags: [], opcoes: {}, regras: {},
 };
+
+function splitList(value: string): string[] {
+  return value.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+function joinList(value: unknown): string {
+  return Array.isArray(value) ? value.join(", ") : "";
+}
 
 export function CardapioViewV2({ pizzariaId }: Props) {
   const [produtos, setProdutos] = useState<BackendProduto[]>([]);
@@ -67,6 +76,10 @@ export function CardapioViewV2({ pizzariaId }: Props) {
       nome: p.nome, categoria: p.categoria ?? "outro", descricao: p.descricao ?? "",
       preco: Number(p.preco), disponivel: p.disponivel, imagem_url: p.imagem_url ?? "", ordem: p.ordem,
       tamanhos: p.tamanhos ? p.tamanhos.map(t => ({ tamanho: t.tamanho, preco: Number(t.preco) })) : null,
+      aliases: p.aliases || [],
+      tags: p.tags || [],
+      opcoes: p.opcoes || {},
+      regras: p.regras || {},
     });
   }
   function cancel() {
@@ -277,6 +290,78 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               <textarea value={form.descricao ?? ""} rows={2}
                 onChange={(e) => setForm({ ...form, descricao: e.target.value })} className={inputCls}/>
             </Field>
+            <Field label="Apelidos / buscas" full>
+              <input
+                value={joinList(form.aliases)}
+                onChange={(e) => setForm({ ...form, aliases: splitList(e.target.value) })}
+                placeholder="Ex: refri, coca 2l, frango catupiry"
+                className={inputCls}
+              />
+            </Field>
+            <Field label="Tags" full>
+              <input
+                value={joinList(form.tags)}
+                onChange={(e) => setForm({ ...form, tags: splitList(e.target.value) })}
+                placeholder="Ex: sem cebola, vegetariana, apimentada"
+                className={inputCls}
+              />
+            </Field>
+            <div className="md:col-span-2 border-t border-slate-100 pt-3 grid md:grid-cols-3 gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean((form.regras as any)?.meia_meia?.permitido)}
+                  onChange={(e) => setForm({
+                    ...form,
+                    regras: {
+                      ...(form.regras || {}),
+                      meia_meia: { ...((form.regras as any)?.meia_meia || {}), permitido: e.target.checked },
+                    },
+                  })}
+                />
+                Aceita meia/meia
+              </label>
+              <Field label="Cálculo meia/meia">
+                <select
+                  value={(form.regras as any)?.meia_meia?.calculo || "maior_valor"}
+                  onChange={(e) => setForm({
+                    ...form,
+                    regras: {
+                      ...(form.regras || {}),
+                      meia_meia: { ...((form.regras as any)?.meia_meia || {}), calculo: e.target.value },
+                    },
+                  })}
+                  className={inputCls}
+                >
+                  <option value="maior_valor">Maior valor</option>
+                  <option value="media">Média dos sabores</option>
+                </select>
+              </Field>
+              <Field label="Máx. sabores">
+                <input
+                  type="number"
+                  min="1"
+                  max="4"
+                  value={(form.regras as any)?.meia_meia?.max_sabores ?? 2}
+                  onChange={(e) => setForm({
+                    ...form,
+                    regras: {
+                      ...(form.regras || {}),
+                      meia_meia: { ...((form.regras as any)?.meia_meia || {}), max_sabores: Number(e.target.value) || 2 },
+                    },
+                  })}
+                  className={inputCls}
+                />
+              </Field>
+            </div>
+            <Field label="Adicionais / bordas" full>
+              <input
+                value={joinList((form.opcoes as any)?.adicionais)}
+                onChange={(e) => setForm({ ...form, opcoes: { ...(form.opcoes || {}), adicionais: splitList(e.target.value) } })}
+                placeholder="Ex: borda catupiry, extra queijo, massa fina"
+                className={inputCls}
+              />
+            </Field>
             <Field label="URL da imagem" full>
               <input value={form.imagem_url ?? ""} onChange={(e) => setForm({ ...form, imagem_url: e.target.value })} className={inputCls}/>
             </Field>
@@ -290,7 +375,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
             <button onClick={cancel} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-md flex items-center gap-1">
               <X className="w-4 h-4"/> Cancelar
             </button>
-            <button onClick={save} disabled={saving || !form.nome || !form.preco}
+            <button onClick={save} disabled={saving || !form.nome || (form.tamanhos === null && !form.preco)}
               className="px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center gap-1 disabled:opacity-50">
               {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
               Salvar

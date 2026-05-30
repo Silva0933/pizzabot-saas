@@ -192,6 +192,7 @@ class EvolutionClient:
         instancia: str,
         numero: str,
         tipo: str = "composing",
+        delay_ms: int | None = None,
     ) -> dict[str, Any]:
         """
         Envia indicador de presença (digitando/gravando).
@@ -201,7 +202,7 @@ class EvolutionClient:
         body = {
             "number": f"{numero}@s.whatsapp.net",
             "presence": tipo,  # "composing" ou "recording"
-            "delay": 8000,
+            "delay": delay_ms if delay_ms is not None else 8000,
         }
         try:
             c = await self._http()

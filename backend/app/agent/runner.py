@@ -27,7 +27,10 @@ from app.agent.tools import execute_tool, get_tools
 from app.models import Conversa, Mensagem
 from app.services.app_config import get_llm_config, record_usage
 from app.services.broadcaster import broadcaster
+from app.services.customer_memory import prompt_summary
 from app.services.evolution import evolution
+from app.services.humanized_delivery import send_humanized_text
+from app.services.response_guard import guard_response
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +59,11 @@ async def run_agent(
         cliente_nome=ctx.cliente_nome,
         cliente_total_pedidos=ctx.cliente_total_pedidos,
         cliente_ultimo_pedido=ctx.ultimo_pedido_resumo,
+        cliente_preferencias=prompt_summary(
+            ctx.cliente.memoria_resumo if ctx.cliente else None,
+            ctx.cliente.preferencias if ctx.cliente else None,
+        ),
+        estado_atendimento=ctx.estado_atendimento,
     )
 
     # Provider de LLM configurado pelo admin (gemini | openai | openrouter)
@@ -262,34 +270,94 @@ async def process_and_reply(
                 instancia=pizz.instancia,
                 numero=telefone,
                 tipo="composing",
+                delay_ms=2500,
             )
     except Exception as e:
         log.debug("Falha ao enviar indicador de digitando: %s", e)
 
     # ---- Roda o agente IA ----
-    result = await run_agent(db, pizzaria_id, telefone, user_input)
+    try:
+        result = await run_agent(db, pizzaria_id, telefone, user_input)
+    except Exception as e:
+        log.exception("Falha critica no processamento da IA para pizzaria=%s tel=%s: %s", pizzaria_id, telefone, e)
+        msg_fallback = (
+            "Ops, tive uma instabilidade tecnica rapida aqui! 😅 "
+            "Mas nao se preocupe: ja acionei nossa equipe humana para continuar o seu atendimento de onde paramos."
+        )
+        try:
+            if pizz.instancia:
+                await evolution.send_text(
+                    instancia=pizz.instancia,
+                    numero=telefone,
+                    texto=msg_fallback,
+                )
+        except Exception as e_send:
+            log.warning("Falha ao enviar mensagem de fallback de erro: %s", e_send)
+
+        # Salva a mensagem no historico e desliga o bot
+        if conv:
+            msg = Mensagem(
+                conversa_id=conv.id,
+                pizzaria_id=pizzaria_id,
+                origem="sistema",
+                tipo="texto",
+                conteudo=msg_fallback,
+                metadata_json={"erro_ia": str(e)},
+            )
+            db.add(msg)
+            conv.bot_ativo = False
+            conv.status = "humano_necessario"
+            conv.last_message = msg_fallback
+            conv.last_timestamp = datetime.now(timezone.utc)
+            await db.commit()
+
+            # Broadcast para o painel de atendimento em tempo real
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "atendimento.humano",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": telefone,
+                        "cliente_nome": conv.cliente_nome,
+                        "motivo": f"Erro de IA: {e}",
+                    },
+                },
+            )
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "conversa.atualizada",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": telefone,
+                        "bot_ativo": False,
+                        "status": "humano_necessario",
+                    },
+                },
+            )
+        return {"ok": False, "erro": str(e), "fallback_acionado": True}
 
     if not result.texto:
         log.warning("Agente terminou sem texto (iter=%d)", result.iteracoes)
         return {"ok": False, "iter": result.iteracoes, "tool_calls": result.tool_calls}
 
+    guarded_text, blocked, reason = guard_response(result.texto, result.tool_calls)
+    if blocked:
+        log.warning("Resposta do agente bloqueada por guardrail (%s)", reason)
+        result.texto = guarded_text
+        result.tool_calls.append(f"guardrail:{reason}")
+
     # Envia pelo WhatsApp
     try:
         if pizz.instancia:
-            # Calcula delay proporcional ao tamanho do texto (max 8 segundos)
-            tamanho = len(result.texto) if result.texto else 0
-            delay_ms = int(min(max(tamanho * 55, 1500), 8000))
-            # Mostra "digitando…" imediatamente antes de enviar (a presença do
-            # início já expirou após o processamento do agente).
-            try:
-                await evolution.send_presence(instancia=pizz.instancia, numero=telefone, tipo="composing")
-            except Exception:  # noqa: BLE001
-                pass
-            await evolution.send_text(
+            await send_humanized_text(
+                evolution=evolution,
                 instancia=pizz.instancia,
                 numero=telefone,
                 texto=result.texto,
-                delay_ms=delay_ms,
             )
     except Exception as e:
         log.exception("Falha enviando pelo Evolution: %s", e)

@@ -17,6 +17,7 @@ class AgentContext:
     cliente: Cliente | None
     telefone: str
     ultimo_pedido_resumo: str | None = None
+    estado_atendimento: dict | None = None
 
     @property
     def cliente_nome(self) -> str | None:
@@ -79,7 +80,14 @@ async def load_context(
         except Exception:  # noqa: BLE001
             resumo = None
 
+    try:
+        from app.services.conversation_state import load_state
+        estado = await load_state(db, pizzaria_id, telefone)
+    except Exception:  # noqa: BLE001
+        estado = {}
+
     return AgentContext(
         pizzaria=pizz, personalidade=pers, cliente=cli,
         telefone=telefone, ultimo_pedido_resumo=resumo,
+        estado_atendimento=estado,
     )

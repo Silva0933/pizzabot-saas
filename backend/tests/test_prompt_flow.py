@@ -447,3 +447,129 @@ class TestTamanhosVariacoes:
 
         assert preco_calculado == Decimal("25.0")
 
+
+# ============================================================
+# 5. TESTES DAS MELHORIAS E HUMANIZAÇÃO (Fase 4 - Custom)
+# ============================================================
+
+class TestHumanizacaoEMelhorias:
+    """Valida as novas lógicas de preferências do cliente e busca geral compacta."""
+
+    def test_prompt_contem_preferencias_cliente(self):
+        from app.agent.prompt import build_system_prompt
+        from unittest.mock import MagicMock
+        p = MagicMock()
+        p.nome = "Pizzaria Teste"
+        p.formas_pagamento_aceitas = ["pix"]
+        p.horario_funcionamento = {}
+
+        prompt = build_system_prompt(p, None, cliente_nome="Jailson", cliente_preferencias="gosta de borda de catupiry")
+        assert "PREFERÊNCIAS DO CLIENTE" in prompt
+        assert "gosta de borda de catupiry" in prompt
+        assert "MEMÓRIA ATIVA DO CLIENTE" in prompt
+
+    def test_buscar_cardapio_geral_retorna_compacto_sem_precos(self):
+        import asyncio
+        from app.agent.tools import buscar_cardapio
+        from unittest.mock import MagicMock, AsyncMock
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+
+        db = AsyncMock()
+        res = MagicMock()
+        res.fetchall = MagicMock(return_value=[("Calabresa G", "Pizzas"), ("Coca-Cola 2L", "Bebidas")])
+        db.execute = AsyncMock(return_value=res)
+
+        r = asyncio.run(buscar_cardapio(ctx, db, query="cardapio")) # generic query triggers compacto_geral
+        assert r["tipo_resultado"] == "compacto_geral"
+        assert r["encontrados"] == 2
+        assert "preco" not in r["items"][0]
+        assert r["items"][0]["nome"] == "Calabresa G"
+
+    def test_obter_preco_produto_calcula_tamanho(self):
+        import asyncio
+        from app.agent.tools import _obter_preco_produto
+        from unittest.mock import AsyncMock, MagicMock
+
+        db = AsyncMock()
+        res = MagicMock()
+        tamanhos = [{"tamanho": "G", "preco": 55.0}, {"tamanho": "M", "preco": 45.0}]
+        res.first = MagicMock(return_value=("Calabresa", 50.0, tamanhos))
+        db.execute = AsyncMock(return_value=res)
+
+        p_id = "00000000-0000-0000-0000-000000000001"
+        pr, nm = asyncio.run(_obter_preco_produto(db, p_id, "Calabresa", "Grande"))
+        assert pr == 55.0
+        assert nm == "Calabresa"
+
+    def test_fallback_ia_process_and_reply(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch, MagicMock
+        from app.agent.runner import process_and_reply
+
+        db = AsyncMock()
+        # Simula erro de IA
+        with patch("app.agent.runner.run_agent", side_effect=RuntimeError("API Error")):
+            with patch("app.services.evolution.evolution.send_text", new_callable=AsyncMock) as mock_send:
+                with patch("app.services.broadcaster.broadcaster.publish", new_callable=AsyncMock) as mock_broad:
+                    # Configura mocks minimos do db
+                    pizz = MagicMock()
+                    pizz.instancia = "inst_test"
+                    pizz.id = "00000000-0000-0000-0000-000000000001"
+
+                    res_pizz = MagicMock()
+                    res_pizz.scalar_one = MagicMock(return_value=pizz)
+
+                    conv = MagicMock()
+                    conv.id = "00000000-0000-0000-0000-000000000002"
+                    conv.bot_ativo = True
+                    conv.cliente_nome = "Jailson"
+
+                    res_conv = MagicMock()
+                    res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+
+                    db.execute.side_effect = [res_pizz, res_conv]
+
+                    r = asyncio.run(process_and_reply(db, pizz.id, "5511999999999", "Oi"))
+
+                    assert r["ok"] is False
+                    assert r["fallback_acionado"] is True
+                    assert conv.bot_ativo is False
+                    assert conv.status == "humano_necessario"
+                    mock_send.assert_called_once()
+                    assert "instabilidade" in mock_send.call_args[1]["texto"]
+
+    def test_registrar_pedido_exige_resumo_previo(self):
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock
+        from app.agent.tools import registrar_pedido
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        ctx.telefone = "5511999999999"
+        ctx.estado_atendimento = {}
+        ctx.cliente = MagicMock()
+
+        res_prod = MagicMock()
+        res_prod.first = MagicMock(return_value=("Calabresa", 50.0, None))
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=res_prod)
+
+        r = asyncio.run(registrar_pedido(
+            ctx, db,
+            itens=[{"nome": "Calabresa", "qtd": 1}],
+            valor_total=50,
+            tipo="retirada",
+            forma_pagamento="dinheiro",
+        ))
+        assert r["ok"] is False
+        assert "preparar_resumo_pedido" in r["erro"]
+
+    def test_guard_response_bloqueia_preco_sem_tool(self):
+        from app.services.response_guard import guard_response
+
+        texto, blocked, reason = guard_response("A pizza fica R$ 55,00", [])
+        assert blocked is True
+        assert reason == "citou_preco_ou_taxa_sem_tool"
+        assert "confirmar" in texto.lower()

@@ -36,6 +36,10 @@ class ProdutoIn(BaseModel):
     imagem_url: str | None = None
     ordem: int = 0
     tamanhos: list[dict[str, Any]] | None = None
+    aliases: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    opcoes: dict[str, Any] = Field(default_factory=dict)
+    regras: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProdutoOut(BaseModel):
@@ -49,6 +53,10 @@ class ProdutoOut(BaseModel):
     imagem_url: str | None
     ordem: int
     tamanhos: list[dict[str, Any]] | None = None
+    aliases: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    opcoes: dict[str, Any] = Field(default_factory=dict)
+    regras: dict[str, Any] = Field(default_factory=dict)
 
     model_config = {"from_attributes": True}
 
@@ -156,7 +164,15 @@ async def reindex_embeddings(
         return {"ok": True, "produtos": 0}
 
     textos = [
-        produto_text_for_embedding(p.nome, p.descricao, p.categoria)
+        produto_text_for_embedding(
+            p.nome,
+            " | ".join(filter(None, [
+                p.descricao,
+                "aliases: " + ", ".join(p.aliases or []) if p.aliases else None,
+                "tags: " + ", ".join(p.tags or []) if p.tags else None,
+            ])),
+            p.categoria,
+        )
         for p in produtos
     ]
 

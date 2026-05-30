@@ -4,7 +4,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,7 @@ from app.db import get_db
 from app.deps import current_user, membership, require_platform_admin
 from app.models import EquipePizzaria, Pizzaria, Usuario
 from app.services.evolution import EvolutionError, evolution
+from app.services.secrets import encrypt_secret, looks_masked, mask_secret
 
 log = logging.getLogger(__name__)
 _settings = get_settings()
@@ -80,6 +81,10 @@ class PizzariaOut(BaseModel):
     taxas_bairro: list[dict] | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("asaas_api_key", "mp_access_token")
+    def _mask_secret_field(self, value: str | None, _info):
+        return mask_secret(value)
 
 
 @router.get("", response_model=list[PizzariaOut])
@@ -190,6 +195,10 @@ async def update_pizzaria(
     updates = body.model_dump(exclude_unset=True, exclude_none=False)
     for k, v in updates.items():
         if hasattr(pizz, k):
+            if k in ("asaas_api_key", "mp_access_token"):
+                if not v or looks_masked(v):
+                    continue
+                v = encrypt_secret(v)
             setattr(pizz, k, v)
     await db.commit()
     await db.refresh(pizz)

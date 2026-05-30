@@ -80,20 +80,10 @@ async def load_history(
         out: list[types.Content] = []
         for r in rows:
             role, content, tcs, tcid = r
-            if role == "user":
+            if role == "user" and content:
                 out.append(to_content("user", text=content))
-            elif role == "assistant":
-                if tcs:
-                    # Pode ter sido turno só de tool call
-                    for tc in tcs:
-                        out.append(to_content("model", function_call={"name": tc["name"], "args": tc.get("args", {})}))
-                else:
-                    out.append(to_content("model", text=content))
-            elif role == "tool":
-                # Gemini espera role='function'
-                import json as _json
-                response_payload = _json.loads(content) if content else {}
-                out.append(to_content("function", function_response={"name": tcid or "unknown", "response": response_payload}))
+            elif role == "assistant" and content and not tcs:
+                out.append(to_content("model", text=content))
         return out
 
     # Fallback: reconstitui a partir das mensagens reais — SOMENTE da conversa
