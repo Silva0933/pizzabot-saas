@@ -55,6 +55,10 @@ async def _aplicar_pagamento(
             pedido.status = "confirmado"
         await db.flush()
         await enviar_mensagem_status(db, pedido, "pagamento_aprovado")
+    # Se falhou (rejeitado/expirado): avisa o cliente pra tentar de novo.
+    elif payment_status in ("rejected", "expired") and old_payment not in ("rejected", "expired", "approved"):
+        await db.flush()
+        await enviar_mensagem_status(db, pedido, "pagamento_falhou")
 
     await db.commit()
     await db.refresh(pedido)

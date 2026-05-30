@@ -346,6 +346,26 @@ class TestPromptAntiAlucinacao:
     def test_fonte_da_verdade_e_a_tool(self):
         assert "FONTE DA VERDADE" in self._build()
 
+    def test_fechamento_envia_campo_mensagem(self):
+        s = self._build()
+        assert "campo \"mensagem\"" in s or "campo 'mensagem'" in s
+        assert "Posso fechar o pedido" in s
+
+    def test_pix_automatico_no_fechamento(self):
+        s = self._build()
+        assert "QR Code" in s and "pagar_agora=true" in s
+
+
+class TestPagamentoFalhou:
+    def test_default_message_existe(self):
+        from app.services.status_messages import DEFAULT_STATUS_MESSAGES
+        assert "pagamento_falhou" in DEFAULT_STATUS_MESSAGES
+
+    def test_falhou_interpola(self):
+        from app.services.status_messages import DEFAULT_STATUS_MESSAGES, _interpolar
+        t = _interpolar(DEFAULT_STATUS_MESSAGES["pagamento_falhou"], {"numero_pedido": 9, "nome_cliente": "Ana"})
+        assert "#9" in t and "Ana" in t and "{" not in t
+
 
 class TestNpsMessage:
     def test_default_nps_interpola(self):

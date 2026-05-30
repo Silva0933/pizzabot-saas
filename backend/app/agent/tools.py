@@ -788,6 +788,23 @@ async def preparar_resumo_pedido(
     if tipo == "delivery":
         linhas.append(f"Entrega - R$ {float(calculo['taxa_entrega']):.2f}")
 
+    total_fmt = float(calculo["valor_total"])
+    # Monta a MENSAGEM COMPLETA pronta pra enviar — já com total, endereço,
+    # pagamento e a PERGUNTA DE FECHAMENTO (sem isso o fluxo trava no resumo).
+    msg_linhas = list(linhas)
+    msg_linhas.append(f"Total: R$ {total_fmt:.2f}")
+    if tipo == "delivery" and endereco_entrega:
+        msg_linhas.append(f"Endereço: {endereco_entrega}")
+    _online = _metodo_online(forma_pagamento)
+    if _online and pagar_agora:
+        pag_txt = f"{forma_pagamento} (pagar agora pela conversa)"
+    elif _online:
+        pag_txt = f"{forma_pagamento} (na entrega)"
+    else:
+        pag_txt = forma_pagamento
+    msg_linhas.append(f"Pagamento: {pag_txt}")
+    mensagem = "\n".join(msg_linhas) + "\n\nPosso fechar o pedido? 😊"
+
     resumo = {
         "etapa": "aguardando_confirmacao_pedido",
         "fingerprint": calculo["fingerprint"],
@@ -810,8 +827,16 @@ async def preparar_resumo_pedido(
         "status": "aguardando_confirmacao_cliente",
         "fingerprint": calculo["fingerprint"],
         "resumo": "\n".join(linhas),
+        "mensagem": mensagem,
         "valor_total": float(calculo["valor_total"]),
-        "instrucao": "Envie este resumo ao cliente e pergunte se pode fechar o pedido. Nao chame registrar_pedido ainda; espere o sim em uma nova mensagem.",
+        "instrucao": (
+            "Envie ao cliente EXATAMENTE o texto do campo 'mensagem' (não reescreva, não omita "
+            "a pergunta final 'Posso fechar o pedido?'). NÃO chame registrar_pedido ainda; espere "
+            "o cliente confirmar (ex.: 'sim', 'pode fechar') em uma NOVA mensagem. Quando ele "
+            "confirmar, chame registrar_pedido com os MESMOS itens/tipo/pagamento — o sistema "
+            "registra, move o pedido pra 'confirmado' e, se for pagar agora no pix/cartão, JÁ "
+            "envia o QR e o código sozinho (você não precisa gerar nem repetir o código)."
+        ),
     }
 
 
