@@ -355,6 +355,15 @@ class TestPromptAntiAlucinacao:
         s = self._build()
         assert "QR Code" in s and "pagar_agora=true" in s
 
+    def test_nunca_assume_forma_pagamento(self):
+        s = self._build()
+        assert "NUNCA assuma" in s and "Pagamento: Dinheiro" in s
+
+    def test_proibe_inventar_problema_de_pix(self):
+        s = self._build()
+        assert "NUNCA INVENTE PROBLEMA" in s
+        assert "Pix está com problema" in s or "indisponível" in s
+
 
 class TestPagamentoFalhou:
     def test_default_message_existe(self):
