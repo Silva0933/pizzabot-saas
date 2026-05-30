@@ -32,6 +32,77 @@ DEFAULT_STATUS_MESSAGES: dict[str, str] = {
 }
 
 
+DEFAULT_NPS_MESSAGE = (
+    "Oi {nome_cliente}! 🍕 Passando rapidinho pra saber se o pedido #{numero_pedido} "
+    "chegou quentinho e tava gostoso. De 0 a 10, que nota você dá pro nosso atendimento? "
+    "Sua opinião ajuda demais a gente a melhorar! ❤️"
+)
+
+
+async def enviar_pesquisa_nps(db: AsyncSession, pedido: Pedido) -> bool:
+    """
+    Envia a pesquisa de satisfação (NPS) pós-entrega. Idempotente: só manda uma
+    vez por pedido (marca `nps_enviado_at`). Não envia se cancelado ou já avaliado.
+    """
+    if pedido.status == "cancelado" or pedido.nps_enviado_at is not None or pedido.nps_nota is not None:
+        return False
+
+    pizz = (
+        await db.execute(select(Pizzaria).where(Pizzaria.id == pedido.pizzaria_id))
+    ).scalar_one_or_none()
+    if not pizz or not pizz.instancia:
+        return False
+
+    cliente = (
+        await db.execute(select(Cliente).where(Cliente.id == pedido.cliente_id))
+    ).scalar_one_or_none()
+    if not cliente:
+        return False
+
+    template = (pizz.mensagens_status or {}).get("nps") or DEFAULT_NPS_MESSAGE
+    texto = _interpolar(template, {
+        "numero_pedido": pedido.numero_pedido or "",
+        "nome_cliente": (cliente.nome or "").split(" ")[0].lstrip("@").strip() or "cliente",
+    })
+
+    try:
+        delay_ms = int(min(max(len(texto) * 55, 1500), 8000))
+        try:
+            await evolution.send_presence(instancia=pizz.instancia, numero=cliente.telefone, tipo="composing")
+        except Exception:  # noqa: BLE001
+            pass
+        await evolution.send_text(instancia=pizz.instancia, numero=cliente.telefone, texto=texto, delay_ms=delay_ms)
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao enviar NPS: %s", e)
+        return False
+
+    from datetime import datetime, timezone
+    pedido.nps_enviado_at = datetime.now(timezone.utc)
+
+    conv = (
+        await db.execute(
+            select(Conversa).where(
+                Conversa.pizzaria_id == pizz.id,
+                Conversa.cliente_telefone == cliente.telefone,
+            )
+        )
+    ).scalar_one_or_none()
+    if conv:
+        msg = Mensagem(
+            conversa_id=conv.id,
+            pizzaria_id=pizz.id,
+            origem="sistema",
+            tipo="texto",
+            conteudo=texto,
+            metadata_json={"trigger": "nps", "pedido_id": str(pedido.id)},
+        )
+        db.add(msg)
+        conv.last_message = texto
+    await db.flush()
+    log.info("NPS enviado: pedido=%s", pedido.numero_pedido)
+    return True
+
+
 def _interpolar(template: str, ctx: dict[str, Any]) -> str:
     """Substitui placeholders {chave} no template."""
     out = template

@@ -67,6 +67,8 @@ class Pizzaria(Base):
     horario_funcionamento: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     formas_pagamento_aceitas: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     taxa_entrega_info: Mapped[str | None] = mapped_column(Text)
+    taxa_entrega_fixa: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    taxas_bairro: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     tempo_entrega_min: Mapped[int | None] = mapped_column(Integer, default=30)
     tempo_entrega_max: Mapped[int | None] = mapped_column(Integer, default=60)
     tempo_retirada_min: Mapped[int | None] = mapped_column(Integer, default=15)
@@ -189,6 +191,11 @@ class Pedido(Base):
     bot_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     cancelado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelamento_motivo: Mapped[str | None] = mapped_column(Text)
+
+    # Pós-venda (NPS): nota de 0-10 e comentário opcional do cliente.
+    nps_nota: Mapped[int | None] = mapped_column(Integer)
+    nps_comentario: Mapped[str | None] = mapped_column(Text)
+    nps_enviado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

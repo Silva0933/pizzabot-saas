@@ -48,6 +48,8 @@ class PedidoOut(BaseModel):
     payment_status: str
     link_pagamento: str | None
     bot_ativo: bool
+    nps_nota: int | None = None
+    nps_comentario: str | None = None
     created_at: datetime
     updated_at: datetime
     cliente: ClienteMinOut | None = None
@@ -151,6 +153,16 @@ async def update_status(
 
     await db.commit()
     await db.refresh(p)
+
+    # Pós-venda: ao sair para entrega, agenda a pesquisa de satisfação (NPS).
+    if old_status != body.status and body.status == "a_caminho":
+        try:
+            import os
+            from app.workers.tasks import enviar_nps
+            delay = int(os.getenv("NPS_DELAY_SECONDS", "3000"))  # ~50 min
+            enviar_nps.apply_async(args=[str(pizzaria_id), str(p.id)], countdown=delay)
+        except Exception:  # noqa: BLE001
+            pass
 
     # Broadcast pro painel
     await broadcaster.publish(

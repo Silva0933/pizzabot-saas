@@ -55,6 +55,7 @@ async def run_agent(
         ctx.personalidade,
         cliente_nome=ctx.cliente_nome,
         cliente_total_pedidos=ctx.cliente_total_pedidos,
+        cliente_ultimo_pedido=ctx.ultimo_pedido_resumo,
     )
 
     # Provider de LLM configurado pelo admin (gemini | openai | openrouter)

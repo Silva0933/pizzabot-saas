@@ -21,6 +21,42 @@ def flush_conversation(self, pizzaria_id: str, telefone: str) -> dict:
     return asyncio.run(_flush_async(uuid.UUID(pizzaria_id), telefone, self))
 
 
+@celery_app.task(name="pizzabot.enviar_nps")
+def enviar_nps(pizzaria_id: str, pedido_id: str) -> dict:
+    """Pós-venda: envia a pesquisa de satisfação algum tempo após a entrega sair."""
+    return asyncio.run(_enviar_nps_async(uuid.UUID(pedido_id)))
+
+
+async def _enviar_nps_async(pedido_id: uuid.UUID) -> dict:
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal, engine
+    from app.models import Pedido
+    from app.services.status_messages import enviar_pesquisa_nps
+
+    try:
+        async with AsyncSessionLocal() as db:
+            ped = (await db.execute(select(Pedido).where(Pedido.id == pedido_id))).scalar_one_or_none()
+            if not ped:
+                return {"ok": False, "motivo": "pedido_inexistente"}
+            enviado = await enviar_pesquisa_nps(db, ped)
+            await db.commit()
+            return {"ok": enviado}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha no envio de NPS: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:
+            pass
+        try:
+            from app.services.evolution import evolution
+            await evolution.close()
+        except Exception:
+            pass
+
+
 async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
     from app.agent.runner import process_and_reply
     from app.db import AsyncSessionLocal, engine

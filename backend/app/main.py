@@ -34,6 +34,14 @@ log = logging.getLogger("pizzabot")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("PizzaBot API iniciada (env=%s)", settings.app_env)
+    # Aplica migrations SQL pendentes (idempotente, com advisory lock global).
+    try:
+        import asyncio
+        from migrations.apply import run as run_migrations
+        await asyncio.to_thread(run_migrations, False)
+        log.info("Migrations verificadas/aplicadas.")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao aplicar migrations no startup: %s", e)
     try:
         from app.services.app_config import ensure_table
         await ensure_table()

@@ -188,6 +188,58 @@ DECL_LEMBRAR_CLIENTE = types.FunctionDeclaration(
     ),
 )
 
+DECL_OBTER_HISTORICO = types.FunctionDeclaration(
+    name="obter_historico_pedidos",
+    description=(
+        "Consulta os últimos pedidos JÁ FEITOS por este cliente (histórico real) e o item "
+        "que ele mais pede. Use quando um cliente CONHECIDO voltar e você quiser sugerir 'o de "
+        "sempre', ou quando ele perguntar o que pediu antes. Retorna pedidos recentes (itens e "
+        "valor) + item_favorito. Se vier vazio, é a primeira vez dele — trate como cliente novo "
+        "e NÃO invente histórico."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "limit": types.Schema(type=types.Type.INTEGER, description="Quantos pedidos recentes trazer (padrão 3, máx 5)"),
+        },
+        required=[],
+    ),
+)
+
+DECL_CONSULTAR_TAXA = types.FunctionDeclaration(
+    name="consultar_taxa_entrega",
+    description=(
+        "Retorna a taxa de entrega para o BAIRRO do cliente. Use SEMPRE que o pedido for "
+        "ENTREGA, assim que souber o bairro, para somar a taxa ao total. Nunca invente a taxa: "
+        "pegue o valor daqui. Se o bairro não estiver cadastrado, o retorno indica isso "
+        "(precisa_confirmar=true) — aí avise que vai confirmar a taxa com a equipe."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "bairro": types.Schema(type=types.Type.STRING, description="Bairro informado pelo cliente"),
+        },
+        required=[],
+    ),
+)
+
+DECL_REGISTRAR_AVALIACAO = types.FunctionDeclaration(
+    name="registrar_avaliacao",
+    description=(
+        "Registra a avaliação que o cliente deu DEPOIS de receber o pedido: uma nota de 0 a 10 "
+        "e um comentário opcional. Use SOMENTE quando, após a entrega, o cliente responder com "
+        "uma nota ou avaliação. Aplica no último pedido entregue do cliente."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "nota": types.Schema(type=types.Type.INTEGER, description="Nota de 0 a 10"),
+            "comentario": types.Schema(type=types.Type.STRING, description="Comentário do cliente (opcional)"),
+        },
+        required=["nota"],
+    ),
+)
+
 
 # ===============================================================
 # IMPLEMENTAÇÕES
@@ -740,6 +792,160 @@ async def lembrar_cliente(
     return {"ok": True}
 
 
+def _normalizar(s: str | None) -> str:
+    """minúsculas, sem acento, sem espaços nas pontas — para casar bairros."""
+    import unicodedata
+    s = (s or "").strip().lower()
+    s = "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+    return re.sub(r"\s+", " ", s)
+
+
+def _taxa_para_bairro(pizz, bairro: str | None) -> dict[str, Any]:
+    """Resolve a taxa de entrega: tabela por bairro → taxa fixa → desconhecida."""
+    alvo = _normalizar(bairro)
+    tabela = pizz.taxas_bairro or []
+    if alvo:
+        for item in tabela:
+            if not isinstance(item, dict):
+                continue
+            if _normalizar(item.get("bairro")) == alvo:
+                try:
+                    taxa = float(item.get("taxa") or 0)
+                except (TypeError, ValueError):
+                    taxa = 0.0
+                return {"bairro": item.get("bairro") or bairro, "taxa": taxa,
+                        "fonte": "bairro", "precisa_confirmar": False}
+        # match parcial (cliente escreve "jd europa", cadastro "Jardim Europa")
+        for item in tabela:
+            if not isinstance(item, dict):
+                continue
+            nb = _normalizar(item.get("bairro"))
+            if nb and (nb in alvo or alvo in nb):
+                try:
+                    taxa = float(item.get("taxa") or 0)
+                except (TypeError, ValueError):
+                    taxa = 0.0
+                return {"bairro": item.get("bairro") or bairro, "taxa": taxa,
+                        "fonte": "bairro_parcial", "precisa_confirmar": False}
+
+    fixa = getattr(pizz, "taxa_entrega_fixa", None)
+    if fixa is not None:
+        return {"bairro": bairro, "taxa": float(fixa), "fonte": "fixa", "precisa_confirmar": False}
+
+    return {"bairro": bairro, "taxa": None, "fonte": "nenhuma", "precisa_confirmar": True}
+
+
+async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro: str | None = None) -> dict[str, Any]:
+    res = _taxa_para_bairro(ctx.pizzaria, bairro)
+    if res["precisa_confirmar"]:
+        res["instrucao"] = (
+            "Taxa não cadastrada para esse bairro e sem taxa fixa. Avise o cliente que vai "
+            "confirmar a taxa de entrega com a equipe — não invente um valor."
+        )
+    else:
+        res["instrucao"] = "Some esta taxa ao valor_total do pedido (itens + taxa)."
+    return {"ok": True, **res}
+
+
+async def _cliente_do_ctx(ctx: AgentContext, db: AsyncSession) -> Cliente | None:
+    return ctx.cliente or (await db.execute(
+        select(Cliente).where(Cliente.pizzaria_id == ctx.pizzaria.id, Cliente.telefone == ctx.telefone)
+    )).scalar_one_or_none()
+
+
+async def obter_historico_pedidos(ctx: AgentContext, db: AsyncSession, *, limit: int = 3) -> dict[str, Any]:
+    """Últimos pedidos reais do cliente + item mais pedido."""
+    cli = await _cliente_do_ctx(ctx, db)
+    if not cli:
+        return {"total_pedidos": 0, "pedidos": [], "item_favorito": None}
+
+    lim = max(1, min(int(limit or 3), 5))
+    reais = ["confirmado", "no_forno", "a_caminho", "entregue"]
+    # Pega um histórico maior pra calcular o favorito, mas só devolve `lim` recentes.
+    rows = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(reais),
+        ).order_by(Pedido.created_at.desc()).limit(20)
+    )).scalars().all()
+
+    if not rows:
+        return {"total_pedidos": cli.total_pedidos or 0, "pedidos": [], "item_favorito": None}
+
+    from collections import Counter
+    contagem: Counter = Counter()
+    pedidos_out = []
+    for i, p in enumerate(rows):
+        itens = p.itens or []
+        nomes = []
+        for it in itens:
+            if isinstance(it, dict) and it.get("nome"):
+                nome = str(it["nome"])
+                qtd = int(it.get("quantidade") or it.get("qtd") or 1)
+                contagem[nome] += qtd
+                nomes.append({"nome": nome, "qtd": qtd})
+        if i < lim:
+            pedidos_out.append({
+                "numero": p.numero_pedido,
+                "data": p.created_at.strftime("%d/%m") if p.created_at else None,
+                "tipo": p.tipo,
+                "valor_total": float(p.valor_total) if p.valor_total is not None else None,
+                "itens": nomes,
+            })
+
+    favorito = contagem.most_common(1)[0][0] if contagem else None
+    return {
+        "total_pedidos": cli.total_pedidos or len(rows),
+        "pedidos": pedidos_out,
+        "item_favorito": favorito,
+    }
+
+
+async def registrar_avaliacao(
+    ctx: AgentContext, db: AsyncSession, *, nota: int, comentario: str | None = None
+) -> dict[str, Any]:
+    try:
+        n = int(nota)
+    except (TypeError, ValueError):
+        return {"ok": False, "erro": "nota inválida — peça uma nota de 0 a 10."}
+    n = max(0, min(n, 10))
+
+    cli = await _cliente_do_ctx(ctx, db)
+    if not cli:
+        return {"ok": False, "erro": "cliente não encontrado"}
+
+    # Aplica no pedido mais recente que já recebeu a pesquisa (ou no último entregue).
+    ped = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["a_caminho", "entregue"]),
+        ).order_by(Pedido.created_at.desc())
+    )).scalars().first()
+    if not ped:
+        return {"ok": False, "erro": "nenhum pedido recente para avaliar"}
+
+    ped.nps_nota = n
+    if comentario:
+        ped.nps_comentario = comentario[:1000]
+    await db.flush()
+
+    from app.services.broadcaster import broadcaster
+    await broadcaster.publish(
+        ctx.pizzaria.id,
+        {
+            "tipo": "pedido.atualizado",
+            "pizzaria_id": str(ctx.pizzaria.id),
+            "payload": {"pedido_id": str(ped.id), "numero_pedido": ped.numero_pedido, "nps_nota": n},
+        },
+    )
+    # Nota baixa: sinaliza pra equipe acompanhar (não trava o fluxo).
+    if n <= 6:
+        return {"ok": True, "nota": n, "alerta": "nota baixa — agradeça, peça desculpas pelo ocorrido e considere escalar_humano se ele relatar um problema."}
+    return {"ok": True, "nota": n}
+
+
 # ===============================================================
 # REGISTRY
 # ===============================================================
@@ -752,6 +958,9 @@ TOOL_DECLARATIONS = [
     DECL_CANCELAR_PEDIDO,
     DECL_ESCALAR_HUMANO,
     DECL_LEMBRAR_CLIENTE,
+    DECL_OBTER_HISTORICO,
+    DECL_CONSULTAR_TAXA,
+    DECL_REGISTRAR_AVALIACAO,
 ]
 
 TOOL_IMPL: dict[str, ToolFn] = {
@@ -763,6 +972,9 @@ TOOL_IMPL: dict[str, ToolFn] = {
     "cancelar_pedido": cancelar_pedido,
     "escalar_humano": escalar_humano,
     "lembrar_cliente": lembrar_cliente,
+    "obter_historico_pedidos": obter_historico_pedidos,
+    "consultar_taxa_entrega": consultar_taxa_entrega,
+    "registrar_avaliacao": registrar_avaliacao,
 }
 
 

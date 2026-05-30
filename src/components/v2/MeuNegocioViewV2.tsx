@@ -154,6 +154,22 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
         </div>
       </Card>
 
+      <Card icon={<CreditCard className="w-4 h-4" />} title="Taxa de entrega" accent="amber">
+        <div className="space-y-3">
+          <Field label="Taxa fixa padrão (R$) — usada quando o bairro não está na tabela">
+            <input type="number" step="0.01" min="0"
+              value={form.taxa_entrega_fixa ?? ""}
+              placeholder="ex: 7.00"
+              onChange={(e) => setField("taxa_entrega_fixa", e.target.value === "" ? null : Number(e.target.value))}
+              className={inputCls}/>
+          </Field>
+          <TaxasBairroEditor
+            taxas={(form.taxas_bairro as any) || []}
+            onChange={(t) => setField("taxas_bairro", t as any)}
+          />
+        </div>
+      </Card>
+
       <Card icon={<Clock className="w-4 h-4" />} title="Horário de funcionamento" accent="emerald">
         <HorarioFuncionamento
           horarios={(form.horario_funcionamento as any) || {}}
@@ -420,6 +436,15 @@ function HistoricoPedidos({ pizzaria }: { pizzaria: BackendPizzaria }) {
                     {" · "}{(p.itens || []).length} {(p.itens || []).length === 1 ? "item" : "itens"}
                   </p>
                 </div>
+                {typeof p.nps_nota === "number" && (
+                  <span title={p.nps_comentario || undefined}
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                      p.nps_nota >= 9 ? "bg-emerald-100 text-emerald-700"
+                      : p.nps_nota >= 7 ? "bg-amber-100 text-amber-700"
+                      : "bg-red-100 text-red-700"}`}>
+                    ⭐ {p.nps_nota}
+                  </span>
+                )}
                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${st.cls} shrink-0`}>{st.label}</span>
                 <span className="text-sm font-bold text-emerald-600 shrink-0 w-24 text-right">{brl(p.valor_total)}</span>
               </div>
@@ -611,7 +636,51 @@ const ACCENTS: Record<string, string> = {
   emerald: "bg-emerald-100 text-emerald-600",
   violet: "bg-violet-100 text-violet-600",
   sky: "bg-sky-100 text-sky-600",
+  amber: "bg-amber-100 text-amber-600",
 };
+
+type TaxaBairro = { bairro: string; taxa: number };
+
+function TaxasBairroEditor({ taxas, onChange }: { taxas: TaxaBairro[]; onChange: (t: TaxaBairro[]) => void }) {
+  const lista = Array.isArray(taxas) ? taxas : [];
+  function update(i: number, patch: Partial<TaxaBairro>) {
+    onChange(lista.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
+  }
+  function add() { onChange([...lista, { bairro: "", taxa: 0 }]); }
+  function remove(i: number) { onChange(lista.filter((_, idx) => idx !== i)); }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-slate-600 font-medium">Tabela por bairro</span>
+        <button type="button" onClick={add}
+          className="text-xs px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium">
+          + Bairro
+        </button>
+      </div>
+      {lista.length === 0 && (
+        <p className="text-xs text-slate-400">Sem bairros cadastrados. A atendente usa a taxa fixa acima.</p>
+      )}
+      {lista.map((t, i) => (
+        <div key={i} className="flex gap-2 items-center">
+          <input value={t.bairro} placeholder="Bairro"
+            onChange={(e) => update(i, { bairro: e.target.value })}
+            className={inputCls + " flex-1"}/>
+          <div className="relative w-28">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">R$</span>
+            <input type="number" step="0.01" min="0" value={t.taxa}
+              onChange={(e) => update(i, { taxa: Number(e.target.value) })}
+              className={inputCls + " pl-7"}/>
+          </div>
+          <button type="button" onClick={() => remove(i)}
+            className="p-2 text-slate-400 hover:text-red-500" title="Remover">
+            <Trash2 className="w-4 h-4"/>
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Card({ icon, title, accent, children }: { icon: React.ReactNode; title: string; accent: keyof typeof ACCENTS | string; children: React.ReactNode }) {
   return (

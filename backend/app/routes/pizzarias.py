@@ -51,6 +51,9 @@ class PizzariaPatch(BaseModel):
     mp_access_token: str | None = None
     tempo_entrega_min: int | None = None
     tempo_entrega_max: int | None = None
+    taxa_entrega_info: str | None = None
+    taxa_entrega_fixa: float | None = None
+    taxas_bairro: list[dict] | None = None
 
 
 class PizzariaOut(BaseModel):
@@ -72,6 +75,9 @@ class PizzariaOut(BaseModel):
     mp_access_token: str | None = None
     tempo_entrega_min: int | None = None
     tempo_entrega_max: int | None = None
+    taxa_entrega_info: str | None = None
+    taxa_entrega_fixa: float | None = None
+    taxas_bairro: list[dict] | None = None
 
     model_config = {"from_attributes": True}
 

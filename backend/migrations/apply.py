@@ -52,31 +52,44 @@ def apply_migration(cur, path: Path):
     )
 
 
-def main() -> int:
+def run(verbose: bool = True) -> int:
+    """Aplica migrations pendentes. Seguro para chamar de múltiplos processos:
+    usa um advisory lock global pra serializar (o 2º processo espera o 1º)."""
     db_url = get_db_url()
     sql_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
 
     if not sql_files:
-        print("Nenhum arquivo .sql encontrado em migrations/")
+        if verbose:
+            print("Nenhum arquivo .sql encontrado em migrations/")
         return 0
 
-    print(f"Conectando em {db_url.split('@')[-1]}…")
+    if verbose:
+        print(f"Conectando em {db_url.split('@')[-1]}…")
     with psycopg.connect(db_url, autocommit=False) as conn:
         with conn.cursor() as cur:
+            # Serializa execuções concorrentes (web + worker subindo juntos).
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext('pizzabot:migrations'))")
             ensure_migrations_table(cur)
             done = applied_versions(cur)
 
             pending = [p for p in sql_files if p.stem not in done]
             if not pending:
-                print("✓ Tudo já aplicado.")
+                if verbose:
+                    print("✓ Tudo já aplicado.")
                 return 0
 
-            print(f"{len(pending)} migration(s) pendente(s):")
+            if verbose:
+                print(f"{len(pending)} migration(s) pendente(s):")
             for p in pending:
                 apply_migration(cur, p)
         conn.commit()
-    print("✓ Migrations aplicadas com sucesso.")
+    if verbose:
+        print("✓ Migrations aplicadas com sucesso.")
     return 0
+
+
+def main() -> int:
+    return run(verbose=True)
 
 
 if __name__ == "__main__":

@@ -184,6 +184,98 @@ class TestRegistrarPedidoValidacao:
 
 
 # ============================================================
+# 2b. FEATURES v2: histórico, taxa por bairro, NPS, upselling
+# ============================================================
+
+class TestTaxaPorBairro:
+    def _pizz(self, taxas=None, fixa=None):
+        from unittest.mock import MagicMock
+        p = MagicMock()
+        p.taxas_bairro = taxas if taxas is not None else []
+        p.taxa_entrega_fixa = fixa
+        return p
+
+    def test_normalizar_remove_acento(self):
+        from app.agent.tools import _normalizar
+        assert _normalizar("Jardim Europá") == "jardim europa"
+        assert _normalizar("  CENTRO  ") == "centro"
+
+    def test_match_exato_de_bairro(self):
+        from app.agent.tools import _taxa_para_bairro
+        pizz = self._pizz([{"bairro": "Centro", "taxa": 5.0}, {"bairro": "Jardim Europa", "taxa": 8.5}])
+        r = _taxa_para_bairro(pizz, "centro")
+        assert r["taxa"] == 5.0 and r["fonte"] == "bairro" and r["precisa_confirmar"] is False
+
+    def test_match_parcial_de_bairro(self):
+        from app.agent.tools import _taxa_para_bairro
+        pizz = self._pizz([{"bairro": "Jardim Europa", "taxa": 8.5}])
+        r = _taxa_para_bairro(pizz, "Europa")  # cliente escreve só parte do bairro
+        assert r["taxa"] == 8.5 and r["fonte"] == "bairro_parcial"
+
+    def test_fallback_taxa_fixa(self):
+        from app.agent.tools import _taxa_para_bairro
+        pizz = self._pizz([], fixa=7.0)
+        r = _taxa_para_bairro(pizz, "Bairro Desconhecido")
+        assert r["taxa"] == 7.0 and r["fonte"] == "fixa" and r["precisa_confirmar"] is False
+
+    def test_bairro_desconhecido_sem_fixa_precisa_confirmar(self):
+        from app.agent.tools import _taxa_para_bairro
+        pizz = self._pizz([{"bairro": "Centro", "taxa": 5.0}], fixa=None)
+        r = _taxa_para_bairro(pizz, "Outro Bairro")
+        assert r["taxa"] is None and r["precisa_confirmar"] is True
+
+
+class TestPromptFeaturesV2:
+    def _build(self):
+        from app.agent.prompt import build_system_prompt
+        from unittest.mock import MagicMock
+        p = MagicMock()
+        p.nome = "Pizza X"; p.endereco = "Rua 1"
+        p.tempo_entrega_min = 30; p.tempo_entrega_max = 60
+        p.tempo_retirada_min = 15; p.tempo_retirada_max = 25
+        p.taxa_entrega_info = "R$5"; p.formas_pagamento_aceitas = ["pix"]
+        p.horario_funcionamento = {}
+        return build_system_prompt(p, None, cliente_nome="Jailson", cliente_total_pedidos=3, cliente_ultimo_pedido="1x Calabresa G")
+
+    def test_tem_secao_recorrente(self):
+        assert "CLIENTE QUE JÁ CONHECEMOS" in self._build()
+
+    def test_tem_upselling(self):
+        assert "UPSELLING" in self._build()
+
+    def test_tem_taxa_entrega(self):
+        s = self._build()
+        assert "TAXA DE ENTREGA" in s and "consultar_taxa_entrega" in s
+
+    def test_tem_pos_venda(self):
+        s = self._build()
+        assert "registrar_avaliacao" in s and "PÓS-VENDA" in s
+
+    def test_injeta_ultimo_pedido(self):
+        assert "ÚLTIMO PEDIDO DELE: 1x Calabresa G" in self._build()
+
+
+class TestNovasToolsRegistry:
+    def test_tools_registradas(self):
+        from app.agent.tools import TOOL_IMPL, TOOL_DECLARATIONS
+        nomes = {d.name for d in TOOL_DECLARATIONS}
+        for t in ("obter_historico_pedidos", "consultar_taxa_entrega", "registrar_avaliacao"):
+            assert t in TOOL_IMPL
+            assert t in nomes
+
+    def test_registrar_avaliacao_required_nota(self):
+        from app.agent.tools import DECL_REGISTRAR_AVALIACAO
+        assert "nota" in list(DECL_REGISTRAR_AVALIACAO.parameters.required)
+
+
+class TestNpsMessage:
+    def test_default_nps_interpola(self):
+        from app.services.status_messages import DEFAULT_NPS_MESSAGE, _interpolar
+        txt = _interpolar(DEFAULT_NPS_MESSAGE, {"numero_pedido": 15, "nome_cliente": "Jailson"})
+        assert "#15" in txt and "Jailson" in txt and "{" not in txt
+
+
+# ============================================================
 # 3. TESTES DA TOOL DECLARATION
 # ============================================================
 

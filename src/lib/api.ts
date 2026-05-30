@@ -123,6 +123,9 @@ export interface BackendPizzaria {
   mp_access_token: string | null;
   tempo_entrega_min?: number | null;
   tempo_entrega_max?: number | null;
+  taxa_entrega_info?: string | null;
+  taxa_entrega_fixa?: number | null;
+  taxas_bairro?: Array<{ bairro: string; taxa: number }> | null;
   created_at?: string | null;
 }
 
@@ -154,6 +157,8 @@ export interface BackendPedido {
   payment_status: string;
   link_pagamento: string | null;
   bot_ativo: boolean;
+  nps_nota?: number | null;
+  nps_comentario?: string | null;
   created_at: string;
   updated_at: string;
   cliente?: {
