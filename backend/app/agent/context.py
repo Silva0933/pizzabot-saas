@@ -9,6 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Cliente, Pedido, PersonalidadeAtendente, Pizzaria
 
+# Quantos pedidos reais o cliente precisa ter ANTES de a atendente oferecer
+# "o de sempre". Evita tratar quem pediu 1 vez como cliente fiel.
+MIN_PEDIDOS_DE_SEMPRE = 3
+
 
 @dataclass
 class AgentContext:
@@ -74,7 +78,8 @@ async def load_context(
     ).scalar_one_or_none()
 
     resumo = None
-    if cli and (cli.total_pedidos or 0) > 0:
+    # Só oferece "o de sempre" para cliente realmente recorrente (>= N pedidos).
+    if cli and (cli.total_pedidos or 0) >= MIN_PEDIDOS_DE_SEMPRE:
         try:
             resumo = await _resumo_ultimo_pedido(db, pizzaria_id, cli)
         except Exception:  # noqa: BLE001

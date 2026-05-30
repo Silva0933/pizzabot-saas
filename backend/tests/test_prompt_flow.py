@@ -575,10 +575,15 @@ class TestHumanizacaoEMelhorias:
         assert r["ok"] is False
         assert "preparar_resumo_pedido" in r["erro"]
 
-    def test_guard_response_bloqueia_preco_sem_tool(self):
+    def test_guard_response_nao_bloqueia_mais(self):
+        """O guard virou pass-through: NÃO pode travar a conversa (causava loop
+        'deixa eu confirmar' e travamento no fechamento do pedido)."""
         from app.services.response_guard import guard_response
 
+        # Mesmo citando preço sem tool no turno, o texto deve passar intacto.
         texto, blocked, reason = guard_response("A pizza fica R$ 55,00", [])
-        assert blocked is True
-        assert reason == "citou_preco_ou_taxa_sem_tool"
-        assert "confirmar" in texto.lower()
+        assert blocked is False
+        assert reason is None
+        assert texto == "A pizza fica R$ 55,00"
+        # E nunca devolve a frase de espera que causava o loop.
+        assert "deixa eu confirmar" not in texto.lower()

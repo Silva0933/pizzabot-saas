@@ -215,6 +215,13 @@ async def apagar_todos_pedidos(
         """),
         {"pid": str(pizzaria_id)},
     )
+    # Limpa também a memória do agente (chat) e o estado de atendimento, pra que
+    # zerar os pedidos dê um recomeço de verdade (ela não "lembra" da conversa).
+    for tabela in ("public.agente_memoria", "public.atendimento_estado"):
+        try:
+            await db.execute(text(f"DELETE FROM {tabela} WHERE pizzaria_id = :pid"), {"pid": str(pizzaria_id)})
+        except Exception:  # noqa: BLE001  (tabela pode não existir em ambientes antigos)
+            pass
     await db.commit()
 
     await broadcaster.publish(
