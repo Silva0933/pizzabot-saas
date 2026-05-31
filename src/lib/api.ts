@@ -516,8 +516,22 @@ export interface UsoPizzaria {
   proximo_do_limite: boolean;
 }
 
+export interface AlertaItem {
+  id: string;
+  pizzaria_id: string | null;
+  pizzaria_nome: string | null;
+  tipo: "preco_suspeito" | "falha_envio" | "falha_ia" | "falha_pagamento" | string;
+  nivel: "info" | "warning" | "error" | string;
+  detalhe: string | null;
+  resolvido: boolean;
+  created_at: string | null;
+}
+export interface AlertasResp { alertas: AlertaItem[]; abertos: number; }
+
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
+  alertas: (apenasAbertos = true) => api.get<AlertasResp>(`/admin/alertas?apenas_abertos=${apenasAbertos}`),
+  resolverAlerta: (id: string) => api.patch<{ ok: boolean }>(`/admin/alertas/${id}/resolver`, {}),
   alterarPlano: (pizzariaId: string, plano: string) =>
     api.patch<{ ok: boolean; plano: string; vence_em?: string | null }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
   assinaturas: () => api.get<AssinaturasResp>(`/admin/assinaturas`),

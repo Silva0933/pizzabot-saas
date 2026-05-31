@@ -1074,6 +1074,12 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
             )
     except PagamentoError as e:
         log.warning("Falha ao gerar cobrança: %s", e)
+        try:
+            from app.services.alertas import registrar_alerta
+            await registrar_alerta(db, tipo="falha_pagamento", pizzaria_id=ctx.pizzaria.id, nivel="error",
+                                   detalhe=f"Falha ao gerar cobrança ({metodo}) no gateway: {e}")
+        except Exception:  # noqa: BLE001
+            pass
         return {"ok": False, "motivo": "erro_gateway"}
 
     ped.payment_id = cob.payment_id

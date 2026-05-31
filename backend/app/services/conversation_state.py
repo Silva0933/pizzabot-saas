@@ -20,10 +20,13 @@ def _compact_state(estado: dict[str, Any]) -> dict[str, Any]:
 
 
 async def load_state(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str) -> dict[str, Any]:
+    # TTL: ignora rascunho de pedido antigo (cliente sumiu e voltou horas depois).
+    from app.agent.memory import CONVERSA_TTL_HORAS
     try:
-        row = (await db.execute(text("""
+        row = (await db.execute(text(f"""
             SELECT estado FROM public.atendimento_estado
             WHERE pizzaria_id = :pid AND telefone = :tel
+              AND updated_at > now() - interval '{CONVERSA_TTL_HORAS} hours'
         """), {"pid": str(pizzaria_id), "tel": telefone})).first()
     except Exception:
         await db.rollback()

@@ -20,6 +20,12 @@ from app.models import Mensagem
 # Mantido enxuto para economizar tokens de ENTRADA a cada mensagem.
 MAX_HISTORY = 12
 
+# TTL da conversa: se o cliente ficou esse tempo sem falar, o atendimento
+# "reseta" (não carregamos turnos antigos) — evita continuar uma conversa velha,
+# misturar contexto e ressuscitar um "de sempre"/pedido antigo. Pizza é pedido
+# curto; 6h é seguro.
+CONVERSA_TTL_HORAS = 6
+
 
 async def load_history_messages(
     db: AsyncSession,
@@ -34,10 +40,11 @@ async def load_history_messages(
     """
     from sqlalchemy import text
 
-    rows = (await db.execute(text("""
+    rows = (await db.execute(text(f"""
         SELECT role, content, tool_calls
         FROM public.agente_memoria
         WHERE pizzaria_id = :pid AND telefone = :tel
+          AND created_at > now() - interval '{CONVERSA_TTL_HORAS} hours'
         ORDER BY created_at DESC
         LIMIT :lim
     """), {"pid": str(pizzaria_id), "tel": telefone, "lim": limit})).fetchall()
@@ -67,10 +74,11 @@ async def load_history(
     from app.models import Base  # noqa: F401  para garantir import dos models
     from sqlalchemy import text
 
-    rows = (await db.execute(text("""
+    rows = (await db.execute(text(f"""
         SELECT role, content, tool_calls, tool_call_id
         FROM public.agente_memoria
         WHERE pizzaria_id = :pid AND telefone = :tel
+          AND created_at > now() - interval '{CONVERSA_TTL_HORAS} hours'
         ORDER BY created_at DESC
         LIMIT :lim
     """), {"pid": str(pizzaria_id), "tel": telefone, "lim": limit})).fetchall()

@@ -264,6 +264,7 @@ async def delete_pizzaria(
     auxiliares = (
         "agente_memoria", "atendimento_estado", "app_config",
         "llm_usage", "cardapio_arquivo", "assinatura_pizzaria",
+        "plataforma_alertas",
     )
     for tabela in auxiliares:
         try:

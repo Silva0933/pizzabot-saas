@@ -275,6 +275,35 @@ async def listar_assinaturas(
     return {"assinaturas": itens, "alertas": contagem, "ciclo_dias": CICLO_DIAS}
 
 
+@router.get("/alertas")
+async def listar_alertas_endpoint(
+    limit: int = Query(50, ge=1, le=200),
+    apenas_abertos: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Lista os alertas da plataforma (falhas + preços suspeitos) — Fase 2."""
+    from app.services.alertas import contar_alertas_abertos, listar_alertas
+    itens = await listar_alertas(db, limit=limit, apenas_abertos=apenas_abertos)
+    abertos = await contar_alertas_abertos(db)
+    return {"alertas": itens, "abertos": abertos}
+
+
+@router.patch("/alertas/{alerta_id}/resolver")
+async def resolver_alerta(
+    alerta_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Marca um alerta como resolvido."""
+    await db.execute(
+        text("UPDATE public.plataforma_alertas SET resolvido = true WHERE id = :id"),
+        {"id": alerta_id},
+    )
+    await db.commit()
+    return {"ok": True}
+
+
 @router.patch("/pizzarias/{pizzaria_id}/suspensao")
 async def alterar_suspensao(
     pizzaria_id: str,

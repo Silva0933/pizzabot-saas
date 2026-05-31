@@ -24,6 +24,7 @@ from app.agent.memory import append_turn, load_history, load_history_messages
 from app.agent.prompt import build_system_prompt
 from app.agent.providers import openai_chat, openai_tools
 from app.agent.tools import execute_tool, get_tools
+from app.services.price_check import coletar_precos_tool, precos_sem_lastro
 from app.models import Conversa, Mensagem
 from app.services.app_config import get_llm_config, record_usage
 from app.services.broadcaster import broadcaster
@@ -39,10 +40,13 @@ MAX_AGENT_ITERATIONS = 6
 
 
 class AgentResult:
-    def __init__(self, *, texto: str | None, iteracoes: int, tool_calls: list[str]):
+    def __init__(self, *, texto: str | None, iteracoes: int, tool_calls: list[str],
+                 precos_tool: set[float] | None = None):
         self.texto = texto
         self.iteracoes = iteracoes
         self.tool_calls = tool_calls
+        # Preços que vieram das tools nesta rodada (pra validar o texto final).
+        self.precos_tool = precos_tool or set()
 
 
 async def run_agent(
@@ -83,6 +87,7 @@ async def run_agent(
 
     tools = get_tools()
     tool_calls_made: list[str] = []
+    precos_tool: set[float] = set()
     final_text: str | None = None
 
     gemini_key = cfg["keys"].get("gemini") or None
@@ -109,6 +114,7 @@ async def run_agent(
                 result = await execute_tool(
                     fc["name"], fc["args"], ctx=ctx, db=db,
                 )
+                precos_tool |= coletar_precos_tool(result)
                 await append_turn(
                     db, pizzaria_id, telefone,
                     role="assistant", tool_calls=[fc],
@@ -135,7 +141,7 @@ async def run_agent(
         total_tokens=usage_acc["total"], calls=iteration,
     )
     await db.commit()
-    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made)
+    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made, precos_tool=precos_tool)
 
 
 async def _run_openai_agent(
@@ -163,6 +169,7 @@ async def _run_openai_agent(
     await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
 
     tool_calls_made: list[str] = []
+    precos_tool: set[float] = set()
     final_text: str | None = None
     iteration = 0
     usage_acc = {"prompt": 0, "completion": 0, "total": 0}
@@ -198,6 +205,7 @@ async def _run_openai_agent(
             for c in calls:
                 tool_calls_made.append(c["name"])
                 result = await execute_tool(c["name"], c["args"], ctx=ctx, db=db)
+                precos_tool |= coletar_precos_tool(result)
                 await append_turn(db, pizzaria_id, telefone, role="assistant", tool_calls=[{"name": c["name"], "args": c["args"]}])
                 await append_turn(db, pizzaria_id, telefone, role="tool", content=_json.dumps(result, default=str), tool_call_id=c["name"])
                 messages.append({
@@ -222,7 +230,7 @@ async def _run_openai_agent(
         total_tokens=usage_acc["total"], calls=iteration,
     )
     await db.commit()
-    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made)
+    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made, precos_tool=precos_tool)
 
 
 async def process_and_reply(
@@ -303,6 +311,12 @@ async def process_and_reply(
         result = await run_agent(db, pizzaria_id, telefone, user_input)
     except Exception as e:
         log.exception("Falha critica no processamento da IA para pizzaria=%s tel=%s: %s", pizzaria_id, telefone, e)
+        try:
+            from app.services.alertas import registrar_alerta_seguro
+            await registrar_alerta_seguro(tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="error",
+                                          detalhe=f"Falha no agente: {e}")
+        except Exception:  # noqa: BLE001
+            pass
         msg_fallback = (
             "Ops, tive uma instabilidade tecnica rapida aqui! 😅 "
             "Mas nao se preocupe: ja acionei nossa equipe humana para continuar o seu atendimento de onde paramos."
@@ -373,6 +387,26 @@ async def process_and_reply(
         result.texto = guarded_text
         result.tool_calls.append(f"guardrail:{reason}")
 
+    # ---- C4: validador NÃO-BLOQUEANTE de preço ----
+    # Se a IA citou um valor que não veio de nenhuma tool (nem soma de itens),
+    # registra um alerta pro painel. A resposta segue normalmente.
+    try:
+        suspeitos = precos_sem_lastro(result.texto, result.precos_tool)
+        if suspeitos:
+            from app.services.alertas import registrar_alerta
+            await registrar_alerta(
+                db,
+                tipo="preco_suspeito",
+                pizzaria_id=pizzaria_id,
+                detalhe=(
+                    f"Possível preço sem lastro citado: {suspeitos}. "
+                    f"Preços vindos das tools: {sorted(result.precos_tool)}. "
+                    f"Resposta: {result.texto[:200]}"
+                ),
+            )
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha no validador de preço (ignorado): %s", e)
+
     # Envia pelo WhatsApp
     try:
         if pizz.instancia:
@@ -384,6 +418,12 @@ async def process_and_reply(
             )
     except Exception as e:
         log.exception("Falha enviando pelo Evolution: %s", e)
+        try:
+            from app.services.alertas import registrar_alerta_seguro
+            await registrar_alerta_seguro(tipo="falha_envio", pizzaria_id=pizzaria_id, nivel="error",
+                                          detalhe=f"Falha ao enviar pelo WhatsApp (Evolution): {e}")
+        except Exception:  # noqa: BLE001
+            pass
 
     # Salva como mensagem do bot
     if conv:

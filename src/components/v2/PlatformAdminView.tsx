@@ -247,6 +247,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         )}
 
         <AssinaturasCard catalogo={ov?.catalogo ?? []} />
+        <AlertasCard />
 
         {loadingOv && !ov ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
@@ -896,6 +897,66 @@ function IconField({
         {children}
       </div>
     </label>
+  );
+}
+
+// ============================================
+// Alertas da plataforma (falhas + preços suspeitos) — Fase 2
+// ============================================
+function AlertasCard() {
+  const [data, setData] = useState<import("../../lib/api").AlertasResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    try { setData(await adminApi.alertas(true)); } catch { /* silencioso */ }
+    setLoading(false);
+  }
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
+
+  async function resolver(id: string) {
+    setBusy(id);
+    try { await adminApi.resolverAlerta(id); await load(); } finally { setBusy(null); }
+  }
+
+  const LABELS: Record<string, string> = {
+    preco_suspeito: "Preço suspeito", falha_envio: "Falha de envio",
+    falha_ia: "Falha da IA", falha_pagamento: "Falha de pagamento",
+  };
+  const COR: Record<string, string> = {
+    error: "bg-red-100 text-red-700", warning: "bg-amber-100 text-amber-700", info: "bg-sky-100 text-sky-700",
+  };
+
+  if (loading) return null;
+  const alertas = data?.alertas ?? [];
+  if (alertas.length === 0) return null; // só aparece quando há algo a tratar
+
+  const fmt = (s: string | null) => s ? new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-slate-800">Alertas</h3>
+        <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-100 text-red-700">{data?.abertos ?? alertas.length} aberto(s)</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {alertas.slice(0, 12).map((a) => (
+          <div key={a.id} className="py-2.5 flex items-start gap-3">
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${COR[a.nivel] || COR.warning}`}>
+              {LABELS[a.tipo] || a.tipo}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-slate-700 break-words">{a.detalhe}</p>
+              <p className="text-[10px] text-slate-400">{a.pizzaria_nome ? a.pizzaria_nome + " · " : ""}{fmt(a.created_at)}</p>
+            </div>
+            <button onClick={() => resolver(a.id)} disabled={busy === a.id}
+              className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium shrink-0 disabled:opacity-50">
+              Resolver
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

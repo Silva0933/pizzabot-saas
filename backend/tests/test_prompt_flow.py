@@ -459,6 +459,39 @@ class TestPedidoDeSempre:
         assert asyncio.run(_pedido_de_sempre(db, "p1", self._cli())) is None
 
 
+class TestPriceCheckC4:
+    """Validador NÃO-bloqueante de preço (Fase 2 / C4)."""
+
+    def test_coleta_precos_de_tool(self):
+        from app.services.price_check import coletar_precos_tool
+        r = {"items": [{"nome": "X", "preco": 50.0, "tamanhos": [{"tamanho": "G", "preco": 52.0}]}], "taxa": 7.0}
+        vs = coletar_precos_tool(r)
+        assert 50.0 in vs and 52.0 in vs and 7.0 in vs
+
+    def test_total_como_soma_e_aceito(self):
+        from app.services.price_check import precos_sem_lastro
+        # 50 + 7 = 57 deve ser aceito (soma de itens + entrega)
+        assert precos_sem_lastro("Itens R$ 50 + entrega R$ 7 = R$ 57,00", {50.0, 7.0}) == []
+
+    def test_preco_inventado_e_flagado(self):
+        from app.services.price_check import precos_sem_lastro
+        assert 99.0 in precos_sem_lastro("fica R$ 99", {50.0, 7.0})
+
+    def test_sem_tool_todo_preco_suspeito(self):
+        from app.services.price_check import precos_sem_lastro
+        assert 30.0 in precos_sem_lastro("custa R$ 30", set())
+
+    def test_texto_sem_preco_nao_flaga(self):
+        from app.services.price_check import precos_sem_lastro
+        assert precos_sem_lastro("vai ser entrega ou retirada?", {50.0}) == []
+
+
+class TestTTLConversa:
+    def test_constante_ttl(self):
+        from app.agent.memory import CONVERSA_TTL_HORAS
+        assert CONVERSA_TTL_HORAS >= 1
+
+
 class TestNpsMessage:
     def test_default_nps_interpola(self):
         from app.services.status_messages import DEFAULT_NPS_MESSAGE, _interpolar
