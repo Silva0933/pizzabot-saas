@@ -58,6 +58,10 @@ class Pizzaria(Base):
     logo_url: Mapped[str | None] = mapped_column(Text)
     plano: Mapped[str] = mapped_column(String, default="basico", nullable=False)
     bot_ativo_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Suspensão administrativa (ex.: inadimplência). Desliga TODO o atendimento
+    # sem excluir os dados. Controlada só pelo admin da plataforma.
+    suspensa: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    suspensa_motivo: Mapped[str | None] = mapped_column(Text)
 
     endereco: Mapped[str | None] = mapped_column(Text)
     telefone_admin: Mapped[str | None] = mapped_column(String)

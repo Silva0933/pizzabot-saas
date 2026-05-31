@@ -249,6 +249,11 @@ async def evolution_webhook(
         log.warning("Webhook para instância desconhecida: %s", payload.instance)
         return {"ignored": "unknown_instance"}
 
+    # Pizzaria suspensa pelo admin (ex.: inadimplência): atendimento 100% desligado.
+    if getattr(pizz, "suspensa", False):
+        log.info("Pizzaria %s suspensa — ignorando mensagem", pizz.id)
+        return {"ignored": "suspended"}
+
     if not pizz.bot_ativo_global:
         log.info("Bot global desligado para pizzaria %s", pizz.id)
         # Ainda salvamos a msg pra histórico, mas não processamos com IA

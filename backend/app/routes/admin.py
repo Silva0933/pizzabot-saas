@@ -176,6 +176,31 @@ async def alterar_plano(
     return {"ok": True, "plano": plano, "info": plan_info(plano)}
 
 
+@router.patch("/pizzarias/{pizzaria_id}/suspensao")
+async def alterar_suspensao(
+    pizzaria_id: str,
+    suspensa: bool = Body(..., embed=True),
+    motivo: str | None = Body(None, embed=True),
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """
+    Suspende (ou reativa) uma pizzaria sem excluir os dados. Suspensa = atendimento
+    100% desligado (o webhook ignora as mensagens). Reativar é só passar suspensa=false.
+    """
+    res = await db.execute(
+        text(
+            "UPDATE public.pizzarias SET suspensa = :s, suspensa_motivo = :m, updated_at = now() "
+            "WHERE id = :id RETURNING id"
+        ),
+        {"s": suspensa, "m": (motivo if suspensa else None), "id": pizzaria_id},
+    )
+    if res.fetchone() is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    await db.commit()
+    return {"ok": True, "suspensa": suspensa, "motivo": motivo if suspensa else None}
+
+
 # ============================================
 # Config de LLM (provider / modelo / chaves)
 # ============================================

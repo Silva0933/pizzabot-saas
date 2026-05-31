@@ -63,6 +63,8 @@ class PizzariaOut(BaseModel):
     instancia: str | None
     plano: str
     bot_ativo_global: bool
+    suspensa: bool = False
+    suspensa_motivo: str | None = None
     endereco: str | None
     telefone_admin: str | None
     telefone_contato: str | None
@@ -221,6 +223,32 @@ async def delete_pizzaria(
             await evolution.delete_instance(instancia=pizz.instancia)
         except Exception:  # noqa: BLE001
             log.warning("Falha ao remover instância %s da Evolution", pizz.instancia)
+
+    # Limpa as tabelas auxiliares que NÃO têm FK com cascade (criadas via
+    # ensure_table). As tabelas do ORM (produtos, clientes, pedidos, conversas,
+    # mensagens, equipe, personalidade) caem por ON DELETE CASCADE.
+    from sqlalchemy import text as _text
+    pid = str(pizzaria_id)
+    auxiliares = (
+        "agente_memoria", "atendimento_estado", "app_config",
+        "llm_usage", "cardapio_arquivo", "assinatura_pizzaria",
+    )
+    for tabela in auxiliares:
+        try:
+            await db.execute(_text(f"DELETE FROM public.{tabela} WHERE pizzaria_id = :pid"), {"pid": pid})
+        except Exception:  # noqa: BLE001  (tabela pode não existir)
+            pass
+
+    # Limpa filas/locks no Redis desta pizzaria (best-effort).
+    try:
+        from app.redis_client import redis as _redis
+        for padrao in (f"pending:{pid}:*", f"flush_at:{pid}:*", f"batch_start:{pid}:*", f"lock:flush:{pid}:*"):
+            chaves = await _redis.keys(padrao)
+            if chaves:
+                await _redis.delete(*chaves)
+    except Exception:  # noqa: BLE001
+        pass
+
     await db.delete(pizz)
     await db.commit()
 

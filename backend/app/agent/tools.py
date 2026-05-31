@@ -933,27 +933,31 @@ async def registrar_pedido(
     )
     ped = (await db.execute(stmt)).scalars().first()
 
+    # Confirmação condicionada ao pagamento: se for PAGAR AGORA via pix/cartão,
+    # o pedido fica "novo" (aguardando pagamento) e só vira "confirmado" quando o
+    # webhook do gateway aprovar. Pagar na entrega/dinheiro → confirma na hora.
+    aguardando_pagamento = bool(_metodo_online(forma_pagamento) and pagar_agora)
+    novo_status = "novo" if aguardando_pagamento else "confirmado"
+
     status_anterior = ped.status if ped else None
     valor_anterior = Decimal(str(ped.valor_total)) if ped and ped.valor_total is not None else Decimal("0")
     if ped:
-        # Atualiza o rascunho e move para confirmado
         ped.itens = itens_norm
         ped.valor_total = Decimal(str(valor_total_real))
         ped.tipo = tipo
         ped.endereco_entrega = endereco_entrega
         ped.forma_pagamento = forma_pagamento
         ped.observacoes = observacoes
-        ped.status = "confirmado"
+        ped.status = novo_status
         ped.updated_at = datetime.now(timezone.utc)
     else:
         status_anterior = None
-        # Cria um novo em confirmado
         ped = Pedido(
             pizzaria_id=ctx.pizzaria.id,
             cliente_id=cli.id,
             itens=itens_norm,
             valor_total=Decimal(str(valor_total_real)),
-            status="confirmado",
+            status=novo_status,
             tipo=tipo,
             endereco_entrega=endereco_entrega,
             forma_pagamento=forma_pagamento,
@@ -1000,7 +1004,16 @@ async def registrar_pedido(
             if tipo == "delivery"
             else f"{ctx.pizzaria.tempo_retirada_min}-{ctx.pizzaria.tempo_retirada_max} min"
         ),
+        "aguardando_pagamento": aguardando_pagamento,
+        "status_pedido": novo_status,
     }
+    if aguardando_pagamento:
+        resultado["instrucao"] = (
+            "Pedido registrado, mas AINDA NÃO confirmado: ele só entra no preparo quando o "
+            "Pix/cartão for pago. NÃO diga 'pedido confirmado/no preparo' agora. Diga que mandou "
+            "o Pix e que, assim que o pagamento cair, confirma e manda pra cozinha. A confirmação "
+            "é automática do sistema."
+        )
 
     try:
         from app.services.conversation_state import save_state
