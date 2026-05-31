@@ -235,7 +235,7 @@ class TestPromptFeaturesV2:
         p.tempo_retirada_min = 15; p.tempo_retirada_max = 25
         p.taxa_entrega_info = "R$5"; p.formas_pagamento_aceitas = ["pix"]
         p.horario_funcionamento = {}
-        return build_system_prompt(p, None, cliente_nome="Jailson", cliente_total_pedidos=3, cliente_ultimo_pedido="1x Calabresa G")
+        return build_system_prompt(p, None, cliente_nome="Jailson", cliente_total_pedidos=3, cliente_ultimo_pedido="Calabresa Vulcão")
 
     def test_tem_secao_recorrente(self):
         assert "CLIENTE QUE JÁ CONHECEMOS" in self._build()
@@ -251,8 +251,8 @@ class TestPromptFeaturesV2:
         s = self._build()
         assert "registrar_avaliacao" in s and "PÓS-VENDA" in s
 
-    def test_injeta_ultimo_pedido(self):
-        assert "ÚLTIMO PEDIDO DELE: 1x Calabresa G" in self._build()
+    def test_injeta_pedido_de_sempre(self):
+        assert "PEDIDO DE SEMPRE DELE: Calabresa Vulcão" in self._build()
 
 
 class TestNovasToolsRegistry:
@@ -404,6 +404,59 @@ class TestPagamentoFalhou:
         from app.services.status_messages import DEFAULT_STATUS_MESSAGES, _interpolar
         t = _interpolar(DEFAULT_STATUS_MESSAGES["pagamento_falhou"], {"numero_pedido": 9, "nome_cliente": "Ana"})
         assert "#9" in t and "Ana" in t and "{" not in t
+
+
+class TestPedidoDeSempre:
+    """A saudação 'de sempre' só vale quando o MESMO item se repete nos últimos 3 pedidos."""
+
+    def _db(self, pedidos_itens):
+        from unittest.mock import AsyncMock, MagicMock
+        peds = []
+        for itens in pedidos_itens:
+            p = MagicMock()
+            p.itens = itens
+            peds.append(p)
+        scal = MagicMock()
+        scal.all = MagicMock(return_value=peds)
+        res = MagicMock()
+        res.scalars = MagicMock(return_value=scal)
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=res)
+        return db
+
+    def _cli(self):
+        from unittest.mock import MagicMock
+        c = MagicMock(); c.id = "c1"; return c
+
+    def test_mesmo_item_3x_retorna_de_sempre(self):
+        import asyncio
+        from app.agent.context import _pedido_de_sempre
+        db = self._db([
+            [{"nome": "Calabresa Vulcão", "quantidade": 1}],
+            [{"nome": "calabresa vulcao", "quantidade": 1}],
+            [{"nome": "Calabresa Vulcão", "quantidade": 2}],
+        ])
+        r = asyncio.run(_pedido_de_sempre(db, "p1", self._cli()))
+        assert r == "Calabresa Vulcão"
+
+    def test_itens_diferentes_retorna_none(self):
+        import asyncio
+        from app.agent.context import _pedido_de_sempre
+        db = self._db([
+            [{"nome": "Calabresa", "quantidade": 1}],
+            [{"nome": "Portuguesa", "quantidade": 1}],
+            [{"nome": "Frango", "quantidade": 1}],
+        ])
+        assert asyncio.run(_pedido_de_sempre(db, "p1", self._cli())) is None
+
+    def test_menos_de_3_pedidos_retorna_none(self):
+        import asyncio
+        from app.agent.context import _pedido_de_sempre
+        db = self._db([
+            [{"nome": "Calabresa", "quantidade": 1}],
+            [{"nome": "Calabresa", "quantidade": 1}],
+        ])
+        assert asyncio.run(_pedido_de_sempre(db, "p1", self._cli())) is None
 
 
 class TestNpsMessage:
