@@ -115,6 +115,12 @@ class EvolutionClient:
 
     @staticmethod
     def _webhook_payload(url: str) -> dict[str, Any]:
+        # Anexa o token de segurança na URL (?token=...). A Evolution devolve a
+        # URL exata configurada, então o backend valida esse token no webhook.
+        token = _settings.evolution_webhook_token
+        if token and "token=" not in url:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}token={token}"
         return {
             "enabled": True,
             "url": url,

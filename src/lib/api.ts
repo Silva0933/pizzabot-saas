@@ -202,6 +202,7 @@ export interface BackendMensagem {
 export const pizzariasApi = {
   list: () => api.get<BackendPizzaria[]>("/pizzarias"),
   get: (id: string) => api.get<BackendPizzaria>(`/pizzarias/${id}`),
+  uso: (id: string) => api.get<UsoPizzaria>(`/pizzarias/${id}/uso`),
   create: (body: {
     nome: string; instancia?: string; telefone_admin?: string; endereco?: string;
     owner_email?: string; owner_senha?: string; owner_nome?: string;
@@ -496,11 +497,23 @@ export interface AssinaturaItem {
   dias_restantes: number | null;
   alerta: "sem_plano" | "em_dia" | "vence_amanha" | "vencida";
   suspensa: boolean;
+  ia_mensagens: number;
+  ia_limite: number;
+  ia_tokens: number;
 }
 export interface AssinaturasResp {
   assinaturas: AssinaturaItem[];
-  alertas: { vence_amanha: number; vencida: number; suspensas: number };
+  alertas: { vence_amanha: number; vencida: number; suspensas: number; limite_ia: number };
   ciclo_dias: number;
+}
+export interface UsoPizzaria {
+  plano: string;
+  ia_mensagens: number;
+  ia_limite: number;
+  ia_tokens: number;
+  percentual: number;
+  limite_atingido: boolean;
+  proximo_do_limite: boolean;
 }
 
 export const adminApi = {

@@ -227,9 +227,12 @@ async def listar_assinaturas(
         "plano_vence_em, suspensa FROM public.pizzarias ORDER BY plano_vence_em NULLS LAST"
     ))).fetchall()
 
+    from app.services.app_config import uso_mes_todas
+    uso = await uso_mes_todas(db)
+
     agora = datetime.now(timezone.utc)
     itens = []
-    contagem = {"vence_amanha": 0, "vencida": 0, "suspensas": 0}
+    contagem = {"vence_amanha": 0, "vencida": 0, "suspensas": 0, "limite_ia": 0}
     for r in rows:
         vence = r[4]
         dias = None
@@ -248,8 +251,13 @@ async def listar_assinaturas(
         if r[5]:
             contagem["suspensas"] += 1
         info = plan_info(r[2])
+        pid = str(r[0])
+        u = uso.get(pid, {"mensagens": 0, "tokens": 0})
+        limite_ia = int((info.get("limites") or {}).get("mensagens_ia_mes") or 0)
+        if limite_ia and u["mensagens"] >= limite_ia:
+            contagem["limite_ia"] += 1
         itens.append({
-            "pizzaria_id": str(r[0]),
+            "pizzaria_id": pid,
             "nome": r[1],
             "plano": r[2],
             "plano_nome": info["nome"],
@@ -259,6 +267,9 @@ async def listar_assinaturas(
             "dias_restantes": dias,
             "alerta": alerta,
             "suspensa": bool(r[5]),
+            "ia_mensagens": u["mensagens"],
+            "ia_limite": limite_ia,
+            "ia_tokens": u["tokens"],
         })
 
     return {"assinaturas": itens, "alertas": contagem, "ciclo_dias": CICLO_DIAS}

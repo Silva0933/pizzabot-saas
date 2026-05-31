@@ -933,7 +933,7 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
   if (!data) return null;
 
   const { assinaturas, alertas } = data;
-  const temAlerta = alertas.vence_amanha > 0 || alertas.vencida > 0;
+  const temAlerta = alertas.vence_amanha > 0 || alertas.vencida > 0 || (alertas.limite_ia ?? 0) > 0;
 
   return (
     <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
@@ -959,6 +959,11 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
               {alertas.suspensas} suspensa(s)
             </span>
           )}
+          {(alertas.limite_ia ?? 0) > 0 && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-orange-100 text-orange-700">
+              {alertas.limite_ia} no limite de IA
+            </span>
+          )}
         </div>
       )}
 
@@ -980,7 +985,17 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
               <div key={a.pizzaria_id} className="py-2.5 flex items-center gap-3 flex-wrap">
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-800 truncate">{a.nome}</p>
-                  <p className="text-[11px] text-slate-400">{a.plano_nome} · vence {fmt(a.vence_em)}</p>
+                  <p className="text-[11px] text-slate-400">
+                    {a.plano_nome} · vence {fmt(a.vence_em)}
+                    {a.ia_limite > 0 && (
+                      <>
+                        {" · "}
+                        <span className={a.ia_mensagens >= a.ia_limite ? "text-orange-600 font-semibold" : ""}>
+                          IA {a.ia_mensagens}/{a.ia_limite}
+                        </span>
+                      </>
+                    )}
+                  </p>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cor}`}>{label}</span>
                 <select

@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     evolution_api_key: str = ""
     gemini_api_key: str = ""
     mp_webhook_secret: str = ""
+    # Segredo que a Evolution devolve na URL do webhook (?token=...). Se vazio,
+    # a validação fica DESLIGADA (compatível com o estado atual). Defina no
+    # ambiente para ativar a proteção anti-spoofing do webhook.
+    evolution_webhook_token: str = ""
 
     # URL pública do backend (usada para configurar o webhook na Evolution).
     public_base_url: str = "https://api.pizzabot.secretariaai.eu.cc"

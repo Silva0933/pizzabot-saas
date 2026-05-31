@@ -250,6 +250,29 @@ async def process_and_reply(
         )
     ).scalar_one_or_none()
 
+    # ---- Limite de mensagens de IA do plano (C2) ----
+    # Se a pizzaria estourou a cota mensal do plano, não aciona a IA (protege o
+    # custo). O cliente não recebe resposta automática; o painel sinaliza o limite.
+    try:
+        from app.services.app_config import uso_mes
+        from app.services.plans import plan_info
+        limite = int((plan_info(pizz.plano).get("limites") or {}).get("mensagens_ia_mes") or 0)
+        if limite > 0:
+            usados = (await uso_mes(db, pizzaria_id)).get("mensagens", 0)
+            if usados >= limite:
+                log.warning("Limite de IA atingido: pizzaria=%s (%s/%s) — pulando resposta", pizzaria_id, usados, limite)
+                await broadcaster.publish(
+                    pizzaria_id,
+                    {
+                        "tipo": "limite.ia",
+                        "pizzaria_id": str(pizzaria_id),
+                        "payload": {"usados": usados, "limite": limite},
+                    },
+                )
+                return {"ok": False, "motivo": "limite_ia_atingido", "usados": usados, "limite": limite}
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao checar limite de IA: %s", e)
+
     # ---- Envia indicador de "digitando" ANTES de processar ----
     try:
         if conv:

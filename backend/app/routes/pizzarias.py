@@ -185,6 +185,36 @@ async def get_pizzaria(
     return pizz
 
 
+@router.get("/{pizzaria_id}/uso")
+async def uso_pizzaria(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Consumo de IA do mês corrente vs. limite do plano (visível ao dono)."""
+    from app.services.app_config import uso_mes
+    from app.services.plans import plan_info
+
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+
+    u = await uso_mes(db, pizzaria_id)
+    limites = plan_info(pizz.plano).get("limites") or {}
+    limite = int(limites.get("mensagens_ia_mes") or 0)
+    usados = u["mensagens"]
+    pct = round(usados / limite * 100, 1) if limite else 0.0
+    return {
+        "plano": pizz.plano,
+        "ia_mensagens": usados,
+        "ia_limite": limite,
+        "ia_tokens": u["tokens"],
+        "percentual": pct,
+        "limite_atingido": bool(limite and usados >= limite),
+        "proximo_do_limite": bool(limite and usados >= limite * 0.8),
+    }
+
+
 @router.patch("/{pizzaria_id}", response_model=PizzariaOut)
 async def update_pizzaria(
     pizzaria_id: uuid.UUID,

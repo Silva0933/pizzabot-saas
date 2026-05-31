@@ -99,6 +99,46 @@ async def record_usage(
         await db.rollback()
 
 
+async def uso_mes(db: AsyncSession, pizzaria_id: Any, *, mes: str | None = None) -> dict[str, int]:
+    """
+    Uso de IA da pizzaria no mês corrente (fuso America/Sao_Paulo):
+      - mensagens: nº de respostas da IA (1 linha em llm_usage por rodada do agente)
+      - tokens: soma de total_tokens
+    """
+    try:
+        row = (await db.execute(text("""
+            SELECT COUNT(*) AS msgs, COALESCE(SUM(total_tokens), 0) AS toks
+            FROM public.llm_usage
+            WHERE pizzaria_id = :pid
+              AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo')
+                                AT TIME ZONE 'America/Sao_Paulo'
+        """), {"pid": str(pizzaria_id)})).first()
+        if not row:
+            return {"mensagens": 0, "tokens": 0}
+        return {"mensagens": int(row[0] or 0), "tokens": int(row[1] or 0)}
+    except Exception:  # noqa: BLE001
+        return {"mensagens": 0, "tokens": 0}
+
+
+async def uso_mes_todas(db: AsyncSession) -> dict[str, dict[str, int]]:
+    """Uso de IA do mês corrente por pizzaria (mapa pizzaria_id → {mensagens, tokens})."""
+    out: dict[str, dict[str, int]] = {}
+    try:
+        rows = (await db.execute(text("""
+            SELECT pizzaria_id, COUNT(*) AS msgs, COALESCE(SUM(total_tokens), 0) AS toks
+            FROM public.llm_usage
+            WHERE pizzaria_id IS NOT NULL
+              AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo')
+                                AT TIME ZONE 'America/Sao_Paulo'
+            GROUP BY pizzaria_id
+        """))).fetchall()
+        for r in rows:
+            out[str(r[0])] = {"mensagens": int(r[1] or 0), "tokens": int(r[2] or 0)}
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 async def get_config(db: AsyncSession, chave: str) -> dict[str, Any]:
     try:
         row = (await db.execute(

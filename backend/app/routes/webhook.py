@@ -222,6 +222,15 @@ async def evolution_webhook(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    # ---- Autenticação anti-spoofing (C1) ----
+    # Se um token estiver configurado, a Evolution o devolve em ?token=... (foi
+    # gravado na URL do webhook). Sem o token correto, rejeita silenciosamente.
+    from app.config import get_settings as _gs
+    _wh_token = _gs().evolution_webhook_token
+    if _wh_token and request.query_params.get("token") != _wh_token:
+        log.warning("Webhook rejeitado: token inválido (instance=%s)", payload.instance)
+        return {"ignored": "bad_token"}
+
     # Loga uma única linha pra debug (sem expor dados sensíveis)
     log.info("Evolution webhook: event=%s instance=%s", payload.event, payload.instance)
 
