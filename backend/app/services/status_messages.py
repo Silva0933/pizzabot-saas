@@ -23,9 +23,9 @@ log = logging.getLogger(__name__)
 # Mensagens padrão usadas quando a pizzaria não configurou um template próprio.
 # Placeholders: {numero_pedido}, {nome_cliente}, {valor_total}, {tempo_entrega}
 DEFAULT_STATUS_MESSAGES: dict[str, str] = {
-    "pagamento_aprovado": "✅ Pagamento confirmado, {nome_cliente}! Seu pedido #{numero_pedido} já entrou na fila de preparo. 🍕",
+    "pagamento_aprovado": "✅ Pagamento confirmado, {nome_cliente}! Seu pedido #{numero_pedido} foi enviado pro preparo e logo entra na cozinha. 🍕",
     "pagamento_falhou": "Ops, {nome_cliente}, não consegui confirmar o pagamento do pedido #{numero_pedido} 😕 Sem problema: você pode tentar o Pix de novo ou pagar na entrega (dinheiro/cartão). Como prefere? Se você já pagou, me manda o comprovante que eu confiro com a equipe. 🙏",
-    "confirmado": "Oi {nome_cliente}! ✅ Seu pedido #{numero_pedido} foi confirmado e já vai pra produção. 🍕",
+    "confirmado": "Oi {nome_cliente}! ✅ Seu pedido #{numero_pedido} foi confirmado e enviado pro preparo. Logo entra na cozinha! 🍕",
     "no_forno": "🔥 Seu pedido #{numero_pedido} já está no forno, {nome_cliente}! Em breve fica pronto.",
     "a_caminho": "🛵 Saiu para entrega! Seu pedido #{numero_pedido} chega em breve. 😋",
     "entregue": "🎉 Pedido #{numero_pedido} entregue! Obrigado pela preferência, {nome_cliente}. Bom apetite! 😋",

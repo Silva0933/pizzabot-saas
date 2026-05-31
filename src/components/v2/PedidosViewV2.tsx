@@ -53,6 +53,8 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
   const [err, setErr] = useState<string | null>(null);
   const [selectedPedido, setSelectedPedido] = useState<BackendPedido | null>(null);
   const [activeTabMobile, setActiveTabMobile] = useState<string>("novo");
+  // Pedidos com uma mudança de status em andamento (evita clique duplo + lag).
+  const [movingIds, setMovingIds] = useState<Set<string>>(new Set());
 
   function load() {
     // Só pedidos de hoje — o fluxo de atendimento começa zerado todo dia.
@@ -93,13 +95,31 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
   }, [pedidos, colunas]);
 
   async function moveStatus(pedidoId: string, novoStatus: string) {
+    // Bloqueia clique duplo enquanto a ação anterior do mesmo pedido roda.
+    if (movingIds.has(pedidoId)) return;
+    const anterior = pedidos.find((p) => p.id === pedidoId);
+    if (!anterior || anterior.status === novoStatus) return;
+
+    setErr(null);
+    setMovingIds((s) => new Set(s).add(pedidoId));
+    // Atualização OTIMISTA: move o card imediatamente (sem esperar o servidor).
+    setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? { ...p, status: novoStatus } : p)));
+    if (selectedPedido?.id === pedidoId) {
+      setSelectedPedido((sp) => (sp ? { ...sp, status: novoStatus } : sp));
+    }
+
     try {
       const updated = await pedidosApi.updateStatus(pizzariaId, pedidoId, novoStatus);
       setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? updated : p)));
-      if (selectedPedido && selectedPedido.id === pedidoId) {
-        setSelectedPedido(updated);
-      }
-    } catch (e: any) { setErr(e.message); }
+      if (selectedPedido?.id === pedidoId) setSelectedPedido(updated);
+    } catch (e: any) {
+      // Falhou → reverte pro estado anterior.
+      setErr(e.message);
+      setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? anterior : p)));
+      if (selectedPedido?.id === pedidoId) setSelectedPedido(anterior);
+    } finally {
+      setMovingIds((s) => { const n = new Set(s); n.delete(pedidoId); return n; });
+    }
   }
 
   if (loading) {
@@ -224,11 +244,12 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
                           {statusIdx > 0 && (
                             <button
                               type="button"
+                              disabled={movingIds.has(p.id)}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 moveStatus(p.id, STATUS_FLOW[statusIdx - 1]);
                               }}
-                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md transition-colors cursor-pointer"
+                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-wait"
                               title="Voltar status"
                             >
                               <ChevronLeft className="w-3.5 h-3.5" />
@@ -241,11 +262,12 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
                           {statusIdx < STATUS_FLOW.length - 1 && statusIdx >= 0 && (
                             <button
                               type="button"
+                              disabled={movingIds.has(p.id)}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 moveStatus(p.id, STATUS_FLOW[statusIdx + 1]);
                               }}
-                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md transition-colors cursor-pointer"
+                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-wait"
                               title="Avançar status"
                             >
                               <ChevronRight className="w-3.5 h-3.5" />
