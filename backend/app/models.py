@@ -76,6 +76,9 @@ class Pizzaria(Base):
     taxa_entrega_info: Mapped[str | None] = mapped_column(Text)
     taxa_entrega_fixa: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
     taxas_bairro: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    # Adicionais/bordas da casa (aplicáveis a qualquer pizza): lista de
+    # {nome, preco, tipo: 'borda'|'adicional'}. A IA oferece SÓ o que está aqui.
+    adicionais: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     tempo_entrega_min: Mapped[int | None] = mapped_column(Integer, default=30)
     tempo_entrega_max: Mapped[int | None] = mapped_column(Integer, default=60)
     tempo_retirada_min: Mapped[int | None] = mapped_column(Integer, default=15)

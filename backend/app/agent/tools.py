@@ -111,6 +111,11 @@ DECL_PREPARAR_RESUMO_PEDIDO = types.FunctionDeclaration(
                         ),
                         "tamanho": types.Schema(type=types.Type.STRING),
                         "qtd": types.Schema(type=types.Type.INTEGER),
+                        "adicionais": types.Schema(
+                            type=types.Type.ARRAY,
+                            description="Adicionais/bordas do item (nomes vindos de consultar_adicionais).",
+                            items=types.Schema(type=types.Type.STRING),
+                        ),
                     },
                 ),
             ),
@@ -157,6 +162,11 @@ DECL_REGISTRAR_PEDIDO = types.FunctionDeclaration(
                         ),
                         "tamanho": types.Schema(type=types.Type.STRING, description="Tamanho selecionado (ex: 'Grande', 'Média', se o item possuir tamanhos)"),
                         "qtd": types.Schema(type=types.Type.INTEGER, description="Quantidade do item (padrão 1)"),
+                        "adicionais": types.Schema(
+                            type=types.Type.ARRAY,
+                            description="Nomes de adicionais/bordas escolhidos para ESTE item (ex: ['Borda Catupiry']). Use APENAS nomes vindos de consultar_adicionais.",
+                            items=types.Schema(type=types.Type.STRING),
+                        ),
                     },
                 ),
             ),
@@ -268,6 +278,24 @@ DECL_CONSULTAR_TAXA = types.FunctionDeclaration(
         type=types.Type.OBJECT,
         properties={
             "bairro": types.Schema(type=types.Type.STRING, description="Bairro informado pelo cliente"),
+        },
+        required=[],
+    ),
+)
+
+DECL_CONSULTAR_ADICIONAIS = types.FunctionDeclaration(
+    name="consultar_adicionais",
+    description=(
+        "Lista os adicionais/bordas que a pizzaria oferece (ex.: borda recheada, "
+        "extra de queijo). Use ANTES de oferecer qualquer borda/adicional, pra citar "
+        "SOMENTE o que existe e o preço real (nunca invente). Para incluir no pedido, "
+        "passe os nomes escolhidos no campo 'adicionais' do item em preparar_resumo_pedido/"
+        "registrar_pedido — o backend soma o preço."
+    ),
+    parameters=types.Schema(
+        type=types.Type.OBJECT,
+        properties={
+            "tipo": types.Schema(type=types.Type.STRING, description="Opcional: filtra por 'borda' ou 'adicional'."),
         },
         required=[],
     ),
@@ -693,6 +721,22 @@ async def _calcular_pedido(
                     nome_final += f" ({tamanho})"
             except ValueError as e:
                 return {"ok": False, "erro": str(e)}
+
+        # ---- Adicionais/bordas do item (preço somado, validado no backend) ----
+        ad_nomes = it.get("adicionais") or it.get("extras")
+        if ad_nomes and isinstance(ad_nomes, list):
+            ad_preco, ad_fmt, faltantes = _resolver_adicionais(ctx.pizzaria, [str(x) for x in ad_nomes])
+            if faltantes:
+                return {
+                    "ok": False,
+                    "erro": (
+                        f"Adicional(is) não disponível(is): {faltantes}. Ofereça só os que "
+                        f"existem (use consultar_adicionais) e não invente preço."
+                    ),
+                }
+            if ad_fmt:
+                preco_unitario += ad_preco
+                nome_final += " + " + " + ".join(ad_fmt)
 
         valor_itens_total += preco_unitario * qtd
         itens_norm.append({
@@ -1336,6 +1380,33 @@ def _normalizar(s: str | None) -> str:
     return re.sub(r"\s+", " ", s)
 
 
+def _resolver_adicionais(pizz, nomes: list[str]) -> tuple[float, list[str], list[str]]:
+    """
+    Resolve adicionais/bordas pedidos contra a lista cadastrada da pizzaria.
+    Retorna (preco_total, nomes_formatados, faltantes). Casa por nome normalizado
+    (tolerante a acento/maiúsc.). Faltantes = pedidos que NÃO existem (anti-invenção).
+    """
+    cadastrados = getattr(pizz, "adicionais", None) or []
+    idx = {}
+    for a in cadastrados:
+        if isinstance(a, dict) and a.get("nome"):
+            idx[_normalizar(a["nome"])] = a
+    preco_total = 0.0
+    formatados: list[str] = []
+    faltantes: list[str] = []
+    for n in nomes:
+        a = idx.get(_normalizar(n))
+        if not a:
+            faltantes.append(str(n))
+            continue
+        try:
+            preco_total += float(a.get("preco") or 0)
+        except (TypeError, ValueError):
+            pass
+        formatados.append(str(a.get("nome")))
+    return round(preco_total, 2), formatados, faltantes
+
+
 def _taxa_para_bairro(pizz, bairro: str | None) -> dict[str, Any]:
     """Resolve a taxa de entrega: tabela por bairro → taxa fixa → desconhecida."""
     alvo = _normalizar(bairro)
@@ -1411,6 +1482,33 @@ async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro:
         except Exception as e:  # noqa: BLE001
             log.debug("Falha ao salvar estado de taxa: %s", e)
     return {"ok": True, **res}
+
+
+async def consultar_adicionais(ctx: AgentContext, db: AsyncSession, *, tipo: str | None = None) -> dict[str, Any]:
+    """Lista os adicionais/bordas cadastrados pela pizzaria (dados reais p/ ofertar)."""
+    lista = getattr(ctx.pizzaria, "adicionais", None) or []
+    alvo_tipo = _normalizar(tipo) if tipo else None
+    items = []
+    for a in lista:
+        if not isinstance(a, dict) or not a.get("nome"):
+            continue
+        t = (a.get("tipo") or "adicional")
+        if alvo_tipo and _normalizar(t) != alvo_tipo:
+            continue
+        try:
+            preco = float(a.get("preco") or 0)
+        except (TypeError, ValueError):
+            preco = 0.0
+        items.append({"nome": a["nome"], "preco": preco, "tipo": t})
+    return {
+        "encontrados": len(items),
+        "adicionais": items,
+        "instrucao": (
+            "Ofereça SOMENTE estes adicionais/bordas (preços reais). Se vazio, a casa não tem "
+            "adicionais — não invente. Para incluir num item, passe os nomes no campo 'adicionais' "
+            "do item ao chamar preparar_resumo_pedido/registrar_pedido."
+        ),
+    }
 
 
 async def _cliente_do_ctx(ctx: AgentContext, db: AsyncSession) -> Cliente | None:
@@ -1527,6 +1625,7 @@ TOOL_DECLARATIONS = [
     DECL_LEMBRAR_CLIENTE,
     DECL_OBTER_HISTORICO,
     DECL_CONSULTAR_TAXA,
+    DECL_CONSULTAR_ADICIONAIS,
     DECL_REGISTRAR_AVALIACAO,
 ]
 
@@ -1542,6 +1641,7 @@ TOOL_IMPL: dict[str, ToolFn] = {
     "lembrar_cliente": lembrar_cliente,
     "obter_historico_pedidos": obter_historico_pedidos,
     "consultar_taxa_entrega": consultar_taxa_entrega,
+    "consultar_adicionais": consultar_adicionais,
     "registrar_avaliacao": registrar_avaliacao,
 }
 

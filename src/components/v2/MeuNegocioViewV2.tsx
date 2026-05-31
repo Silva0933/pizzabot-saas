@@ -170,6 +170,14 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
         </div>
       </Card>
 
+      <Card icon={<Package className="w-4 h-4" />} title="Adicionais & Bordas" accent="violet">
+        <p className="text-xs text-slate-500 mb-2">Bordas recheadas e extras que a atendente pode oferecer (com preço real). Aplicam-se a qualquer pizza.</p>
+        <AdicionaisEditor
+          adicionais={(form.adicionais as any) || []}
+          onChange={(a) => setField("adicionais", a as any)}
+        />
+      </Card>
+
       <Card icon={<Clock className="w-4 h-4" />} title="Horário de funcionamento" accent="emerald">
         <HorarioFuncionamento
           horarios={(form.horario_funcionamento as any) || {}}
@@ -638,6 +646,52 @@ const ACCENTS: Record<string, string> = {
   sky: "bg-sky-100 text-sky-600",
   amber: "bg-amber-100 text-amber-600",
 };
+
+type Adicional = { nome: string; preco: number; tipo?: string };
+
+function AdicionaisEditor({ adicionais, onChange }: { adicionais: Adicional[]; onChange: (a: Adicional[]) => void }) {
+  const lista = Array.isArray(adicionais) ? adicionais : [];
+  function update(i: number, patch: Partial<Adicional>) {
+    onChange(lista.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
+  }
+  function add() { onChange([...lista, { nome: "", preco: 0, tipo: "borda" }]); }
+  function remove(i: number) { onChange(lista.filter((_, idx) => idx !== i)); }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-slate-600 font-medium">Lista</span>
+        <button type="button" onClick={add}
+          className="text-xs px-2.5 py-1 rounded-lg bg-violet-100 text-violet-700 hover:bg-violet-200 font-medium">
+          + Adicional
+        </button>
+      </div>
+      {lista.length === 0 && <p className="text-xs text-slate-400">Nenhum adicional. A atendente não vai oferecer bordas/extras.</p>}
+      {lista.map((t, i) => (
+        <div key={i} className="flex gap-2 items-center">
+          <input value={t.nome} placeholder="Ex: Borda Catupiry"
+            onChange={(e) => update(i, { nome: e.target.value })}
+            className={inputCls + " flex-1"}/>
+          <select value={t.tipo || "borda"} onChange={(e) => update(i, { tipo: e.target.value })}
+            className={inputCls + " w-24"}>
+            <option value="borda">Borda</option>
+            <option value="adicional">Adicional</option>
+          </select>
+          <div className="relative w-24">
+            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">R$</span>
+            <input type="number" step="0.01" min="0" value={t.preco}
+              onChange={(e) => update(i, { preco: Number(e.target.value) })}
+              className={inputCls + " pl-7"}/>
+          </div>
+          <button type="button" onClick={() => remove(i)}
+            className="p-2 text-slate-400 hover:text-red-500" title="Remover">
+            <Trash2 className="w-4 h-4"/>
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 type TaxaBairro = { bairro: string; taxa: number };
 

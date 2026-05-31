@@ -56,6 +56,7 @@ class PizzariaPatch(BaseModel):
     taxa_entrega_info: str | None = None
     taxa_entrega_fixa: float | None = None
     taxas_bairro: list[dict] | None = None
+    adicionais: list[dict] | None = None
 
 
 class PizzariaOut(BaseModel):

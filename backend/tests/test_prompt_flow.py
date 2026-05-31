@@ -486,6 +486,34 @@ class TestPriceCheckC4:
         assert precos_sem_lastro("vai ser entrega ou retirada?", {50.0}) == []
 
 
+class TestAdicionaisFase3:
+    def _pizz(self, ads):
+        from unittest.mock import MagicMock
+        p = MagicMock(); p.adicionais = ads; return p
+
+    def test_resolve_adicional_existente(self):
+        from app.agent.tools import _resolver_adicionais
+        p = self._pizz([{"nome": "Borda Catupiry", "preco": 8.0, "tipo": "borda"}])
+        preco, fmt, falt = _resolver_adicionais(p, ["borda catupiry"])
+        assert preco == 8.0 and fmt == ["Borda Catupiry"] and falt == []
+
+    def test_adicional_inexistente_vira_faltante(self):
+        from app.agent.tools import _resolver_adicionais
+        p = self._pizz([{"nome": "Borda Catupiry", "preco": 8.0}])
+        _, _, falt = _resolver_adicionais(p, ["Borda Cheddar"])
+        assert falt == ["Borda Cheddar"]
+
+    def test_tool_registrada(self):
+        from app.agent.tools import TOOL_IMPL, TOOL_DECLARATIONS
+        assert "consultar_adicionais" in TOOL_IMPL
+        assert "consultar_adicionais" in {d.name for d in TOOL_DECLARATIONS}
+
+    def test_item_aceita_adicionais_no_schema(self):
+        from app.agent.tools import DECL_REGISTRAR_PEDIDO
+        item = DECL_REGISTRAR_PEDIDO.parameters.properties["itens"].items
+        assert "adicionais" in item.properties
+
+
 class TestTTLConversa:
     def test_constante_ttl(self):
         from app.agent.memory import CONVERSA_TTL_HORAS
