@@ -164,6 +164,55 @@ async def _get_or_create_conversa(
     return conv
 
 
+async def _handle_presence(payload: EvolutionWebhookPayload, db: AsyncSession) -> dict[str, Any]:
+    """
+    Trata o evento de presença ('digitando'/'gravando'). Se o cliente está
+    escrevendo e já existe um lote pendente, estica o debounce — assim a gente
+    espera ele terminar antes de responder. Best-effort (eventos de presença do
+    WhatsApp não são 100% confiáveis; o debounce base cobre o resto).
+    """
+    if not payload.instance:
+        return {"ignored": "no_instance"}
+
+    data = payload.data or {}
+    jid = data.get("id") or ""
+    presenca = None
+    presences = data.get("presences")
+    if isinstance(presences, dict) and presences:
+        if not jid:
+            jid = next(iter(presences.keys()), "")
+        node = presences.get(jid) or next(iter(presences.values()), None)
+        if isinstance(node, dict):
+            presenca = node.get("lastKnownPresence") or node.get("presence")
+    presenca = presenca or data.get("lastKnownPresence") or data.get("presence")
+
+    if presenca not in ("composing", "recording"):
+        return {"ignored": "presence", "presence": presenca}
+    if jid.endswith("@g.us") or "@broadcast" in jid:
+        return {"ignored": "group"}
+
+    telefone = _extract_phone(jid)
+    if not telefone:
+        return {"ignored": "no_phone"}
+
+    pizz = (
+        await db.execute(select(Pizzaria).where(Pizzaria.instancia == payload.instance))
+    ).scalar_one_or_none()
+    if not pizz:
+        return {"ignored": "unknown_instance"}
+
+    from app.services.queue import TYPING_GRACE_SECONDS, touch_typing
+
+    esticou = await touch_typing(pizz.id, telefone)
+    if esticou:
+        # Reagenda a checagem de flush pra depois da janela de digitação.
+        from app.workers.tasks import flush_conversation
+        flush_conversation.apply_async(
+            args=[str(pizz.id), telefone], countdown=TYPING_GRACE_SECONDS + 0.5,
+        )
+    return {"ok": True, "typing": True, "extended": esticou}
+
+
 # ============================================
 # Endpoint
 # ============================================
@@ -175,6 +224,10 @@ async def evolution_webhook(
 ) -> dict[str, Any]:
     # Loga uma única linha pra debug (sem expor dados sensíveis)
     log.info("Evolution webhook: event=%s instance=%s", payload.event, payload.instance)
+
+    # "Digitando…" do cliente: estica o debounce em vez de responder na hora.
+    if payload.event in ("presence.update", "presence_update"):
+        return await _handle_presence(payload, db)
 
     if payload.event not in (None, "messages.upsert"):
         return {"ignored": payload.event}
@@ -328,11 +381,12 @@ async def evolution_webhook(
                 conteudo=conteudo,
                 metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
             )
-            # Agenda flush_conversation com countdown=10.5s (alinhado ao debounce de 10s)
+            # Agenda flush_conversation alinhado ao debounce base (+ folga).
+            from app.services.queue import DEBOUNCE_SECONDS
             from app.workers.tasks import flush_conversation
             flush_conversation.apply_async(
                 args=[str(pizz.id), telefone],
-                countdown=10.5,
+                countdown=DEBOUNCE_SECONDS + 0.5,
             )
 
     await broadcaster.publish(

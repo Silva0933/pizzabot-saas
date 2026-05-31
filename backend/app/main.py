@@ -31,6 +31,33 @@ logging.basicConfig(level=settings.log_level)
 log = logging.getLogger("pizzabot")
 
 
+async def _resync_webhooks_presence() -> None:
+    """Reaplica o webhook (com PRESENCE_UPDATE) em todas as instâncias ativas."""
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal
+    from app.models import Pizzaria
+
+    base = (settings.public_base_url or "").rstrip("/")
+    if not base:
+        return
+    webhook_url = f"{base}/webhook/evolution"
+
+    async with AsyncSessionLocal() as db:
+        instancias = (
+            await db.execute(select(Pizzaria.instancia).where(Pizzaria.instancia.isnot(None)))
+        ).scalars().all()
+
+    for inst in instancias:
+        if not inst:
+            continue
+        try:
+            await evolution.set_webhook(instancia=inst, webhook_url=webhook_url)
+            log.info("Webhook re-sincronizado (presence) p/ instância %s", inst)
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha re-sincronizando webhook da instância %s: %s", inst, e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     log.info("PizzaBot API iniciada (env=%s)", settings.app_env)
@@ -47,6 +74,12 @@ async def lifespan(app: FastAPI):
         await ensure_table()
     except Exception as e:  # noqa: BLE001
         log.warning("Falha ao garantir tabela app_config: %s", e)
+    # Re-sincroniza o webhook das instâncias existentes para incluir o novo
+    # evento PRESENCE_UPDATE ("digitando"). Best-effort, não bloqueia o boot.
+    try:
+        await _resync_webhooks_presence()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao re-sincronizar webhooks de presença: %s", e)
     yield
     # Cleanup
     await evolution.close()

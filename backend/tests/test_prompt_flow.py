@@ -364,6 +364,36 @@ class TestPromptAntiAlucinacao:
         assert "NUNCA INVENTE PROBLEMA" in s
         assert "Pix está com problema" in s or "indisponível" in s
 
+    def test_nao_repete_saudacao_nem_info(self):
+        s = self._build()
+        assert "NENHUMA mensagem depois da primeira pode começar com saudação" in s
+        assert "NÃO repita informação que você já deu" in s
+
+
+class TestDebounceTyping:
+    def test_constantes_debounce_curto(self):
+        from app.services.queue import DEBOUNCE_SECONDS, TYPING_GRACE_SECONDS, MAX_HOLD_SECONDS
+        assert DEBOUNCE_SECONDS <= 8.0      # debounce base "curto"
+        assert TYPING_GRACE_SECONDS >= 4.0  # janela de digitação
+        assert MAX_HOLD_SECONDS >= DEBOUNCE_SECONDS
+
+    def test_evolution_assina_presence_update(self):
+        from app.services.evolution import EvolutionClient
+        payload = EvolutionClient._webhook_payload("https://x/webhook/evolution")
+        assert "PRESENCE_UPDATE" in payload["events"]
+        assert "MESSAGES_UPSERT" in payload["events"]
+
+
+class TestFragmentacaoBaloes:
+    def test_split_por_paragrafo(self):
+        from app.services.humanized_delivery import split_balloons
+        b = split_balloons("Primeiro balão.\n\nSegundo balão.")
+        assert b == ["Primeiro balão.", "Segundo balão."]
+
+    def test_texto_curto_unico_balao(self):
+        from app.services.humanized_delivery import split_balloons
+        assert split_balloons("Oi!") == ["Oi!"]
+
 
 class TestPagamentoFalhou:
     def test_default_message_existe(self):

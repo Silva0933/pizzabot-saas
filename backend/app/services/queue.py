@@ -20,7 +20,15 @@ from typing import Any
 
 from app.redis_client import redis
 
-DEBOUNCE_SECONDS = 10.0
+# Debounce base curto: respondemos ~7s após a última MENSAGEM. Se a Evolution
+# avisar que o cliente está "digitando" (presence.update), esticamos a espera
+# por mais TYPING_GRACE_SECONDS a cada sinal — assim a gente espera ele terminar
+# de escrever antes de responder, sem ficar preso num timer fixo longo.
+DEBOUNCE_SECONDS = 7.0
+TYPING_GRACE_SECONDS = 6.0
+# Teto: nunca segura mais que isso desde a última mensagem (evita travar pra
+# sempre se os eventos de "digitando" não pararem de chegar).
+MAX_HOLD_SECONDS = 45.0
 
 
 def _pending_key(pid: uuid.UUID, phone: str) -> str:
@@ -29,6 +37,40 @@ def _pending_key(pid: uuid.UUID, phone: str) -> str:
 
 def _flush_key(pid: uuid.UUID, phone: str) -> str:
     return f"flush_at:{pid}:{phone}"
+
+
+def _first_seen_key(pid: uuid.UUID, phone: str) -> str:
+    return f"batch_start:{pid}:{phone}"
+
+
+async def touch_typing(pizzaria_id: uuid.UUID, telefone: str) -> bool:
+    """
+    Cliente está digitando: estica o flush_at por mais TYPING_GRACE_SECONDS,
+    respeitando o teto MAX_HOLD_SECONDS desde a 1ª mensagem do lote.
+
+    Só estica se já existir um lote pendente (flush_at setado) — não faz sentido
+    segurar nada se não há mensagem na fila ainda.
+    Retorna True se esticou.
+    """
+    flush_at_raw = await redis.get(_flush_key(pizzaria_id, telefone))
+    if not flush_at_raw:
+        return False
+
+    now = time.time()
+    novo_flush = now + TYPING_GRACE_SECONDS
+
+    # Respeita o teto a partir do início do lote.
+    started_raw = await redis.get(_first_seen_key(pizzaria_id, telefone))
+    if started_raw:
+        limite = float(started_raw) + MAX_HOLD_SECONDS
+        novo_flush = min(novo_flush, limite)
+
+    atual = float(flush_at_raw)
+    if novo_flush <= atual:
+        return False  # já estamos esperando mais que isso
+
+    await redis.set(_flush_key(pizzaria_id, telefone), str(novo_flush), ex=3600)
+    return True
 
 
 async def enqueue_message(
@@ -53,6 +95,8 @@ async def enqueue_message(
     # Conversa "morta" depois de 1h sem msg cai sozinha
     pipe.expire(_pending_key(pizzaria_id, telefone), 3600)
     pipe.set(_flush_key(pizzaria_id, telefone), str(flush_at), ex=3600)
+    # Marca o início do lote (só na 1ª msg) para o teto MAX_HOLD_SECONDS.
+    pipe.set(_first_seen_key(pizzaria_id, telefone), str(time.time()), nx=True, ex=3600)
     await pipe.execute()
 
     return flush_at
@@ -79,6 +123,7 @@ async def drain_pending(pizzaria_id: uuid.UUID, telefone: str) -> list[dict[str,
     pipe.lrange(key, 0, -1)
     pipe.delete(key)
     pipe.delete(_flush_key(pizzaria_id, telefone))
-    raw_list, _, _ = await pipe.execute()
+    pipe.delete(_first_seen_key(pizzaria_id, telefone))
+    raw_list, _, _, _ = await pipe.execute()
 
     return [json.loads(item) for item in raw_list]

@@ -120,7 +120,9 @@ class EvolutionClient:
             "url": url,
             "webhookByEvents": False,
             "webhookBase64": False,
-            "events": ["MESSAGES_UPSERT"],
+            # PRESENCE_UPDATE = eventos de "digitando/gravando" do cliente,
+            # usados pra esticar o debounce enquanto ele ainda está escrevendo.
+            "events": ["MESSAGES_UPSERT", "PRESENCE_UPDATE"],
         }
 
     # =========================
