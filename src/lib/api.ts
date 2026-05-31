@@ -482,10 +482,33 @@ export interface LLMConfig {
   keys_configuradas: Record<string, boolean>;
 }
 
+export interface AssinaturaItem {
+  pizzaria_id: string;
+  nome: string;
+  plano: string;
+  plano_nome: string;
+  preco_mensal: number;
+  ativado_em: string | null;
+  vence_em: string | null;
+  dias_restantes: number | null;
+  alerta: "sem_plano" | "em_dia" | "vence_amanha" | "vencida";
+  suspensa: boolean;
+}
+export interface AssinaturasResp {
+  assinaturas: AssinaturaItem[];
+  alertas: { vence_amanha: number; vencida: number; suspensas: number };
+  ciclo_dias: number;
+}
+
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
   alterarPlano: (pizzariaId: string, plano: string) =>
-    api.patch<{ ok: boolean; plano: string }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
+    api.patch<{ ok: boolean; plano: string; vence_em?: string | null }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
+  assinaturas: () => api.get<AssinaturasResp>(`/admin/assinaturas`),
+  renovar: (pizzariaId: string) =>
+    api.patch<{ ok: boolean; vence_em: string | null }>(`/admin/pizzarias/${pizzariaId}/renovar`, {}),
+  suspender: (pizzariaId: string, suspensa: boolean, motivo?: string) =>
+    api.patch<{ ok: boolean; suspensa: boolean }>(`/admin/pizzarias/${pizzariaId}/suspensao`, { suspensa, motivo }),
   llm: () => api.get<LLMConfig>(`/admin/llm`),
   salvarLlm: (body: { provider: string; model: string; keys: Record<string, string> }) =>
     api.put<{ ok: boolean }>(`/admin/llm`, body),

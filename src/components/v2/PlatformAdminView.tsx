@@ -246,6 +246,8 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </div>
         )}
 
+        <AssinaturasCard />
+
         {loadingOv && !ov ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
         ) : r ? (
@@ -894,5 +896,104 @@ function IconField({
         {children}
       </div>
     </label>
+  );
+}
+
+// ============================================
+// Assinaturas & Vencimentos (ciclo de 30 dias, suspensão manual)
+// ============================================
+function AssinaturasCard() {
+  const [data, setData] = useState<import("../../lib/api").AssinaturasResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    try { setData(await adminApi.assinaturas()); } catch { /* silencioso */ }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function renovar(id: string) {
+    setBusy(id);
+    try { await adminApi.renovar(id); await load(); } finally { setBusy(null); }
+  }
+  async function toggleSuspensao(id: string, suspender: boolean) {
+    if (suspender && !window.confirm("Suspender esta pizzaria? O atendimento será totalmente desligado (sem excluir dados).")) return;
+    setBusy(id);
+    try { await adminApi.suspender(id, suspender, suspender ? "Inadimplência" : undefined); await load(); } finally { setBusy(null); }
+  }
+
+  const fmt = (s: string | null) => s ? new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—";
+
+  if (loading) return null;
+  if (!data) return null;
+
+  const { assinaturas, alertas } = data;
+  const temAlerta = alertas.vence_amanha > 0 || alertas.vencida > 0;
+
+  return (
+    <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h3 className="text-sm font-bold text-slate-800">Assinaturas & Vencimentos</h3>
+        <span className="text-xs text-slate-400">Ciclo de {data.ciclo_dias} dias · suspensão manual</span>
+      </div>
+
+      {temAlerta && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {alertas.vencida > 0 && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-100 text-red-700">
+              {alertas.vencida} vencida(s)
+            </span>
+          )}
+          {alertas.vence_amanha > 0 && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700">
+              {alertas.vence_amanha} vence(m) em ≤1 dia
+            </span>
+          )}
+          {alertas.suspensas > 0 && (
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-200 text-slate-600">
+              {alertas.suspensas} suspensa(s)
+            </span>
+          )}
+        </div>
+      )}
+
+      {assinaturas.length === 0 ? (
+        <p className="text-xs text-slate-400">Nenhuma assinatura ainda.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {assinaturas.map((a) => {
+            const cor = a.suspensa ? "bg-slate-100 text-slate-500"
+              : a.alerta === "vencida" ? "bg-red-100 text-red-700"
+              : a.alerta === "vence_amanha" ? "bg-amber-100 text-amber-700"
+              : a.alerta === "sem_plano" ? "bg-slate-100 text-slate-500"
+              : "bg-emerald-100 text-emerald-700";
+            const label = a.suspensa ? "Suspensa"
+              : a.alerta === "vencida" ? `Vencida há ${Math.abs(a.dias_restantes ?? 0)}d`
+              : a.alerta === "sem_plano" ? "Sem plano"
+              : a.dias_restantes != null ? `Vence em ${a.dias_restantes}d` : "—";
+            return (
+              <div key={a.pizzaria_id} className="py-2.5 flex items-center gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-800 truncate">{a.nome}</p>
+                  <p className="text-[11px] text-slate-400">{a.plano_nome} · vence {fmt(a.vence_em)}</p>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cor}`}>{label}</span>
+                <button onClick={() => renovar(a.pizzaria_id)} disabled={busy === a.pizzaria_id}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium disabled:opacity-50">
+                  Renovar +30d
+                </button>
+                <button onClick={() => toggleSuspensao(a.pizzaria_id, !a.suspensa)} disabled={busy === a.pizzaria_id}
+                  className={`text-xs px-2.5 py-1 rounded-lg font-medium disabled:opacity-50 ${
+                    a.suspensa ? "bg-sky-50 text-sky-700 hover:bg-sky-100" : "bg-red-50 text-red-700 hover:bg-red-100"
+                  }`}>
+                  {a.suspensa ? "Reativar" : "Suspender"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

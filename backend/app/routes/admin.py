@@ -6,6 +6,7 @@ operacional das pizzarias (faturamento delas, pedidos, ticket, etc.).
 
 MRR = soma do preço mensal do plano de cada pizzaria ativa.
 """
+import math
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -22,6 +23,9 @@ from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
 from app.services.secrets import decrypt_secret, encrypt_secret, mask_secret
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+# Ciclo de cobrança: 30 dias rolando a partir da ativação do plano.
+CICLO_DIAS = 30
 
 # Provedores de LLM suportados + sugestões de modelo (o admin pode digitar outro).
 LLM_PROVIDERS = {
@@ -161,19 +165,103 @@ async def alterar_plano(
     db: AsyncSession = Depends(get_db),
     _: Usuario = Depends(require_platform_admin),
 ) -> dict:
-    """Altera o plano de assinatura de uma pizzaria."""
+    """Ativa/altera o plano de uma pizzaria e inicia um ciclo de 30 dias."""
     plano = (plano or "").lower()
     if plano not in PLANS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Plano inválido. Use: {list(PLANS)}")
 
+    # Ativar/trocar plano (re)inicia o ciclo: vence em 30 dias a partir de agora.
     res = await db.execute(
-        text("UPDATE public.pizzarias SET plano = :plano, updated_at = now() WHERE id = :id RETURNING id"),
+        text(
+            f"UPDATE public.pizzarias SET plano = :plano, plano_ativado_em = now(), "
+            f"plano_vence_em = now() + interval '{CICLO_DIAS} days', updated_at = now() "
+            f"WHERE id = :id RETURNING plano_vence_em"
+        ),
         {"plano": plano, "id": pizzaria_id},
     )
-    if res.fetchone() is None:
+    row = res.fetchone()
+    if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
     await db.commit()
-    return {"ok": True, "plano": plano, "info": plan_info(plano)}
+    return {"ok": True, "plano": plano, "info": plan_info(plano), "vence_em": row[0].isoformat() if row[0] else None}
+
+
+@router.patch("/pizzarias/{pizzaria_id}/renovar")
+async def renovar_assinatura(
+    pizzaria_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """
+    Renova +30 dias (cliente pagou). Estende a partir do vencimento atual se ainda
+    no futuro, senão a partir de hoje. Também reativa a pizzaria se estava suspensa.
+    """
+    res = await db.execute(
+        text(
+            f"UPDATE public.pizzarias SET "
+            f"plano_vence_em = GREATEST(now(), COALESCE(plano_vence_em, now())) + interval '{CICLO_DIAS} days', "
+            f"plano_ativado_em = COALESCE(plano_ativado_em, now()), "
+            f"suspensa = FALSE, suspensa_motivo = NULL, updated_at = now() "
+            f"WHERE id = :id RETURNING plano_vence_em"
+        ),
+        {"id": pizzaria_id},
+    )
+    row = res.fetchone()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    await db.commit()
+    return {"ok": True, "vence_em": row[0].isoformat() if row[0] else None, "reativada": True}
+
+
+@router.get("/assinaturas")
+async def listar_assinaturas(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """
+    Lista as assinaturas com vencimento e ALERTAS (vence amanhã / vencida) para o
+    painel do admin. A suspensão é manual — aqui só sinalizamos.
+    """
+    rows = (await db.execute(text(
+        "SELECT id, nome, COALESCE(plano,'basico') AS plano, plano_ativado_em, "
+        "plano_vence_em, suspensa FROM public.pizzarias ORDER BY plano_vence_em NULLS LAST"
+    ))).fetchall()
+
+    agora = datetime.now(timezone.utc)
+    itens = []
+    contagem = {"vence_amanha": 0, "vencida": 0, "suspensas": 0}
+    for r in rows:
+        vence = r[4]
+        dias = None
+        alerta = "sem_plano"
+        if vence is not None:
+            # dias restantes (arredonda pra cima quando ainda há fração de dia futura)
+            dias = math.ceil((vence - agora).total_seconds() / 86400)
+            if dias < 0:
+                alerta = "vencida"
+                contagem["vencida"] += 1
+            elif dias <= 1:
+                alerta = "vence_amanha"
+                contagem["vence_amanha"] += 1
+            else:
+                alerta = "em_dia"
+        if r[5]:
+            contagem["suspensas"] += 1
+        info = plan_info(r[2])
+        itens.append({
+            "pizzaria_id": str(r[0]),
+            "nome": r[1],
+            "plano": r[2],
+            "plano_nome": info["nome"],
+            "preco_mensal": info["preco_mensal"],
+            "ativado_em": r[3].isoformat() if r[3] else None,
+            "vence_em": vence.isoformat() if vence else None,
+            "dias_restantes": dias,
+            "alerta": alerta,
+            "suspensa": bool(r[5]),
+        })
+
+    return {"assinaturas": itens, "alertas": contagem, "ciclo_dias": CICLO_DIAS}
 
 
 @router.patch("/pizzarias/{pizzaria_id}/suspensao")

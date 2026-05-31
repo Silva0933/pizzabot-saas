@@ -62,6 +62,9 @@ class Pizzaria(Base):
     # sem excluir os dados. Controlada só pelo admin da plataforma.
     suspensa: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     suspensa_motivo: Mapped[str | None] = mapped_column(Text)
+    # Assinatura: quando o plano foi ativado e quando vence (ciclo de 30 dias).
+    plano_ativado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    plano_vence_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     endereco: Mapped[str | None] = mapped_column(Text)
     telefone_admin: Mapped[str | None] = mapped_column(String)
