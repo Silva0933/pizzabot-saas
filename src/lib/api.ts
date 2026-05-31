@@ -126,6 +126,9 @@ export interface BackendPizzaria {
   taxa_entrega_info?: string | null;
   taxa_entrega_fixa?: number | null;
   taxas_bairro?: Array<{ bairro: string; taxa: number }> | null;
+  suspensa?: boolean;
+  suspensa_motivo?: string | null;
+  plano_vence_em?: string | null;
   created_at?: string | null;
 }
 

@@ -346,6 +346,8 @@ export default function App() {
       notifPermission={"default" as NotificationPermission}
       onEnableNotifications={() => {}}
     >
+      <AssinaturaAviso venceEm={pizzaria.plano_vence_em ?? null} suspensa={pizzaria.suspensa ?? false} />
+
       {nav === "inicio" && (
         <InicioDashboard
           pizzeria={pizzeriaOld}
@@ -392,6 +394,40 @@ export default function App() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+// ============================================
+// Aviso sutil de assinatura (atraso / suspensão) no painel do dono
+// ============================================
+function AssinaturaAviso({ venceEm, suspensa }: { venceEm: string | null; suspensa: boolean }) {
+  if (!suspensa && !venceEm) return null;
+
+  let dias: number | null = null;
+  if (venceEm) {
+    dias = Math.ceil((new Date(venceEm).getTime() - Date.now()) / 86_400_000);
+  }
+
+  // Só mostra se suspensa, vencida (dias<0) ou bem perto (<=3 dias).
+  if (!suspensa && (dias === null || dias > 3)) return null;
+
+  let cls = "bg-amber-50 border-amber-200 text-amber-800";
+  let msg = "";
+  if (suspensa) {
+    cls = "bg-red-50 border-red-200 text-red-800";
+    msg = "Atendimento suspenso por pendência financeira. Regularize com o suporte para reativar.";
+  } else if (dias !== null && dias < 0) {
+    cls = "bg-red-50 border-red-200 text-red-800";
+    msg = `Sua assinatura está em atraso há ${Math.abs(dias)} dia(s). Regularize para evitar a suspensão do atendimento.`;
+  } else {
+    msg = `Sua assinatura vence em ${dias} dia(s). Fique atento para não interromper o atendimento.`;
+  }
+
+  return (
+    <div className={`mx-4 md:mx-6 mt-3 flex items-center gap-2 border ${cls} px-3 py-2 rounded-lg text-xs`}>
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-70 shrink-0" />
+      <span className="leading-snug">{msg}</span>
+    </div>
   );
 }
 

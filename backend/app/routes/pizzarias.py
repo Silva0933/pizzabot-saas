@@ -2,6 +2,7 @@
 import logging
 import re
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_serializer
@@ -65,6 +66,7 @@ class PizzariaOut(BaseModel):
     bot_ativo_global: bool
     suspensa: bool = False
     suspensa_motivo: str | None = None
+    plano_vence_em: datetime | None = None
     endereco: str | None
     telefone_admin: str | None
     telefone_contato: str | None
