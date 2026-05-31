@@ -208,7 +208,9 @@ class EvolutionClient:
         tipo: 'composing' (digitando) ou 'recording' (gravando áudio).
         """
         body = {
-            "number": f"{numero}@s.whatsapp.net",
+            # Mesmo formato do send_text (número puro) — com sufixo a presença
+            # às vezes não chega ao destinatário em algumas versões da Evolution.
+            "number": numero,
             "presence": tipo,  # "composing" ou "recording"
             "delay": delay_ms if delay_ms is not None else 8000,
         }

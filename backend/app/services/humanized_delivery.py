@@ -1,6 +1,7 @@
 """Envio humanizado: quebra texto em baloes e ajusta digitando por tamanho."""
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
@@ -51,6 +52,9 @@ async def send_humanized_text(
     results: list[dict[str, Any]] = []
     for part in split_balloons(texto):
         delay = typing_delay_ms(part)
+        # 1) Mostra "digitando…" e 2) SEGURA pelo tempo proporcional ao texto,
+        # garantindo que o indicador apareça (não depende do delay nativo da
+        # Evolution, que é instável). Curto = rápido; texto longo = pausa maior.
         try:
             await evolution.send_presence(
                 instancia=instancia,
@@ -60,10 +64,14 @@ async def send_humanized_text(
             )
         except Exception:
             pass
+        try:
+            await asyncio.sleep(min(delay, 7000) / 1000)
+        except Exception:
+            pass
+        # Sem delay extra no envio — a pausa já foi feita acima.
         results.append(await evolution.send_text(
             instancia=instancia,
             numero=numero,
             texto=part,
-            delay_ms=delay,
         ))
     return results
