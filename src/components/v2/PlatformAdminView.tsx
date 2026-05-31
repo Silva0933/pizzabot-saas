@@ -246,7 +246,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </div>
         )}
 
-        <AssinaturasCard />
+        <AssinaturasCard catalogo={ov?.catalogo ?? []} />
 
         {loadingOv && !ov ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
@@ -902,7 +902,7 @@ function IconField({
 // ============================================
 // Assinaturas & Vencimentos (ciclo de 30 dias, suspensão manual)
 // ============================================
-function AssinaturasCard() {
+function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanCatalogo[] }) {
   const [data, setData] = useState<import("../../lib/api").AssinaturasResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -913,6 +913,10 @@ function AssinaturasCard() {
   }
   useEffect(() => { load(); }, []);
 
+  async function ativarPlano(id: string, plano: string) {
+    setBusy(id);
+    try { await adminApi.alterarPlano(id, plano); await load(); } finally { setBusy(null); }
+  }
   async function renovar(id: string) {
     setBusy(id);
     try { await adminApi.renovar(id); await load(); } finally { setBusy(null); }
@@ -979,6 +983,22 @@ function AssinaturasCard() {
                   <p className="text-[11px] text-slate-400">{a.plano_nome} · vence {fmt(a.vence_em)}</p>
                 </div>
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cor}`}>{label}</span>
+                <select
+                  value={a.alerta === "sem_plano" ? "" : a.plano}
+                  disabled={busy === a.pizzaria_id}
+                  onChange={(e) => { if (e.target.value) ativarPlano(a.pizzaria_id, e.target.value); }}
+                  title={a.alerta === "sem_plano" ? "Ativar plano (inicia ciclo de 30 dias)" : "Trocar plano (reinicia o ciclo)"}
+                  className={`text-xs px-2 py-1 rounded-lg border outline-none cursor-pointer disabled:opacity-50 font-medium ${
+                    a.alerta === "sem_plano"
+                      ? "bg-violet-600 text-white border-violet-600"
+                      : "bg-violet-50 text-violet-700 border-violet-200"
+                  }`}
+                >
+                  {a.alerta === "sem_plano" && <option value="" disabled>Ativar plano…</option>}
+                  {(catalogo.length ? catalogo : [{ id: a.plano, nome: a.plano_nome }]).map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                </select>
                 <button onClick={() => renovar(a.pizzaria_id)} disabled={busy === a.pizzaria_id}
                   className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium disabled:opacity-50">
                   Renovar +30d
