@@ -24,7 +24,7 @@ MAX_HISTORY = 12
 # "reseta" (não carregamos turnos antigos) — evita continuar uma conversa velha,
 # misturar contexto e ressuscitar um "de sempre"/pedido antigo. Pizza é pedido
 # curto; 6h é seguro.
-CONVERSA_TTL_HORAS = 6
+CONVERSA_TTL_HORAS = 2
 
 
 async def load_history_messages(

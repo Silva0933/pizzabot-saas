@@ -200,6 +200,13 @@ async def processar(
     intencao = nlu.get("intencao")
     dados = nlu.get("dados") or {}
 
+    # Se a conversa anterior já foi finalizada com sucesso e o cliente está iniciando um novo
+    # contato (intenção não é de pós-venda ou pós-entrega), resetamos o estado FSM.
+    if estado.get("etapa") == "FINALIZADO" and intencao not in (
+        "alterar_pedido", "avaliar", "cancelar", "reclamar", "falar_humano"
+    ):
+        estado.update(estado_inicial())
+
     decisao: dict[str, Any] = {
         "acao": "conversar", "fatos": [], "proxima_pergunta": None,
         "enviar_cardapio": False, "dados": {},

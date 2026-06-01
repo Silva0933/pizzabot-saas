@@ -33,7 +33,7 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     provider = cfg["provider"]
     api_key = cfg["keys"].get(provider) or ""
     model = modelo_para_plano(cfg, getattr(ctx.pizzaria, "plano", None))
-    if provider not in ("openai", "openrouter") or not api_key:
+    if provider not in ("openai", "openrouter", "gemini") or not api_key:
         # FSM atual roda no caminho OpenAI-compatível (NLU/voz via chat). Sem isso, fallback.
         return None
 

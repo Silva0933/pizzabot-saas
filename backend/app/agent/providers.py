@@ -74,6 +74,8 @@ def _base_and_headers(provider: str, api_key: str) -> tuple[str, dict[str, str]]
         headers["HTTP-Referer"] = "https://pizzabot.secretariaai.eu.cc"
         headers["X-Title"] = "PizzaBot"
         return OPENROUTER_BASE, headers
+    elif provider == "gemini":
+        return "https://generativelanguage.googleapis.com/v1beta/openai", headers
     return OPENAI_BASE, headers
 
 
