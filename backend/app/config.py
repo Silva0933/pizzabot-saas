@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     evolution_base_url: str = ""
     evolution_api_key: str = ""
     gemini_api_key: str = ""
+    # Chaves LLM opcionais via env (fallback quando não configuradas no painel).
+    openrouter_api_key: str = ""
+    openai_api_key: str = ""
+    # Provider/modelo padrão via env (usado quando não configurado no banco).
+    # Exemplo: LLM_PROVIDER=openrouter  LLM_MODEL=openai/gpt-4o-mini
+    llm_provider: str = ""   # gemini | openai | openrouter
+    llm_model: str = ""
     mp_webhook_secret: str = ""
     # Segredo que a Evolution devolve na URL do webhook (?token=...). Se vazio,
     # a validação fica DESLIGADA (compatível com o estado atual). Defina no

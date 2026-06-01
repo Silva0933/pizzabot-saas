@@ -180,14 +180,39 @@ DEFAULT_LLM_CONFIG: dict[str, Any] = {
 
 async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     """
-    Config de LLM atual (merge com defaults). A chave do Gemini cai para a
-    variável de ambiente quando não cadastrada no painel.
+    Config de LLM atual (merge com defaults).
+
+    Prioridade para cada campo:
+      1. Valor salvo no banco (painel admin)
+      2. Variável de ambiente (LLM_PROVIDER / LLM_MODEL / *_API_KEY)
+      3. Default hard-coded (gemini / gemini-2.0-flash)
     """
     cfg = await get_config(db, LLM_KEY)
-    provider = (cfg.get("provider") or DEFAULT_LLM_CONFIG["provider"]).lower()
-    model = cfg.get("model") or DEFAULT_LLM_CONFIG["model"]
+
+    # --- Provider ---
+    provider = (
+        cfg.get("provider")
+        or _settings.llm_provider
+        or DEFAULT_LLM_CONFIG["provider"]
+    ).lower()
+
+    # --- Modelo ---
+    model = (
+        cfg.get("model")
+        or _settings.llm_model
+        or DEFAULT_LLM_CONFIG["model"]
+    )
+
+    # --- Chaves (decrypt se salvas criptografadas) ---
     keys = {**DEFAULT_LLM_CONFIG["keys"], **(cfg.get("keys") or {})}
     keys = {k: (decrypt_secret(v) or "") for k, v in keys.items()}
+
+    # Fallback para variáveis de ambiente quando a chave não está no banco.
     if not keys.get("gemini"):
         keys["gemini"] = _settings.gemini_api_key or ""
+    if not keys.get("openrouter"):
+        keys["openrouter"] = _settings.openrouter_api_key or ""
+    if not keys.get("openai"):
+        keys["openai"] = _settings.openai_api_key or ""
+
     return {"provider": provider, "model": model, "keys": keys}
