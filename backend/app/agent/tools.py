@@ -766,7 +766,7 @@ async def _calcular_pedido(
                     if isinstance(regras.get("meia_meia"), dict):
                         regras_meia = {**regras_meia, **regras["meia_meia"]}
                 except ValueError as e:
-                    return {"ok": False, "erro": str(e)}
+                    return {"ok": False, "erro": str(e), "sabor_invalido": sab}
 
             if not precos_sabores:
                 return {"ok": False, "erro": "Pizza combinada sem sabores validos."}
@@ -796,7 +796,7 @@ async def _calcular_pedido(
                 else:
                     nome_final = nome_limpo
             except ValueError as e:
-                return {"ok": False, "erro": str(e)}
+                return {"ok": False, "erro": str(e), "produto_invalido": nome_prod}
 
         # ---- Adicionais/bordas do item (preço somado, validado no backend) ----
         ad_nomes = it.get("adicionais") or it.get("extras")

@@ -315,6 +315,22 @@ async def processar(
             observacoes=estado.get("observacoes"),
         )
         if not calc.get("ok"):
+            # Se for erro de item/sabor não encontrado no cardápio, removemos do carrinho
+            prod_inv = calc.get("produto_invalido") or calc.get("sabor_invalido")
+            if prod_inv:
+                import unicodedata
+                def _norm(x):
+                    x_clean = "".join(c for c in unicodedata.normalize("NFD", str(x).strip().lower()) if unicodedata.category(c) != "Mn")
+                    import re as _re
+                    return _re.sub(r"\s+", " ", x_clean)
+                
+                alvo = _norm(prod_inv)
+                estado["carrinho"] = [
+                    it for it in estado["carrinho"]
+                    if (not it.get("nome") or _norm(it.get("nome")) != alvo) and 
+                       (not it.get("sabores") or all(_norm(s) != alvo for s in it["sabores"]))
+                ]
+
             # Pendência: item não encontrado / falta tamanho / taxa não cadastrada.
             decisao["acao"] = "pendencia"
             decisao["fatos"].append(f"O sistema precisa resolver: {calc.get('erro')}")
