@@ -66,8 +66,9 @@ class Pizzaria(Base):
     plano_ativado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     plano_vence_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Pipeline FSM (NLU→backend→voz): quando True, o atendimento usa o novo
-    # pipeline determinístico em vez do agente de tool-calling. Off por padrão.
-    pipeline_fsm: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # pipeline determinístico em vez do agente de tool-calling. Padrão = True
+    # (ambiente de testes; fallback automático pro agente legado em baixa confiança).
+    pipeline_fsm: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     endereco: Mapped[str | None] = mapped_column(Text)
     telefone_admin: Mapped[str | None] = mapped_column(String)
