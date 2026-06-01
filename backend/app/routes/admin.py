@@ -364,6 +364,8 @@ class LLMConfigIn(BaseModel):
     keys: dict[str, str] = {}
     # Modelo por plano (opcional): {"basico": "...", "pro": "...", "premium": "..."}.
     modelos_plano: dict[str, str] = {}
+    # Modelo separado p/ transcrever áudio (ex.: google/gemini-2.5-flash-lite).
+    transcription_model: str | None = None
 
 
 @router.get("/llm")
@@ -383,6 +385,7 @@ async def get_llm(
         "keys_configuradas": {k: bool(v) for k, v in cfg["keys"].items()},
         "modelos_plano": cfg.get("modelos_plano") or {},
         "planos": list(PLANS.keys()),
+        "transcription_model": cfg.get("transcription_model") or "",
     }
 
 
@@ -415,9 +418,11 @@ async def put_llm(
     await set_config(db, LLM_KEY, {
         "provider": provider, "model": body.model.strip(),
         "keys": keys, "modelos_plano": modelos_plano,
+        "transcription_model": (body.transcription_model or "").strip(),
     })
     return {"ok": True, "provider": provider, "model": body.model.strip(),
             "modelos_plano": modelos_plano,
+            "transcription_model": (body.transcription_model or "").strip(),
             "keys_configuradas": {k: bool(decrypt_secret(v) or v) for k, v in keys.items()}}
 
 

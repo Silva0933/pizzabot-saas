@@ -618,6 +618,7 @@ function LLMConfigCard() {
   const [customMode, setCustomMode] = useState(false);
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [modelosPlano, setModelosPlano] = useState<Record<string, string>>({});
+  const [transcriptionModel, setTranscriptionModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -629,6 +630,7 @@ function LLMConfigCard() {
     setModel(c.model);
     setCustomMode(!modelos.includes(c.model));
     setModelosPlano(c.modelos_plano || {});
+    setTranscriptionModel(c.transcription_model || "");
   }
 
   function load() {
@@ -655,7 +657,7 @@ function LLMConfigCard() {
   async function save() {
     setSaving(true); setMsg(null);
     try {
-      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano });
+      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano, transcription_model: transcriptionModel.trim() });
       setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor/modelo." });
       load();
     } catch (e: any) { setMsg({ ok: false, text: e.message }); }
@@ -745,6 +747,15 @@ function LLMConfigCard() {
                 </div>
               </div>
             )}
+
+            {/* Modelo de transcrição de áudio (separado) */}
+            <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <span className="text-xs font-semibold text-slate-700">Modelo p/ transcrever áudio</span>
+              <p className="text-[11px] text-slate-400 mb-1.5">Use um modelo que "ouça" áudio quando o modelo de resposta não ouve (ex.: Gemma). Vazio = mesmo modelo de resposta.</p>
+              <input value={transcriptionModel} onChange={(e) => setTranscriptionModel(e.target.value)}
+                placeholder="ex.: google/gemini-2.5-flash-lite"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
+            </label>
 
             <div className="space-y-2.5">
               {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (

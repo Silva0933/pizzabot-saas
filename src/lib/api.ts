@@ -487,6 +487,7 @@ export interface LLMConfig {
   keys_configuradas: Record<string, boolean>;
   modelos_plano?: Record<string, string>;
   planos?: string[];
+  transcription_model?: string;
 }
 
 export interface AssinaturaItem {
@@ -551,7 +552,7 @@ export const adminApi = {
   suspender: (pizzariaId: string, suspensa: boolean, motivo?: string) =>
     api.patch<{ ok: boolean; suspensa: boolean }>(`/admin/pizzarias/${pizzariaId}/suspensao`, { suspensa, motivo }),
   llm: () => api.get<LLMConfig>(`/admin/llm`),
-  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string> }) =>
+  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string>; transcription_model?: string }) =>
     api.put<{ ok: boolean }>(`/admin/llm`, body),
   testarLlm: () =>
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),

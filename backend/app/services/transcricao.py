@@ -46,7 +46,9 @@ async def transcrever_audio(db: AsyncSession, audio_b64: str, mimetype: str = "a
     """
     cfg = await get_llm_config(db)
     provider = cfg["provider"]
-    model = cfg["model"]
+    # Usa o MODELO DE TRANSCRIÇÃO (separado): permite usar um modelo multimodal
+    # barato p/ ouvir o áudio mesmo quando o modelo de resposta não ouve (ex.: Gemma).
+    model = cfg.get("transcription_model") or cfg["model"]
     keys = cfg["keys"]
 
     try:

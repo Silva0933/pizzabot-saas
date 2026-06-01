@@ -219,7 +219,16 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     # Permite usar um modelo mais barato no Básico e melhor no Premium.
     modelos_plano = cfg.get("modelos_plano") or {}
 
-    return {"provider": provider, "model": model, "keys": keys, "modelos_plano": modelos_plano}
+    # Modelo de TRANSCRIÇÃO de áudio (separado do modelo de texto). Útil quando o
+    # modelo de resposta não ouve áudio (ex.: Gemma) — aí o áudio é transcrito por
+    # um modelo multimodal barato (ex.: google/gemini-2.5-flash-lite) e o TEXTO vai
+    # pro modelo de resposta. Cai no modelo de texto se não configurado.
+    transcription_model = (cfg.get("transcription_model") or "").strip() or model
+
+    return {
+        "provider": provider, "model": model, "keys": keys,
+        "modelos_plano": modelos_plano, "transcription_model": transcription_model,
+    }
 
 
 def modelo_para_plano(cfg: dict[str, Any], plano: str | None) -> str:
