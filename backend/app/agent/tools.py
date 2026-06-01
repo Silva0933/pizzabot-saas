@@ -577,6 +577,29 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
         row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": f"%{q}%"})).first()
 
     if not row:
+        # Fallback POR PALAVRA-CHAVE (sem acento, qualquer ordem): "vulcão de
+        # calabresa" casa com "Calabresa Vulcão". Busca o produto que contém MAIS
+        # tokens da query (e, em empate, o nome mais curto).
+        _STOP = {"de", "da", "do", "com", "sem", "a", "o", "e", "pizza", "sabor", "uma", "um"}
+        tokens = [t for t in re.split(r"[^0-9a-zà-ÿ]+", q.lower()) if len(t) >= 3 and t not in _STOP]
+        tokens_norm = [_normalizar(t) for t in tokens]
+        if tokens_norm:
+            cands = (await db.execute(text(
+                "SELECT nome, preco, tamanhos, COALESCE(aliases::text,'') FROM public.produtos "
+                "WHERE pizzaria_id = :pid AND disponivel = true"
+            ), {"pid": str(pizzaria_id)})).fetchall()
+            melhor = None
+            melhor_score = 0
+            for c in cands:
+                alvo = _normalizar(f"{c[0]} {c[3]}")
+                score = sum(1 for t in tokens_norm if t in alvo)
+                if score > melhor_score or (score == melhor_score and score > 0 and melhor and len(c[0]) < len(melhor[0])):
+                    melhor, melhor_score = c, score
+            # Exige casar TODOS os tokens (precisão) — evita pegar item errado.
+            if melhor and melhor_score >= len(tokens_norm):
+                row = (melhor[0], melhor[1], melhor[2])
+
+    if not row:
         raise ValueError(f"Sabor ou produto '{nome_sabor}' nao encontrado no cardapio.")
 
     from unittest.mock import Mock
