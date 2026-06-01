@@ -870,3 +870,109 @@ class TestHumanizacaoEMelhorias:
         assert texto == "A pizza fica R$ 55,00"
         # E nunca devolve a frase de espera que causava o loop.
         assert "deixa eu confirmar" not in texto.lower()
+
+
+class TestMelhoriasEspecificas:
+    """Valida as correções de duplicação de tamanho e tratamento de timeout na FSM."""
+
+    def test_pizza_combinada_limpa_sufixos_individuais(self):
+        import asyncio
+        from app.agent.tools import _calcular_pedido
+        from unittest.mock import AsyncMock, MagicMock
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        ctx.pizzaria.adicionais = []
+
+        db = AsyncMock()
+
+        # Simulamos que _obter_preco_produto retorna "Calabresa (G)" e "Frango (G)"
+        with patch("app.agent.tools._obter_preco_produto") as mock_obter_preco:
+            with patch("app.agent.tools._obter_regras_produto") as mock_obter_regras:
+                mock_obter_preco.side_effect = [
+                    (30.0, "Calabresa (G)"),
+                    (35.0, "Frango (G)"),
+                ]
+                mock_obter_regras.return_value = {"meia_meia": {"permitido": True, "max_sabores": 2, "calculo": "maior_valor"}}
+
+                r = asyncio.run(_calcular_pedido(
+                    ctx, db,
+                    itens=[{"sabores": ["Calabresa", "Frango"], "tamanho": "G", "qtd": 1}],
+                    tipo="retirada",
+                    forma_pagamento="dinheiro"
+                ))
+
+                assert r["ok"] is True
+                assert r["itens"][0]["nome"] == "Pizza Meia Calabresa / Meia Frango (G)"
+                assert r["valor_total"] == 35.0
+
+    def test_item_simples_com_colisao_de_letra_no_tamanho(self):
+        import asyncio
+        from app.agent.tools import _calcular_pedido
+        from unittest.mock import AsyncMock, MagicMock
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        ctx.pizzaria.adicionais = []
+
+        db = AsyncMock()
+
+        with patch("app.agent.tools._obter_preco_produto") as mock_obter_preco:
+            # "Frango" tem a letra "g"
+            mock_obter_preco.return_value = (40.0, "Frango")
+
+            r = asyncio.run(_calcular_pedido(
+                ctx, db,
+                itens=[{"nome": "Frango", "tamanho": "G", "qtd": 1}],
+                tipo="retirada",
+                forma_pagamento="dinheiro"
+            ))
+
+            assert r["ok"] is True
+            # Deve conter o (G) no final mesmo que "g" exista na palavra "Frango"
+            assert r["itens"][0]["nome"] == "Frango (G)"
+
+    def test_timeout_fsm_aciona_fallback_com_max_iterations(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch, MagicMock
+        from app.agent.runner import process_and_reply
+
+        db = AsyncMock()
+
+        # Mock de run_fsm_agent para demorar e dar timeout
+        async def mock_run_fsm_delay(*args, **kwargs):
+            await asyncio.sleep(10)
+            return MagicMock()
+
+        with patch("app.agent.fsm.pipeline.run_fsm_agent", side_effect=mock_run_fsm_delay):
+            with patch("app.agent.runner.run_agent", new_callable=AsyncMock) as mock_run_agent:
+                with patch("app.services.broadcaster.broadcaster.publish", new_callable=AsyncMock):
+                    with patch("app.services.humanized_delivery.send_humanized_text", new_callable=AsyncMock):
+                        pizz = MagicMock()
+                        pizz.pipeline_fsm = True
+                        pizz.instancia = "inst_test"
+                        pizz.id = "00000000-0000-0000-0000-000000000001"
+
+                        res_pizz = MagicMock()
+                        res_pizz.scalar_one = MagicMock(return_value=pizz)
+
+                        conv = MagicMock()
+                        conv.id = "00000000-0000-0000-0000-000000000002"
+                        res_conv = MagicMock()
+                        res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+
+                        db.execute.side_effect = [res_pizz, res_conv]
+
+                        mock_result = MagicMock()
+                        mock_result.texto = "Resposta do legado"
+                        mock_result.iteracoes = 2
+                        mock_result.tool_calls = []
+                        mock_run_agent.return_value = mock_result
+
+                        # Executamos o process_and_reply
+                        r = asyncio.run(process_and_reply(db, pizz.id, "5511999999999", "Oi"))
+
+                        assert r["ok"] is True
+                        # Deve ter chamado o run_agent legado com max_iterations=3 devido ao timeout
+                        mock_run_agent.assert_called_once()
+                        assert mock_run_agent.call_args[1]["max_iterations"] == 3

@@ -54,6 +54,7 @@ async def run_agent(
     pizzaria_id: uuid.UUID,
     telefone: str,
     user_input: str,
+    max_iterations: int | None = None,
 ) -> AgentResult:
     """Roda uma rodada completa do agente para uma entrada do cliente."""
     ctx = await load_context(db, pizzaria_id, telefone)
@@ -70,6 +71,8 @@ async def run_agent(
         estado_atendimento=ctx.estado_atendimento,
     )
 
+    max_iter = max_iterations or MAX_AGENT_ITERATIONS
+
     # Provider de LLM configurado pelo admin (gemini | openai | openrouter)
     cfg = await get_llm_config(db)
     # Custo por plano: usa o modelo definido para o plano da pizzaria (se houver).
@@ -78,7 +81,7 @@ async def run_agent(
     provider = cfg["provider"]
     if provider in ("openai", "openrouter") and cfg["keys"].get(provider):
         return await _run_openai_agent(
-            db, pizzaria_id, telefone, user_input, ctx=ctx, system=system, cfg=cfg,
+            db, pizzaria_id, telefone, user_input, ctx=ctx, system=system, cfg=cfg, max_iterations=max_iter,
         )
 
     history = await load_history(db, pizzaria_id, telefone)
@@ -96,7 +99,7 @@ async def run_agent(
     gemini_key = cfg["keys"].get("gemini") or None
     gemini_model = cfg["model"] if provider == "gemini" else "gemini-2.0-flash"
     usage_acc = {"prompt": 0, "completion": 0, "total": 0}
-    for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
+    for iteration in range(1, max_iter + 1):
         log.info("Agente iter=%d pizzaria=%s tel=%s", iteration, pizzaria_id, telefone)
         response = await call_gemini(
             system=system, history=history, tools=tools,
@@ -156,6 +159,7 @@ async def _run_openai_agent(
     ctx: Any,
     system: str,
     cfg: dict,
+    max_iterations: int | None = None,
 ) -> AgentResult:
     """Loop do agente usando provider OpenAI-compatível (OpenAI/OpenRouter)."""
     import json as _json
@@ -171,13 +175,14 @@ async def _run_openai_agent(
 
     await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
 
+    max_iter = max_iterations or MAX_AGENT_ITERATIONS
     tool_calls_made: list[str] = []
     precos_tool: set[float] = set()
     final_text: str | None = None
     iteration = 0
     usage_acc = {"prompt": 0, "completion": 0, "total": 0}
 
-    for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
+    for iteration in range(1, max_iter + 1):
         log.info("Agente(%s) iter=%d pizzaria=%s", provider, iteration, pizzaria_id)
         res = await openai_chat(
             provider=provider, api_key=api_key, model=model,
@@ -312,15 +317,25 @@ async def process_and_reply(
     # ---- Roda o agente IA (pipeline FSM se a pizzaria estiver com a flag) ----
     try:
         result = None
+        fallback_iterations = None
         if getattr(pizz, "pipeline_fsm", False):
             try:
+                import asyncio
                 from app.agent.fsm.pipeline import run_fsm_agent
-                result = await run_fsm_agent(db, pizzaria_id, telefone, user_input)
+                result = await asyncio.wait_for(
+                    run_fsm_agent(db, pizzaria_id, telefone, user_input),
+                    timeout=4.0
+                )
+            except asyncio.TimeoutError:
+                log.warning("Pipeline FSM estourou o timeout de 4s, caindo p/ agente legado com limites reduzidos")
+                result = None
+                fallback_iterations = 3
             except Exception as e_fsm:  # noqa: BLE001
                 log.exception("Pipeline FSM falhou, caindo p/ agente legado: %s", e_fsm)
                 result = None
+                fallback_iterations = 3
         if result is None:  # flag off OU fallback do FSM
-            result = await run_agent(db, pizzaria_id, telefone, user_input)
+            result = await run_agent(db, pizzaria_id, telefone, user_input, max_iterations=fallback_iterations)
     except Exception as e:
         log.exception("Falha critica no processamento da IA para pizzaria=%s tel=%s: %s", pizzaria_id, telefone, e)
         try:

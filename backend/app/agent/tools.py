@@ -727,7 +727,8 @@ async def _calcular_pedido(
                 try:
                     pr, nm = await _obter_preco_produto(db, ctx.pizzaria.id, sab, tamanho)
                     precos_sabores.append(pr)
-                    nomes_sabores.append(nm)
+                    nm_limpo, _ = _parse_nome_e_tamanho(nm)
+                    nomes_sabores.append(nm_limpo)
                     regras = await _obter_regras_produto(db, ctx.pizzaria.id, sab)
                     if isinstance(regras.get("meia_meia"), dict):
                         regras_meia = {**regras_meia, **regras["meia_meia"]}
@@ -745,7 +746,7 @@ async def _calcular_pedido(
             calculo_meia = regras_meia.get("calculo") or "maior_valor"
             preco_unitario = (sum(precos_sabores) / len(precos_sabores)) if calculo_meia == "media" else max(precos_sabores)
             nome_final = "Pizza Meia " + " / Meia ".join(nomes_sabores)
-            if tamanho and tamanho.lower() not in nome_final.lower():
+            if tamanho:
                 nome_final += f" ({tamanho})"
         # Caso 2: Item simples
         else:
@@ -754,11 +755,13 @@ async def _calcular_pedido(
                 return {"ok": False, "erro": "Item do pedido sem nome ou sabores definidos."}
             try:
                 preco_unitario, db_nome = await _obter_preco_produto(db, ctx.pizzaria.id, nome_prod, tamanho)
-                nome_final = db_nome
-                # Só acrescenta o tamanho se o nome do produto ainda não o contém
-                # (evita "The Pizza (GG) (GG)" quando o tamanho já está no nome).
-                if tamanho and tamanho.lower() not in nome_final.lower():
-                    nome_final += f" ({tamanho})"
+                nome_limpo, tam_existente = _parse_nome_e_tamanho(db_nome)
+                if tamanho:
+                    nome_final = f"{nome_limpo} ({tamanho})"
+                elif tam_existente:
+                    nome_final = f"{nome_limpo} ({tam_existente})"
+                else:
+                    nome_final = nome_limpo
             except ValueError as e:
                 return {"ok": False, "erro": str(e)}
 
@@ -948,6 +951,12 @@ async def registrar_pedido(
             "erro": "valor_total inválido (0). Use preparar_resumo_pedido antes de registrar.",
         }
 
+    # Trava por cliente (advisory lock) — serializa chamadas concorrentes
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+        {"k": f"reg:{ctx.pizzaria.id}:{ctx.telefone}"},
+    )
+
     calculo = await _calcular_pedido(
         ctx,
         db,
@@ -988,12 +997,6 @@ async def registrar_pedido(
     valor_itens_total = float(calculo["valor_itens"])
     taxa_entrega = float(calculo["taxa_entrega"])
     valor_total_real = float(calculo["valor_total"])
-
-    # Trava por cliente (advisory lock) — serializa chamadas concorrentes
-    await db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
-        {"k": f"reg:{ctx.pizzaria.id}:{ctx.telefone}"},
-    )
 
     # garante cliente
     cli = ctx.cliente
