@@ -1424,10 +1424,31 @@ async def cancelar_pedido(
     if ped.status in ("a_caminho", "entregue"):
         return {"ok": False, "erro": f"pedido #{ped.numero_pedido} já está '{ped.status}' e não pode ser cancelado"}
 
+    old_status = ped.status
     ped.status = "cancelado"
     ped.cancelado_at = datetime.now(timezone.utc)
     ped.cancelamento_motivo = motivo_cancelamento
     await db.flush()
+
+    # Dispara o broadcast WebSocket de atualização do pedido para mover o card em tempo real no Kanban
+    try:
+        from app.services.broadcaster import broadcaster
+        await broadcaster.publish(
+            ctx.pizzaria.id,
+            {
+                "tipo": "pedido.atualizado",
+                "pizzaria_id": str(ctx.pizzaria.id),
+                "payload": {
+                    "pedido_id": str(ped.id),
+                    "numero_pedido": ped.numero_pedido,
+                    "status_anterior": old_status,
+                    "status_novo": ped.status,
+                },
+            },
+        )
+    except Exception as e_bc:
+        log.warning("Falha ao disparar broadcast de cancelamento: %s", e_bc)
+
     return {"ok": True, "numero_pedido": ped.numero_pedido, "cancelado": True}
 
 
