@@ -130,6 +130,7 @@ export interface BackendPizzaria {
   suspensa?: boolean;
   suspensa_motivo?: string | null;
   plano_vence_em?: string | null;
+  pipeline_fsm?: boolean;
   created_at?: string | null;
 }
 
@@ -551,6 +552,8 @@ export const adminApi = {
     api.patch<{ ok: boolean; vence_em: string | null }>(`/admin/pizzarias/${pizzariaId}/renovar`, {}),
   suspender: (pizzariaId: string, suspensa: boolean, motivo?: string) =>
     api.patch<{ ok: boolean; suspensa: boolean }>(`/admin/pizzarias/${pizzariaId}/suspensao`, { suspensa, motivo }),
+  togglePipeline: (pizzariaId: string, fsm: boolean) =>
+    api.patch<{ ok: boolean; pipeline_fsm: boolean }>(`/admin/pizzarias/${pizzariaId}/pipeline`, { fsm }),
   llm: () => api.get<LLMConfig>(`/admin/llm`),
   salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string>; transcription_model?: string }) =>
     api.put<{ ok: boolean }>(`/admin/llm`, body),

@@ -309,9 +309,18 @@ async def process_and_reply(
     except Exception as e:
         log.debug("Falha ao enviar indicador de digitando: %s", e)
 
-    # ---- Roda o agente IA ----
+    # ---- Roda o agente IA (pipeline FSM se a pizzaria estiver com a flag) ----
     try:
-        result = await run_agent(db, pizzaria_id, telefone, user_input)
+        result = None
+        if getattr(pizz, "pipeline_fsm", False):
+            try:
+                from app.agent.fsm.pipeline import run_fsm_agent
+                result = await run_fsm_agent(db, pizzaria_id, telefone, user_input)
+            except Exception as e_fsm:  # noqa: BLE001
+                log.exception("Pipeline FSM falhou, caindo p/ agente legado: %s", e_fsm)
+                result = None
+        if result is None:  # flag off OU fallback do FSM
+            result = await run_agent(db, pizzaria_id, telefone, user_input)
     except Exception as e:
         log.exception("Falha critica no processamento da IA para pizzaria=%s tel=%s: %s", pizzaria_id, telefone, e)
         try:

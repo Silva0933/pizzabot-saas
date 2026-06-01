@@ -86,6 +86,7 @@ async def openai_chat(
     tools: list[dict[str, Any]] | None = None,
     temperature: float = 0.7,
     max_tokens: int = 1024,
+    response_format: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Chama chat completions (OpenAI/OpenRouter). Retorna formato normalizado:
@@ -101,6 +102,8 @@ async def openai_chat(
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+    if response_format:
+        payload["response_format"] = response_format
 
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)

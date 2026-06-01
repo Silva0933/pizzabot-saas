@@ -330,6 +330,24 @@ async def resolver_alerta(
     return {"ok": True}
 
 
+@router.patch("/pizzarias/{pizzaria_id}/pipeline")
+async def alterar_pipeline(
+    pizzaria_id: str,
+    fsm: bool = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Liga/desliga o pipeline FSM (NLU→backend→voz) de uma pizzaria (experimental)."""
+    res = await db.execute(
+        text("UPDATE public.pizzarias SET pipeline_fsm = :v, updated_at = now() WHERE id = :id RETURNING id"),
+        {"v": fsm, "id": pizzaria_id},
+    )
+    if res.fetchone() is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    await db.commit()
+    return {"ok": True, "pipeline_fsm": fsm}
+
+
 @router.patch("/pizzarias/{pizzaria_id}/suspensao")
 async def alterar_suspensao(
     pizzaria_id: str,

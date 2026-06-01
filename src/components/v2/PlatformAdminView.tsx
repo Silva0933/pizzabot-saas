@@ -202,6 +202,16 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     setBusyId(null);
   }
 
+  async function togglePipeline(p: BackendPizzaria) {
+    setBusyId(p.id);
+    setErr(null);
+    try {
+      await adminApi.togglePipeline(p.id, !p.pipeline_fsm);
+      await refreshAll();
+    } catch (e: any) { setErr(e.message || "Erro ao alternar pipeline."); }
+    setBusyId(null);
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Header */}
@@ -576,6 +586,16 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                   }`}>
                     <Power className="w-2.5 h-2.5" /> {p.bot_ativo_global ? "Bot on" : "Bot off"}
                   </span>
+                  <button
+                    type="button"
+                    disabled={busyId === p.id}
+                    onClick={(e) => { e.stopPropagation(); togglePipeline(p); }}
+                    title="Pipeline FSM (experimental): NLU → backend → voz"
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer disabled:opacity-50 ${
+                      p.pipeline_fsm ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    }`}>
+                    FSM {p.pipeline_fsm ? "ON" : "off"}
+                  </button>
                 </div>
                 <p className="text-xs text-slate-500 truncate">
                   {(() => { const a = assinaturaById(p.id); return a ? `${brl(a.preco_mensal)}/mês · ${a.uso.produtos} produtos · ${a.uso.conversas} conversas` : (p.instancia ? `Instância: ${p.instancia}` : "Sem instância Evolution"); })()}

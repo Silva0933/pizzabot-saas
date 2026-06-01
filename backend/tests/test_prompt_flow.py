@@ -552,6 +552,41 @@ class TestFase5CustoEscala:
         assert "PREFERÊNCIAS DO CLIENTE" in s
 
 
+class TestPipelineFSM:
+    def test_nlu_extrai_json_sujo(self):
+        from app.agent.fsm.nlu import _extrair_json, _normalizar_saida
+        d = _extrair_json('```json\n{"intencao":"adicionar_item","confianca_intencao":0.9,"dados_extraidos":{}}\n```')
+        assert d and d["intencao"] == "adicionar_item"
+        norm = _normalizar_saida(d)
+        assert norm["intencao"] == "adicionar_item" and 0 <= norm["confianca"] <= 1
+
+    def test_nlu_intencao_invalida_vira_duvida(self):
+        from app.agent.fsm.nlu import _normalizar_saida
+        n = _normalizar_saida({"intencao": "xpto", "confianca_intencao": 2})
+        assert n["intencao"] == "duvida_geral" and n["confianca"] == 1.0
+
+    def test_engine_aplica_nlu_no_carrinho(self):
+        from app.agent.fsm.engine import estado_inicial, _aplicar_nlu
+        e = estado_inicial()
+        _aplicar_nlu(e, {
+            "produtos": [{"nome": "Calabresa", "qtd": 2, "tamanho": "G"}],
+            "tipo_entrega": "delivery", "forma_pagamento": "pix", "pagar_agora": True,
+        })
+        assert e["carrinho"][0]["nome"] == "Calabresa" and e["carrinho"][0]["qtd"] == 2
+        assert e["tipo"] == "delivery" and e["pagamento"] == "pix" and e["pagar_agora"] is True
+
+    def test_engine_remove_item(self):
+        from app.agent.fsm.engine import estado_inicial, _aplicar_nlu
+        e = estado_inicial()
+        _aplicar_nlu(e, {"produtos": [{"nome": "Calabresa", "qtd": 1}]})
+        _aplicar_nlu(e, {"remover": ["calabresa"]})
+        assert e["carrinho"] == []
+
+    def test_resumo_estado(self):
+        from app.agent.fsm.engine import estado_inicial, resumo_estado
+        assert "etapa=SAUDACAO" in resumo_estado(estado_inicial())
+
+
 class TestNpsMessage:
     def test_default_nps_interpola(self):
         from app.services.status_messages import DEFAULT_NPS_MESSAGE, _interpolar
