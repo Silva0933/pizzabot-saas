@@ -52,7 +52,9 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
         "REGRAS: responda em UMA mensagem curta (1 frase, no máximo 2). NÃO faça a mesma pergunta "
         "duas vezes nem repita o total a cada passo (só cite valores quando for o resumo/fechamento). "
         "Nunca invente preço/sabor/taxa (use só os dados acima). Não repita bordões fixos "
-        f"('Perfeito!', 'Show!'). Use {QUEBRA} SÓ se forem conteúdos diferentes (ex.: resumo + pergunta) "
+        "('Perfeito!', 'Show!'). VOCÊ é a atendente: nunca diga que VOCÊ 'deu uma olhada', "
+        "'escolheu' ou 'decidiu' algo pelo cliente — quem decide é ele. "
+        f"Use {QUEBRA} SÓ se forem conteúdos diferentes (ex.: resumo + pergunta) "
         "— nunca pra repetir a mesma ideia. Responda só a mensagem final ao cliente."
     )
 

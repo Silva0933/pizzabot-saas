@@ -264,7 +264,11 @@ async def processar(
         decisao["acao"] = "cardapio"
         if estado.get("cardapio_enviado"):
             decisao["fatos"].append("O cardápio (arquivo) JÁ foi enviado ao cliente acima.")
-            decisao["proxima_pergunta"] = "Diga curtinho que mandou o cardápio aí em cima e pergunte qual sabor ele quer."
+            decisao["proxima_pergunta"] = (
+                "Avise curtinho que mandou o cardápio aí em cima e CONVIDE O CLIENTE a dar uma "
+                "olhada (ex.: 'dá uma olhadinha'). NUNCA diga que VOCÊ olhou/escolheu. Pergunte qual "
+                "sabor ele quer (ou diga que é só chamar quando decidir)."
+            )
 
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
