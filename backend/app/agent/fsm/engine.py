@@ -134,6 +134,15 @@ def _eh_confirmacao(intencao: str | None, texto: str) -> bool:
     return bool(_CONFIRMA_RE.match(t)) and len(t) <= 25
 
 
+def _eh_grosseria(texto: str) -> bool:
+    # Detecta ofensa explícita (não inclui pedido educado de atendente, que tem
+    # intenção própria 'falar_humano' na NLU).
+    t = (texto or "").lower()
+    palavroes = ("merda", "porra", "caralho", "vai se", "vsf", "fdp", "filho da",
+                 "idiota", "imbecil", "otario", "otária", "nojento")
+    return any(p in t for p in palavroes)
+
+
 _CARDAPIO_RE = _re.compile(
     r"(card[aá]pio|menu|me manda|o que (voc|vc|tu).*tem|quais.*(sabor|op[cç])|"
     r"que sabores|op[cç][oõ]es|lista de)",
@@ -157,7 +166,10 @@ async def processar(
     user_input: str = "",
 ) -> dict[str, Any]:
     """Executa um passo da FSM. Retorna a 'decisão' para a voz + estado atualizado."""
-    from app.agent.tools import _calcular_pedido, enviar_cardapio_arquivo, registrar_pedido, _gerar_cobranca
+    from app.agent.tools import (
+        _calcular_pedido, atualizar_pedido, cancelar_pedido, enviar_cardapio_arquivo,
+        escalar_humano, registrar_avaliacao, registrar_pedido,
+    )
 
     intencao = nlu.get("intencao")
     dados = nlu.get("dados") or {}
@@ -167,13 +179,71 @@ async def processar(
         "enviar_cardapio": False, "dados": {},
     }
 
+    # Reclamação / pedir atendente humano → escala (desliga o bot na conversa).
+    if intencao in ("reclamar", "falar_humano") or _eh_grosseria(user_input):
+        motivo = "reclamação" if intencao == "reclamar" else ("ofensa" if _eh_grosseria(user_input) else "cliente pediu atendente")
+        try:
+            await escalar_humano(ctx, db, motivo_escalonamento=f"FSM: {motivo} — '{user_input[:120]}'")
+        except Exception:  # noqa: BLE001
+            pass
+        decisao["acao"] = "escalado"
+        decisao["fatos"].append("Atendimento escalado para um humano da equipe.")
+        decisao["proxima_pergunta"] = (
+            "Acolha com empatia (peça desculpas se for reclamação) e avise que já chamou alguém "
+            "da equipe pra continuar. NÃO peça mais dados do pedido."
+        )
+        return {"decisao": decisao, "estado": estado}
+
+    # Avaliação (NPS) pós-entrega
+    nota = dados.get("nota")
+    if intencao == "avaliar" or (isinstance(nota, int) and 0 <= nota <= 10 and estado.get("etapa") == "FINALIZADO"):
+        try:
+            n = int(nota) if isinstance(nota, int) else 10
+            r = await registrar_avaliacao(ctx, db, nota=n, comentario=user_input[:300])
+            decisao["fatos"].append(f"Avaliação registrada: nota {n}.")
+            if r.get("alerta"):
+                decisao["fatos"].append(r["alerta"])
+        except Exception:  # noqa: BLE001
+            pass
+        decisao["acao"] = "avaliado"
+        decisao["proxima_pergunta"] = "Agradeça a avaliação de coração, de forma curta."
+        return {"decisao": decisao, "estado": estado}
+
+    # Alterar pedido JÁ registrado (endereço/pagamento)
+    if intencao == "alterar_pedido" and estado.get("etapa") == "FINALIZADO":
+        end = dados.get("endereco")
+        novo_end = None
+        if isinstance(end, dict) and any(end.get(k) for k in ("rua", "numero", "bairro")):
+            novo_end = ", ".join(str(end.get(k)) for k in ("rua", "numero", "bairro", "referencia") if end.get(k))
+        nova_forma = dados.get("forma_pagamento") if dados.get("forma_pagamento") in ("pix", "cartao", "dinheiro") else None
+        try:
+            r = await atualizar_pedido(ctx, db, novo_endereco=novo_end, nova_forma_pagamento=nova_forma)
+            decisao["fatos"].append(
+                "Pedido atualizado." if r.get("ok") else f"Não consegui atualizar: {r.get('erro')}"
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        decisao["acao"] = "pedido_atualizado"
+        decisao["proxima_pergunta"] = "Confirme a alteração feita de forma curta."
+        return {"decisao": decisao, "estado": estado}
+
     # Cancelar
     if intencao == "cancelar":
+        # Se já existe um pedido REGISTRADO, cancela de verdade no sistema.
+        if estado.get("etapa") == "FINALIZADO":
+            try:
+                r = await cancelar_pedido(ctx, db, motivo_cancelamento="Cancelado pelo cliente")
+                decisao["fatos"].append(
+                    f"Pedido #{r.get('numero_pedido')} cancelado." if r.get("ok") else f"Não consegui cancelar: {r.get('erro')}"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            decisao["fatos"].append("Pedido (rascunho) limpo.")
         estado.update(estado_inicial())
         estado["apresentou"] = True
         decisao["acao"] = "cancelado"
-        decisao["fatos"].append("Pedido cancelado/limpo.")
-        decisao["proxima_pergunta"] = "Pergunte se ele quer começar um novo pedido."
+        decisao["proxima_pergunta"] = "Confirme o cancelamento e pergunte se quer começar um novo pedido."
         return {"decisao": decisao, "estado": estado}
 
     # Cardápio em arquivo — detectado por intenção OU por heurística (a mensagem

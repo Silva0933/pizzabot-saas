@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 INTENCOES = (
     "saudacao", "pedir_cardapio", "adicionar_item", "remover_item", "informar_tamanho",
     "informar_entrega_retirada", "informar_endereco", "informar_pagamento",
-    "confirmar_resumo", "cancelar", "duvida_geral", "conversa_fiada",
+    "confirmar_resumo", "cancelar", "alterar_pedido", "avaliar", "reclamar",
+    "falar_humano", "duvida_geral", "conversa_fiada",
 )
 
 _SYSTEM = (
@@ -34,12 +35,16 @@ _SYSTEM = (
     '    "endereco": {"rua": str|null, "numero": str|null, "bairro": str|null, "referencia": str|null}|null,\n'
     '    "forma_pagamento": "pix"|"cartao"|"dinheiro"|null,\n'
     '    "pagar_agora": true|false|null,\n'
-    '    "quer_cardapio": true|false\n'
+    '    "quer_cardapio": true|false,\n'
+    '    "nota": int 0..10|null\n'
     "  }\n"
     "}\n"
     "Regras: só preencha o que o cliente DISSE; o que ele não falou fica null/vazio. "
     "Nunca invente preço, sabor ou taxa (isso é com o sistema). Se ele só confirma (ex.: 'sim', 'pode', "
-    "'isso', 'fechado'), use intencao 'confirmar_resumo'. Se for só bate-papo, 'conversa_fiada'."
+    "'isso', 'fechado'), use intencao 'confirmar_resumo'. Se for só bate-papo, 'conversa_fiada'. "
+    "Se ele reclamar (pizza fria/atrasada/errada) use 'reclamar'; se pedir pra falar com atendente/humano "
+    "use 'falar_humano'; se der uma nota/avaliação (0-10) use 'avaliar' e preencha 'nota'; se quiser MUDAR "
+    "endereço/forma de pagamento de um pedido já feito use 'alterar_pedido'."
 )
 
 
@@ -108,9 +113,13 @@ async def nlu_extract(
             max_tokens=600,
             response_format={"type": "json_object"},
         )
+        usage = res.get("usage") or {}
         parsed = _extrair_json(res.get("content") or "")
         if parsed:
-            return _normalizar_saida(parsed)
+            out = _normalizar_saida(parsed)
+            out["_usage"] = usage
+            return out
+        return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": usage}
     except Exception as e:  # noqa: BLE001
         log.warning("NLU falhou (caindo p/ duvida_geral): %s", e)
-    return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}}
+    return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": {}}

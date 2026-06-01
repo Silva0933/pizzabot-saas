@@ -71,10 +71,25 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         decisao=decisao,
         ja_apresentou=bool(estado.get("apresentou")) and decisao.get("acao") != "saudacao",
     )
-    texto = await voice.gerar_voz(provider=provider, api_key=api_key, model=model, comando=comando)
+    texto, voz_usage = await voice.gerar_voz(provider=provider, api_key=api_key, model=model, comando=comando)
     if not texto:
         texto = "Pode repetir, por favor? 😊"
     texto = texto.replace(QUEBRA, "\n\n")
+
+    # Registra uso/custo (NLU + voz) — alimenta o limite por plano (C2) e o
+    # dashboard de custo (C3), igual ao agente legado.
+    try:
+        from app.services.app_config import record_usage
+        nlu_usage = res_nlu.get("_usage") or {}
+        pt = int(nlu_usage.get("prompt_tokens", 0)) + int(voz_usage.get("prompt_tokens", 0))
+        ct = int(nlu_usage.get("completion_tokens", 0)) + int(voz_usage.get("completion_tokens", 0))
+        tt = int(nlu_usage.get("total_tokens", 0)) + int(voz_usage.get("total_tokens", 0))
+        await record_usage(
+            db, pizzaria_id=pizzaria_id, provider=provider, model=model,
+            prompt_tokens=pt, completion_tokens=ct, total_tokens=tt or (pt + ct), calls=2,
+        )
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao registrar uso FSM: %s", e)
 
     # Persiste estado + memória (turno user/assistant) para o histórico da NLU.
     try:

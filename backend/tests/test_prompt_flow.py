@@ -613,6 +613,22 @@ class TestPipelineFSM:
         assert _quer_cardapio("x", "x", {"quer_cardapio": True})
         assert not _quer_cardapio("adicionar_item", "quero uma calabresa grande", {})
 
+    def test_grosseria_detecta(self):
+        from app.agent.fsm.engine import _eh_grosseria
+        assert _eh_grosseria("que merda de atendimento")
+        assert not _eh_grosseria("quero uma calabresa grande")
+
+    def test_intencoes_novas(self):
+        from app.agent.fsm.nlu import INTENCOES
+        for i in ("reclamar", "falar_humano", "avaliar", "alterar_pedido"):
+            assert i in INTENCOES
+
+    def test_voz_retorna_usage_tupla(self):
+        import inspect
+        from app.agent.fsm.voice import gerar_voz
+        # gerar_voz agora retorna (texto, usage)
+        assert inspect.iscoroutinefunction(gerar_voz)
+
 
 class TestNpsMessage:
     def test_default_nps_interpola(self):

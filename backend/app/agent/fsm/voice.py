@@ -63,7 +63,8 @@ async def gerar_voz(
     api_key: str,
     model: str,
     comando: str,
-) -> str:
+) -> tuple[str, dict]:
+    """Retorna (texto, usage)."""
     from app.agent.providers import openai_chat
     try:
         res = await openai_chat(
@@ -71,8 +72,7 @@ async def gerar_voz(
             messages=[{"role": "user", "content": comando}],
             temperature=0.6, max_tokens=300,
         )
-        txt = (res.get("content") or "").strip()
-        return txt
+        return (res.get("content") or "").strip(), (res.get("usage") or {})
     except Exception as e:  # noqa: BLE001
         log.warning("Voz FSM falhou: %s", e)
-        return ""
+        return "", {}
