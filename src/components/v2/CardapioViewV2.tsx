@@ -1070,8 +1070,24 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
 type ImportMode = "imagem" | "texto" | "json";
 
 const JSON_EXEMPLO = `[
-  { "nome": "Calabresa (G)", "categoria": "pizza", "descricao": "Calabresa, cebola, mussarela", "preco": 52 },
-  { "nome": "Coca-Cola 2L", "categoria": "bebida", "descricao": "", "preco": 12 }
+  {
+    "nome": "Calabresa",
+    "categoria": "pizza",
+    "descricao": "Massa artesanal, mussarela, calabresa e cebola",
+    "preco": 35.00,
+    "tamanhos": [
+      { "tamanho": "P", "preco": 30.00 },
+      { "tamanho": "M", "preco": 35.00 },
+      { "tamanho": "G", "preco": 40.00 }
+    ]
+  },
+  {
+    "nome": "Coca-Cola 2L",
+    "categoria": "bebida",
+    "descricao": "Refrigerante 2 litros",
+    "preco": 12.00,
+    "tamanhos": null
+  }
 ]`;
 
 function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onImported: () => void }) {
@@ -1116,12 +1132,23 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
     try {
       const data = JSON.parse(jsonText);
       if (!Array.isArray(data)) throw new Error("O JSON precisa ser uma lista [].");
-      const norm: ProdutoImport[] = data.map((d: any) => ({
-        nome: String(d.nome || "").trim(),
-        categoria: String(d.categoria || "outro").toLowerCase(),
-        descricao: String(d.descricao || ""),
-        preco: Number(d.preco) || 0,
-      })).filter((p: ProdutoImport) => p.nome);
+      const norm: ProdutoImport[] = data.map((d: any) => {
+        const item: ProdutoImport = {
+          nome: String(d.nome || "").trim(),
+          categoria: String(d.categoria || "outro").toLowerCase(),
+          descricao: String(d.descricao || ""),
+          preco: Number(d.preco) || 0,
+        };
+        if (Array.isArray(d.tamanhos)) {
+          item.tamanhos = d.tamanhos.map((t: any) => ({
+            tamanho: String(t.tamanho || "").trim(),
+            preco: Number(t.preco) || 0,
+          })).filter((t: any) => t.tamanho);
+        } else {
+          item.tamanhos = null;
+        }
+        return item;
+      }).filter((p: ProdutoImport) => p.nome);
       if (!norm.length) throw new Error("Nenhum produto válido no JSON.");
       setItens(norm);
     } catch (e: any) { setErr("JSON inválido: " + (e.message || "")); }
