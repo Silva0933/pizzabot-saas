@@ -7,12 +7,16 @@ from typing import Any
 
 
 def typing_delay_ms(texto: str) -> int:
+    """Tempo de 'digitando' proporcional ao tamanho do texto.
+    Curto = quase imediato; longo = pausa maior (com teto pra não cansar)."""
     tamanho = len(texto or "")
-    if tamanho <= 20:
-        return 800
-    if tamanho <= 80:
-        return min(max(tamanho * 35, 1200), 3200)
-    return min(max(tamanho * 28, 2800), 6500)
+    if tamanho <= 15:           # "ok 😊", "perfeito!"
+        return 600
+    if tamanho <= 40:           # frase curta
+        return min(max(tamanho * 28, 900), 1800)
+    if tamanho <= 90:           # 1-2 linhas
+        return min(max(tamanho * 26, 1800), 3000)
+    return min(max(tamanho * 22, 3000), 5000)  # texto longo (teto 5s)
 
 
 def split_balloons(texto: str, *, max_balloons: int = 3, max_chars: int = 320) -> list[str]:

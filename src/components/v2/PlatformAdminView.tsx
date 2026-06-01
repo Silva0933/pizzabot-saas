@@ -617,6 +617,7 @@ function LLMConfigCard() {
   const [model, setModel] = useState("");
   const [customMode, setCustomMode] = useState(false);
   const [keys, setKeys] = useState<Record<string, string>>({});
+  const [modelosPlano, setModelosPlano] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -627,6 +628,7 @@ function LLMConfigCard() {
     const modelos = c.providers[c.provider]?.modelos || [];
     setModel(c.model);
     setCustomMode(!modelos.includes(c.model));
+    setModelosPlano(c.modelos_plano || {});
   }
 
   function load() {
@@ -653,7 +655,7 @@ function LLMConfigCard() {
   async function save() {
     setSaving(true); setMsg(null);
     try {
-      await adminApi.salvarLlm({ provider, model: model.trim(), keys });
+      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano });
       setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor/modelo." });
       load();
     } catch (e: any) { setMsg({ ok: false, text: e.message }); }
@@ -723,6 +725,26 @@ function LLMConfigCard() {
                 )}
               </label>
             </div>
+
+            {/* Modelo por plano (custo/escala) — opcional */}
+            {(cfg.planos?.length ?? 0) > 0 && (
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                <p className="text-xs font-semibold text-slate-700 mb-1">Modelo por plano (opcional)</p>
+                <p className="text-[11px] text-slate-400 mb-2">Deixe vazio pra usar o modelo padrão acima. Ex.: Básico num modelo mais barato, Premium num melhor.</p>
+                <div className="grid sm:grid-cols-3 gap-2">
+                  {(cfg.planos || []).map((p) => (
+                    <label key={p} className="block">
+                      <span className="text-[11px] font-medium text-slate-600 capitalize">{p}</span>
+                      <input
+                        value={modelosPlano[p] ?? ""}
+                        onChange={(e) => setModelosPlano((m) => ({ ...m, [p]: e.target.value }))}
+                        placeholder="(padrão)"
+                        className="mt-1 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:border-violet-400 font-mono" />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2.5">
               {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
@@ -1002,6 +1024,23 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
         <h3 className="text-sm font-bold text-slate-800">Assinaturas & Vencimentos</h3>
         <span className="text-xs text-slate-400">Ciclo de {data.ciclo_dias} dias · suspensão manual</span>
       </div>
+
+      {data.custo && (
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
+            <p className="text-[10px] text-emerald-700 font-medium">Receita (planos ativos)</p>
+            <p className="text-sm font-bold text-emerald-700">{brl(data.custo.receita_total)}</p>
+          </div>
+          <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
+            <p className="text-[10px] text-amber-700 font-medium">Custo IA estimado (mês)</p>
+            <p className="text-sm font-bold text-amber-700">{brl(data.custo.custo_total_estimado)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
+            <p className="text-[10px] text-slate-500 font-medium">Margem estimada</p>
+            <p className={`text-sm font-bold ${data.custo.margem_estimada >= 0 ? "text-slate-700" : "text-red-600"}`}>{brl(data.custo.margem_estimada)}</p>
+          </div>
+        </div>
+      )}
 
       {temAlerta && (
         <div className="mb-3 flex flex-wrap gap-2">

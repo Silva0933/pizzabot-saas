@@ -215,4 +215,14 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     if not keys.get("openai"):
         keys["openai"] = _settings.openai_api_key or ""
 
-    return {"provider": provider, "model": model, "keys": keys}
+    # Modelo por plano (opcional): {"basico": "...", "pro": "...", "premium": "..."}.
+    # Permite usar um modelo mais barato no Básico e melhor no Premium.
+    modelos_plano = cfg.get("modelos_plano") or {}
+
+    return {"provider": provider, "model": model, "keys": keys, "modelos_plano": modelos_plano}
+
+
+def modelo_para_plano(cfg: dict[str, Any], plano: str | None) -> str:
+    """Retorna o modelo configurado para o plano, ou o modelo global como padrão."""
+    mp = cfg.get("modelos_plano") or {}
+    return (mp.get((plano or "").lower()) or cfg.get("model") or "").strip() or cfg.get("model")

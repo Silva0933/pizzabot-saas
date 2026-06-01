@@ -72,6 +72,9 @@ async def run_agent(
 
     # Provider de LLM configurado pelo admin (gemini | openai | openrouter)
     cfg = await get_llm_config(db)
+    # Custo por plano: usa o modelo definido para o plano da pizzaria (se houver).
+    from app.services.app_config import modelo_para_plano
+    cfg = {**cfg, "model": modelo_para_plano(cfg, getattr(ctx.pizzaria, "plano", None))}
     provider = cfg["provider"]
     if provider in ("openai", "openrouter") and cfg["keys"].get(provider):
         return await _run_openai_agent(

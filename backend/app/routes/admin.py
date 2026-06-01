@@ -24,8 +24,13 @@ from app.services.secrets import decrypt_secret, encrypt_secret, mask_secret
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+import os
+
 # Ciclo de cobrança: 30 dias rolando a partir da ativação do plano.
 CICLO_DIAS = 30
+# Custo estimado de IA por 1M de tokens (em R$). Ajustável por ambiente conforme
+# o modelo/câmbio. Usado só para a estimativa de custo no painel admin.
+CUSTO_POR_1M_TOKENS_BRL = float(os.getenv("CUSTO_POR_1M_TOKENS_BRL", "2.50"))
 
 # Provedores de LLM suportados + sugestões de modelo (o admin pode digitar outro).
 LLM_PROVIDERS = {
@@ -233,6 +238,9 @@ async def listar_assinaturas(
     agora = datetime.now(timezone.utc)
     itens = []
     contagem = {"vence_amanha": 0, "vencida": 0, "suspensas": 0, "limite_ia": 0}
+    tokens_total = 0
+    custo_total = 0.0
+    receita_total = 0.0
     for r in rows:
         vence = r[4]
         dias = None
@@ -256,6 +264,11 @@ async def listar_assinaturas(
         limite_ia = int((info.get("limites") or {}).get("mensagens_ia_mes") or 0)
         if limite_ia and u["mensagens"] >= limite_ia:
             contagem["limite_ia"] += 1
+        custo = round(u["tokens"] / 1_000_000 * CUSTO_POR_1M_TOKENS_BRL, 2)
+        tokens_total += u["tokens"]
+        custo_total += custo
+        if not r[5]:  # não conta receita de suspensa
+            receita_total += float(info["preco_mensal"])
         itens.append({
             "pizzaria_id": pid,
             "nome": r[1],
@@ -270,9 +283,22 @@ async def listar_assinaturas(
             "ia_mensagens": u["mensagens"],
             "ia_limite": limite_ia,
             "ia_tokens": u["tokens"],
+            "ia_custo": custo,
         })
 
-    return {"assinaturas": itens, "alertas": contagem, "ciclo_dias": CICLO_DIAS}
+    custo_total = round(custo_total, 2)
+    return {
+        "assinaturas": itens,
+        "alertas": contagem,
+        "ciclo_dias": CICLO_DIAS,
+        "custo": {
+            "tokens_total": tokens_total,
+            "custo_total_estimado": custo_total,
+            "receita_total": round(receita_total, 2),
+            "margem_estimada": round(receita_total - custo_total, 2),
+            "preco_por_1m_tokens": CUSTO_POR_1M_TOKENS_BRL,
+        },
+    }
 
 
 @router.get("/alertas")
@@ -336,6 +362,8 @@ class LLMConfigIn(BaseModel):
     provider: str
     model: str
     keys: dict[str, str] = {}
+    # Modelo por plano (opcional): {"basico": "...", "pro": "...", "premium": "..."}.
+    modelos_plano: dict[str, str] = {}
 
 
 @router.get("/llm")
@@ -353,6 +381,8 @@ async def get_llm(
         # nunca devolve a chave crua — só máscara + flag de configurada
         "keys_mascaradas": {k: _mask(v) for k, v in raw_keys.items()},
         "keys_configuradas": {k: bool(v) for k, v in cfg["keys"].items()},
+        "modelos_plano": cfg.get("modelos_plano") or {},
+        "planos": list(PLANS.keys()),
     }
 
 
@@ -375,8 +405,19 @@ async def put_llm(
         if k in keys and v and v.strip():
             keys[k] = encrypt_secret(v.strip())
 
-    await set_config(db, LLM_KEY, {"provider": provider, "model": body.model.strip(), "keys": keys})
+    # Modelo por plano: mantém só entradas válidas (plano conhecido + modelo não-vazio).
+    modelos_plano = {
+        p.lower(): m.strip()
+        for p, m in (body.modelos_plano or {}).items()
+        if p.lower() in PLANS and (m or "").strip()
+    }
+
+    await set_config(db, LLM_KEY, {
+        "provider": provider, "model": body.model.strip(),
+        "keys": keys, "modelos_plano": modelos_plano,
+    })
     return {"ok": True, "provider": provider, "model": body.model.strip(),
+            "modelos_plano": modelos_plano,
             "keys_configuradas": {k: bool(decrypt_secret(v) or v) for k, v in keys.items()}}
 
 

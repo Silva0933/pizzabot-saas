@@ -520,6 +520,38 @@ class TestTTLConversa:
         assert CONVERSA_TTL_HORAS >= 1
 
 
+class TestFase5CustoEscala:
+    def test_modelo_por_plano(self):
+        from app.services.app_config import modelo_para_plano
+        cfg = {"model": "padrao", "modelos_plano": {"basico": "barato", "premium": "top"}}
+        assert modelo_para_plano(cfg, "basico") == "barato"
+        assert modelo_para_plano(cfg, "premium") == "top"
+        assert modelo_para_plano(cfg, "pro") == "padrao"   # sem override → padrão
+        assert modelo_para_plano(cfg, None) == "padrao"
+
+    def test_typing_proporcional(self):
+        from app.services.humanized_delivery import typing_delay_ms
+        curto = typing_delay_ms("ok")
+        medio = typing_delay_ms("a" * 60)
+        longo = typing_delay_ms("a" * 300)
+        assert curto < medio < longo
+        assert longo <= 5000  # teto
+
+    def test_memoria_cliente_enxuta_no_prompt(self):
+        from app.agent.prompt import build_system_prompt
+        from unittest.mock import MagicMock
+        p = MagicMock()
+        p.nome = "X"; p.endereco = "R1"
+        p.tempo_entrega_min = 30; p.tempo_entrega_max = 60
+        p.tempo_retirada_min = 15; p.tempo_retirada_max = 25
+        p.taxa_entrega_info = "5"; p.formas_pagamento_aceitas = ["pix"]; p.horario_funcionamento = {}
+        longa = "x" * 800
+        s = build_system_prompt(p, None, cliente_nome="Ana", cliente_preferencias=longa)
+        # a preferência injetada deve estar truncada (<= ~180 chars), não 800
+        assert ("x" * 800) not in s
+        assert "PREFERÊNCIAS DO CLIENTE" in s
+
+
 class TestNpsMessage:
     def test_default_nps_interpola(self):
         from app.services.status_messages import DEFAULT_NPS_MESSAGE, _interpolar

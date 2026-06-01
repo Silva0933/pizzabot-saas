@@ -485,6 +485,8 @@ export interface LLMConfig {
   providers: Record<string, { nome: string; modelos: string[] }>;
   keys_mascaradas: Record<string, string>;
   keys_configuradas: Record<string, boolean>;
+  modelos_plano?: Record<string, string>;
+  planos?: string[];
 }
 
 export interface AssinaturaItem {
@@ -501,11 +503,19 @@ export interface AssinaturaItem {
   ia_mensagens: number;
   ia_limite: number;
   ia_tokens: number;
+  ia_custo?: number;
 }
 export interface AssinaturasResp {
   assinaturas: AssinaturaItem[];
   alertas: { vence_amanha: number; vencida: number; suspensas: number; limite_ia: number };
   ciclo_dias: number;
+  custo?: {
+    tokens_total: number;
+    custo_total_estimado: number;
+    receita_total: number;
+    margem_estimada: number;
+    preco_por_1m_tokens: number;
+  };
 }
 export interface UsoPizzaria {
   plano: string;
@@ -541,7 +551,7 @@ export const adminApi = {
   suspender: (pizzariaId: string, suspensa: boolean, motivo?: string) =>
     api.patch<{ ok: boolean; suspensa: boolean }>(`/admin/pizzarias/${pizzariaId}/suspensao`, { suspensa, motivo }),
   llm: () => api.get<LLMConfig>(`/admin/llm`),
-  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string> }) =>
+  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string> }) =>
     api.put<{ ok: boolean }>(`/admin/llm`, body),
   testarLlm: () =>
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),

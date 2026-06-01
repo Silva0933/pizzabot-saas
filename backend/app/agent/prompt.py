@@ -96,7 +96,9 @@ def build_system_prompt(
     if cliente_ultimo_pedido:
         cliente_block += f"\nPEDIDO DE SEMPRE DELE: {cliente_ultimo_pedido}"
     if cliente_preferencias:
-        cliente_block += f"\nPREFERÊNCIAS DO CLIENTE (gostos, restrições, endereço padrão): {cliente_preferencias}"
+        # Memória longa ENXUTA: 1-2 linhas no máximo (economia de tokens).
+        _pref = " ".join(str(cliente_preferencias).split())[:180]
+        cliente_block += f"\nPREFERÊNCIAS DO CLIENTE (gostos/restrições/endereço): {_pref}"
     if estado_atendimento:
         estado_txt = str(estado_atendimento)[:900]
         cliente_block += f"\nESTADO CURTO DO ATENDIMENTO ATUAL (use só para continuidade desta conversa): {estado_txt}"
