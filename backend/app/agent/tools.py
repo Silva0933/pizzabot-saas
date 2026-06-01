@@ -865,11 +865,51 @@ async def _calcular_pedido(
 
         res_taxa = _taxa_para_bairro(ctx.pizzaria, bairro_detectado)
         if res_taxa.get("precisa_confirmar"):
+            # Escala para humano automaticamente
+            conv = (await db.execute(
+                select(Conversa).where(
+                    Conversa.pizzaria_id == ctx.pizzaria.id,
+                    Conversa.cliente_telefone == ctx.telefone,
+                )
+            )).scalar_one_or_none()
+            if conv:
+                conv.bot_ativo = False
+                conv.status = "humano_necessario"
+                await db.flush()
+                
+                from app.services.broadcaster import broadcaster
+                await broadcaster.publish(
+                    ctx.pizzaria.id,
+                    {
+                        "tipo": "atendimento.humano",
+                        "pizzaria_id": str(ctx.pizzaria.id),
+                        "payload": {
+                            "conversa_id": str(conv.id),
+                            "telefone": ctx.telefone,
+                            "cliente_nome": conv.cliente_nome,
+                            "motivo": f"Bairro '{bairro_detectado}' sem taxa de entrega cadastrada",
+                        },
+                    },
+                )
+                await broadcaster.publish(
+                    ctx.pizzaria.id,
+                    {
+                        "tipo": "conversa.atualizada",
+                        "pizzaria_id": str(ctx.pizzaria.id),
+                        "payload": {
+                            "conversa_id": str(conv.id),
+                            "telefone": ctx.telefone,
+                            "bot_ativo": False,
+                            "status": "humano_necessario",
+                            "motivo": f"Bairro '{bairro_detectado}' sem taxa de entrega cadastrada",
+                        },
+                    },
+                )
             return {
                 "ok": False,
                 "erro": (
-                    "Taxa de entrega nao cadastrada para esse bairro. Avise que vai "
-                    "confirmar a taxa com a equipe antes de fechar o pedido."
+                    "Taxa de entrega nao cadastrada para esse bairro. O atendimento já foi "
+                    "escalado para a equipe humana. Avise o cliente que o suporte vai confirmar a taxa."
                 ),
                 "bairro_detectado": bairro_detectado,
             }
@@ -1580,9 +1620,50 @@ async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro:
         res["fonte_geocodificacao"] = fonte_geo
 
     if res["precisa_confirmar"]:
+        # Escala para humano automaticamente
+        conv = (await db.execute(
+            select(Conversa).where(
+                Conversa.pizzaria_id == ctx.pizzaria.id,
+                Conversa.cliente_telefone == ctx.telefone,
+            )
+        )).scalar_one_or_none()
+        if conv:
+            conv.bot_ativo = False
+            conv.status = "humano_necessario"
+            await db.flush()
+            
+            from app.services.broadcaster import broadcaster
+            await broadcaster.publish(
+                ctx.pizzaria.id,
+                {
+                    "tipo": "atendimento.humano",
+                    "pizzaria_id": str(ctx.pizzaria.id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": ctx.telefone,
+                        "cliente_nome": conv.cliente_nome,
+                        "motivo": f"Bairro '{bairro_alvo}' sem taxa de entrega cadastrada",
+                    },
+                },
+            )
+            await broadcaster.publish(
+                ctx.pizzaria.id,
+                {
+                    "tipo": "conversa.atualizada",
+                    "pizzaria_id": str(ctx.pizzaria.id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": ctx.telefone,
+                        "bot_ativo": False,
+                        "status": "humano_necessario",
+                        "motivo": f"Bairro '{bairro_alvo}' sem taxa de entrega cadastrada",
+                    },
+                },
+            )
         res["instrucao"] = (
-            "Taxa não cadastrada para esse bairro e sem taxa fixa. Avise o cliente que vai "
-            "confirmar a taxa de entrega com a equipe — não invente um valor."
+            "Taxa não cadastrada para esse bairro e sem taxa fixa. O ATENDIMENTO JÁ FOI "
+            "ESCALADO PARA UM HUMANO. Avise o cliente de forma muito simpática que a equipe "
+            "humana vai confirmar o valor da taxa de entrega em instantes."
         )
     else:
         res["instrucao"] = "Some esta taxa ao valor_total do pedido (itens + taxa)."
