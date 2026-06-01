@@ -282,6 +282,12 @@ async def processar(
                 if r.get("ok"):
                     estado["cardapio_enviado"] = True
                     enviou_agora = True
+                    try:
+                        from app.services.conversation_state import save_state
+                        await save_state(db, ctx.pizzaria.id, ctx.telefone, estado)
+                        await db.commit()
+                    except Exception as e_commit:
+                        log.debug("Falha no commit preventivo de cardapio_enviado: %s", e_commit)
                 elif r.get("motivo") == "sem_arquivo":
                     # Não há arquivo: a voz deve listar via buscar_cardapio.
                     decisao["fatos"].append("Não há arquivo de cardápio; liste os sabores em texto (use o que souber do cardápio).")

@@ -324,10 +324,10 @@ async def process_and_reply(
                 from app.agent.fsm.pipeline import run_fsm_agent
                 result = await asyncio.wait_for(
                     run_fsm_agent(db, pizzaria_id, telefone, user_input),
-                    timeout=4.0
+                    timeout=8.0
                 )
             except asyncio.TimeoutError:
-                log.warning("Pipeline FSM estourou o timeout de 4s, caindo p/ agente legado com limites reduzidos")
+                log.warning("Pipeline FSM estourou o timeout de 8s, caindo p/ agente legado com limites reduzidos")
                 result = None
                 fallback_iterations = 3
             except Exception as e_fsm:  # noqa: BLE001
