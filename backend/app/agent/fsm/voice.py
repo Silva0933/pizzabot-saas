@@ -33,6 +33,8 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
             linhas.append(f"Entrega: R$ {dados['taxa_entrega']:.2f}")
         if dados.get("total") is not None:
             linhas.append(f"Total: R$ {dados['total']:.2f}")
+        if dados.get("observacoes"):
+            linhas.append(f"Observações: {dados['observacoes']}")
         if dados.get("numero_pedido"):
             linhas.append(f"Pedido #{dados['numero_pedido']} · {dados.get('tempo_estimado','')}")
         resumo = "DADOS CALCULADOS PELO SISTEMA (use exatamente, não invente):\n" + "\n".join(linhas)

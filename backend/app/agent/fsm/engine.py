@@ -25,6 +25,7 @@ def estado_inicial() -> dict[str, Any]:
         "pipeline": "fsm", "etapa": "SAUDACAO", "carrinho": [],
         "tipo": None, "endereco": None, "pagamento": None, "pagar_agora": None,
         "cardapio_enviado": False, "apresentou": False, "upsell_feito": False,
+        "observacoes": None,
     }
 
 
@@ -36,10 +37,11 @@ def resumo_estado(estado: dict[str, Any]) -> str:
         + (f" ({i.get('tamanho')})" if i.get("tamanho") else "")
         for i in c
     ) or "(vazio)"
+    obs = f"; observacoes={estado.get('observacoes')}" if estado.get("observacoes") else ""
     return (
         f"etapa={estado.get('etapa')}; carrinho={itens}; tipo={estado.get('tipo')}; "
         f"endereco={'sim' if estado.get('endereco') else 'nao'}; pagamento={estado.get('pagamento')}; "
-        f"pagar_agora={estado.get('pagar_agora')}"
+        f"pagar_agora={estado.get('pagar_agora')}{obs}"
     )
 
 
@@ -111,6 +113,14 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         estado["pagamento"] = dados["forma_pagamento"]
     if isinstance(dados.get("pagar_agora"), bool):
         estado["pagar_agora"] = dados["pagar_agora"]
+    if dados.get("observacoes") and isinstance(dados.get("observacoes"), str):
+        obs = dados["observacoes"].strip()
+        if obs:
+            if estado.get("observacoes"):
+                if obs.lower() not in estado["observacoes"].lower():
+                    estado["observacoes"] = f"{estado['observacoes']}, {obs}"
+            else:
+                estado["observacoes"] = obs
 
 
 def _online(pagamento: str | None) -> bool:
@@ -289,6 +299,9 @@ async def processar(
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
 
+    if dados.get("observacoes"):
+        decisao["fatos"].append(f"Observação anotada do cliente: '{dados.get('observacoes')}'")
+
     # Resolve o carrinho (preços reais) sempre que houver itens
     calc = None
     if estado["carrinho"]:
@@ -299,6 +312,7 @@ async def processar(
             forma_pagamento=estado.get("pagamento") or "dinheiro",
             pagar_agora=bool(estado.get("pagar_agora")),
             endereco_entrega=estado.get("endereco"),
+            observacoes=estado.get("observacoes"),
         )
         if not calc.get("ok"):
             # Pendência: item não encontrado / falta tamanho / taxa não cadastrada.
@@ -346,6 +360,7 @@ async def processar(
         "itens": itens_fmt,
         "taxa_entrega": round(float(calc["taxa_entrega"]), 2),
         "total": round(float(calc["valor_total"]), 2),
+        "observacoes": estado.get("observacoes"),
     }
 
     falta_pagar_agora = _online(estado.get("pagamento")) and estado.get("pagar_agora") is None
@@ -367,6 +382,7 @@ async def processar(
             forma_pagamento=estado["pagamento"],
             pagar_agora=bool(estado.get("pagar_agora")),
             endereco_entrega=estado.get("endereco"),
+            observacoes=estado.get("observacoes"),
             confirmado=True,  # FSM já validou a confirmação
         )
         if not reg.get("ok"):

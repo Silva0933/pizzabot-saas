@@ -36,12 +36,14 @@ _SYSTEM = (
     '    "forma_pagamento": "pix"|"cartao"|"dinheiro"|null,\n'
     '    "pagar_agora": true|false|null,\n'
     '    "quer_cardapio": true|false,\n'
-    '    "nota": int 0..10|null\n'
+    '    "nota": int 0..10|null,\n'
+    '    "observacoes": str|null\n'
     "  }\n"
     "}\n"
     "Regras: só preencha o que o cliente DISSE; o que ele não falou fica null/vazio. "
-    "Nunca invente preço, sabor ou taxa (isso é com o sistema). Se ele só confirma (ex.: 'sim', 'pode', "
-    "'isso', 'fechado'), use intencao 'confirmar_resumo'. Se for só bate-papo, 'conversa_fiada'. "
+    "Nunca invente preço, sabor ou taxa (isso é com o sistema). Se o cliente pedir alteração de ingredientes, "
+    "remoção de itens de preparo (ex.: 'sem cebola', 'borda fina', 'com gelo'), preencha o campo 'observacoes'. "
+    "Se ele só confirma (ex.: 'sim', 'pode', 'isso', 'fechado'), use intencao 'confirmar_resumo'. Se for só bate-papo, 'conversa_fiada'. "
     "Se ele reclamar (pizza fria/atrasada/errada) use 'reclamar'; se pedir pra falar com atendente/humano "
     "use 'falar_humano'; se der uma nota/avaliação (0-10) use 'avaliar' e preencha 'nota'; se quiser MUDAR "
     "endereço/forma de pagamento de um pedido já feito use 'alterar_pedido'."
