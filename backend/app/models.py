@@ -151,7 +151,7 @@ class Produto(Base):
     disponivel: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     imagem_url: Mapped[str | None] = mapped_column(Text)
     ordem: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    tamanhos: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True, default=None)
+    tamanhos_json: Mapped[list[dict[str, Any]] | None] = mapped_column("tamanhos", JSONB, nullable=True, default=None)
     aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     opcoes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -159,6 +159,79 @@ class Produto(Base):
     # embedding: vector(768) — registrado via raw SQL na migration; lemos como array
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    tamanhos_rel: Mapped[list[ProdutoTamanho]] = relationship("ProdutoTamanho", back_populates="produto", cascade="all, delete-orphan", lazy="selectin")
+    grupos_complementos: Mapped[list[GrupoComplementos]] = relationship("GrupoComplementos", secondary="produto_complementos", back_populates="produtos", lazy="selectin")
+
+    @property
+    def tamanhos(self) -> list[dict[str, Any]] | None:
+        if self.tamanhos_rel:
+            return [{"tamanho": t.tamanho, "preco": float(t.preco)} for t in self.tamanhos_rel]
+        return None
+
+    @tamanhos.setter
+    def tamanhos(self, value: list[dict[str, Any]] | None) -> None:
+        self.tamanhos_rel = []
+        if value:
+            for v in value:
+                t_nome = v.get("tamanho") or v.get("nome")
+                t_preco = v.get("preco")
+                if t_nome:
+                    self.tamanhos_rel.append(ProdutoTamanho(
+                        tamanho=str(t_nome),
+                        preco=Decimal(str(t_preco or 0))
+                    ))
+
+
+class ProdutoTamanho(Base):
+    __tablename__ = "produto_tamanhos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    produto_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("produtos.id", ondelete="CASCADE"), nullable=False)
+    tamanho: Mapped[str] = mapped_column(String(30), nullable=False)
+    preco: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    disponivel: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    produto: Mapped[Produto] = relationship("Produto", back_populates="tamanhos_rel")
+
+
+class ProdutoComplemento(Base):
+    __tablename__ = "produto_complementos"
+
+    produto_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("produtos.id", ondelete="CASCADE"), primary_key=True)
+    grupo_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("grupo_complementos.id", ondelete="CASCADE"), primary_key=True)
+
+
+class GrupoComplementos(Base):
+    __tablename__ = "grupo_complementos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    nome: Mapped[str] = mapped_column(String(100), nullable=False)
+    obrigatorio: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    min_opcoes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    max_opcoes: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    complementos: Mapped[list[Complemento]] = relationship("Complemento", back_populates="grupo", cascade="all, delete-orphan", lazy="selectin")
+    produtos: Mapped[list[Produto]] = relationship("Produto", secondary="produto_complementos", back_populates="grupos_complementos")
+
+
+class Complemento(Base):
+    __tablename__ = "complementos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    grupo_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("grupo_complementos.id", ondelete="CASCADE"), nullable=False)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    preco: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.00, nullable=False)
+    disponivel: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    grupo: Mapped[GrupoComplementos] = relationship("GrupoComplementos", back_populates="complementos")
 
 
 # ============================================

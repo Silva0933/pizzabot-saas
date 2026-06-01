@@ -340,10 +340,23 @@ async def buscar_cardapio(
       Só retorna descrição quando incluir_descricao=True.
     """
     base = (
-        "SELECT id, nome, categoria, descricao, preco, disponivel, tamanhos, aliases, tags "
-        "FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = true"
+        "SELECT p.id, p.nome, p.categoria, p.descricao, p.preco, p.disponivel, "
+        "  (SELECT COALESCE(json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)), '[]'::json) "
+        "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos, "
+        "  (SELECT COALESCE(json_agg(json_build_object( "
+        "     'grupo', gc.nome, "
+        "     'obrigatorio', gc.obrigatorio, "
+        "     'max_opcoes', gc.max_opcoes, "
+        "     'opcoes', (SELECT COALESCE(json_agg(json_build_object('nome', c.nome, 'preco', c.preco)), '[]'::json) "
+        "                FROM public.complementos c WHERE c.grupo_id = gc.id AND c.disponivel = true) "
+        "   )), '[]'::json) "
+        "   FROM public.produto_complementos pc "
+        "   JOIN public.grupo_complementos gc ON gc.id = pc.grupo_id "
+        "   WHERE pc.produto_id = p.id) as grupos_complementos, "
+        "  p.aliases, p.tags "
+        "FROM public.produtos p WHERE p.pizzaria_id = :pid AND p.disponivel = true"
     )
-    order = " ORDER BY categoria NULLS LAST, ordem, nome LIMIT :lim"
+    order = " ORDER BY p.categoria NULLS LAST, p.ordem, p.nome LIMIT :lim"
     lim = max(1, min(int(limit or 12), 40))
 
     q_clean = (query or "").strip().lower()
@@ -397,13 +410,13 @@ async def buscar_cardapio(
         ors = []
         for i, w in enumerate(tokens[:6]):
             ors.append(
-                f"(nome ILIKE :q{i} OR descricao ILIKE :q{i} OR categoria ILIKE :q{i} "
-                f"OR aliases::text ILIKE :q{i} OR tags::text ILIKE :q{i})"
+                f"(p.nome ILIKE :q{i} OR p.descricao ILIKE :q{i} OR p.categoria ILIKE :q{i} "
+                f"OR p.aliases::text ILIKE :q{i} OR p.tags::text ILIKE :q{i})"
             )
             params[f"q{i}"] = f"%{w}%"
         where_extra += " AND (" + " OR ".join(ors) + ")"
     if categoria:
-        where_extra += " AND categoria ILIKE :cat"
+        where_extra += " AND p.categoria ILIKE :cat"
         params["cat"] = f"%{categoria.strip().rstrip('s')}%"
 
     # Executa busca textual
@@ -420,15 +433,28 @@ async def buscar_cardapio(
                 emb_str = "[" + ",".join(str(f) for f in emb) + "]"
 
                 stmt_sem = (
-                    "SELECT id, nome, categoria, descricao, preco, disponivel, tamanhos, aliases, tags, "
-                    " (embedding <=> CAST(:emb AS vector)) AS distancia "
-                    "FROM public.produtos "
-                    "WHERE pizzaria_id = :pid AND disponivel = true "
-                    " AND (embedding <=> CAST(:emb AS vector)) < 0.5"
+                    "SELECT p.id, p.nome, p.categoria, p.descricao, p.preco, p.disponivel, "
+                    "  (SELECT COALESCE(json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)), '[]'::json) "
+                    "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos, "
+                    "  (SELECT COALESCE(json_agg(json_build_object( "
+                    "     'grupo', gc.nome, "
+                    "     'obrigatorio', gc.obrigatorio, "
+                    "     'max_opcoes', gc.max_opcoes, "
+                    "     'opcoes', (SELECT COALESCE(json_agg(json_build_object('nome', c.nome, 'preco', c.preco)), '[]'::json) "
+                    "                FROM public.complementos c WHERE c.grupo_id = gc.id AND c.disponivel = true) "
+                    "   )), '[]'::json) "
+                    "   FROM public.produto_complementos pc "
+                    "   JOIN public.grupo_complementos gc ON gc.id = pc.grupo_id "
+                    "   WHERE pc.produto_id = p.id) as grupos_complementos, "
+                    "  p.aliases, p.tags, "
+                    " (p.embedding <=> CAST(:emb AS vector)) AS distancia "
+                    "FROM public.produtos p "
+                    "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+                    " AND (p.embedding <=> CAST(:emb AS vector)) < 0.5"
                 )
                 params_sem = {"pid": str(ctx.pizzaria.id), "emb": emb_str, "lim": lim}
                 if categoria:
-                    stmt_sem += " AND categoria ILIKE :cat"
+                    stmt_sem += " AND p.categoria ILIKE :cat"
                     params_sem["cat"] = f"%{categoria.strip().rstrip('s')}%"
                 stmt_sem += " ORDER BY distancia ASC LIMIT :lim"
 
@@ -438,35 +464,29 @@ async def buscar_cardapio(
                 for r_sem in rows_sem:
                     if r_sem[1].lower() not in nomes_existentes:
                         # Converte a tupla retornada no mesmo formato das colunas normais
-                        rows.append((r_sem[0], r_sem[1], r_sem[2], r_sem[3], r_sem[4], r_sem[5], r_sem[6], r_sem[7], r_sem[8]))
+                        rows.append((r_sem[0], r_sem[1], r_sem[2], r_sem[3], r_sem[4], r_sem[5], r_sem[6], r_sem[7], r_sem[8], r_sem[9]))
         except Exception as e:
             log.warning("Falha na busca semântica com pgvector: %s", e)
 
-    # Importante: para busca ESPECÍFICA sem resultado, NÃO devolvemos o cardápio
-    # inteiro (isso fazia a atendente "achar" pizzas ao buscar refrigerante).
-    # Retorna vazio → a atendente avisa que o item não existe.
-
     items = []
     for r in rows:
-        # Payload enxuto: só o que o modelo precisa (economiza tokens por busca).
-        # 'id'/'disponivel' foram removidos de propósito — não são usados na conversa.
         item: dict[str, Any] = {
             "nome": r[1],
             "categoria": r[2],
             "preco": float(r[4]) if r[4] is not None else 0.0,
         }
-        tamanhos = r[6] if len(r) > 6 else None
-        # Só inclui o campo 'tamanhos' quando ele REALMENTE existe (lista não vazia).
-        # Assim o modelo entende: sem campo = preço único, nunca pergunta tamanho.
-        if tamanhos:
+        tamanhos = r[6] if len(r) > 6 and r[6] else None
+        if tamanhos and len(tamanhos) > 0:
             item["tamanhos"] = tamanhos
-        # Só inclui descrição/ingredientes se explicitamente pedido
+        grupos_complementos = r[7] if len(r) > 7 and r[7] else None
+        if grupos_complementos and len(grupos_complementos) > 0:
+            item["grupos_complementos"] = grupos_complementos
         if incluir_descricao:
             item["descricao"] = r[3]
-        if len(r) > 7 and r[7]:
-            item["aliases"] = r[7]
         if len(r) > 8 and r[8]:
-            item["tags"] = r[8]
+            item["aliases"] = r[8]
+        if len(r) > 9 and r[9]:
+            item["tags"] = r[9]
         items.append(item)
     return {"encontrados": len(items), "items": items}
 
@@ -549,10 +569,13 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
     # antes da busca genérica, pra não pegar o tamanho errado.
     if tamanho:
         row_ts = (await db.execute(text(
-            "SELECT nome, preco, tamanhos FROM public.produtos "
-            "WHERE pizzaria_id = :pid AND disponivel = true "
-            "AND nome ILIKE :q AND nome ILIKE :t "
-            "ORDER BY length(nome) LIMIT 1"
+            "SELECT p.nome, p.preco, "
+            "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
+            "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
+            "FROM public.produtos p "
+            "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+            "AND p.nome ILIKE :q AND p.nome ILIKE :t "
+            "ORDER BY length(p.nome) LIMIT 1"
         ), {"pid": str(pizzaria_id), "q": f"%{q}%", "t": f"%{tamanho}%"})).first()
         if row_ts:
             db_nome, db_preco, db_tamanhos = row_ts
@@ -561,18 +584,24 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
 
     # Primeiro tenta busca exata por nome
     stmt = text(
-        "SELECT nome, preco, tamanhos FROM public.produtos "
-        "WHERE pizzaria_id = :pid AND disponivel = true "
-        "AND (nome ILIKE :q OR aliases::text ILIKE :q) LIMIT 1"
+        "SELECT p.nome, p.preco, "
+        "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
+        "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
+        "FROM public.produtos p "
+        "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+        "AND (p.nome ILIKE :q OR p.aliases::text ILIKE :q) LIMIT 1"
     )
     row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": q})).first()
     if not row:
         # Se não achar exato, tenta busca parcial (ILike)
         stmt = text(
-            "SELECT nome, preco, tamanhos FROM public.produtos "
-            "WHERE pizzaria_id = :pid AND disponivel = true "
-            "AND (nome ILIKE :q OR aliases::text ILIKE :q OR tags::text ILIKE :q) "
-            "ORDER BY CASE WHEN nome ILIKE :q THEN 0 ELSE 1 END, ordem, nome LIMIT 1"
+            "SELECT p.nome, p.preco, "
+            "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
+            "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
+            "FROM public.produtos p "
+            "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+            "AND (p.nome ILIKE :q OR p.aliases::text ILIKE :q OR p.tags::text ILIKE :q) "
+            "ORDER BY CASE WHEN p.nome ILIKE :q THEN 0 ELSE 1 END, p.ordem, p.nome LIMIT 1"
         )
         row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": f"%{q}%"})).first()
 
@@ -585,8 +614,12 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
         tokens_norm = [_normalizar(t) for t in tokens]
         if tokens_norm:
             cands = (await db.execute(text(
-                "SELECT nome, preco, tamanhos, COALESCE(aliases::text,'') FROM public.produtos "
-                "WHERE pizzaria_id = :pid AND disponivel = true"
+                "SELECT p.nome, p.preco, "
+                "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
+                "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos, "
+                "  COALESCE(p.aliases::text,'') "
+                "FROM public.produtos p "
+                "WHERE p.pizzaria_id = :pid AND p.disponivel = true"
             ), {"pid": str(pizzaria_id)})).fetchall()
             melhor = None
             melhor_score = 0
@@ -768,13 +801,37 @@ async def _calcular_pedido(
         # ---- Adicionais/bordas do item (preço somado, validado no backend) ----
         ad_nomes = it.get("adicionais") or it.get("extras")
         if ad_nomes and isinstance(ad_nomes, list):
-            ad_preco, ad_fmt, faltantes = _resolver_adicionais(ctx.pizzaria, [str(x) for x in ad_nomes])
+            # Busca os complementos válidos associados ao produto/sabores na tabela produto_complementos
+            comp_rows = []
+            if sabores and isinstance(sabores, list):
+                for sab in sabores:
+                    sab_clean, _ = _parse_nome_e_tamanho(sab)
+                    rows_s = (await db.execute(text(
+                        "SELECT c.nome, c.preco "
+                        "FROM public.complementos c "
+                        "JOIN public.produto_complementos pc ON pc.grupo_id = c.grupo_id "
+                        "JOIN public.produtos p ON p.id = pc.produto_id "
+                        "WHERE p.pizzaria_id = :pid AND p.nome ILIKE :nome AND c.disponivel = true"
+                    ), {"pid": str(ctx.pizzaria.id), "nome": sab_clean})).fetchall()
+                    comp_rows.extend(rows_s)
+            else:
+                nome_limpo, _ = _parse_nome_e_tamanho(nome_prod)
+                comp_rows = (await db.execute(text(
+                    "SELECT c.nome, c.preco "
+                    "FROM public.complementos c "
+                    "JOIN public.produto_complementos pc ON pc.grupo_id = c.grupo_id "
+                    "JOIN public.produtos p ON p.id = pc.produto_id "
+                    "WHERE p.pizzaria_id = :pid AND p.nome ILIKE :nome AND c.disponivel = true"
+                ), {"pid": str(ctx.pizzaria.id), "nome": nome_limpo})).fetchall()
+
+            complementos_validos = [{"nome": r[0], "preco": float(r[1])} for r in comp_rows]
+            ad_preco, ad_fmt, faltantes = _resolver_adicionais(complementos_validos, [str(x) for x in ad_nomes])
             if faltantes:
                 return {
                     "ok": False,
                     "erro": (
-                        f"Adicional(is) não disponível(is): {faltantes}. Ofereça só os que "
-                        f"existem (use consultar_adicionais) e não invente preço."
+                        f"Adicional(is) não disponível(is) para este item: {faltantes}. Ofereça só os "
+                        f"complementos que pertencem ao produto (use buscar_cardapio para ver)."
                     ),
                 }
             if ad_fmt:
@@ -1434,15 +1491,19 @@ def _normalizar(s: str | None) -> str:
     return re.sub(r"\s+", " ", s)
 
 
-def _resolver_adicionais(pizz, nomes: list[str]) -> tuple[float, list[str], list[str]]:
+def _resolver_adicionais(pizz_ou_lista, nomes: list[str]) -> tuple[float, list[str], list[str]]:
     """
-    Resolve adicionais/bordas pedidos contra a lista cadastrada da pizzaria.
+    Resolve adicionais/bordas pedidos contra a lista cadastrada da pizzaria ou lista de complementos.
     Retorna (preco_total, nomes_formatados, faltantes). Casa por nome normalizado
     (tolerante a acento/maiúsc.). Faltantes = pedidos que NÃO existem (anti-invenção).
     """
-    cadastrados = getattr(pizz, "adicionais", None) or []
+    if isinstance(pizz_ou_lista, list):
+        cadastrados = pizz_ou_lista
+    else:
+        cadastrados = getattr(pizz_ou_lista, "adicionais", None) or []
+
     idx = {}
-    for a in cadastrados:
+    for a in (cadastrados or []):
         if isinstance(a, dict) and a.get("nome"):
             idx[_normalizar(a["nome"])] = a
     preco_total = 0.0

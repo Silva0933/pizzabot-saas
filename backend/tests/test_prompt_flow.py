@@ -976,3 +976,79 @@ class TestMelhoriasEspecificas:
                         # Deve ter chamado o run_agent legado com max_iterations=3 devido ao timeout
                         mock_run_agent.assert_called_once()
                         assert mock_run_agent.call_args[1]["max_iterations"] == 3
+
+
+class TestCardapioRelacional:
+    """Valida as melhorias na modelagem relacional de tamanhos e complementos do cardápio."""
+
+    def test_produto_ORM_tamanhos_getter_e_setter(self):
+        from app.models import Produto
+        from decimal import Decimal
+
+        p = Produto(
+            nome="Calabresa",
+            preco=Decimal("35.00"),
+            tamanhos=[
+                {"tamanho": "M", "preco": 30.0},
+                {"tamanho": "G", "preco": 40.0}
+            ]
+        )
+
+        assert len(p.tamanhos_rel) == 2
+        assert p.tamanhos_rel[0].tamanho == "M"
+        assert p.tamanhos_rel[0].preco == Decimal("30.0")
+        assert p.tamanhos_rel[1].tamanho == "G"
+        assert p.tamanhos_rel[1].preco == Decimal("40.0")
+
+        # Verifica o getter
+        tamanhos_lista = p.tamanhos
+        assert len(tamanhos_lista) == 2
+        assert tamanhos_lista[0] == {"tamanho": "M", "preco": 30.0}
+        assert tamanhos_lista[1] == {"tamanho": "G", "preco": 40.0}
+
+    def test_valida_complementos_especificos_por_produto(self):
+        import asyncio
+        from app.agent.tools import _calcular_pedido
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+
+        db = AsyncMock()
+
+        # 1. Caso com adicional válido
+        res_ok = MagicMock()
+        res_ok.fetchall = MagicMock(return_value=[("Borda Catupiry", 8.0)])
+        db.execute = AsyncMock(return_value=res_ok)
+
+        with patch("app.agent.tools._obter_preco_produto") as mock_obter:
+            mock_obter.return_value = (40.0, "Pizza Calabresa")
+
+            r = asyncio.run(_calcular_pedido(
+                ctx, db,
+                itens=[{"nome": "Calabresa", "qtd": 1, "adicionais": ["Borda Catupiry"]}],
+                tipo="retirada",
+                forma_pagamento="dinheiro"
+            ))
+
+            assert r["ok"] is True
+            assert r["itens"][0]["nome"] == "Pizza Calabresa + Borda Catupiry"
+            assert r["valor_total"] == 48.0
+
+        # 2. Caso com adicional inválido (rejeita)
+        res_err = MagicMock()
+        res_err.fetchall = MagicMock(return_value=[])  # Sem complementos cadastrados para esse produto
+        db.execute = AsyncMock(return_value=res_err)
+
+        with patch("app.agent.tools._obter_preco_produto") as mock_obter:
+            mock_obter.return_value = (8.0, "Coca-Cola")
+
+            r = asyncio.run(_calcular_pedido(
+                ctx, db,
+                itens=[{"nome": "Coca-Cola", "qtd": 1, "adicionais": ["Borda Catupiry"]}],
+                tipo="retirada",
+                forma_pagamento="dinheiro"
+            ))
+
+            assert r["ok"] is False
+            assert "não disponível(is) para este item" in r["erro"]
