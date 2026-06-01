@@ -1170,8 +1170,14 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
                     instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
                     texto=cob.qr_code,
                 )
+            elif cob.metodo != "pix" and cob.link_pagamento:
+                # Cartão/checkout: envia o LINK de pagamento ao cliente.
+                await evolution.send_text(
+                    instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+                    texto=f"💳 Pague pelo link: {cob.link_pagamento}",
+                )
         except Exception as e:  # noqa: BLE001
-            log.debug("Falha ao enviar QR/código Pix: %s", e)
+            log.debug("Falha ao enviar cobrança (QR/link): %s", e)
 
     return {
         "ok": True,

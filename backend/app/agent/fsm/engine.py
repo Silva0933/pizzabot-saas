@@ -24,7 +24,7 @@ def estado_inicial() -> dict[str, Any]:
     return {
         "pipeline": "fsm", "etapa": "SAUDACAO", "carrinho": [],
         "tipo": None, "endereco": None, "pagamento": None, "pagar_agora": None,
-        "cardapio_enviado": False, "apresentou": False,
+        "cardapio_enviado": False, "apresentou": False, "upsell_feito": False,
     }
 
 
@@ -337,16 +337,45 @@ async def processar(
             return {"decisao": decisao, "estado": estado}
         estado["etapa"] = "FINALIZADO"
         decisao["acao"] = "pedido_registrado"
-        pix_enviado = bool((reg.get("pagamento") or {}).get("ok"))
+        pag = reg.get("pagamento") or {}
+        cobr_ok = bool(pag.get("ok"))
+        metodo_cobr = pag.get("metodo")  # "pix" | "link" (cartão/checkout)
         decisao["dados"] = {"numero_pedido": reg.get("numero_pedido"),
                             "tempo_estimado": reg.get("tempo_estimado")}
+        # Mensagem de pagamento adaptada ao MÉTODO real (não assume Pix).
+        if cobr_ok and metodo_cobr == "pix":
+            pag_fato = "O QR e o código Pix JÁ foram enviados ao cliente acima."
+            pag_pergunta = "Avise que o Pix (QR + código) está aí em cima e que você confirma assim que o pagamento cair."
+        elif cobr_ok and metodo_cobr:  # link de cartão/checkout
+            pag_fato = "O LINK de pagamento (cartão) JÁ foi enviado ao cliente acima."
+            pag_pergunta = "Avise que o link de pagamento está aí em cima e que você confirma assim que o pagamento cair."
+        else:
+            # pagar na entrega/dinheiro, ou cobrança não gerada
+            pag_fato = ""
+            pag_pergunta = ""
         decisao["fatos"].append(
-            f"Pedido REGISTRADO (#{reg.get('numero_pedido')}), tempo {reg.get('tempo_estimado')}. "
-            + ("Pix/QR JÁ foi enviado ao cliente em mensagem separada." if pix_enviado else "")
+            f"Pedido REGISTRADO (#{reg.get('numero_pedido')}), tempo {reg.get('tempo_estimado')}. " + pag_fato
         )
         decisao["proxima_pergunta"] = (
-            "Confirme que o pedido foi fechado, dizendo o número e o tempo estimado. NÃO repita o resumo. "
-            + ("Avise que o Pix está aí em cima e que você confirma assim que cair." if pix_enviado else "")
+            "Confirme que o pedido foi fechado, dizendo o número e o tempo estimado. NÃO repita o resumo "
+            "nem invente forma de pagamento. " + pag_pergunta
+        )
+        return {"decisao": decisao, "estado": estado}
+
+    # 0) UPSELL sutil — uma única vez, logo após o 1º item entrar no carrinho.
+    if not estado.get("upsell_feito"):
+        estado["upsell_feito"] = True
+        estado["etapa"] = "COLETA_ITENS"
+        decisao["acao"] = "upsell"
+        tem_borda = any(
+            isinstance(a, dict) and (a.get("tipo") or "").lower() == "borda"
+            for a in (getattr(ctx.pizzaria, "adicionais", None) or [])
+        )
+        decisao["fatos"].append("Anotei: " + "; ".join(itens_fmt))
+        oferta = "uma borda recheada ou uma bebida" if tem_borda else "uma bebida"
+        decisao["proxima_pergunta"] = (
+            f"De forma SUTIL e curta, pergunte se ele quer adicionar mais alguma coisa ({oferta}). "
+            "Só ofereça borda se eu citei que há borda. Uma vez só, sem insistir; se ele recusar, siga."
         )
         return {"decisao": decisao, "estado": estado}
 
@@ -354,7 +383,6 @@ async def processar(
     if not estado.get("tipo"):
         estado["etapa"] = "ENTREGA"
         decisao["acao"] = "pedir_info"
-        decisao["fatos"].append("Anotei: " + "; ".join(itens_fmt))
         decisao["proxima_pergunta"] = "Pergunte SÓ se vai ser ENTREGA ou RETIRADA (não repita o total)."
         return {"decisao": decisao, "estado": estado}
 
