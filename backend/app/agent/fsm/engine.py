@@ -330,8 +330,12 @@ async def processar(
     if not estado["carrinho"]:
         estado["etapa"] = "SAUDACAO" if not estado.get("apresentou") else "COLETA_ITENS"
         if decisao["acao"] == "conversar":
-            decisao["acao"] = "saudacao" if not estado.get("apresentou") else "coletar_item"
-            decisao["proxima_pergunta"] = "Cumprimente (só se for a 1ª vez) e pergunte qual sabor de pizza ele quer."
+            if not estado.get("apresentou"):
+                decisao["acao"] = "saudacao"
+                decisao["proxima_pergunta"] = "Cumprimente (só se for a 1ª vez) e pergunte qual sabor de pizza ele quer."
+            else:
+                decisao["acao"] = "coletar_item"
+                decisao["proxima_pergunta"] = "Pergunte qual sabor de pizza ele gostaria (não cumprimente nem diga seu nome, vá direto ao ponto)."
         estado["apresentou"] = True
         return {"decisao": decisao, "estado": estado}
 
