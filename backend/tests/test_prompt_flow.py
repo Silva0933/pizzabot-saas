@@ -586,6 +586,25 @@ class TestPipelineFSM:
         from app.agent.fsm.engine import estado_inicial, resumo_estado
         assert "etapa=SAUDACAO" in resumo_estado(estado_inicial())
 
+    def test_confirmacao_heuristica(self):
+        from app.agent.fsm.engine import _eh_confirmacao
+        assert _eh_confirmacao("confirmar_resumo", "")
+        for t in ("sim", "pode", "ok", "pode ser", "pode fechar", "fechou", "beleza", "isso"):
+            assert _eh_confirmacao("duvida_geral", t), t
+        assert not _eh_confirmacao("duvida_geral", "quero trocar de sabor")
+
+    def test_dedup_esclarecimento_tamanho(self):
+        from app.agent.fsm.engine import estado_inicial, _aplicar_nlu
+        e = estado_inicial()
+        _aplicar_nlu(e, {"produtos": [{"nome": "The Pizza"}]})
+        _aplicar_nlu(e, {"produtos": [{"nome": "the pizza", "tamanho": "GG"}]})
+        assert len(e["carrinho"]) == 1 and e["carrinho"][0]["tamanho"] == "GG"
+
+    def test_registrar_aceita_confirmado(self):
+        import inspect
+        from app.agent.tools import registrar_pedido
+        assert "confirmado" in inspect.signature(registrar_pedido).parameters
+
 
 class TestNpsMessage:
     def test_default_nps_interpola(self):

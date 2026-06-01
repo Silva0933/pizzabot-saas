@@ -544,6 +544,21 @@ def _match_tamanho(tamanhos: list[dict[str, Any]], tamanho: str | None) -> dict[
 async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sabor: str, tamanho: str | None) -> tuple[float, str]:
     """Busca o produto e calcula o preço adequado para o tamanho informado."""
     q, tamanho = _parse_nome_e_tamanho(nome_sabor, tamanho)
+    # Se veio tamanho, alguns cardápios cadastram o tamanho NO NOME (produtos
+    # separados: "The Pizza (P)", "The Pizza (GG)"). Tenta casar nome + tamanho
+    # antes da busca genérica, pra não pegar o tamanho errado.
+    if tamanho:
+        row_ts = (await db.execute(text(
+            "SELECT nome, preco, tamanhos FROM public.produtos "
+            "WHERE pizzaria_id = :pid AND disponivel = true "
+            "AND nome ILIKE :q AND nome ILIKE :t "
+            "ORDER BY length(nome) LIMIT 1"
+        ), {"pid": str(pizzaria_id), "q": f"%{q}%", "t": f"%{tamanho}%"})).first()
+        if row_ts:
+            db_nome, db_preco, db_tamanhos = row_ts
+            if not db_tamanhos:  # produto já é o do tamanho certo
+                return (float(db_preco) if db_preco is not None else 0.0), db_nome
+
     # Primeiro tenta busca exata por nome
     stmt = text(
         "SELECT nome, preco, tamanhos FROM public.produtos "
@@ -707,7 +722,7 @@ async def _calcular_pedido(
             calculo_meia = regras_meia.get("calculo") or "maior_valor"
             preco_unitario = (sum(precos_sabores) / len(precos_sabores)) if calculo_meia == "media" else max(precos_sabores)
             nome_final = "Pizza Meia " + " / Meia ".join(nomes_sabores)
-            if tamanho:
+            if tamanho and tamanho.lower() not in nome_final.lower():
                 nome_final += f" ({tamanho})"
         # Caso 2: Item simples
         else:
@@ -717,7 +732,9 @@ async def _calcular_pedido(
             try:
                 preco_unitario, db_nome = await _obter_preco_produto(db, ctx.pizzaria.id, nome_prod, tamanho)
                 nome_final = db_nome
-                if tamanho:
+                # Só acrescenta o tamanho se o nome do produto ainda não o contém
+                # (evita "The Pizza (GG) (GG)" quando o tamanho já está no nome).
+                if tamanho and tamanho.lower() not in nome_final.lower():
                     nome_final += f" ({tamanho})"
             except ValueError as e:
                 return {"ok": False, "erro": str(e)}
@@ -896,6 +913,7 @@ async def registrar_pedido(
     endereco_entrega: str | None = None,
     observacoes: str | None = None,
     nome_cliente: str | None = None,
+    confirmado: bool = False,
 ) -> dict[str, Any]:
     try:
         _vt = float(valor_total)
@@ -921,23 +939,27 @@ async def registrar_pedido(
     if not calculo.get("ok"):
         return calculo
 
-    estado = _ctx_estado(ctx)
-    if estado.get("etapa") != "aguardando_confirmacao_pedido":
-        return {
-            "ok": False,
-            "erro": (
-                "Antes de registrar, chame preparar_resumo_pedido, envie o resumo ao cliente "
-                "e espere ele confirmar em uma nova mensagem."
-            ),
-        }
-    if estado.get("fingerprint") != calculo["fingerprint"]:
-        return {
-            "ok": False,
-            "erro": (
-                "Os dados do pedido mudaram depois do resumo confirmado. Prepare um novo resumo "
-                "e peça confirmação novamente."
-            ),
-        }
+    # 'confirmado=True' (pipeline FSM): a confirmação já foi validada de forma
+    # determinística pelo backend, então pulamos a trava do fluxo de tool-calling
+    # (que exige preparar_resumo_pedido antes + fingerprint).
+    if not confirmado:
+        estado = _ctx_estado(ctx)
+        if estado.get("etapa") != "aguardando_confirmacao_pedido":
+            return {
+                "ok": False,
+                "erro": (
+                    "Antes de registrar, chame preparar_resumo_pedido, envie o resumo ao cliente "
+                    "e espere ele confirmar em uma nova mensagem."
+                ),
+            }
+        if estado.get("fingerprint") != calculo["fingerprint"]:
+            return {
+                "ok": False,
+                "erro": (
+                    "Os dados do pedido mudaram depois do resumo confirmado. Prepare um novo resumo "
+                    "e peça confirmação novamente."
+                ),
+            }
 
     itens_norm = calculo["itens"]
     valor_itens_total = float(calculo["valor_itens"])

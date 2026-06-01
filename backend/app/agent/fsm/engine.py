@@ -43,9 +43,17 @@ def resumo_estado(estado: dict[str, Any]) -> str:
     )
 
 
+def _chave_item(nome: str | None, sabores: list[str]) -> str:
+    import unicodedata
+    base = (nome or " ".join(sorted(sabores or []))).strip().lower()
+    return "".join(c for c in unicodedata.normalize("NFD", base) if unicodedata.category(c) != "Mn")
+
+
 def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
     """Funde os dados extraídos pela NLU no estado (carrinho e campos)."""
-    # Adicionar produtos
+    # Adicionar produtos — com MERGE: se já existe item com o mesmo nome/sabores,
+    # NÃO duplica; só completa o que faltava (tamanho/adicionais). Isso evita o
+    # bug de "the pizza" + "quero a GG" virar 2 pizzas.
     for p in (dados.get("produtos") or []):
         if not isinstance(p, dict):
             continue
@@ -53,12 +61,28 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         sabores = [s for s in (p.get("sabores_meia") or []) if s]
         if not nome and not sabores:
             continue
+        tamanho = (p.get("tamanho") or None)
+        adicionais = [a for a in (p.get("adicionais") or []) if a]
+        chave = _chave_item(nome, sabores)
+
+        existente = next(
+            (it for it in estado["carrinho"] if _chave_item(it.get("nome"), it.get("sabores") or []) == chave),
+            None,
+        )
+        if existente is not None:
+            # Esclarecimento do mesmo item: atualiza tamanho/adicionais, não duplica.
+            if tamanho:
+                existente["tamanho"] = tamanho
+            if adicionais:
+                existente["adicionais"] = list({*(existente.get("adicionais") or []), *adicionais})
+            continue
+
         estado["carrinho"].append({
             "nome": nome or None,
             "sabores": sabores,
-            "tamanho": (p.get("tamanho") or None),
+            "tamanho": tamanho,
             "qtd": int(p.get("qtd") or 1),
-            "adicionais": [a for a in (p.get("adicionais") or []) if a],
+            "adicionais": adicionais,
         })
     # Remover produtos (por nome aproximado)
     for rem in (dados.get("remover") or []):
@@ -93,11 +117,29 @@ def _online(pagamento: str | None) -> bool:
     return (pagamento or "") in ("pix", "cartao")
 
 
+import re as _re
+
+_CONFIRMA_RE = _re.compile(
+    r"^\s*(sim|claro|isso|isso ai|ok|okay|blz|beleza|pode|pode ser|pode fechar|"
+    r"pode mandar|fechar|fechou|fechado|confirma|confirmo|confirmado|bora|"
+    r"manda|vai|perfeito|exato|certo|positivo|pode sim|ta bom|tá bom|tudo certo)\b",
+    _re.IGNORECASE,
+)
+
+
+def _eh_confirmacao(intencao: str | None, texto: str) -> bool:
+    if intencao == "confirmar_resumo":
+        return True
+    t = (texto or "").strip().lower()
+    return bool(_CONFIRMA_RE.match(t)) and len(t) <= 25
+
+
 async def processar(
     db: AsyncSession,
     ctx: AgentContext,
     estado: dict[str, Any],
     nlu: dict[str, Any],
+    user_input: str = "",
 ) -> dict[str, Any]:
     """Executa um passo da FSM. Retorna a 'decisão' para a voz + estado atualizado."""
     from app.agent.tools import _calcular_pedido, enviar_cardapio_arquivo, registrar_pedido, _gerar_cobranca
@@ -166,44 +208,23 @@ async def processar(
     # Tem itens resolvidos → segue o funil
     estado["apresentou"] = True
     itens_fmt = [f"{i['quantidade']}x {i['nome']} (R$ {i['preco_unit']:.2f})" for i in calc["itens"]]
-    decisao["dados"] = {
+    resumo_dados = {
         "itens": itens_fmt,
-        "valor_itens": round(float(calc["valor_itens"]), 2),
         "taxa_entrega": round(float(calc["taxa_entrega"]), 2),
         "total": round(float(calc["valor_total"]), 2),
     }
 
-    # 1) tipo de entrega
-    if not estado.get("tipo"):
-        estado["etapa"] = "ENTREGA"
-        decisao["acao"] = "pedir_info"
-        decisao["fatos"].append("Itens no carrinho: " + "; ".join(itens_fmt))
-        decisao["proxima_pergunta"] = "Pergunte se vai ser ENTREGA ou RETIRADA."
-        return {"decisao": decisao, "estado": estado}
+    falta_pagar_agora = _online(estado.get("pagamento")) and estado.get("pagar_agora") is None
+    tudo_coletado = (
+        bool(estado.get("tipo"))
+        and (estado["tipo"] != "delivery" or bool(estado.get("endereco")))
+        and bool(estado.get("pagamento"))
+        and not falta_pagar_agora
+    )
 
-    # 2) endereço (se delivery)
-    if estado["tipo"] == "delivery" and not estado.get("endereco"):
-        estado["etapa"] = "ENDERECO"
-        decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Peça o endereço completo (rua, número, bairro, referência)."
-        return {"decisao": decisao, "estado": estado}
-
-    # 3) forma de pagamento
-    if not estado.get("pagamento"):
-        estado["etapa"] = "PAGAMENTO"
-        decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Pergunte a forma de pagamento (pix, cartão ou dinheiro)."
-        return {"decisao": decisao, "estado": estado}
-
-    # 4) pagar agora ou na entrega (se online)
-    if _online(estado.get("pagamento")) and estado.get("pagar_agora") is None:
-        estado["etapa"] = "PAGAMENTO"
-        decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Pergunte se quer pagar AGORA pela conversa ou NA ENTREGA."
-        return {"decisao": decisao, "estado": estado}
-
-    # 5) confirmação final
-    if intencao == "confirmar_resumo" and estado.get("etapa") == "AGUARDANDO_CONFIRMACAO":
+    # CONFIRMAÇÃO (checada ANTES de reperguntar): se já mostramos o resumo e o
+    # cliente confirmou ("sim/pode/ok/fechar"...), REGISTRA o pedido.
+    if tudo_coletado and estado.get("etapa") == "AGUARDANDO_CONFIRMACAO" and _eh_confirmacao(intencao, user_input):
         reg = await registrar_pedido(
             ctx, db,
             itens=estado["carrinho"],
@@ -212,6 +233,7 @@ async def processar(
             forma_pagamento=estado["pagamento"],
             pagar_agora=bool(estado.get("pagar_agora")),
             endereco_entrega=estado.get("endereco"),
+            confirmado=True,  # FSM já validou a confirmação
         )
         if not reg.get("ok"):
             decisao["acao"] = "pendencia"
@@ -219,21 +241,53 @@ async def processar(
             return {"decisao": decisao, "estado": estado}
         estado["etapa"] = "FINALIZADO"
         decisao["acao"] = "pedido_registrado"
-        decisao["dados"]["numero_pedido"] = reg.get("numero_pedido")
-        decisao["dados"]["tempo_estimado"] = reg.get("tempo_estimado")
-        decisao["dados"]["pix_enviado"] = bool((reg.get("pagamento") or {}).get("ok"))
+        pix_enviado = bool((reg.get("pagamento") or {}).get("ok"))
+        decisao["dados"] = {"numero_pedido": reg.get("numero_pedido"),
+                            "tempo_estimado": reg.get("tempo_estimado")}
         decisao["fatos"].append(
-            f"Pedido REGISTRADO (#{reg.get('numero_pedido')}). "
-            + ("Pix/QR já enviado ao cliente." if decisao["dados"]["pix_enviado"] else "")
+            f"Pedido REGISTRADO (#{reg.get('numero_pedido')}), tempo {reg.get('tempo_estimado')}. "
+            + ("Pix/QR JÁ foi enviado ao cliente em mensagem separada." if pix_enviado else "")
         )
         decisao["proxima_pergunta"] = (
-            "Confirme o pedido com o número e o tempo estimado. "
-            + ("Diga que o Pix foi enviado acima e que confirma assim que cair." if decisao["dados"]["pix_enviado"] else "")
+            "Confirme que o pedido foi fechado, dizendo o número e o tempo estimado. NÃO repita o resumo. "
+            + ("Avise que o Pix está aí em cima e que você confirma assim que cair." if pix_enviado else "")
         )
         return {"decisao": decisao, "estado": estado}
 
-    # tudo coletado, mas ainda não confirmado → mostra resumo e pede confirmação
+    # 1) tipo de entrega
+    if not estado.get("tipo"):
+        estado["etapa"] = "ENTREGA"
+        decisao["acao"] = "pedir_info"
+        decisao["fatos"].append("Anotei: " + "; ".join(itens_fmt))
+        decisao["proxima_pergunta"] = "Pergunte SÓ se vai ser ENTREGA ou RETIRADA (não repita o total)."
+        return {"decisao": decisao, "estado": estado}
+
+    # 2) endereço (se delivery)
+    if estado["tipo"] == "delivery" and not estado.get("endereco"):
+        estado["etapa"] = "ENDERECO"
+        decisao["acao"] = "pedir_info"
+        decisao["proxima_pergunta"] = "Peça SÓ o endereço completo (rua, número, bairro, referência). Não repita o total."
+        return {"decisao": decisao, "estado": estado}
+
+    # 3) forma de pagamento
+    if not estado.get("pagamento"):
+        estado["etapa"] = "PAGAMENTO"
+        decisao["acao"] = "pedir_info"
+        decisao["proxima_pergunta"] = "Pergunte SÓ a forma de pagamento (pix, cartão ou dinheiro). Não repita o total."
+        return {"decisao": decisao, "estado": estado}
+
+    # 4) pagar agora ou na entrega (se online)
+    if falta_pagar_agora:
+        estado["etapa"] = "PAGAMENTO"
+        decisao["acao"] = "pedir_info"
+        decisao["proxima_pergunta"] = "Pergunte SÓ se quer pagar AGORA pela conversa ou NA ENTREGA. Não repita o total."
+        return {"decisao": decisao, "estado": estado}
+
+    # tudo coletado, mas ainda não confirmado → mostra o resumo UMA vez e pede confirmação
     estado["etapa"] = "AGUARDANDO_CONFIRMACAO"
     decisao["acao"] = "resumo_confirmar"
-    decisao["proxima_pergunta"] = "Apresente o resumo (itens, entrega/retirada, endereço, total) e pergunte 'Posso fechar o pedido?'."
+    decisao["dados"] = resumo_dados
+    decisao["dados"]["tipo"] = estado["tipo"]
+    decisao["dados"]["endereco"] = estado.get("endereco")
+    decisao["proxima_pergunta"] = "Mostre o resumo (itens, entrega/retirada, total) UMA vez e pergunte 'Posso fechar o pedido?'. Não repita se já perguntou."
     return {"decisao": decisao, "estado": estado}

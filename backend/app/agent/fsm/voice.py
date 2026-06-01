@@ -49,9 +49,11 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
         f"O QUE O SISTEMA FEZ/SABE AGORA:\n{fatos}\n\n"
         f"{resumo}\n\n"
         f"SUA TAREFA: {decisao.get('proxima_pergunta') or 'Responda de forma útil e siga o atendimento.'}\n\n"
-        "REGRAS: nunca invente preço/sabor/taxa (use só os dados acima); não repita bordões fixos "
-        "('Perfeito!', 'Show!') a cada msg; máximo 2 frases curtas. Se quiser quebrar em 2 balões, "
-        f"separe com {QUEBRA}. Responda só a mensagem final ao cliente, nada de explicações."
+        "REGRAS: responda em UMA mensagem curta (1 frase, no máximo 2). NÃO faça a mesma pergunta "
+        "duas vezes nem repita o total a cada passo (só cite valores quando for o resumo/fechamento). "
+        "Nunca invente preço/sabor/taxa (use só os dados acima). Não repita bordões fixos "
+        f"('Perfeito!', 'Show!'). Use {QUEBRA} SÓ se forem conteúdos diferentes (ex.: resumo + pergunta) "
+        "— nunca pra repetir a mesma ideia. Responda só a mensagem final ao cliente."
     )
 
 

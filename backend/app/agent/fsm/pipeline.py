@@ -60,7 +60,7 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         return None
 
     # 2) Engine (decisão determinística)
-    out = await engine.processar(db, ctx, estado, res_nlu)
+    out = await engine.processar(db, ctx, estado, res_nlu, user_input=user_input)
     estado = out["estado"]
     decisao = out["decisao"]
 
