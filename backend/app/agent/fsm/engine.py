@@ -281,9 +281,9 @@ async def processar(
         if estado.get("cardapio_enviado"):
             decisao["fatos"].append("O cardápio (arquivo) JÁ foi enviado ao cliente acima.")
             decisao["proxima_pergunta"] = (
-                "Avise curtinho que mandou o cardápio aí em cima e CONVIDE O CLIENTE a dar uma "
-                "olhada (ex.: 'dá uma olhadinha'). NUNCA diga que VOCÊ olhou/escolheu. Pergunte qual "
-                "sabor ele quer (ou diga que é só chamar quando decidir)."
+                "Mensagem CURTA e simples: avise que acabou de mandar o cardápio aí em cima (👆) e "
+                "diga que, assim que decidir, é só chamar. NÃO pergunte o sabor agora nem diga que "
+                "VOCÊ olhou. Ex.: 'Mandei o cardápio aí em cima 👆 Assim que decidir, é só me chamar 😊'."
             )
 
     # Funde dados extraídos no estado
