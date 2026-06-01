@@ -117,6 +117,22 @@ def _online(pagamento: str | None) -> bool:
     return (pagamento or "") in ("pix", "cartao")
 
 
+def _fatos_pizzaria(pizz) -> str:
+    """Fatos reais da pizzaria pra voz responder dúvidas (sem inventar)."""
+    partes = [f"Pizzaria: {getattr(pizz, 'nome', '') or ''}"]
+    if getattr(pizz, "endereco", None):
+        partes.append(f"Endereço: {pizz.endereco}")
+    formas = getattr(pizz, "formas_pagamento_aceitas", None) or []
+    if formas:
+        partes.append("Pagamentos: " + ", ".join(formas))
+    if getattr(pizz, "tempo_entrega_min", None):
+        partes.append(f"Entrega ~{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min")
+    hf = getattr(pizz, "horario_funcionamento", None) or {}
+    if hf:
+        partes.append("Tem horário de funcionamento cadastrado (consulte se perguntarem).")
+    return "DADOS REAIS DA PIZZARIA (use só estes; não invente): " + " · ".join(partes)
+
+
 import re as _re
 
 _CONFIRMA_RE = _re.compile(
@@ -292,12 +308,30 @@ async def processar(
             estado["etapa"] = "COLETA_ITENS"
             return {"decisao": decisao, "estado": estado}
 
+    # Dúvida geral / conversa fiada → RESPONDE de verdade (não força o funil).
+    if intencao in ("duvida_geral", "conversa_fiada") and decisao["acao"] == "conversar":
+        decisao["acao"] = "responder_duvida"
+        decisao["fatos"].append(_fatos_pizzaria(ctx.pizzaria))
+        if estado["carrinho"]:
+            decisao["proxima_pergunta"] = (
+                "Responda com naturalidade ao que o cliente falou (use os dados reais da pizzaria). "
+                "Depois retome o pedido de leve, sem ser robótica."
+            )
+        else:
+            decisao["proxima_pergunta"] = (
+                "Responda com naturalidade EXATAMENTE ao que o cliente perguntou/disse, usando os dados "
+                "reais da pizzaria. Ex.: se ele perguntou se é a pizzaria X, confirme que sim. Se fizer "
+                "sentido, convide a fazer um pedido — mas NÃO force 'qual sabor' se ele não pediu pizza."
+            )
+        estado["apresentou"] = True
+        return {"decisao": decisao, "estado": estado}
+
     # Sem itens ainda → coleta
     if not estado["carrinho"]:
         estado["etapa"] = "SAUDACAO" if not estado.get("apresentou") else "COLETA_ITENS"
         if decisao["acao"] == "conversar":
             decisao["acao"] = "saudacao" if not estado.get("apresentou") else "coletar_item"
-            decisao["proxima_pergunta"] = "Pergunte qual sabor de pizza ele quer (sem repetir saudação se já cumprimentou)."
+            decisao["proxima_pergunta"] = "Cumprimente (só se for a 1ª vez) e pergunte qual sabor de pizza ele quer."
         estado["apresentou"] = True
         return {"decisao": decisao, "estado": estado}
 

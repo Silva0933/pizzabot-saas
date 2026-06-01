@@ -21,7 +21,7 @@ def _persona_linha(personalidade) -> str:
     return f"Você é {nome}, atendente da pizzaria (estilo {estilo}). Fale como gente de verdade no WhatsApp, curto e natural."
 
 
-def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any], ja_apresentou: bool) -> str:
+def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any], ja_apresentou: bool, user_input: str = "") -> str:
     fatos = "\n".join(f"- {f}" for f in (decisao.get("fatos") or [])) or "- (nada novo)"
     dados = decisao.get("dados") or {}
     resumo = ""
@@ -46,9 +46,11 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
     return (
         f"{_persona_linha(personalidade)} Pizzaria: {pizzaria_nome}.\n"
         f"{apres}\n\n"
+        f"MENSAGEM DO CLIENTE AGORA: \"{(user_input or '').strip()[:300]}\"\n\n"
         f"O QUE O SISTEMA FEZ/SABE AGORA:\n{fatos}\n\n"
         f"{resumo}\n\n"
-        f"SUA TAREFA: {decisao.get('proxima_pergunta') or 'Responda de forma útil e siga o atendimento.'}\n\n"
+        f"SUA TAREFA: {decisao.get('proxima_pergunta') or 'Responda de forma útil e siga o atendimento.'} "
+        "Responda DE VERDADE ao que o cliente falou acima (não ignore a pergunta dele).\n\n"
         "REGRAS: responda em UMA mensagem curta (1 frase, no máximo 2). NÃO faça a mesma pergunta "
         "duas vezes nem repita o total a cada passo (só cite valores quando for o resumo/fechamento). "
         "Nunca invente preço/sabor/taxa (use só os dados acima). Não repita bordões fixos "

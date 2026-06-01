@@ -70,6 +70,7 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         pizzaria_nome=ctx.pizzaria.nome,
         decisao=decisao,
         ja_apresentou=bool(estado.get("apresentou")) and decisao.get("acao") != "saudacao",
+        user_input=user_input,
     )
     texto, voz_usage = await voice.gerar_voz(provider=provider, api_key=api_key, model=model, comando=comando)
     if not texto:
