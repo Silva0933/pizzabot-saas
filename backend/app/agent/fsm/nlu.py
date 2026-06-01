@@ -33,7 +33,8 @@ _SYSTEM = (
     '    "tipo_entrega": "delivery"|"retirada"|null,\n'
     '    "endereco": {"rua": str|null, "numero": str|null, "bairro": str|null, "referencia": str|null}|null,\n'
     '    "forma_pagamento": "pix"|"cartao"|"dinheiro"|null,\n'
-    '    "pagar_agora": true|false|null\n'
+    '    "pagar_agora": true|false|null,\n'
+    '    "quer_cardapio": true|false\n'
     "  }\n"
     "}\n"
     "Regras: só preencha o que o cliente DISSE; o que ele não falou fica null/vazio. "

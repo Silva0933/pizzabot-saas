@@ -605,6 +605,14 @@ class TestPipelineFSM:
         from app.agent.tools import registrar_pedido
         assert "confirmado" in inspect.signature(registrar_pedido).parameters
 
+    def test_quer_cardapio_multi_intencao(self):
+        from app.agent.fsm.engine import _quer_cardapio
+        # pede pizza E cardápio na mesma frase (intenção primária != pedir_cardapio)
+        assert _quer_cardapio("adicionar_item", "quero uma pizza e o cardapio", {})
+        assert _quer_cardapio("saudacao", "me manda o menu", {})
+        assert _quer_cardapio("x", "x", {"quer_cardapio": True})
+        assert not _quer_cardapio("adicionar_item", "quero uma calabresa grande", {})
+
 
 class TestNpsMessage:
     def test_default_nps_interpola(self):

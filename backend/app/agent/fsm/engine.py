@@ -134,6 +134,21 @@ def _eh_confirmacao(intencao: str | None, texto: str) -> bool:
     return bool(_CONFIRMA_RE.match(t)) and len(t) <= 25
 
 
+_CARDAPIO_RE = _re.compile(
+    r"(card[aá]pio|menu|me manda|o que (voc|vc|tu).*tem|quais.*(sabor|op[cç])|"
+    r"que sabores|op[cç][oõ]es|lista de)",
+    _re.IGNORECASE,
+)
+
+
+def _quer_cardapio(intencao: str | None, texto: str, dados: dict[str, Any]) -> bool:
+    if intencao == "pedir_cardapio":
+        return True
+    if dados.get("quer_cardapio") is True:
+        return True
+    return bool(_CARDAPIO_RE.search(texto or ""))
+
+
 async def processar(
     db: AsyncSession,
     ctx: AgentContext,
@@ -161,18 +176,25 @@ async def processar(
         decisao["proxima_pergunta"] = "Pergunte se ele quer começar um novo pedido."
         return {"decisao": decisao, "estado": estado}
 
-    # Cardápio em arquivo
-    if intencao == "pedir_cardapio":
+    # Cardápio em arquivo — detectado por intenção OU por heurística (a mensagem
+    # pode pedir pizza E cardápio ao mesmo tempo; a NLU só traz 1 intenção).
+    if _quer_cardapio(intencao, user_input, dados):
+        enviou_agora = False
         if not estado.get("cardapio_enviado"):
             try:
                 r = await enviar_cardapio_arquivo(ctx, db)
-                estado["cardapio_enviado"] = bool(r.get("ok"))
-                decisao["enviar_cardapio"] = False  # a tool já envia
+                if r.get("ok"):
+                    estado["cardapio_enviado"] = True
+                    enviou_agora = True
+                elif r.get("motivo") == "sem_arquivo":
+                    # Não há arquivo: a voz deve listar via buscar_cardapio.
+                    decisao["fatos"].append("Não há arquivo de cardápio; liste os sabores em texto (use o que souber do cardápio).")
             except Exception:  # noqa: BLE001
                 pass
         decisao["acao"] = "cardapio"
-        decisao["fatos"].append("Cardápio (arquivo) já enviado ao cliente.")
-        decisao["proxima_pergunta"] = "Pergunte qual sabor ele quer."
+        if estado.get("cardapio_enviado"):
+            decisao["fatos"].append("O cardápio (arquivo) JÁ foi enviado ao cliente acima.")
+            decisao["proxima_pergunta"] = "Diga curtinho que mandou o cardápio aí em cima e pergunte qual sabor ele quer."
 
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
