@@ -1412,6 +1412,7 @@ async def atualizar_pedido(
 
     if novo_endereco:
         ped.endereco_entrega = novo_endereco
+    forma_anterior = ped.forma_pagamento
     if nova_forma_pagamento:
         ped.forma_pagamento = nova_forma_pagamento
     if novas_observacoes:
@@ -1421,10 +1422,11 @@ async def atualizar_pedido(
 
     await db.flush()
 
-    # Se passou a ser pagamento online e ainda não há cobrança, gera agora.
+    # Se passou a ser pagamento online e ainda não há cobrança (ou mudou o método), gera agora.
     resultado: dict[str, Any] = {"ok": True, "numero_pedido": ped.numero_pedido}
     metodo = _metodo_online(nova_forma_pagamento) if nova_forma_pagamento else None
-    if metodo and ped.payment_status != "approved" and not ped.payment_id:
+    mudou_metodo = nova_forma_pagamento and (nova_forma_pagamento != forma_anterior)
+    if metodo and ped.payment_status != "approved" and (not ped.payment_id or mudou_metodo):
         resultado["pagamento"] = await _gerar_cobranca(ctx, db, ped, metodo)
     return resultado
 

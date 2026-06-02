@@ -19,7 +19,7 @@ def typing_delay_ms(texto: str) -> int:
     return min(max(tamanho * 22, 3000), 5000)  # texto longo (teto 5s)
 
 
-def split_balloons(texto: str, *, max_balloons: int = 3, max_chars: int = 320) -> list[str]:
+def split_balloons(texto: str, *, max_balloons: int = 6, max_chars: int = 320) -> list[str]:
     text = re.sub(r"\n{3,}", "\n\n", (texto or "").strip())
     if not text:
         return []

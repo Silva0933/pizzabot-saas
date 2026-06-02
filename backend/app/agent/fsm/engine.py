@@ -294,6 +294,25 @@ async def processar(
                 "(ex.: 'Imagina!', 'De nada, bom apetite!', 'Qualquer coisa só chamar'). Não ofereça mais pizzas."
             )
             return {"decisao": decisao, "estado": estado}
+        elif intencao == "informar_pagamento" or any(k in user_input.lower() for k in ("link", "pix", "pagar", "pagamento", "copia e cola")):
+            from app.agent.tools import gerar_pagamento
+            try:
+                metodo_pag = estado.get("pagamento") or "pix"
+                r = await gerar_pagamento(ctx, db, metodo=metodo_pag)
+                if r.get("ok"):
+                    decisao["acao"] = "conversar"
+                    pag = r.get("pagamento") or {}
+                    metodo_cobr = pag.get("metodo") or metodo_pag
+                    if metodo_cobr == "pix":
+                        decisao["proxima_pergunta"] = "Avise o cliente que você acabou de reenviar o código Pix e o QR Code acima."
+                    else:
+                        decisao["proxima_pergunta"] = "Avise o cliente que você acabou de reenviar o link de pagamento do cartão acima."
+                    return {"decisao": decisao, "estado": estado}
+                else:
+                    decisao["proxima_pergunta"] = f"Avise o cliente que não foi possível gerar o pagamento: {r.get('motivo') or 'erro'}"
+                    return {"decisao": decisao, "estado": estado}
+            except Exception as e_pag:
+                log.warning("Falha ao re-gerar pagamento na FSM: %s", e_pag)
         elif intencao not in ("alterar_pedido", "avaliar", "cancelar", "reclamar", "falar_humano"):
             estado.update(estado_inicial())
 
