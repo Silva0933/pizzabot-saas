@@ -51,6 +51,77 @@ def _chave_item(nome: str | None, sabores: list[str]) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", base) if unicodedata.category(c) != "Mn")
 
 
+def _descongelar(item: dict[str, Any]) -> None:
+    """Remove o preço congelado de um item (força re-resolução no próximo cálculo)."""
+    item.pop("preco_congelado", None)
+    item.pop("nome_congelado", None)
+
+
+def _congelar_precos(estado: dict[str, Any], calc: dict[str, Any]) -> None:
+    """BLINDAGEM (Pilar 1): grava no carrinho o preço/nome JÁ resolvido pelo backend,
+    pra que os próximos turnos reutilizem o MESMO valor (preço estável)."""
+    itens = calc.get("itens") or []
+    carrinho = estado.get("carrinho") or []
+    for i, ci in enumerate(carrinho):
+        if i >= len(itens) or not isinstance(itens[i], dict):
+            continue
+        pu = itens[i].get("preco_unit")
+        nm = itens[i].get("nome")
+        if isinstance(pu, (int, float)) and not isinstance(pu, bool) and pu > 0 and nm:
+            ci["preco_congelado"] = round(float(pu), 2)
+            ci["nome_congelado"] = nm
+
+
+def _fmt_brl(v: float) -> str:
+    """Formata em Real no padrão BR (vírgula decimal)."""
+    return ("R$ %0.2f" % float(v)).replace(".", ",")
+
+
+def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: float,
+                       tipo: str | None, endereco: str | None,
+                       pagamento: str | None, pagar_agora: bool | None,
+                       observacoes: str | None) -> str:
+    """BLINDAGEM (Pilar 2): texto do RESUMO montado 100% pelo backend (verbatim).
+    A LLM não toca nesses números."""
+    linhas = ["Fechando seu pedido 📝", ""]
+    for it in itens_norm:
+        linhas.append(f"• {it['quantidade']}x {it['nome']} — {_fmt_brl(it['preco_unit'])}")
+    if tipo == "delivery" and taxa and taxa > 0:
+        linhas.append(f"Entrega: {_fmt_brl(taxa)}")
+    linhas.append(f"*Total: {_fmt_brl(total)}*")
+    linhas.append("")
+    if tipo == "delivery":
+        linhas.append(f"📍 Entrega: {endereco or '(endereço a confirmar)'}")
+    elif tipo == "retirada":
+        linhas.append("🛵 Retirada no balcão")
+    if pagamento:
+        nomes = {"pix": "Pix", "cartao": "Cartão", "dinheiro": "Dinheiro"}
+        quando = ""
+        if pagamento in ("pix", "cartao"):
+            quando = " (agora pela conversa)" if pagar_agora else " (na entrega/retirada)"
+        linhas.append(f"💳 Pagamento: {nomes.get(pagamento, pagamento)}{quando}")
+    if observacoes:
+        linhas.append(f"📝 Obs: {observacoes}")
+    linhas.append("")
+    linhas.append("Posso fechar o pedido? 😊")
+    return "\n".join(linhas)
+
+
+def _montar_registro_msg(numero: Any, tempo: str | None, metodo_cobr: str | None,
+                         cobr_ok: bool) -> str:
+    """BLINDAGEM (Pilar 2): texto do FECHAMENTO montado pelo backend (verbatim)."""
+    linhas = [f"Pedido #{numero} fechado! 🍕"]
+    if tempo:
+        linhas.append(f"Fica pronto em aproximadamente {tempo}.")
+    if cobr_ok and metodo_cobr == "pix":
+        linhas.append("O QR e o código Pix estão aí em cima — assim que o pagamento cair, eu confirmo pra você! 😊")
+    elif cobr_ok and metodo_cobr:
+        linhas.append("O link de pagamento está aí em cima — é só finalizar por lá. 😊")
+    else:
+        linhas.append("Qualquer coisa, é só me chamar. 😊")
+    return "\n".join(linhas)
+
+
 def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
     """Funde os dados extraídos pela NLU no estado (carrinho e campos)."""
     # Adicionar produtos — com MERGE: se já existe item com o mesmo nome/sabores,
@@ -73,10 +144,17 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         )
         if existente is not None:
             # Esclarecimento do mesmo item: atualiza tamanho/adicionais, não duplica.
-            if tamanho:
+            mudou = False
+            if tamanho and existente.get("tamanho") != tamanho:
                 existente["tamanho"] = tamanho
+                mudou = True
             if adicionais:
-                existente["adicionais"] = list({*(existente.get("adicionais") or []), *adicionais})
+                antes = set(existente.get("adicionais") or [])
+                existente["adicionais"] = list({*antes, *adicionais})
+                if set(existente["adicionais"]) != antes:
+                    mudou = True
+            if mudou:
+                _descongelar(existente)  # item mudou → re-resolver o preço
             continue
 
         estado["carrinho"].append({
@@ -101,6 +179,7 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         for it in reversed(estado["carrinho"]):
             if not it.get("tamanho"):
                 it["tamanho"] = tam_avulso
+                _descongelar(it)  # ganhou tamanho → re-resolver o preço
                 break
 
     if dados.get("tipo_entrega") in ("delivery", "retirada"):
@@ -374,6 +453,16 @@ async def processar(
                         pass
             return {"decisao": decisao, "estado": estado}
 
+        # Cálculo OK → CONGELA os preços resolvidos no carrinho (preço estável) e
+        # publica os valores VÁLIDOS pro guard-rail conferir o texto da voz.
+        if calc.get("ok"):
+            _congelar_precos(estado, calc)
+            pv = [round(float(i["preco_unit"]), 2) for i in (calc.get("itens") or [])]
+            pv.append(round(float(calc.get("valor_total") or 0), 2))
+            if calc.get("taxa_entrega"):
+                pv.append(round(float(calc["taxa_entrega"]), 2))
+            decisao["precos_validos"] = [v for v in pv if v > 0]
+
     # Dúvida geral / conversa fiada → RESPONDE de verdade (não força o funil).
     if intencao in ("duvida_geral", "conversa_fiada") and decisao["acao"] == "conversar":
         decisao["acao"] = "responder_duvida"
@@ -483,6 +572,10 @@ async def processar(
             "Confirme que o pedido foi fechado, dizendo o número e o tempo estimado. NÃO repita o resumo "
             "nem invente forma de pagamento. " + pag_pergunta
         )
+        # BLINDAGEM (Pilar 2): mensagem de fechamento escrita pelo backend (verbatim).
+        decisao["mensagem_pronta"] = _montar_registro_msg(
+            reg.get("numero_pedido"), reg.get("tempo_estimado"), metodo_cobr, cobr_ok
+        )
         return {"decisao": decisao, "estado": estado}
 
     # 0) UPSELL sutil — uma única vez, logo após o 1º item entrar no carrinho.
@@ -494,7 +587,9 @@ async def processar(
             isinstance(a, dict) and (a.get("tipo") or "").lower() == "borda"
             for a in (getattr(ctx.pizzaria, "adicionais", None) or [])
         )
-        decisao["fatos"].append("Anotei: " + "; ".join(itens_fmt))
+        # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
+        itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
+        decisao["fatos"].append("Anotei: " + "; ".join(itens_nomes))
         oferta = "uma borda recheada ou uma bebida" if tem_borda else "uma bebida"
         decisao["proxima_pergunta"] = (
             f"De forma SUTIL e curta, pergunte se ele quer adicionar mais alguma coisa ({oferta}). "
@@ -537,4 +632,11 @@ async def processar(
     decisao["dados"]["tipo"] = estado["tipo"]
     decisao["dados"]["endereco"] = estado.get("endereco")
     decisao["proxima_pergunta"] = "Mostre o resumo (itens, entrega/retirada, total) UMA vez e pergunte 'Posso fechar o pedido?'. Não repita se já perguntou."
+    # BLINDAGEM (Pilar 2): resumo com os VALORES escrito pelo backend (verbatim) —
+    # a LLM nunca mais cita preço aqui, então nunca diverge.
+    decisao["mensagem_pronta"] = _montar_resumo_msg(
+        calc["itens"], float(calc["taxa_entrega"]), float(calc["valor_total"]),
+        estado.get("tipo"), estado.get("endereco"),
+        estado.get("pagamento"), estado.get("pagar_agora"), estado.get("observacoes"),
+    )
     return {"decisao": decisao, "estado": estado}

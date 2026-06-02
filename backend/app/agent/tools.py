@@ -750,6 +750,24 @@ async def _calcular_pedido(
         qtd = max(1, min(qtd, 50))
         tamanho = it.get("tamanho") or it.get("tam")
 
+        # BLINDAGEM (Pilar 1) — preço CONGELADO: se este item já teve o preço
+        # resolvido num turno anterior, reutiliza EXATAMENTE o mesmo valor. Assim o
+        # preço nunca muda no meio da conversa (a causa do bug R$50→R$45). O engine
+        # limpa o congelamento sempre que o item muda (tamanho/adicionais), forçando
+        # uma nova resolução só quando faz sentido.
+        _pc = it.get("preco_congelado")
+        if (
+            isinstance(_pc, (int, float)) and not isinstance(_pc, bool)
+            and _pc > 0 and it.get("nome_congelado")
+        ):
+            valor_itens_total += float(_pc) * qtd
+            itens_norm.append({
+                "nome": it["nome_congelado"],
+                "quantidade": qtd,
+                "preco_unit": float(_pc),
+            })
+            continue
+
         # Caso 1: Pizza combinada (sabores múltiplos)
         sabores = it.get("sabores")
         if sabores and isinstance(sabores, list):

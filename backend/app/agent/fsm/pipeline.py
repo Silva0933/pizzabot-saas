@@ -65,16 +65,46 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     decisao = out["decisao"]
 
     # 3) Voz
-    comando = voice.montar_comando(
-        personalidade=ctx.personalidade,
-        pizzaria_nome=ctx.pizzaria.nome,
-        decisao=decisao,
-        ja_apresentou=bool(estado.get("apresentou")) and decisao.get("acao") != "saudacao",
-        user_input=user_input,
-    )
-    texto, voz_usage = await voice.gerar_voz(provider=provider, api_key=api_key, model=model, comando=comando)
-    if not texto:
-        texto = "Pode repetir, por favor? 😊"
+    ja_apresentou = bool(estado.get("apresentou")) and decisao.get("acao") != "saudacao"
+    voz_usage: dict = {}
+    msg_pronta = decisao.get("mensagem_pronta")
+    if msg_pronta:
+        # BLINDAGEM (Pilar 2): mensagens CRÍTICAS (resumo/fechamento) vêm prontas do
+        # backend — não passam pela LLM, então os valores nunca divergem. Economiza
+        # tokens e elimina alucinação de preço de uma vez.
+        texto = str(msg_pronta)
+    else:
+        comando = voice.montar_comando(
+            personalidade=ctx.personalidade,
+            pizzaria_nome=ctx.pizzaria.nome,
+            decisao=decisao,
+            ja_apresentou=ja_apresentou,
+            user_input=user_input,
+        )
+        texto, voz_usage = await voice.gerar_voz(provider=provider, api_key=api_key, model=model, comando=comando)
+        if not texto:
+            texto = "Pode repetir, por favor? 😊"
+        # BLINDAGEM (Pilar 3): guard-rail determinístico sobre o texto da LLM —
+        # remove saudação repetida e neutraliza qualquer preço sem lastro.
+        try:
+            from app.agent.fsm.guard import blindar
+            texto, correcoes = blindar(
+                texto, ja_apresentou=ja_apresentou,
+                precos_validos=decisao.get("precos_validos") or [],
+            )
+            if correcoes.get("precos_neutralizados"):
+                # Pilar 5: preço inventado é sinal grave → alerta no painel.
+                from app.services.alertas import registrar_alerta
+                await registrar_alerta(
+                    db, tipo="preco_suspeito", pizzaria_id=pizzaria_id, nivel="warning",
+                    detalhe=(
+                        f"IA citou preço sem lastro {correcoes['precos_neutralizados']} "
+                        f"(válidos: {decisao.get('precos_validos')}); neutralizado. "
+                        f"Acao={decisao.get('acao')} input='{user_input[:80]}'"
+                    ),
+                )
+        except Exception as e:  # noqa: BLE001
+            log.debug("Guard FSM falhou (texto segue como veio): %s", e)
     texto = texto.replace(QUEBRA, "\n\n")
 
     # Registra uso/custo (NLU + voz) — alimenta o limite por plano (C2) e o
