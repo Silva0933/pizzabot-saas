@@ -42,7 +42,7 @@ Serviços principais (backend/app/services/)
 evolution, pagamentos, status_messages, business_hours, transcricao, app_config, broadcaster, plans, price_check, response_guard, customer_memory, geocoding, humanized_delivery, embeddings, import_cardapio, alertas.
 
 Estado atual (foco recente)
-Os últimos commits giram em torno de blindagem anti-falha da FSM (6 pilares), correções de timeout, JSON mode fallback, validação de preço, extração de entrega, suporte nativo ao Gemini, e reestruturação relacional do cardápio (tamanhos múltiplos + complementos por produto). Migrations já vão até 010_cardapio_relacional.sql.
+Os últimos commits giram em torno do controle robusto de falhas de IA, transição amigável e silenciosa para o suporte humano, persistência de avisos de sistema no histórico da conversa no painel, contadores de falhas consecutivas FSM (NLU e pendências do pedido), logs técnicos descritivos com stack trace e contexto (carrinho, etapa FSM), além de correções de taxa de entrega por bairro/geral e blindagem anti-alucinação no prompt. Migrations vão até 010_cardapio_relacional.sql.
 
 Como rodar
 Backend (Docker):
@@ -161,5 +161,8 @@ Os componentes e telas do painel React (PWA) estão concentrados em `src/compone
 *   **Resolver bugs ao enviar mensagens ou áudios**: Verifique `services/evolution.py` ou `routes/webhook.py`.
 *   **Ajustar taxas de entrega por bairro ou geolocalização**: Procure em `agent/tools.py` (`_taxa_para_bairro`) ou `services/geocoding.py`.
 *   **Modificar o cálculo de preços (meia-meia, adicionais, etc.)**: Ajuste a lógica de cálculo na função `_calcular_pedido` em `agent/tools.py`.
+*   **Corrigir falhas de IA, mensagens de fallback ou logs de exceções**: Ajuste a captura de erros em [runner.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/runner.py).
+*   **Alterar o comportamento ou motivo de transição para humano**: Ajuste a lógica de [escalar_humano](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/tools.py#L1475) em [tools.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/tools.py).
+*   **Configurar contadores de erros ou loops de pendências/NLU**: Ajuste a regra de contadores em [fsm/pipeline.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/pipeline.py).
 *   **Corrigir problemas no painel Kanban do frontend**: Modifique `components/v2/PedidosViewV2.tsx`.
 *   **Ajustar chat no frontend**: Modifique `components/v2/ConversasViewV2.tsx`.
