@@ -134,7 +134,16 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         log.debug("Falha ao salvar memória FSM: %s", e)
 
     await db.commit()
+    # Passa os preços VÁLIDOS calculados pelo FSM pro validador do runner (C4),
+    # senão ele acha que "Preços vindos das tools: []" e marca todo valor legítimo
+    # como suspeito (falso-positivo). Como o resumo verbatim mostra exatamente
+    # esses valores, o C4 do runner não dispara mais à toa.
+    precos_validos = {
+        round(float(v), 2) for v in (decisao.get("precos_validos") or [])
+        if isinstance(v, (int, float)) and not isinstance(v, bool)
+    }
     return AgentResult(
         texto=texto, iteracoes=1,
         tool_calls=[f"fsm:{decisao.get('acao')}:{res_nlu.get('intencao')}"],
+        precos_tool=precos_validos,
     )
