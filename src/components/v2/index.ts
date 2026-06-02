@@ -8,3 +8,4 @@ export { InicioDashboard } from "./InicioDashboard";
 export { MetricasView } from "./MetricasView";
 export { OnboardingChecklist } from "./OnboardingChecklist";
 export type { OnboardingItem } from "./OnboardingChecklist";
+export { LandingPage } from "./LandingPage";

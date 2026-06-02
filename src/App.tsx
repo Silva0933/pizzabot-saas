@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock } from "lucide-react";
 import {
-  AppShell, NAV_PAGE_META, InicioDashboard,
+  AppShell, NAV_PAGE_META, InicioDashboard, LandingPage,
 } from "./components/v2";
 import type { NavKey } from "./components/v2/Sidebar";
 import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
@@ -82,6 +82,7 @@ export default function App() {
   const [authSenha, setAuthSenha] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authErr, setAuthErr] = useState<string | null>(null);
+  const [showLogin, setShowLogin] = useState(false);
 
   // ============================================
   // Workspace
@@ -276,14 +277,23 @@ export default function App() {
   // ============================================
   // Render: login
   // ============================================
-  if (!user) return (
-    <LoginScreen
-      email={authEmail} setEmail={setAuthEmail}
-      senha={authSenha} setSenha={setAuthSenha}
-      loading={authLoading} err={authErr}
-      onSubmit={handleLogin}
-    />
-  );
+  if (!user) {
+    if (showLogin) {
+      return (
+        <LoginScreen
+          email={authEmail}
+          setEmail={setAuthEmail}
+          senha={authSenha}
+          setSenha={setAuthSenha}
+          loading={authLoading}
+          err={authErr}
+          onSubmit={handleLogin}
+          onBack={() => setShowLogin(false)}
+        />
+      );
+    }
+    return <LandingPage onAccessLogin={() => setShowLogin(true)} />;
+  }
 
   // ============================================
   // Render: painel da plataforma (admin sem pizzaria ativa)
@@ -439,6 +449,7 @@ function LoginScreen(props: {
   senha: string; setSenha: (v: string) => void;
   loading: boolean; err: string | null;
   onSubmit: (e: React.FormEvent) => void;
+  onBack?: () => void;
 }) {
   return (
     <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
@@ -513,6 +524,15 @@ function LoginScreen(props: {
             )}
           </button>
         </form>
+        {props.onBack && (
+          <button
+            type="button"
+            onClick={props.onBack}
+            className="w-full mt-4 text-xs text-slate-500 hover:text-slate-300 font-medium transition-colors"
+          >
+            ← Voltar para a página inicial
+          </button>
+        )}
       </div>
     </div>
   );
