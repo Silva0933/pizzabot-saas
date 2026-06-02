@@ -349,12 +349,52 @@ async def processar(
             decisao["fatos"].append(f"O sistema precisa resolver: {calc.get('erro')}")
             decisao["proxima_pergunta"] = "Resolva a pendência acima com o cliente (ex.: peça o tamanho, ou avise que não temos o item)."
             estado["etapa"] = "COLETA_ITENS"
+
+            if prod_inv:
+                prod_inv_lower = prod_inv.lower()
+                is_beverage = any(k in prod_inv_lower for k in ("bebida", "refrigerante", "refri", "suco", "agua", "coca", "fanta", "guarana", "sprite", "soda", "cerva", "cerveja", "chopp", "lata", "garrafa"))
+                if is_beverage:
+                    try:
+                        from app.agent.tools import buscar_cardapio
+                        card_res = await buscar_cardapio(ctx, db, query="bebida", limit=15)
+                        bebidas = [f"{item['nome']} (R$ {item['preco']:.2f})" for item in card_res.get("items", []) if "preco" in item]
+                        if bebidas:
+                            decisao["fatos"].append("Bebidas reais disponíveis no cardápio: " + ", ".join(bebidas))
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        from app.agent.tools import buscar_cardapio
+                        card_res = await buscar_cardapio(ctx, db, query=prod_inv, limit=5)
+                        if card_res.get("items"):
+                            alts = [f"{item['nome']} (R$ {item['preco']:.2f})" for item in card_res["items"] if "preco" in item]
+                            if alts:
+                                decisao["fatos"].append("Produtos semelhantes encontrados no cardápio: " + ", ".join(alts))
+                    except Exception:
+                        pass
             return {"decisao": decisao, "estado": estado}
 
     # Dúvida geral / conversa fiada → RESPONDE de verdade (não força o funil).
     if intencao in ("duvida_geral", "conversa_fiada") and decisao["acao"] == "conversar":
         decisao["acao"] = "responder_duvida"
         decisao["fatos"].append(_fatos_pizzaria(ctx.pizzaria))
+
+        if user_input:
+            try:
+                from app.agent.tools import buscar_cardapio
+                clean_query = user_input.replace("?", "").replace("!", "").strip()
+                if len(clean_query) >= 3:
+                    card_res = await buscar_cardapio(ctx, db, query=clean_query, incluir_descricao=True, limit=5)
+                    items = card_res.get("items") or []
+                    if items:
+                        fatos_prod = []
+                        for item in items:
+                            desc = f" ({item['descricao']})" if item.get("descricao") else ""
+                            fatos_prod.append(f"{item['nome']}: R$ {item['preco']:.2f}{desc}")
+                        decisao["fatos"].append("Produtos encontrados no cardápio para esclarecer a dúvida do cliente: " + "; ".join(fatos_prod))
+            except Exception:
+                pass
+
         if estado["carrinho"]:
             decisao["proxima_pergunta"] = (
                 "Responda com naturalidade ao que o cliente falou (use os dados reais da pizzaria). "

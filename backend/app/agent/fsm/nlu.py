@@ -114,16 +114,28 @@ async def nlu_extract(
         f"ÚLTIMA MENSAGEM DO CLIENTE: {user_input}"
     )
     try:
-        res = await openai_chat(
-            provider=provider, api_key=api_key, model=model,
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": contexto},
-            ],
-            temperature=0.0,
-            max_tokens=600,
-            response_format={"type": "json_object"},
-        )
+        try:
+            res = await openai_chat(
+                provider=provider, api_key=api_key, model=model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM},
+                    {"role": "user", "content": contexto},
+                ],
+                temperature=0.0,
+                max_tokens=600,
+                response_format={"type": "json_object"},
+            )
+        except Exception as e_json:
+            log.info("NLU falhou com response_format (possivel falta de suporte a JSON Mode), tentando sem: %s", e_json)
+            res = await openai_chat(
+                provider=provider, api_key=api_key, model=model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM},
+                    {"role": "user", "content": contexto},
+                ],
+                temperature=0.0,
+                max_tokens=600,
+            )
         usage = res.get("usage") or {}
         parsed = _extrair_json(res.get("content") or "")
         if parsed:
@@ -132,5 +144,5 @@ async def nlu_extract(
             return out
         return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": usage}
     except Exception as e:  # noqa: BLE001
-        log.warning("NLU falhou (caindo p/ duvida_geral): %s", e)
+        log.warning("NLU falhou criticamente (caindo p/ duvida_geral): %s", e)
     return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": {}}

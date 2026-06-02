@@ -941,7 +941,7 @@ class TestMelhoriasEspecificas:
 
         # Mock de run_fsm_agent para demorar e dar timeout
         async def mock_run_fsm_delay(*args, **kwargs):
-            await asyncio.sleep(10)
+            await asyncio.sleep(20)
             return MagicMock()
 
         with patch("app.agent.fsm.pipeline.run_fsm_agent", side_effect=mock_run_fsm_delay):

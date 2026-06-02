@@ -141,6 +141,16 @@ async def run_agent(
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
         break
 
+    # Rede de segurança: nunca deixar o cliente no vácuo.
+    if not final_text:
+        if "enviar_cardapio_arquivo" in tool_calls_made:
+            final_text = "Te mandei o cardápio aí em cima! 👆"
+        elif not tool_calls_made:
+            final_text = "Desculpa, não entendi 😅 Pode repetir, por favor?"
+        
+        if final_text:
+            await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
+
     await record_usage(
         db, pizzaria_id=pizzaria_id, provider="gemini", model=gemini_model,
         prompt_tokens=usage_acc["prompt"], completion_tokens=usage_acc["completion"],
@@ -229,8 +239,14 @@ async def _run_openai_agent(
         break
 
     # Rede de segurança: nunca deixar o cliente no vácuo.
-    if not final_text and not tool_calls_made:
-        final_text = "Desculpa, não entendi 😅 Pode repetir, por favor?"
+    if not final_text:
+        if "enviar_cardapio_arquivo" in tool_calls_made:
+            final_text = "Te mandei o cardápio aí em cima! 👆"
+        elif not tool_calls_made:
+            final_text = "Desculpa, não entendi 😅 Pode repetir, por favor?"
+        
+        if final_text:
+            await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
 
     await record_usage(
         db, pizzaria_id=pizzaria_id, provider=provider, model=model,
@@ -324,7 +340,7 @@ async def process_and_reply(
                 from app.agent.fsm.pipeline import run_fsm_agent
                 result = await asyncio.wait_for(
                     run_fsm_agent(db, pizzaria_id, telefone, user_input),
-                    timeout=8.0
+                    timeout=15.0
                 )
             except asyncio.TimeoutError:
                 log.warning("Pipeline FSM estourou o timeout de 8s, caindo p/ agente legado com limites reduzidos")
