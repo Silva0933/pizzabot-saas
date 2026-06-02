@@ -353,16 +353,57 @@ async def process_and_reply(
         if result is None:  # flag off OU fallback do FSM
             result = await run_agent(db, pizzaria_id, telefone, user_input, max_iterations=fallback_iterations)
     except Exception as e:
-        log.exception("Falha critica no processamento da IA para pizzaria=%s tel=%s: %s", pizzaria_id, telefone, e)
+        import traceback
+        tb = traceback.format_exc()
+        
+        # Carrega o estado FSM atual para enriquecer os logs e a mensagem interna
+        estado_desc = "Desconhecido"
+        carrinho_desc = "Vazio"
+        try:
+            from app.services.conversation_state import load_state
+            estado = await load_state(db, pizzaria_id, telefone)
+            if isinstance(estado, dict):
+                estado_desc = estado.get("etapa") or "Desconhecido"
+                carrinho = estado.get("carrinho") or []
+                carrinho_desc = "; ".join(
+                    f"{i.get('qtd', 1)}x {i.get('nome') or ' / '.join(i.get('sabores') or [])}"
+                    + (f" ({i.get('tamanho')})" if i.get("tamanho") else "")
+                    for i in carrinho
+                ) or "Vazio"
+        except Exception as e_state:
+            log.warning("Falha ao recuperar estado para logs em runner: %s", e_state)
+
+        # Log estruturado rico no console
+        log.error(
+            "--- FALHA CRITICA NO AGENTE IA ---\n"
+            "Pizzaria ID: %s | Pizzaria Nome: %s\n"
+            "Cliente: %s (%s)\n"
+            "Etapa FSM: %s | Carrinho: %s\n"
+            "Input do Cliente: %s\n"
+            "Erro: %s: %s\n"
+            "Stack Trace:\n%s"
+            "----------------------------------",
+            pizzaria_id, getattr(pizz, "nome", "Desconhecida"),
+            conv.cliente_nome if conv else "Desconhecido", telefone,
+            estado_desc, carrinho_desc,
+            user_input,
+            type(e).__name__, str(e),
+            tb
+        )
+
         try:
             from app.services.alertas import registrar_alerta_seguro
-            await registrar_alerta_seguro(tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="error",
-                                          detalhe=f"Falha no agente: {e}")
+            await registrar_alerta_seguro(
+                tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="error",
+                detalhe=f"Falha no agente: {type(e).__name__} ({estado_desc}) - {e}"
+            )
         except Exception:  # noqa: BLE001
             pass
+
+        # Mensagem simpática e transparente pro cliente final (WhatsApp)
         msg_fallback = (
-            "Ops, tive uma instabilidade tecnica rapida aqui! 😅 "
-            "Mas nao se preocupe: ja acionei nossa equipe humana para continuar o seu atendimento de onde paramos."
+            "Vou chamar um de nossos atendentes para finalizar o seu pedido. "
+            "Só um instantinho que já vão te responder! 😊"
         )
         try:
             if pizz.instancia:
@@ -374,15 +415,23 @@ async def process_and_reply(
         except Exception as e_send:
             log.warning("Falha ao enviar mensagem de fallback de erro: %s", e_send)
 
-        # Salva a mensagem no historico e desliga o bot
+        # Salva a mensagem no histórico (origem="sistema") e desliga o bot
         if conv:
+            conteudo_sistema = (
+                f"⚠️ Falha técnica no processamento (IA)\n"
+                f"Erro: {type(e).__name__}: {e}\n"
+                f"Etapa FSM: {estado_desc}\n"
+                f"Carrinho: {carrinho_desc}\n"
+                f"Input do cliente: '{user_input[:100]}'\n"
+                f"Atendimento transferido para humano."
+            )
             msg = Mensagem(
                 conversa_id=conv.id,
                 pizzaria_id=pizzaria_id,
                 origem="sistema",
                 tipo="texto",
-                conteudo=msg_fallback,
-                metadata_json={"erro_ia": str(e)},
+                conteudo=conteudo_sistema,
+                metadata_json={"erro_ia": str(e), "etapa": estado_desc, "carrinho": carrinho_desc},
             )
             db.add(msg)
             conv.bot_ativo = False
@@ -401,7 +450,7 @@ async def process_and_reply(
                         "conversa_id": str(conv.id),
                         "telefone": telefone,
                         "cliente_nome": conv.cliente_nome,
-                        "motivo": f"Erro de IA: {e}",
+                        "motivo": f"Erro de IA: {type(e).__name__} ({estado_desc})",
                     },
                 },
             )
@@ -415,6 +464,23 @@ async def process_and_reply(
                         "telefone": telefone,
                         "bot_ativo": False,
                         "status": "humano_necessario",
+                        "motivo": f"Erro de IA: {type(e).__name__}",
+                    },
+                },
+            )
+            # Broadcast nova mensagem do sistema
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "mensagem.nova",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "mensagem_id": str(msg.id),
+                        "telefone": telefone,
+                        "conteudo": conteudo_sistema,
+                        "origem": "sistema",
+                        "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(timezone.utc).isoformat(),
                     },
                 },
             )

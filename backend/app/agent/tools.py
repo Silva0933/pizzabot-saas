@@ -23,7 +23,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import AgentContext
-from app.models import Cliente, Conversa, Pedido
+from app.models import Cliente, Conversa, Pedido, Mensagem
 
 log = logging.getLogger(__name__)
 
@@ -884,45 +884,7 @@ async def _calcular_pedido(
         res_taxa = _taxa_para_bairro(ctx.pizzaria, bairro_detectado)
         if res_taxa.get("precisa_confirmar"):
             # Escala para humano automaticamente
-            conv = (await db.execute(
-                select(Conversa).where(
-                    Conversa.pizzaria_id == ctx.pizzaria.id,
-                    Conversa.cliente_telefone == ctx.telefone,
-                )
-            )).scalar_one_or_none()
-            if conv:
-                conv.bot_ativo = False
-                conv.status = "humano_necessario"
-                await db.flush()
-                
-                from app.services.broadcaster import broadcaster
-                await broadcaster.publish(
-                    ctx.pizzaria.id,
-                    {
-                        "tipo": "atendimento.humano",
-                        "pizzaria_id": str(ctx.pizzaria.id),
-                        "payload": {
-                            "conversa_id": str(conv.id),
-                            "telefone": ctx.telefone,
-                            "cliente_nome": conv.cliente_nome,
-                            "motivo": f"Bairro '{bairro_detectado}' sem taxa de entrega cadastrada",
-                        },
-                    },
-                )
-                await broadcaster.publish(
-                    ctx.pizzaria.id,
-                    {
-                        "tipo": "conversa.atualizada",
-                        "pizzaria_id": str(ctx.pizzaria.id),
-                        "payload": {
-                            "conversa_id": str(conv.id),
-                            "telefone": ctx.telefone,
-                            "bot_ativo": False,
-                            "status": "humano_necessario",
-                            "motivo": f"Bairro '{bairro_detectado}' sem taxa de entrega cadastrada",
-                        },
-                    },
-                )
+            await escalar_humano(ctx, db, motivo_escalonamento=f"Bairro '{bairro_detectado}' sem taxa de entrega cadastrada")
             return {
                 "ok": False,
                 "erro": (
@@ -1492,6 +1454,18 @@ async def escalar_humano(
         conv.status = "humano_necessario"
         await db.flush()
 
+        # Salva a mensagem interna com origem="sistema" no banco
+        msg = Mensagem(
+            conversa_id=conv.id,
+            pizzaria_id=ctx.pizzaria.id,
+            origem="sistema",
+            tipo="texto",
+            conteudo=f"Atendimento transferido para humano. Motivo: {motivo_escalonamento}",
+            metadata_json={"trigger": "escalar_humano", "motivo": motivo_escalonamento},
+        )
+        db.add(msg)
+        await db.flush()
+
         # Broadcast para alertar o painel em tempo real
         from app.services.broadcaster import broadcaster
 
@@ -1519,6 +1493,22 @@ async def escalar_humano(
                     "bot_ativo": False,
                     "status": "humano_necessario",
                     "motivo": motivo_escalonamento,
+                },
+            },
+        )
+        # Broadcast nova mensagem do sistema
+        await broadcaster.publish(
+            ctx.pizzaria.id,
+            {
+                "tipo": "mensagem.nova",
+                "pizzaria_id": str(ctx.pizzaria.id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "mensagem_id": str(msg.id),
+                    "telefone": ctx.telefone,
+                    "conteudo": msg.conteudo,
+                    "origem": "sistema",
+                    "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(timezone.utc).isoformat(),
                 },
             },
         )
@@ -1662,45 +1652,7 @@ async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro:
 
     if res["precisa_confirmar"]:
         # Escala para humano automaticamente
-        conv = (await db.execute(
-            select(Conversa).where(
-                Conversa.pizzaria_id == ctx.pizzaria.id,
-                Conversa.cliente_telefone == ctx.telefone,
-            )
-        )).scalar_one_or_none()
-        if conv:
-            conv.bot_ativo = False
-            conv.status = "humano_necessario"
-            await db.flush()
-            
-            from app.services.broadcaster import broadcaster
-            await broadcaster.publish(
-                ctx.pizzaria.id,
-                {
-                    "tipo": "atendimento.humano",
-                    "pizzaria_id": str(ctx.pizzaria.id),
-                    "payload": {
-                        "conversa_id": str(conv.id),
-                        "telefone": ctx.telefone,
-                        "cliente_nome": conv.cliente_nome,
-                        "motivo": f"Bairro '{bairro_alvo}' sem taxa de entrega cadastrada",
-                    },
-                },
-            )
-            await broadcaster.publish(
-                ctx.pizzaria.id,
-                {
-                    "tipo": "conversa.atualizada",
-                    "pizzaria_id": str(ctx.pizzaria.id),
-                    "payload": {
-                        "conversa_id": str(conv.id),
-                        "telefone": ctx.telefone,
-                        "bot_ativo": False,
-                        "status": "humano_necessario",
-                        "motivo": f"Bairro '{bairro_alvo}' sem taxa de entrega cadastrada",
-                    },
-                },
-            )
+        await escalar_humano(ctx, db, motivo_escalonamento=f"Bairro '{bairro_alvo}' sem taxa de entrega cadastrada")
         res["instrucao"] = (
             "Taxa não cadastrada para esse bairro e sem taxa fixa. O ATENDIMENTO JÁ FOI "
             "ESCALADO PARA UM HUMANO. Avise o cliente de forma muito simpática que a equipe "

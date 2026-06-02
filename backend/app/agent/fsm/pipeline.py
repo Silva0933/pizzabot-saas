@@ -54,6 +54,29 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         user_input=user_input,
     )
 
+    # Controle de falhas consecutivas de NLU (confiança < 0.5)
+    confianca = res_nlu.get("confianca", 1.0)
+    if confianca < 0.5:
+        estado["nlu_falhas_consecutivas"] = estado.get("nlu_falhas_consecutivas", 0) + 1
+    else:
+        estado["nlu_falhas_consecutivas"] = 0
+
+    if estado.get("nlu_falhas_consecutivas", 0) >= 3:
+        log.warning("FSM escalando por falhas consecutivas de NLU (confianca baixa repetida) para pizzaria=%s tel=%s", pizzaria_id, telefone)
+        from app.agent.tools import escalar_humano
+        await escalar_humano(ctx, db, motivo_escalonamento="IA não compreendeu o cliente por 3 vezes consecutivas (confiança NLU muito baixa)")
+        
+        msg_transicao = "Vou chamar um de nossos atendentes para finalizar o seu pedido. Só um instantinho que já vão te responder! 😊"
+        await save_state(db, pizzaria_id, telefone, estado)
+        await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
+        await append_turn(db, pizzaria_id, telefone, role="assistant", content=msg_transicao)
+        await db.commit()
+        return AgentResult(
+            texto=msg_transicao, iteracoes=1,
+            tool_calls=["fsm:escalado:nlu_falhas"],
+            precos_tool=set(),
+        )
+
     # Rede de segurança: baixa confiança em algo que não seja pedido → agente legado.
     if res_nlu["confianca"] < CONFIANCA_MINIMA and res_nlu["intencao"] in ("duvida_geral",):
         log.info("FSM fallback p/ legado (confianca=%.2f)", res_nlu["confianca"])
@@ -63,6 +86,34 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     out = await engine.processar(db, ctx, estado, res_nlu, user_input=user_input)
     estado = out["estado"]
     decisao = out["decisao"]
+
+    # Incrementa ou reseta contador de pendências
+    if decisao.get("acao") == "pendencia":
+        estado["pendencias_consecutivas"] = estado.get("pendencias_consecutivas", 0) + 1
+    else:
+        estado["pendencias_consecutivas"] = 0
+
+    if estado.get("pendencias_consecutivas", 0) >= 3:
+        log.warning("FSM escalando por pendências consecutivas acumuladas para pizzaria=%s tel=%s", pizzaria_id, telefone)
+        from app.agent.tools import escalar_humano
+        
+        erro_pendencia = "Falta de dados/erro no pedido"
+        for fato in decisao.get("fatos", []):
+            if "precisa resolver" in fato or "erro" in fato:
+                erro_pendencia = fato
+        
+        await escalar_humano(ctx, db, motivo_escalonamento=f"Cliente travou em pendências por 3 vezes consecutivas ({erro_pendencia})")
+        
+        msg_transicao = "Vou chamar um de nossos atendentes para finalizar o seu pedido. Só um instantinho que já vão te responder! 😊"
+        await save_state(db, pizzaria_id, telefone, estado)
+        await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
+        await append_turn(db, pizzaria_id, telefone, role="assistant", content=msg_transicao)
+        await db.commit()
+        return AgentResult(
+            texto=msg_transicao, iteracoes=1,
+            tool_calls=["fsm:escalado:pendencias_limite"],
+            precos_tool=set(),
+        )
 
     # 3) Voz
     ja_apresentou = bool(estado.get("apresentou")) and decisao.get("acao") != "saudacao"

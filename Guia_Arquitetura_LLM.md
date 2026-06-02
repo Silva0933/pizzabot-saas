@@ -1,3 +1,67 @@
+Resumo Geral — PizzaBot
+O que é
+Plataforma SaaS multi-tenant de atendimento automatizado para pizzarias/lanchonetes via WhatsApp. Uma atendente de IA conversa com o cliente, lê o cardápio, registra pedidos, gera cobrança (Pix/cartão) e acompanha o status — tudo num painel web por pizzaria, mais um painel de administração da plataforma.
+
+Local: E:\Tops Ferramentas\PizzaBot
+
+Arquitetura
+WhatsApp → Evolution API → (webhook) → Backend FastAPI
+                                          ├─ persiste msg + WebSocket pro painel
+                                          └─ enfileira no Redis (debounce ~10s)
+                                                  ↓
+                                          Worker Celery → Agente IA (LLM + tools)
+                                                  ↓
+                                          Evolution API → resposta no WhatsApp
+Painel React (PWA) ──HTTP/JWT + WebSocket──> Backend
+Três serviços usam a mesma imagem Docker, diferenciados por APP_ROLE:
+
+backend — API FastAPI (uvicorn), webhooks, WebSocket
+worker — Celery, consome a fila e roda o agente IA
+painel — frontend React servido por Nginx
+Infra de apoio: Postgres (com pgvector) + Redis.
+
+Stack
+Backend (backend/)
+
+FastAPI + Uvicorn
+SQLAlchemy 2.0 async + asyncpg + pgvector
+Celery + Redis (fila com debounce)
+LLM multi-provider: Gemini, OpenAI e OpenRouter (escolhido no painel admin)
+Evolution API (WhatsApp), Mercado Pago e Asaas (pagamentos)
+ffmpeg (transcrição de áudios)
+Frontend (src/)
+
+React 19 + Vite + TypeScript
+Tailwind CSS + lucide-react + recharts + motion
+PWA (manifest + service worker)
+Telas atuais em src/components/v2/: Início, Conversas, Pedidos, Cardápio, Meu Negócio, PlatformAdminView
+Componentes do agente IA (backend/app/agent/)
+runner, llm, providers, tools, prompt, memory, context. O agente é orientado por uma FSM (máquina de estados) — foco recente do desenvolvimento (ver commits). Tools: buscar_cardapio, registrar_pedido, gerar_pagamento, etc. A busca do cardápio usa SQL (não depende de embeddings); reindex semântico é opcional via Gemini.
+
+Serviços principais (backend/app/services/)
+evolution, pagamentos, status_messages, business_hours, transcricao, app_config, broadcaster, plans, price_check, response_guard, customer_memory, geocoding, humanized_delivery, embeddings, import_cardapio, alertas.
+
+Estado atual (foco recente)
+Os últimos commits giram em torno de blindagem anti-falha da FSM (6 pilares), correções de timeout, JSON mode fallback, validação de preço, extração de entrega, suporte nativo ao Gemini, e reestruturação relacional do cardápio (tamanhos múltiplos + complementos por produto). Migrations já vão até 010_cardapio_relacional.sql.
+
+Como rodar
+Backend (Docker):
+
+cd backend && cp .env.example .env   # preencher variáveis
+docker compose up -d
+docker compose exec backend python migrations/apply.py
+Frontend:
+
+npm install
+echo "VITE_PIZZABOT_API_URL=http://localhost:8000" > .env.local
+npm run dev      # http://localhost:5173
+npm run lint     # tsc --noEmit (checagem de tipos)
+Configuração de IA e pagamentos
+Chaves de LLM / provedor / modelo: definidos no painel admin → Configuração de IA (tabela app_config), com teste de conexão e consumo de tokens.
+Chaves de pagamento (Mercado Pago/Asaas): por pizzaria, em Meu Negócio. Cobrança só é gerada quando o cliente escolhe "pagar agora"; confirmação chega via webhook.
+Deploy
+Via Coolify a partir do repositório: backend e worker pelo backend/Dockerfile (worker com APP_ROLE=worker), painel via build Vite + Nginx, mais Postgres (pgvector) e Redis. Docs das fases em docs/.
+
 # Guia de Arquitetura e Estrutura de Arquivos — PizzaBot
 
 Este documento serve como um mapa esqueleto do projeto **PizzaBot**. Ele foi projetado para que qualquer LLM (ou desenvolvedor) compreenda rapidamente a arquitetura, as funcionalidades e a localização exata de cada componente do sistema sem precisar ler todos os arquivos da base de código.
