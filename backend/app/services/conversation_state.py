@@ -13,9 +13,16 @@ MAX_STATE_BYTES = 3000
 
 def _compact_state(estado: dict[str, Any]) -> dict[str, Any]:
     encoded = json.dumps(estado, ensure_ascii=False, default=str)
-    if len(encoded.encode("utf-8")) <= MAX_STATE_BYTES:
+    # Aumentado o limite de bytes seguro para 50KB para evitar compactação destrutiva acidental
+    if len(encoded.encode("utf-8")) <= 50000:
         return estado
-    keep = {k: estado[k] for k in ("etapa", "itens", "tipo", "total", "taxa_entrega", "pagamento") if k in estado}
+    # Se ainda assim passar, preservamos todas as chaves essenciais do funil da FSM e do legado
+    chaves_essenciais = (
+        "etapa", "carrinho", "itens", "tipo", "total", "taxa_entrega", "pagamento",
+        "endereco", "pagar_agora", "pipeline", "apresentou", "upsell_feito",
+        "cardapio_enviado", "observacoes", "pedido_id", "numero_pedido", "fingerprint"
+    )
+    keep = {k: estado[k] for k in chaves_essenciais if k in estado}
     return keep
 
 

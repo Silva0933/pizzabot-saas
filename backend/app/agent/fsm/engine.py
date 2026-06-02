@@ -279,17 +279,23 @@ async def processar(
     intencao = nlu.get("intencao")
     dados = nlu.get("dados") or {}
 
-    # Se a conversa anterior já foi finalizada com sucesso e o cliente está iniciando um novo
-    # contato (intenção não é de pós-venda ou pós-entrega), resetamos o estado FSM.
-    if estado.get("etapa") == "FINALIZADO" and intencao not in (
-        "alterar_pedido", "avaliar", "cancelar", "reclamar", "falar_humano"
-    ):
-        estado.update(estado_inicial())
-
     decisao: dict[str, Any] = {
         "acao": "conversar", "fatos": [], "proxima_pergunta": None,
         "enviar_cardapio": False, "dados": {},
     }
+
+    # Se a conversa anterior já foi finalizada com sucesso e o cliente está iniciando um novo
+    # contato (intenção não é de pós-venda ou pós-entrega), resetamos o estado FSM.
+    # Se for apenas cortesia/agradecimento pós-venda, respondemos com simpatia sem resetar o estado.
+    if estado.get("etapa") == "FINALIZADO":
+        if intencao == "conversa_fiada":
+            decisao["proxima_pergunta"] = (
+                "Responda de forma curta e simpática ao agradecimento ou cortesia do cliente "
+                "(ex.: 'Imagina!', 'De nada, bom apetite!', 'Qualquer coisa só chamar'). Não ofereça mais pizzas."
+            )
+            return {"decisao": decisao, "estado": estado}
+        elif intencao not in ("alterar_pedido", "avaliar", "cancelar", "reclamar", "falar_humano"):
+            estado.update(estado_inicial())
 
     # Reclamação / pedir atendente humano → escala (desliga o bot na conversa).
     if intencao in ("reclamar", "falar_humano") or _eh_grosseria(user_input):
@@ -615,7 +621,17 @@ async def processar(
     if not estado.get("pagamento"):
         estado["etapa"] = "PAGAMENTO"
         decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Pergunte SÓ a forma de pagamento (pix, cartão ou dinheiro). Não repita o total."
+        # Se temos o cálculo com a taxa de entrega resolvida, instrui a IA a informá-la
+        bairro = (calc.get("bairro_detectado") or "seu bairro") if calc else "seu bairro"
+        taxa = float(calc.get("taxa_entrega") or 0.0) if calc else 0.0
+        if calc and calc.get("ok") and estado.get("tipo") == "delivery":
+            taxa_str = f"de R$ {taxa:.2f}".replace(".", ",") if taxa > 0 else "grátis"
+            decisao["proxima_pergunta"] = (
+                f"Informe ao cliente que a taxa de entrega para {bairro} é {taxa_str}. "
+                "Em seguida, pergunte SÓ a forma de pagamento (pix, cartão ou dinheiro). Não repita o total."
+            )
+        else:
+            decisao["proxima_pergunta"] = "Pergunte SÓ a forma de pagamento (pix, cartão ou dinheiro). Não repita o total."
         return {"decisao": decisao, "estado": estado}
 
     # 4) pagar agora ou na entrega (se online)

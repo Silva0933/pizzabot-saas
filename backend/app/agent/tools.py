@@ -1091,7 +1091,7 @@ async def registrar_pedido(
     # (que exige preparar_resumo_pedido antes + fingerprint).
     if not confirmado:
         estado = _ctx_estado(ctx)
-        if estado.get("etapa") != "aguardando_confirmacao_pedido":
+        if estado.get("etapa") not in ("aguardando_confirmacao_pedido", "AGUARDANDO_CONFIRMACAO"):
             return {
                 "ok": False,
                 "erro": (
