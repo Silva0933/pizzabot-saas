@@ -24,7 +24,8 @@ def estado_inicial() -> dict[str, Any]:
     return {
         "pipeline": "fsm", "etapa": "SAUDACAO", "carrinho": [],
         "tipo": None, "endereco": None, "pagamento": None, "pagar_agora": None,
-        "cardapio_enviado": False, "apresentou": False, "upsell_feito": False,
+        "cardapio_enviado": False, "cardapio_ofertado": False,
+        "apresentou": False, "upsell_feito": False,
         "observacoes": None,
     }
 
@@ -423,7 +424,15 @@ async def processar(
 
     # Cardápio em arquivo — detectado por intenção OU por heurística (a mensagem
     # pode pedir pizza E cardápio ao mesmo tempo; a NLU só traz 1 intenção).
-    if _quer_cardapio(intencao, user_input, dados):
+    # Também dispara quando ACABAMOS de oferecer o cardápio na saudação e o cliente
+    # confirmou ("sim", "quero", "pode") — aí mandamos o arquivo na hora.
+    confirmou_ver_cardapio = (
+        bool(estado.get("cardapio_ofertado"))
+        and not estado.get("cardapio_enviado")
+        and not estado["carrinho"]
+        and _eh_confirmacao(intencao, user_input)
+    )
+    if _quer_cardapio(intencao, user_input, dados) or confirmou_ver_cardapio:
         enviou_agora = False
         if not estado.get("cardapio_enviado"):
             try:
@@ -553,24 +562,47 @@ async def processar(
                 "Depois retome o pedido de leve, sem ser robótica."
             )
         else:
+            oferta_cardapio = (
+                "" if estado.get("cardapio_enviado")
+                else " Se fizer sentido e ainda não enviou o cardápio, ofereça mostrá-lo."
+            )
             decisao["proxima_pergunta"] = (
-                "Responda com naturalidade EXATAMENTE ao que o cliente perguntou/disse, usando os dados "
-                "reais da pizzaria. Ex.: se ele perguntou se é a pizzaria X, confirme que sim. Se fizer "
-                "sentido, convide a fazer um pedido — mas NÃO force 'qual sabor' se ele não pediu pizza."
+                "Responda com naturalidade EXATAMENTE ao que o cliente perguntou/disse, usando SÓ os dados reais. "
+                "Se ele perguntou por um SABOR/PRODUTO específico: se ele aparece em 'Produtos encontrados no cardápio', "
+                "confirme que TEMOS e diga o preço (se ele perguntou pelo preço); se NÃO aparecer ali, diga com gentileza "
+                "que infelizmente não temos esse sabor." + oferta_cardapio +
+                " Se ele só perguntou algo geral (ex.: se é a pizzaria X), responda direto. NÃO force 'qual sabor' "
+                "se ele não pediu pizza."
             )
         estado["apresentou"] = True
         return {"decisao": decisao, "estado": estado}
 
-    # Sem itens ainda → coleta
+    # Sem itens ainda → coleta. Em vez de perguntar "qual sabor", OFERECEMOS o
+    # cardápio (a não ser que já tenha sido enviado), pra o cliente ver as opções.
     if not estado["carrinho"]:
         estado["etapa"] = "SAUDACAO" if not estado.get("apresentou") else "COLETA_ITENS"
         if decisao["acao"] == "conversar":
+            ja_tem_cardapio = bool(estado.get("cardapio_enviado"))
             if not estado.get("apresentou"):
                 decisao["acao"] = "saudacao"
-                decisao["proxima_pergunta"] = "Cumprimente (só se for a 1ª vez) e pergunte qual sabor de pizza ele quer."
+                if ja_tem_cardapio:
+                    decisao["proxima_pergunta"] = "Cumprimente (nome + pizzaria, só na 1ª vez) e pergunte o que ele vai querer hoje."
+                else:
+                    decisao["proxima_pergunta"] = (
+                        "Cumprimente (nome + pizzaria, só na 1ª vez) e pergunte se ele gostaria de ver o cardápio. "
+                        "Ex.: 'Olá, boa noite! Sou a Camila da Pizzaria Palazio 😊 Gostaria de ver o cardápio?'"
+                    )
+                    estado["cardapio_ofertado"] = True
             else:
                 decisao["acao"] = "coletar_item"
-                decisao["proxima_pergunta"] = "Pergunte qual sabor de pizza ele gostaria (não cumprimente nem diga seu nome, vá direto ao ponto)."
+                if ja_tem_cardapio:
+                    decisao["proxima_pergunta"] = "Pergunte o que ele gostaria de pedir (não cumprimente nem diga seu nome, vá direto ao ponto)."
+                else:
+                    decisao["proxima_pergunta"] = (
+                        "Pergunte se ele gostaria de ver o cardápio (não cumprimente nem diga seu nome, vá direto ao ponto). "
+                        "Ex.: 'Quer que eu te mande o cardápio? 😊'"
+                    )
+                    estado["cardapio_ofertado"] = True
         estado["apresentou"] = True
         return {"decisao": decisao, "estado": estado}
 
