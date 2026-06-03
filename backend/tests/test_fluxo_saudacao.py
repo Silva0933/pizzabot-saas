@@ -127,3 +127,42 @@ class TestFluxoNaoTravaAoRecusarUpsell:
         # NÃO pode dead-end em responder_duvida; tem que avançar pra entrega/retirada.
         assert out["decisao"]["acao"] == "pedir_info"
         assert "entrega" in out["decisao"]["proxima_pergunta"].lower()
+
+
+class TestRascunhoAoVivo:
+    def test_sincroniza_itens_no_card_e_faz_broadcast(self):
+        """O pedido em construção deve espelhar no rascunho (card "Novos") em tempo
+        real, atualizando o MESMO pedido (sem criar duplicado) e avisando o painel."""
+        from app.agent.fsm import engine
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        ctx.telefone = "5511999999999"
+        ctx.cliente = MagicMock()
+        ctx.cliente.id = "00000000-0000-0000-0000-0000000000c1"
+
+        ped = MagicMock()
+        ped.id = "00000000-0000-0000-0000-0000000000p1"
+        ped.numero_pedido = 1
+        ped.status = "novo"
+
+        res = MagicMock()
+        res.scalars.return_value.first.return_value = ped
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=res)
+
+        estado = {"tipo": "delivery", "endereco": "Rua X, 10", "pagamento": "pix"}
+        calc = {
+            "itens": [{"nome": "Calabresa (M)", "preco_unit": 40.0, "quantidade": 1}],
+            "valor_total": 45.0,
+        }
+
+        with patch("app.services.broadcaster.broadcaster.publish", new=AsyncMock()) as mock_pub:
+            asyncio.run(engine._sincronizar_rascunho(db, ctx, estado, calc))
+
+        assert ped.itens == calc["itens"]
+        assert float(ped.valor_total) == 45.0
+        assert ped.tipo == "delivery"
+        assert ped.endereco_entrega == "Rua X, 10"
+        assert ped.forma_pagamento == "pix"
+        mock_pub.assert_awaited_once()

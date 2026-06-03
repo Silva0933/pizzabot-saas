@@ -264,6 +264,68 @@ def _quer_cardapio(intencao: str | None, texto: str, dados: dict[str, Any]) -> b
     return bool(_CARDAPIO_RE.search(texto or ""))
 
 
+async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dict[str, Any], calc: dict[str, Any]) -> None:
+    """Espelha o pedido EM CONSTRUÇÃO no rascunho (card do Kanban "Novos"), pra o
+    painel mostrar itens/total/entrega/pagamento em tempo real — sem esperar o
+    registro final. Atualiza o MESMO rascunho que o registrar_pedido reaproveita,
+    então não cria pedido duplicado. Best-effort: nunca derruba o atendimento.
+    """
+    try:
+        from datetime import datetime, timezone
+        from decimal import Decimal
+
+        from sqlalchemy import select
+
+        from app.models import Cliente, Pedido
+
+        cli = ctx.cliente
+        if not cli:
+            cli = (await db.execute(select(Cliente).where(
+                Cliente.pizzaria_id == ctx.pizzaria.id,
+                Cliente.telefone == ctx.telefone,
+            ))).scalar_one_or_none()
+        if not cli:
+            return
+
+        # Só atualiza um rascunho ABERTO (status 'novo', ainda não pago). Não cria
+        # um novo aqui — se não houver rascunho, o registro final cuida disso.
+        ped = (await db.execute(select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status == "novo",
+            Pedido.payment_status != "approved",
+        ).order_by(Pedido.created_at.desc()))).scalars().first()
+        if not ped:
+            return
+
+        ped.itens = calc.get("itens") or []
+        ped.valor_total = Decimal(str(calc.get("valor_total") or 0))
+        if estado.get("tipo"):
+            ped.tipo = estado["tipo"]
+        if estado.get("endereco"):
+            ped.endereco_entrega = estado["endereco"]
+        if estado.get("pagamento"):
+            ped.forma_pagamento = estado["pagamento"]
+        if estado.get("observacoes"):
+            ped.observacoes = estado["observacoes"]
+        ped.updated_at = datetime.now(timezone.utc)
+        await db.flush()
+
+        from app.services.broadcaster import broadcaster
+        await broadcaster.publish(ctx.pizzaria.id, {
+            "tipo": "pedido.atualizado",
+            "pizzaria_id": str(ctx.pizzaria.id),
+            "payload": {
+                "pedido_id": str(ped.id),
+                "numero_pedido": ped.numero_pedido,
+                "status_novo": ped.status,
+                "em_construcao": True,
+            },
+        })
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao sincronizar rascunho de pedido: %s", e)
+
+
 async def processar(
     db: AsyncSession,
     ctx: AgentContext,
@@ -532,6 +594,9 @@ async def processar(
             if calc.get("taxa_entrega"):
                 pv.append(round(float(calc["taxa_entrega"]), 2))
             decisao["precos_validos"] = [v for v in pv if v > 0]
+            # Espelha o pedido em construção no card do painel (Kanban "Novos") em
+            # tempo real — itens/total/entrega/pagamento conforme vão sendo coletados.
+            await _sincronizar_rascunho(db, ctx, estado, calc)
 
     # Dúvida geral / conversa fiada → RESPONDE de verdade (não força o funil).
     # IMPORTANTE: se o cliente JÁ tem itens no carrinho e só fez bate-papo ou recusou
@@ -741,6 +806,9 @@ async def processar(
 
     # tudo coletado, mas ainda não confirmado → mostra o resumo UMA vez e pede confirmação
     estado["etapa"] = "AGUARDANDO_CONFIRMACAO"
+    # Reseta o controle do lembrete: cada vez que (re)entramos no resumo, um novo
+    # lembrete de confirmação pode ser enviado se o cliente sumir sem confirmar.
+    estado["confirmacao_lembrada"] = False
     decisao["acao"] = "resumo_confirmar"
     decisao["dados"] = resumo_dados
     decisao["dados"]["tipo"] = estado["tipo"]

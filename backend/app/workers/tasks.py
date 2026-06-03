@@ -33,6 +33,103 @@ def enviar_nps(pizzaria_id: str, pedido_id: str) -> dict:
     return asyncio.run(_enviar_nps_async(uuid.UUID(pedido_id)))
 
 
+# Tempo (segundos) sem confirmação até mandar UM lembrete perguntando se pode fechar.
+# Evita o cliente achar que o pedido já está fechado e ir buscar sem ter confirmado.
+CONFIRM_REMINDER_SECONDS = 480  # 8 min
+
+
+@celery_app.task(name="pizzabot.lembrar_confirmacao")
+def lembrar_confirmacao(pizzaria_id: str, telefone: str) -> dict:
+    """Se o cliente viu o resumo e não confirmou, manda UM lembrete perguntando."""
+    return asyncio.run(_lembrar_confirmacao_async(uuid.UUID(pizzaria_id), telefone))
+
+
+async def _lembrar_confirmacao_async(pizzaria_id: uuid.UUID, telefone: str) -> dict:
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal, engine
+    from app.models import Conversa, Mensagem, Pizzaria
+    from app.services.broadcaster import broadcaster
+    from app.services.conversation_state import load_state, save_state
+    from app.services.evolution import evolution
+
+    try:
+        async with AsyncSessionLocal() as db:
+            estado = await load_state(db, pizzaria_id, telefone)
+            # Só lembra se AINDA está aguardando confirmação e ainda não lembramos.
+            if not isinstance(estado, dict) or estado.get("etapa") != "AGUARDANDO_CONFIRMACAO":
+                return {"ok": False, "motivo": "nao_aguardando"}
+            if estado.get("confirmacao_lembrada"):
+                return {"ok": False, "motivo": "ja_lembrado"}
+
+            conv = (await db.execute(select(Conversa).where(
+                Conversa.pizzaria_id == pizzaria_id,
+                Conversa.cliente_telefone == telefone,
+            ))).scalar_one_or_none()
+            # Se um humano assumiu, não interferimos.
+            if conv is not None and not getattr(conv, "bot_ativo", True):
+                return {"ok": False, "motivo": "humano_assumiu"}
+
+            pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+
+            texto = (
+                "Oi! Seu pedido ainda *não foi fechado* 😊 Quando quiser, é só me confirmar que "
+                "eu mando pra cozinha. Posso fechar o pedido?"
+            )
+            try:
+                if pizz and pizz.instancia:
+                    await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
+            except Exception as e_send:  # noqa: BLE001
+                log.warning("Falha ao enviar lembrete de confirmação: %s", e_send)
+                return {"ok": False, "erro": str(e_send)}
+
+            # Marca como lembrado (evita reenvio) e registra no histórico.
+            estado["confirmacao_lembrada"] = True
+            await save_state(db, pizzaria_id, telefone, estado)
+            try:
+                from app.agent.memory import append_turn
+                await append_turn(db, pizzaria_id, telefone, role="assistant", content=texto)
+            except Exception:  # noqa: BLE001
+                pass
+
+            if conv is not None:
+                msg = Mensagem(
+                    conversa_id=conv.id, pizzaria_id=pizzaria_id,
+                    origem="bot", tipo="texto", conteudo=texto,
+                    metadata_json={"trigger": "lembrete_confirmacao"},
+                )
+                db.add(msg)
+                conv.last_message = texto
+                conv.last_timestamp = datetime.now(timezone.utc)
+                await db.commit()
+                await broadcaster.publish(pizzaria_id, {
+                    "tipo": "mensagem.nova", "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id), "mensagem_id": str(msg.id),
+                        "telefone": telefone, "conteudo": texto, "origem": "bot",
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    },
+                })
+            else:
+                await db.commit()
+            log.info("Lembrete de confirmação enviado: pizzaria=%s tel=%s", pizzaria_id, telefone)
+            return {"ok": True}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha no lembrete de confirmação: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:
+            pass
+        try:
+            await evolution.close()
+        except Exception:
+            pass
+
+
 async def _enviar_nps_async(pedido_id: uuid.UUID) -> dict:
     from sqlalchemy import select
 

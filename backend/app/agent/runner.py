@@ -730,6 +730,19 @@ async def process_and_reply(
             },
         )
 
+    # ---- Lembrete de confirmação ----
+    # Se o FSM mostrou o resumo e está esperando o "ok", agenda UM follow-up: se o
+    # cliente sumir sem confirmar, mandamos uma mensagem perguntando se pode fechar
+    # (evita o cliente achar que o pedido já está fechado e ir buscar sem confirmar).
+    try:
+        if any(str(tc).startswith("fsm:resumo_confirmar") for tc in (result.tool_calls or [])):
+            from app.workers.tasks import CONFIRM_REMINDER_SECONDS, lembrar_confirmacao
+            lembrar_confirmacao.apply_async(
+                args=[str(pizzaria_id), telefone], countdown=CONFIRM_REMINDER_SECONDS,
+            )
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao agendar lembrete de confirmação: %s", e)
+
     return {
         "ok": True,
         "texto": result.texto,
