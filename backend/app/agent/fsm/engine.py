@@ -334,14 +334,16 @@ async def processar(
     # Avaliação (NPS) pós-entrega
     nota = dados.get("nota")
     if intencao == "avaliar" or (isinstance(nota, int) and 0 <= nota <= 10 and estado.get("etapa") == "FINALIZADO"):
+        # Avaliação é de baixo risco: se falhar ao gravar, ainda agradecemos o
+        # cliente (não há prejuízo pra ele), mas logamos pra não passar batido.
         try:
             n = int(nota) if isinstance(nota, int) else 10
             r = await registrar_avaliacao(ctx, db, nota=n, comentario=user_input[:300])
             decisao["fatos"].append(f"Avaliação registrada: nota {n}.")
             if r.get("alerta"):
                 decisao["fatos"].append(r["alerta"])
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as e_aval:  # noqa: BLE001
+            log.warning("Falha ao registrar avaliação na FSM (segue agradecendo): %s", e_aval)
         decisao["acao"] = "avaliado"
         decisao["proxima_pergunta"] = "Agradeça a avaliação de coração, de forma curta."
         return {"decisao": decisao, "estado": estado}
@@ -353,13 +355,30 @@ async def processar(
         if isinstance(end, dict) and any(end.get(k) for k in ("rua", "numero", "bairro")):
             novo_end = ", ".join(str(end.get(k)) for k in ("rua", "numero", "bairro", "referencia") if end.get(k))
         nova_forma = dados.get("forma_pagamento") if dados.get("forma_pagamento") in ("pix", "cartao", "dinheiro") else None
+        atualizou_ok = False
+        erro_upd = None
         try:
             r = await atualizar_pedido(ctx, db, novo_endereco=novo_end, nova_forma_pagamento=nova_forma)
-            decisao["fatos"].append(
-                "Pedido atualizado." if r.get("ok") else f"Não consegui atualizar: {r.get('erro')}"
+            atualizou_ok = bool(r.get("ok"))
+            erro_upd = r.get("erro")
+        except Exception as e_upd:  # noqa: BLE001
+            log.exception("Falha ao alterar pedido na FSM: %s", e_upd)
+            erro_upd = str(e_upd)
+        if not atualizou_ok:
+            # NÃO podemos dizer ao cliente que alteramos se o banco não mudou.
+            # Escala pra um humano resolver e instrui a voz a NÃO confirmar.
+            try:
+                await escalar_humano(ctx, db, motivo_escalonamento=f"FSM: falha ao alterar pedido — {erro_upd or 'erro desconhecido'}")
+            except Exception:  # noqa: BLE001
+                pass
+            decisao["acao"] = "escalado"
+            decisao["fatos"].append("Não foi possível alterar o pedido automaticamente; a equipe foi acionada.")
+            decisao["proxima_pergunta"] = (
+                "Diga ao cliente, com empatia, que você está ajustando o pedido com a equipe e já retornam. "
+                "NÃO afirme que a alteração foi concluída."
             )
-        except Exception:  # noqa: BLE001
-            pass
+            return {"decisao": decisao, "estado": estado}
+        decisao["fatos"].append("Pedido atualizado.")
         decisao["acao"] = "pedido_atualizado"
         decisao["proxima_pergunta"] = "Confirme a alteração feita de forma curta."
         return {"decisao": decisao, "estado": estado}
@@ -368,13 +387,32 @@ async def processar(
     if intencao == "cancelar":
         # Se já existe um pedido REGISTRADO, cancela de verdade no sistema.
         if estado.get("etapa") == "FINALIZADO":
+            cancelou_ok = False
+            erro_cancel = None
+            numero_cancel = None
             try:
                 r = await cancelar_pedido(ctx, db, motivo_cancelamento="Cancelado pelo cliente")
-                decisao["fatos"].append(
-                    f"Pedido #{r.get('numero_pedido')} cancelado." if r.get("ok") else f"Não consegui cancelar: {r.get('erro')}"
+                cancelou_ok = bool(r.get("ok"))
+                erro_cancel = r.get("erro")
+                numero_cancel = r.get("numero_pedido")
+            except Exception as e_cancel:  # noqa: BLE001
+                log.exception("Falha ao cancelar pedido na FSM: %s", e_cancel)
+                erro_cancel = str(e_cancel)
+            if not cancelou_ok:
+                # Cancelamento real falhou (ex.: já está no forno / saiu pra entrega).
+                # NÃO dizemos que cancelou nem limpamos o estado — escala pra humano.
+                try:
+                    await escalar_humano(ctx, db, motivo_escalonamento=f"FSM: falha ao cancelar pedido — {erro_cancel or 'erro desconhecido'}")
+                except Exception:  # noqa: BLE001
+                    pass
+                decisao["acao"] = "escalado"
+                decisao["fatos"].append("Não foi possível cancelar automaticamente; a equipe foi acionada.")
+                decisao["proxima_pergunta"] = (
+                    "Diga ao cliente, com empatia, que você está verificando o cancelamento com a equipe e já "
+                    "retornam. NÃO afirme que o pedido foi cancelado."
                 )
-            except Exception:  # noqa: BLE001
-                pass
+                return {"decisao": decisao, "estado": estado}
+            decisao["fatos"].append(f"Pedido #{numero_cancel} cancelado.")
         else:
             decisao["fatos"].append("Pedido (rascunho) limpo.")
         estado.update(estado_inicial())

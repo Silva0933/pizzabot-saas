@@ -43,6 +43,10 @@ def _first_seen_key(pid: uuid.UUID, phone: str) -> str:
     return f"batch_start:{pid}:{phone}"
 
 
+def _inflight_key(pid: uuid.UUID, phone: str) -> str:
+    return f"inflight:{pid}:{phone}"
+
+
 async def touch_typing(pizzaria_id: uuid.UUID, telefone: str) -> bool:
     """
     Cliente está digitando: estica o flush_at por mais TYPING_GRACE_SECONDS,
@@ -115,15 +119,50 @@ async def should_flush_now(pizzaria_id: uuid.UUID, telefone: str) -> tuple[bool,
 
 
 async def drain_pending(pizzaria_id: uuid.UUID, telefone: str) -> list[dict[str, Any]]:
-    """Tira todas as msgs pendentes (atômico) e limpa o flush_at."""
-    key = _pending_key(pizzaria_id, telefone)
+    """Tira as msgs pendentes (atômico), limpa o flush_at e move o lote para um
+    "inflight" durável.
 
-    # LRANGE + DELETE atômico via pipeline
+    Como o worker faz `task_acks_late=True`, se ele crashar DEPOIS do drain e ANTES
+    de responder, com um drain puramente destrutivo as mensagens se perderiam (a
+    task seria reentregue e encontraria a fila vazia → cliente sem resposta).
+    Aqui, em vez de só apagar, gravamos o lote no `inflight:{pid}:{phone}` e só o
+    limpamos via `confirm_processed` após o atendimento concluir. Numa reentrega
+    (ou no próximo flush) o lote órfão é recuperado e reprocessado.
+
+    Também reincorpora qualquer `inflight` deixado por uma execução anterior que
+    falhou (recuperação automática).
+    """
+    pkey = _pending_key(pizzaria_id, telefone)
+    ikey = _inflight_key(pizzaria_id, telefone)
+
+    # 1) Lê inflight órfão (de um crash anterior) + pendentes novas, e remove a
+    #    lista de pendentes + os marcadores de debounce — tudo atômico.
     pipe = redis.pipeline()
-    pipe.lrange(key, 0, -1)
-    pipe.delete(key)
+    pipe.lrange(ikey, 0, -1)
+    pipe.lrange(pkey, 0, -1)
+    pipe.delete(pkey)
     pipe.delete(_flush_key(pizzaria_id, telefone))
     pipe.delete(_first_seen_key(pizzaria_id, telefone))
-    raw_list, _, _, _ = await pipe.execute()
+    inflight_raw, pending_raw, *_ = await pipe.execute()
 
-    return [json.loads(item) for item in raw_list]
+    itens_raw = list(inflight_raw) + list(pending_raw)
+    if not itens_raw:
+        return []
+
+    # 2) Regrava o lote completo no inflight (durável até o envio ser confirmado).
+    pipe2 = redis.pipeline()
+    pipe2.delete(ikey)
+    pipe2.rpush(ikey, *itens_raw)
+    pipe2.expire(ikey, 3600)
+    await pipe2.execute()
+
+    return [json.loads(item) for item in itens_raw]
+
+
+async def confirm_processed(pizzaria_id: uuid.UUID, telefone: str) -> None:
+    """Limpa o lote inflight após o atendimento concluir (sucesso ou falha tratada).
+
+    Só um crash DURO do worker (que nem roda o finally) mantém o inflight, e aí o
+    lote é reprocessado numa reentrega da task — evitando perder a mensagem.
+    """
+    await redis.delete(_inflight_key(pizzaria_id, telefone))

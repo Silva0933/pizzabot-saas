@@ -14,6 +14,12 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+# Modelos que já provaram NÃO suportar JSON Mode (response_format). Cacheado em
+# memória do processo: sem isso, todo modelo sem JSON Mode (ex.: Gemma, alguns do
+# OpenRouter) custaria DUAS chamadas de NLU por mensagem (tenta com, falha, tenta
+# sem). Após o 1º fracasso, já vamos direto sem response_format.
+_SEM_JSON_MODE: set[str] = set()
+
 INTENCOES = (
     "saudacao", "pedir_cardapio", "adicionar_item", "remover_item", "informar_tamanho",
     "informar_entrega_retirada", "informar_endereco", "informar_pagamento",
@@ -113,28 +119,35 @@ async def nlu_extract(
         f"HISTÓRICO RECENTE:\n{historico_texto or '(início da conversa)'}\n\n"
         f"ÚLTIMA MENSAGEM DO CLIENTE: {user_input}"
     )
+    messages = [
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user", "content": contexto},
+    ]
+    chave_modelo = f"{provider}:{model}"
     try:
-        try:
+        # Só tenta JSON Mode se este modelo ainda não falhou nele antes.
+        usar_json = chave_modelo not in _SEM_JSON_MODE
+        if usar_json:
+            try:
+                res = await openai_chat(
+                    provider=provider, api_key=api_key, model=model,
+                    messages=messages, temperature=0.0, max_tokens=600,
+                    response_format={"type": "json_object"},
+                )
+            except Exception as e_json:
+                log.info(
+                    "NLU: modelo %s não suporta JSON Mode; desativando p/ próximas chamadas: %s",
+                    chave_modelo, e_json,
+                )
+                _SEM_JSON_MODE.add(chave_modelo)
+                res = await openai_chat(
+                    provider=provider, api_key=api_key, model=model,
+                    messages=messages, temperature=0.0, max_tokens=600,
+                )
+        else:
             res = await openai_chat(
                 provider=provider, api_key=api_key, model=model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": contexto},
-                ],
-                temperature=0.0,
-                max_tokens=600,
-                response_format={"type": "json_object"},
-            )
-        except Exception as e_json:
-            log.info("NLU falhou com response_format (possivel falta de suporte a JSON Mode), tentando sem: %s", e_json)
-            res = await openai_chat(
-                provider=provider, api_key=api_key, model=model,
-                messages=[
-                    {"role": "system", "content": _SYSTEM},
-                    {"role": "user", "content": contexto},
-                ],
-                temperature=0.0,
-                max_tokens=600,
+                messages=messages, temperature=0.0, max_tokens=600,
             )
         usage = res.get("usage") or {}
         parsed = _extrair_json(res.get("content") or "")

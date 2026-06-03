@@ -38,6 +38,13 @@ log = logging.getLogger(__name__)
 # Limite de iterações no loop (evita custo absurdo se o modelo gira em torno de tools)
 MAX_AGENT_ITERATIONS = 6
 
+# Tetos de tempo do processamento (segundos). Precisam somar abaixo do TTL do lock
+# de flush (ver FLUSH_LOCK_TTL em workers/tasks.py), senão dois workers poderiam
+# processar a MESMA conversa em paralelo e mandar respostas duplicadas.
+#   pior caso = FSM_TIMEOUT_SECONDS (FSM) + LEGACY_TIMEOUT_SECONDS (fallback legado)
+FSM_TIMEOUT_SECONDS = 15.0
+LEGACY_TIMEOUT_SECONDS = 40.0
+
 
 class AgentResult:
     def __init__(self, *, texto: str | None, iteracoes: int, tool_calls: list[str],
@@ -282,6 +289,25 @@ async def process_and_reply(
         )
     ).scalar_one_or_none()
 
+    # ---- Re-checagem de "bot ligado" (race humano × bot) ----
+    # O webhook só enfileira se o bot estava ativo, mas entre o enqueue e este
+    # flush passam segundos de debounce (7–45s). Nesse intervalo um atendente pode
+    # ter ASSUMIDO a conversa (bot_ativo=False), o admin pode ter desligado o bot
+    # global, ou a pizzaria pode ter sido suspensa. Revalidamos aqui, senão o bot
+    # responderia por cima do humano.
+    if getattr(pizz, "suspensa", False):
+        log.info("Pizzaria %s suspensa no flush — não respondendo", pizzaria_id)
+        return {"ok": False, "motivo": "pizzaria_suspensa"}
+    if not getattr(pizz, "bot_ativo_global", True):
+        log.info("Bot global desligado no flush para pizzaria %s — não respondendo", pizzaria_id)
+        return {"ok": False, "motivo": "bot_global_desligado"}
+    if conv is not None and not getattr(conv, "bot_ativo", True):
+        log.info(
+            "Conversa assumida por humano durante o debounce (pizzaria=%s tel=%s) — bot não responde",
+            pizzaria_id, telefone,
+        )
+        return {"ok": False, "motivo": "humano_assumiu"}
+
     # ---- Limite de mensagens de IA do plano (C2) ----
     # Se a pizzaria estourou a cota mensal do plano, não aciona a IA (protege o
     # custo). O cliente não recebe resposta automática; o painel sinaliza o limite.
@@ -331,19 +357,22 @@ async def process_and_reply(
         log.debug("Falha ao enviar indicador de digitando: %s", e)
 
     # ---- Roda o agente IA (pipeline FSM se a pizzaria estiver com a flag) ----
+    import asyncio
     try:
         result = None
         fallback_iterations = None
         if getattr(pizz, "pipeline_fsm", False):
             try:
-                import asyncio
                 from app.agent.fsm.pipeline import run_fsm_agent
                 result = await asyncio.wait_for(
                     run_fsm_agent(db, pizzaria_id, telefone, user_input),
-                    timeout=15.0
+                    timeout=FSM_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
-                log.warning("Pipeline FSM estourou o timeout de 8s, caindo p/ agente legado com limites reduzidos")
+                log.warning(
+                    "Pipeline FSM estourou o timeout de %.0fs, caindo p/ agente legado com limites reduzidos",
+                    FSM_TIMEOUT_SECONDS,
+                )
                 result = None
                 fallback_iterations = 3
             except Exception as e_fsm:  # noqa: BLE001
@@ -351,10 +380,23 @@ async def process_and_reply(
                 result = None
                 fallback_iterations = 3
         if result is None:  # flag off OU fallback do FSM
-            result = await run_agent(db, pizzaria_id, telefone, user_input, max_iterations=fallback_iterations)
+            # Teto de tempo no agente legado também: sem isso uma única chamada de
+            # LLM lenta (timeout HTTP de 60s) já estouraria o lock de flush e
+            # abriria brecha pra resposta duplicada por outro worker.
+            result = await asyncio.wait_for(
+                run_agent(db, pizzaria_id, telefone, user_input, max_iterations=fallback_iterations),
+                timeout=LEGACY_TIMEOUT_SECONDS,
+            )
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
+
+        # Limpa qualquer transação parcial/abortada antes de gravar o aviso de
+        # sistema (o agente pode ter falhado no meio de um commit).
+        try:
+            await db.rollback()
+        except Exception as e_rb:  # noqa: BLE001
+            log.debug("Falha no rollback pós-erro do agente: %s", e_rb)
         
         # Carrega o estado FSM atual para enriquecer os logs e a mensagem interna
         estado_desc = "Desconhecido"
@@ -487,8 +529,100 @@ async def process_and_reply(
         return {"ok": False, "erro": str(e), "fallback_acionado": True}
 
     if not result.texto:
-        log.warning("Agente terminou sem texto (iter=%d)", result.iteracoes)
-        return {"ok": False, "iter": result.iteracoes, "tool_calls": result.tool_calls}
+        # Rede de segurança final: o agente rodou sem erro mas não produziu texto
+        # (ex.: gastou todas as iterações em tool calls e nunca formulou a resposta).
+        # NÃO podemos deixar o cliente no vácuo: mandamos uma mensagem amigável e
+        # transferimos pra um humano, igual ao caminho de exceção crítica.
+        log.warning(
+            "Agente terminou SEM texto (iter=%d, tool_calls=%s) — escalando p/ humano",
+            result.iteracoes, result.tool_calls,
+        )
+        msg_fallback = (
+            "Vou chamar um de nossos atendentes para finalizar o seu pedido. "
+            "Só um instantinho que já vão te responder! 😊"
+        )
+        try:
+            if pizz.instancia:
+                await evolution.send_text(
+                    instancia=pizz.instancia, numero=telefone, texto=msg_fallback,
+                )
+        except Exception as e_send:  # noqa: BLE001
+            log.warning("Falha ao enviar fallback de 'sem texto': %s", e_send)
+
+        try:
+            from app.services.alertas import registrar_alerta_seguro
+            await registrar_alerta_seguro(
+                tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="error",
+                detalhe=f"Agente terminou sem texto (iter={result.iteracoes}, tools={result.tool_calls})",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        if conv:
+            conteudo_sistema = (
+                "⚠️ A IA terminou o processamento sem gerar resposta.\n"
+                f"Iterações: {result.iteracoes} | Tools: {result.tool_calls}\n"
+                f"Input do cliente: '{user_input[:100]}'\n"
+                "Atendimento transferido para humano."
+            )
+            msg = Mensagem(
+                conversa_id=conv.id,
+                pizzaria_id=pizzaria_id,
+                origem="sistema",
+                tipo="texto",
+                conteudo=conteudo_sistema,
+                metadata_json={"erro_ia": "sem_texto", "iter": result.iteracoes, "tool_calls": result.tool_calls},
+            )
+            db.add(msg)
+            conv.bot_ativo = False
+            conv.status = "humano_necessario"
+            conv.last_message = msg_fallback
+            conv.last_timestamp = datetime.now(timezone.utc)
+            await db.commit()
+
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "atendimento.humano",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": telefone,
+                        "cliente_nome": conv.cliente_nome,
+                        "motivo": "IA sem resposta",
+                    },
+                },
+            )
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "conversa.atualizada",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": telefone,
+                        "bot_ativo": False,
+                        "status": "humano_necessario",
+                        "motivo": "IA sem resposta",
+                    },
+                },
+            )
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "mensagem.nova",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "mensagem_id": str(msg.id),
+                        "telefone": telefone,
+                        "conteudo": conteudo_sistema,
+                        "origem": "sistema",
+                        "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(timezone.utc).isoformat(),
+                    },
+                },
+            )
+        return {"ok": False, "motivo": "sem_texto", "iter": result.iteracoes, "tool_calls": result.tool_calls, "fallback_acionado": True}
 
     guarded_text, blocked, reason = guard_response(result.texto, result.tool_calls)
     if blocked:

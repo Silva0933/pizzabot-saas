@@ -286,6 +286,23 @@ async def evolution_webhook(
     evolution_msg_id = key.get("id")
     push_name = data.get("pushName")
 
+    # ---- Idempotência (dedup de reentrega) ----
+    # A Evolution reenvia o mesmo evento quando não recebe o 200 a tempo. Sem dedup,
+    # a mesma mensagem é persistida 2x e o conteúdo entra duplicado na fila de
+    # debounce (vira "Oi\nOi"). Marcamos o id do evento no Redis (SET NX, TTL 10min):
+    # se já vimos, ignoramos silenciosamente. Best-effort — se o Redis falhar, segue.
+    if evolution_msg_id:
+        from app.redis_client import redis as _redis
+        try:
+            primeiro = await _redis.set(
+                f"wh:seen:{payload.instance}:{evolution_msg_id}", "1", nx=True, ex=600,
+            )
+            if not primeiro:
+                log.info("Webhook duplicado ignorado (evolution_id=%s)", evolution_msg_id)
+                return {"ignored": "duplicate", "evolution_id": evolution_msg_id}
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha no dedup de webhook (seguindo sem dedup): %s", e)
+
     # ---- áudio: transcreve para o agente entender o pedido por voz ----
     if tipo == "audio" and pizz.instancia:
         try:

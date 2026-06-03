@@ -15,6 +15,12 @@ from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
 
+# TTL do lock de flush por conversa. PRECISA ser maior que o pior caso de
+# processamento do agente (FSM_TIMEOUT_SECONDS + LEGACY_TIMEOUT_SECONDS no runner,
+# ~55s) + a folga de envio de mensagens/broadcast, senão o lock expira no meio do
+# processamento e outro worker pega a MESMA conversa → resposta duplicada.
+FLUSH_LOCK_TTL = 90
+
 
 @celery_app.task(name="pizzabot.flush_conversation", bind=True)
 def flush_conversation(self, pizzaria_id: str, telefone: str) -> dict:
@@ -60,9 +66,10 @@ async def _enviar_nps_async(pedido_id: uuid.UUID) -> dict:
 async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
     from app.agent.runner import process_and_reply
     from app.db import AsyncSessionLocal, engine
-    from app.services.queue import drain_pending, should_flush_now
+    from app.services.queue import confirm_processed, drain_pending, should_flush_now
 
     has_lock = False
+    drained = False
     try:
         can_flush, wait = await should_flush_now(pizzaria_id, telefone)
         if not can_flush:
@@ -76,7 +83,7 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
         # Trava de concorrência por conversa
         from app.redis_client import redis
         lock_key = f"lock:flush:{pizzaria_id}:{telefone}"
-        acquired = await redis.set(lock_key, "1", nx=True, ex=45)
+        acquired = await redis.set(lock_key, "1", nx=True, ex=FLUSH_LOCK_TTL)
         if not acquired:
             log.info("Conversa travada por outro worker, reagendando: pizzaria=%s tel=%s", pizzaria_id, telefone)
             flush_conversation.apply_async(
@@ -87,6 +94,7 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
         has_lock = True
 
         pending = await drain_pending(pizzaria_id, telefone)
+        drained = True  # a partir daqui o lote está no inflight; o finally o libera
         if not pending:
             return {"empty": True}
 
@@ -102,11 +110,6 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
 
         async with AsyncSessionLocal() as db:
             try:
-                from sqlalchemy import text
-                res_prod = await db.execute(text("SELECT COUNT(*) FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = TRUE"), {"pid": str(pizzaria_id)})
-                prod_count = res_prod.scalar()
-                log.info("DIAGNOSTIC: produtos disponiveis count=%s para pizzaria=%s", prod_count, pizzaria_id)
-
                 result = await process_and_reply(db, pizzaria_id, telefone, conteudo)
                 return result
             except Exception as e:
@@ -114,6 +117,14 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
                 await db.rollback()
                 return {"ok": False, "erro": str(e)}
     finally:
+        # Libera o lote inflight: chegando neste finally, a mensagem já foi tratada
+        # (respondida ou falha tratada). Só um crash DURO do worker — que não roda
+        # este finally — preserva o inflight pra reprocessamento numa reentrega.
+        if drained:
+            try:
+                await confirm_processed(pizzaria_id, telefone)
+            except Exception:
+                pass
         if has_lock:
             try:
                 from app.redis_client import redis

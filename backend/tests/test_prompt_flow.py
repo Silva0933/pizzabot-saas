@@ -809,6 +809,9 @@ class TestHumanizacaoEMelhorias:
                     pizz = MagicMock()
                     pizz.instancia = "inst_test"
                     pizz.id = "00000000-0000-0000-0000-000000000001"
+                    # Bot ligado: o flush só deve responder se passar na re-checagem.
+                    pizz.suspensa = False
+                    pizz.bot_ativo_global = True
 
                     res_pizz = MagicMock()
                     res_pizz.scalar_one = MagicMock(return_value=pizz)
@@ -830,7 +833,8 @@ class TestHumanizacaoEMelhorias:
                     assert conv.bot_ativo is False
                     assert conv.status == "humano_necessario"
                     mock_send.assert_called_once()
-                    assert "instabilidade" in mock_send.call_args[1]["texto"]
+                    # Mensagem amigável de transição para humano (não expõe erro técnico).
+                    assert "atendente" in mock_send.call_args[1]["texto"].lower()
 
     def test_registrar_pedido_exige_resumo_previo(self):
         import asyncio
@@ -952,12 +956,16 @@ class TestMelhoriasEspecificas:
                         pizz.pipeline_fsm = True
                         pizz.instancia = "inst_test"
                         pizz.id = "00000000-0000-0000-0000-000000000001"
+                        # Bot ligado: passa na re-checagem antes de processar.
+                        pizz.suspensa = False
+                        pizz.bot_ativo_global = True
 
                         res_pizz = MagicMock()
                         res_pizz.scalar_one = MagicMock(return_value=pizz)
 
                         conv = MagicMock()
                         conv.id = "00000000-0000-0000-0000-000000000002"
+                        conv.bot_ativo = True
                         res_conv = MagicMock()
                         res_conv.scalar_one_or_none = MagicMock(return_value=conv)
 
