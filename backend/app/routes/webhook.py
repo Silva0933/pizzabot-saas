@@ -124,14 +124,6 @@ def _extract_content(data: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
     return "[mensagem não suportada]", "texto", metadata
 
 
-def _parece_intencao_pedido(texto: str) -> bool:
-    t = (texto or "").lower()
-    termos = (
-        "quero", "queria", "vou querer", "pedido", "pedir", "entrega", "retirada",
-        "pizza", "sabor", "borda", "coca", "refri", "bebida", "combo", "meia",
-    )
-    return any(x in t for x in termos)
-
 
 def _pode_responder_fora_horario_com_ia(texto: str) -> bool:
     t = (texto or "").lower()
@@ -359,16 +351,18 @@ async def evolution_webhook(
             cli.nome = push_name
             await db.flush()
 
-    ped_ativo = None
-    if _parece_intencao_pedido(conteudo):
-        stmt_ped = select(Pedido).where(
-            Pedido.pizzaria_id == pizz.id,
-            Pedido.cliente_id == cli.id,
-            Pedido.status.in_(["novo", "confirmado", "no_forno", "a_caminho"]),
-        )
-        ped_ativo = (await db.execute(stmt_ped)).scalars().first()
+    # Lead em "Novos": cria um card de rascunho para CADA conversa/contato novo
+    # (mesmo que a 1ª mensagem seja só "oi"), desde que não exista um pedido ativo
+    # do cliente. Assim a equipe vê todo contato que chega no Kanban. Como o card
+    # só nasce quando NÃO há pedido ativo, mensagens repetidas não duplicam o card.
+    stmt_ped = select(Pedido).where(
+        Pedido.pizzaria_id == pizz.id,
+        Pedido.cliente_id == cli.id,
+        Pedido.status.in_(["novo", "confirmado", "no_forno", "a_caminho"]),
+    )
+    ped_ativo = (await db.execute(stmt_ped)).scalars().first()
 
-    if _parece_intencao_pedido(conteudo) and not ped_ativo:
+    if not ped_ativo:
         ped_rascunho = Pedido(
             pizzaria_id=pizz.id,
             cliente_id=cli.id,
