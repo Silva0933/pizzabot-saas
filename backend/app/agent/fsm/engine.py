@@ -454,11 +454,9 @@ async def processar(
         decisao["acao"] = "cardapio"
         if estado.get("cardapio_enviado"):
             decisao["fatos"].append("O cardápio (arquivo) JÁ foi enviado ao cliente acima.")
-            decisao["proxima_pergunta"] = (
-                "Mensagem CURTA e simples: avise que acabou de mandar o cardápio aí em cima (👆) e "
-                "diga que, assim que decidir, é só chamar. NÃO pergunte o sabor agora nem diga que "
-                "VOCÊ olhou. Ex.: 'Mandei o cardápio aí em cima 👆 Assim que decidir, é só me chamar 😊'."
-            )
+            # Mensagem verbatim (backend) — a LLM não improvisa "te mostro os sabores
+            # em texto" nem pergunta o sabor. Curta e objetiva, como pedido.
+            decisao["mensagem_pronta"] = "Cardápio enviado aí em cima 👆 Assim que escolher, é só me falar! 😊"
 
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
@@ -536,7 +534,16 @@ async def processar(
             decisao["precos_validos"] = [v for v in pv if v > 0]
 
     # Dúvida geral / conversa fiada → RESPONDE de verdade (não força o funil).
-    if intencao in ("duvida_geral", "conversa_fiada") and decisao["acao"] == "conversar":
+    # IMPORTANTE: se o cliente JÁ tem itens no carrinho e só fez bate-papo ou recusou
+    # adicionar mais ("só a pizza mesmo"), NÃO travamos aqui — deixamos cair no funil
+    # (entrega/pagamento) pra não parar o fluxo. Só damos resposta dedicada de dúvida
+    # quando ele REALMENTE perguntou algo (duvida_geral) ou ainda não tem nada pedido.
+    responder_como_duvida = (
+        intencao in ("duvida_geral", "conversa_fiada")
+        and decisao["acao"] == "conversar"
+        and (intencao == "duvida_geral" or not estado["carrinho"])
+    )
+    if responder_como_duvida:
         decisao["acao"] = "responder_duvida"
         decisao["fatos"].append(_fatos_pizzaria(ctx.pizzaria))
 
@@ -558,8 +565,10 @@ async def processar(
 
         if estado["carrinho"]:
             decisao["proxima_pergunta"] = (
-                "Responda com naturalidade ao que o cliente falou (use os dados reais da pizzaria). "
-                "Depois retome o pedido de leve, sem ser robótica."
+                "Responda com naturalidade ao que o cliente perguntou (use só os dados reais). "
+                "Se ele perguntou se um item TEM um ingrediente (ex.: cebola): responda sim ou não e, se TIVER, "
+                "pergunte se ele prefere pedir SEM esse ingrediente ou escolher outro sabor — NUNCA pule direto "
+                "para confirmar o pedido. Caso contrário, responda e retome o pedido de leve, sem ser robótica."
             )
         else:
             oferta_cardapio = (

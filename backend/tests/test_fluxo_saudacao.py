@@ -76,6 +76,11 @@ class TestConfirmaVerCardapio:
         mock_card.assert_awaited_once()
         assert out["decisao"]["acao"] == "cardapio"
         assert out["estado"]["cardapio_enviado"] is True
+        # Mensagem verbatim do backend: NÃO oferece "mostrar sabores em texto".
+        msg = out["decisao"].get("mensagem_pronta") or ""
+        assert "👆" in msg
+        assert "texto" not in msg.lower()
+        assert "sabores" not in msg.lower()
 
     def test_sim_sem_oferta_previa_nao_dispara_cardapio(self):
         """Sem ter oferecido antes, um 'sim' solto não deve mandar o cardápio."""
@@ -94,3 +99,31 @@ class TestConfirmaVerCardapio:
 
         mock_card.assert_not_awaited()
         assert out["decisao"]["acao"] != "cardapio"
+
+
+class TestFluxoNaoTravaAoRecusarUpsell:
+    def test_conversa_fiada_com_carrinho_avanca_o_funil(self):
+        """Recusar o upsell ('só a pizza mesmo') NÃO pode parar o fluxo: com itens
+        no carrinho, a conversa fiada deve cair no funil e perguntar entrega/retirada."""
+        from app.agent.fsm import engine
+
+        ctx, db = _ctx_db()
+        ctx.pizzaria.adicionais = []
+        ctx.pizzaria.taxa_entrega_fixa = None
+        ctx.pizzaria.taxas_bairro = None
+
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        estado["upsell_feito"] = True  # upsell já foi feito
+        # Item com preço congelado → _calcular_pedido não toca no banco.
+        estado["carrinho"] = [{
+            "nome": "Portuguesa", "tamanho": "M", "qtd": 1,
+            "preco_congelado": 45.0, "nome_congelado": "Portuguesa (M)",
+        }]
+
+        nlu = {"intencao": "conversa_fiada", "dados": {}}
+        out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="só a pizza mesmo"))
+
+        # NÃO pode dead-end em responder_duvida; tem que avançar pra entrega/retirada.
+        assert out["decisao"]["acao"] == "pedir_info"
+        assert "entrega" in out["decisao"]["proxima_pergunta"].lower()
