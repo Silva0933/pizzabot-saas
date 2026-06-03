@@ -8,11 +8,32 @@ direto e responde curto. Pode usar [QUEBRA] para separar balões.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 log = logging.getLogger(__name__)
 
 QUEBRA = "[QUEBRA]"
+
+# Uma resposta "completa" termina em pontuação final, fecha-parênteses/aspas, OU
+# num emoji/símbolo (≥ 0x2190 cobre setas e emojis). Caso contrário, provavelmente
+# o modelo cortou no meio (ex.: "Beleza! Mais", "Ok, só a") — aí refazemos.
+_FIM_OK = re.compile(r"""[.!?…)\]"']\s*$""")
+
+
+def _parece_truncado(texto: str) -> bool:
+    t = (texto or "").strip()
+    if not t:
+        return True
+    # remove o marcador de quebra do fim antes de avaliar
+    t = t.replace(QUEBRA, " ").strip()
+    if not t:
+        return True
+    if _FIM_OK.search(t):
+        return False
+    if ord(t[-1]) >= 0x2190:  # emoji / símbolo no fim → ok
+        return False
+    return True
 
 
 def _persona_linha(personalidade) -> str:
@@ -73,7 +94,7 @@ async def gerar_voz(
     model: str,
     comando: str,
 ) -> tuple[str, dict]:
-    """Retorna (texto, usage)."""
+    """Retorna (texto, usage). Refaz UMA vez se a 1ª resposta vier truncada."""
     from app.agent.providers import openai_chat
     try:
         res = await openai_chat(
@@ -81,7 +102,33 @@ async def gerar_voz(
             messages=[{"role": "user", "content": comando}],
             temperature=0.6, max_tokens=300,
         )
-        return (res.get("content") or "").strip(), (res.get("usage") or {})
+        texto = (res.get("content") or "").strip()
+        usage = res.get("usage") or {}
+
+        # O modelo às vezes corta a frase no meio (ex.: "Beleza! Mais"). Isso deixa
+        # o cliente sem entender e trava o atendimento. Detectamos e refazemos uma
+        # vez, com um empurrão pra completar a frase e mais espaço de tokens.
+        if _parece_truncado(texto):
+            log.warning("Voz FSM veio truncada (%r) — refazendo", texto[:60])
+            res2 = await openai_chat(
+                provider=provider, api_key=api_key, model=model,
+                messages=[{
+                    "role": "user",
+                    "content": comando + "\n\nIMPORTANTE: responda a frase COMPLETA, terminando o pensamento (não corte no meio).",
+                }],
+                temperature=0.4, max_tokens=400,
+            )
+            texto2 = (res2.get("content") or "").strip()
+            u2 = res2.get("usage") or {}
+            for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                usage[k] = int(usage.get(k, 0) or 0) + int(u2.get(k, 0) or 0)
+            # Usa a 2ª se ela estiver completa; senão fica com a menos ruim.
+            if texto2 and not _parece_truncado(texto2):
+                texto = texto2
+            elif texto2 and not texto:
+                texto = texto2
+
+        return texto, usage
     except Exception as e:  # noqa: BLE001
         log.warning("Voz FSM falhou: %s", e)
         return "", {}

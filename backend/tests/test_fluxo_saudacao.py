@@ -166,3 +166,23 @@ class TestRascunhoAoVivo:
         assert ped.endereco_entrega == "Rua X, 10"
         assert ped.forma_pagamento == "pix"
         mock_pub.assert_awaited_once()
+
+
+class TestVozTruncada:
+    def test_detecta_respostas_cortadas(self):
+        from app.agent.fsm.voice import _parece_truncado
+
+        # Cortadas no meio (o bug real visto em produção).
+        for ruim in ["Beleza! Mais", "Ok, só a", "", "   ", "Vou anotar a"]:
+            assert _parece_truncado(ruim) is True, ruim
+
+        # Completas (pontuação final ou emoji).
+        for ok in [
+            "Mais alguma coisa pra acompanhar? 😊",
+            "Quer uma bebida?",
+            "Vai ser entrega ou retirada?",
+            "Perfeito!",
+            "Te mandei o cardápio aí em cima 👆",
+            "Anotado, portuguesa sem cebola.",
+        ]:
+            assert _parece_truncado(ok) is False, ok
