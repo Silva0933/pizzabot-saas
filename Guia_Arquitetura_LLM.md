@@ -44,6 +44,8 @@ evolution, pagamentos, status_messages, business_hours, transcricao, app_config,
 Estado atual (foco recente)
 Os últimos commits giram em torno do controle robusto de falhas de IA, transição amigável e silenciosa para o suporte humano, persistência de avisos de sistema no histórico da conversa no painel, contadores de falhas consecutivas FSM (NLU e pendências do pedido), logs técnicos descritivos com stack trace e contexto (carrinho, etapa FSM), além de correções de taxa de entrega por bairro/geral e blindagem anti-alucinação no prompt. Migrations vão até 010_cardapio_relacional.sql.
 
+Blindagem de produção (commit 3f39629): rodada de hardening de prova-de-falhas no agente, cobrindo race conditions, perda de mensagens e falhas silenciosas — ver a seção "6. Controle de Falhas e Prova de Produção" abaixo. Sem migrations nem variáveis de ambiente novas. Checklist de validação em docs/smoke-test-blindagem.md.
+
 Como rodar
 Backend (Docker):
 
@@ -166,3 +168,29 @@ Os componentes e telas do painel React (PWA) estão concentrados em `src/compone
 *   **Configurar contadores de erros ou loops de pendências/NLU**: Ajuste a regra de contadores em [fsm/pipeline.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/pipeline.py).
 *   **Corrigir problemas no painel Kanban do frontend**: Modifique `components/v2/PedidosViewV2.tsx`.
 *   **Ajustar chat no frontend**: Modifique `components/v2/ConversasViewV2.tsx`.
+
+---
+
+## 6. Controle de Falhas e Prova de Produção
+
+Rodada de hardening (commit `3f39629`) que torna o agente resistente a race conditions, perda de mensagens e falhas silenciosas. **Sem migrations e sem variáveis de ambiente novas.** Validação em [docs/smoke-test-blindagem.md](file:///e:/Tops%20Ferramentas/PizzaBot/docs/smoke-test-blindagem.md). Testes em `backend/tests/test_robustez_falhas.py`.
+
+### 6.1. Críticos
+*   **Race `bot_ativo` (humano × bot)**: `process_and_reply` em [runner.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/runner.py) re-checa `suspensa` / `bot_ativo_global` / `bot_ativo` **antes de responder**. O webhook só enfileira com o bot ligado, mas durante o debounce (7–45s) um atendente pode assumir a conversa; sem a re-checagem o bot responderia por cima do humano.
+*   **Agente sem texto não deixa o cliente no vácuo**: se o agente conclui sem gerar resposta, [runner.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/runner.py) envia fallback amigável, registra alerta `falha_ia` e escala para humano (mesmo tratamento da exceção crítica).
+*   **Timeouts coerentes**: constantes `FSM_TIMEOUT_SECONDS=15` e `LEGACY_TIMEOUT_SECONDS=40` em [runner.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/runner.py) (o agente legado passou a ter teto), `rollback` defensivo no `except`, e `FLUSH_LOCK_TTL=90` em [workers/tasks.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/workers/tasks.py) — sempre acima do pior caso de processamento, evitando flush duplicado por dois workers.
+
+### 6.2. Médios
+*   **Idempotência do webhook (dedup)**: [routes/webhook.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/webhook.py) marca o `evolution_id` no Redis via `SET NX` (TTL 10 min). Reentregas da Evolution são ignoradas (`{"ignored":"duplicate"}`) — evita persistir/processar a mesma mensagem 2x.
+*   **Inflight durável (não perde mensagem)**: [services/queue.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/services/queue.py) — `drain_pending` move o lote para `inflight:{pid}:{phone}` e só limpa via `confirm_processed` após o flush concluir (chamado no `finally` de [workers/tasks.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/workers/tasks.py)). Com `task_acks_late=True`, um crash do worker antes de responder não perde a mensagem: o lote órfão é recuperado e reprocessado. Semântica passa a ser *at-least-once*.
+*   **Fim das falhas silenciosas no engine**: em [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py), `cancelar`/`alterar pedido` que falham (exceção ou `ok=False`) **escalam para humano e NÃO confirmam "feito"** ao cliente; avaliação (baixo risco) loga em vez de engolir o erro.
+
+### 6.3. Menores
+*   **Log DIAGNOSTIC removido** de [workers/tasks.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/workers/tasks.py) (rodava um `COUNT(*)` de produtos a cada mensagem).
+*   **NLU cacheia modelos sem JSON Mode** em [fsm/nlu.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/nlu.py) (`_SEM_JSON_MODE`) — evita 2 chamadas de NLU por mensagem em modelos sem `response_format`.
+
+### Onde mexer (controle de falhas)
+*   **Re-checagem de bot ligado / fallback de erro / timeouts**: [runner.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/runner.py) (`process_and_reply`).
+*   **TTL do lock / liberação do inflight**: [workers/tasks.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/workers/tasks.py).
+*   **Dedup / inflight da fila**: [routes/webhook.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/webhook.py) e [services/queue.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/services/queue.py).
+*   **Escalonamento ao falhar cancelar/alterar**: [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py).
