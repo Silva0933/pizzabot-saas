@@ -333,7 +333,7 @@ export function LandingPage({ onAccessLogin }: LandingPageProps) {
                     • 1x Portuguesa (M) — R$ 31,90<br/>
                     • 1x Coca Cola 2L — R$ 12,00<br/>
                     <strong>*Total: R$ 43,90*</strong><br/><br/>
-                    🛵 Retirada no balcão<br/>
+                    🏪 Retirada no balcão<br/>
                     💳 Pagamento: Pix (agora)<br/><br/>
                     Posso fechar o pedido? 😊
                   </div>

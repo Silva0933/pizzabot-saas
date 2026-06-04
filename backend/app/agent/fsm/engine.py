@@ -94,12 +94,15 @@ def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: flo
     if tipo == "delivery":
         linhas.append(f"📍 Entrega: {endereco or '(endereço a confirmar)'}")
     elif tipo == "retirada":
-        linhas.append("🛵 Retirada no balcão")
+        linhas.append("🏪 Retirada no balcão")
     if pagamento:
         nomes = {"pix": "Pix", "cartao": "Cartão", "dinheiro": "Dinheiro"}
         quando = ""
         if pagamento in ("pix", "cartao"):
-            quando = " (agora pela conversa)" if pagar_agora else " (na entrega/retirada)"
+            if pagar_agora:
+                quando = " (agora pela conversa)"
+            else:
+                quando = " (na retirada)" if tipo == "retirada" else " (na entrega)"
         linhas.append(f"💳 Pagamento: {nomes.get(pagamento, pagamento)}{quando}")
     if observacoes:
         linhas.append(f"📝 Obs: {observacoes}")
