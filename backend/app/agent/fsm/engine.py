@@ -126,6 +126,46 @@ def _montar_registro_msg(numero: Any, tempo: str | None, metodo_cobr: str | None
     return "\n".join(linhas)
 
 
+import re as _re_rem
+
+# Termos genéricos de bebida — o cliente raramente diz o nome exato ("Coca Cola 2L"),
+# fala "o refrigerante", "a bebida", "o refri". Usado pra casar remoção por categoria.
+_BEBIDA_KW = (
+    "refrigerante", "refri", "bebida", "suco", "agua", "água", "coca", "guarana",
+    "guaraná", "fanta", "sprite", "soda", "cerveja", "chopp", "lata", "garrafa",
+    "tubaina", "tubaína", "pepsi", "schweppes", "h2o",
+)
+
+
+def _termo_de_bebida(s: str) -> bool:
+    s = (s or "").lower()
+    return any(k in s for k in _BEBIDA_KW)
+
+
+def _item_texto(it: dict[str, Any]) -> str:
+    return ((it.get("nome") or "") + " " + " ".join(it.get("sabores") or [])).lower().strip()
+
+
+def _inferir_remocao(user_input: str, carrinho: list[dict[str, Any]]) -> list[str]:
+    """Quando o cliente quer remover mas a NLU não especificou O QUÊ: descobre do
+    texto qual item do carrinho ele quer tirar (cita um pedaço do nome, ou fala
+    genérico de bebida e o item é bebida)."""
+    t = (user_input or "").lower()
+    if not t or not carrinho:
+        return []
+    fala_bebida = _termo_de_bebida(t)
+    alvos: list[str] = []
+    for it in carrinho:
+        nome_full = _item_texto(it)
+        if not nome_full:
+            continue
+        palavras = [w for w in _re_rem.split(r"\W+", nome_full) if len(w) >= 3]
+        cita_nome = any(w in t for w in palavras)
+        if cita_nome or (fala_bebida and _termo_de_bebida(nome_full)):
+            alvos.append(it.get("nome") or nome_full)
+    return alvos
+
+
 def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
     """Funde os dados extraídos pela NLU no estado (carrinho e campos)."""
     # Adicionar produtos — com MERGE: se já existe item com o mesmo nome/sabores,
@@ -168,15 +208,25 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
             "qtd": int(p.get("qtd") or 1),
             "adicionais": adicionais,
         })
-    # Remover produtos (por nome aproximado)
+    # Remover produtos. Match flexível: substring em qualquer direção OU termo
+    # genérico de bebida (ex.: "refrigerante", "refri") removendo o item que É uma
+    # bebida — o cliente quase nunca diz o nome exato "Coca Cola 2L".
     for rem in (dados.get("remover") or []):
         alvo = (rem or "").strip().lower()
         if not alvo:
             continue
-        estado["carrinho"] = [
-            it for it in estado["carrinho"]
-            if alvo not in ((it.get("nome") or "") + " " + " ".join(it.get("sabores") or [])).lower()
-        ]
+        alvo_eh_bebida = _termo_de_bebida(alvo)
+        novo_carrinho = []
+        for it in estado["carrinho"]:
+            nome_full = _item_texto(it)
+            casou = bool(nome_full) and (
+                alvo in nome_full
+                or nome_full in alvo
+                or (alvo_eh_bebida and _termo_de_bebida(nome_full))
+            )
+            if not casou:
+                novo_carrinho.append(it)
+        estado["carrinho"] = novo_carrinho
     # Se o último item está sem tamanho e a NLU trouxe um tamanho avulso, aplica nele.
     tam_avulso = dados.get("tamanho") if isinstance(dados.get("tamanho"), str) else None
     if tam_avulso and estado["carrinho"]:
@@ -533,6 +583,14 @@ async def processar(
             # Mensagem verbatim (backend) — a LLM não improvisa "te mostro os sabores
             # em texto" nem pergunta o sabor. Curta e objetiva, como pedido.
             decisao["mensagem_pronta"] = "Cardápio enviado aí em cima 👆 Assim que escolher, é só me falar! 😊"
+
+    # Robustez de remoção: o cliente quer remover (intent remover_item) mas a NLU não
+    # disse O QUÊ → infere do texto qual item do carrinho tirar. Ex.: "não quero mais o
+    # refrigerante, só a pizza" deve remover a Coca, mesmo a NLU não devolvendo 'remover'.
+    if intencao == "remover_item" and not dados.get("remover"):
+        alvos = _inferir_remocao(user_input, estado.get("carrinho") or [])
+        if alvos:
+            dados["remover"] = alvos
 
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
