@@ -121,7 +121,7 @@ async def gerar_voz(
         res = await openai_chat(
             provider=provider, api_key=api_key, model=model,
             messages=[{"role": "user", "content": comando}],
-            temperature=0.6, max_tokens=800,
+            temperature=0.6, max_tokens=1200,
         )
         texto = (res.get("content") or "").strip()
         usage = res.get("usage") or {}
@@ -136,7 +136,7 @@ async def gerar_voz(
                     "role": "user",
                     "content": comando + "\n\nIMPORTANTE: responda a frase COMPLETA, terminando o pensamento (não corte no meio). Seja breve.",
                 }],
-                temperature=0.4, max_tokens=1024,
+                temperature=0.4, max_tokens=2048,
             )
             texto2 = (res2.get("content") or "").strip()
             u2 = res2.get("usage") or {}

@@ -107,12 +107,24 @@ async def openai_chat(
     if response_format:
         payload["response_format"] = response_format
 
+    # Modelos Gemini 2.5 ("thinking") gastam o orçamento de tokens PENSANDO antes do
+    # texto — com isso a resposta vinha vazia/truncada. NLU e voz não precisam pensar
+    # (só reescrever/extrair), então desligamos o raciocínio. Se o endpoint/modelo
+    # rejeitar o parâmetro (400), refazemos a chamada sem ele logo abaixo.
+    if provider == "gemini":
+        payload["reasoning_effort"] = "none"
+
     # Timeout agressivo de propósito: o pipeline FSM tem teto de 15s e o legado de
     # 40s. Um provedor lento (OpenRouter/OpenAI instável) não pode segurar o worker
     # por 60s — falha rápido pra liberar a vaga de concorrência (--concurrency=4).
     timeout = httpx.Timeout(20.0, connect=5.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
+        # Auto-cura: alguns modelos/endpoints não conhecem reasoning_effort → 400.
+        # Nesse caso, refaz sem o parâmetro (cai pro caminho com thinking + teto folgado).
+        if resp.status_code == 400 and "reasoning_effort" in payload:
+            payload.pop("reasoning_effort", None)
+            resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
         if resp.status_code >= 400:
             raise RuntimeError(f"{provider} {resp.status_code}: {resp.text[:400]}")
         data = resp.json()

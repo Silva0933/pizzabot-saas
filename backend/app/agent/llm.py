@@ -77,7 +77,7 @@ async def call_gemini(
     """Faz uma chamada ao Gemini com tools."""
     client = get_client(api_key)
 
-    config = types.GenerateContentConfig(
+    config_kwargs: dict[str, Any] = dict(
         system_instruction=system,
         temperature=temperature,
         max_output_tokens=max_tokens,
@@ -87,6 +87,18 @@ async def call_gemini(
         # response sem texto nem function_call → o bot travava sem responder.
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )
+    # Gemini 2.5 ("thinking") gasta o orçamento de tokens PENSANDO antes do texto e
+    # pode devolver resposta VAZIA (foi o que aconteceu no teste com gemini-2.5-flash).
+    # A tarefa do agente não precisa de raciocínio explícito — desligamos nos 2.5.
+    # Best-effort: SDKs antigos podem não ter ThinkingConfig.
+    if "2.5" in (model or ""):
+        _TC = getattr(types, "ThinkingConfig", None)
+        if _TC is not None:
+            try:
+                config_kwargs["thinking_config"] = _TC(thinking_budget=0)
+            except Exception:  # noqa: BLE001
+                pass
+    config = types.GenerateContentConfig(**config_kwargs)
 
     response = await client.aio.models.generate_content(
         model=model,
