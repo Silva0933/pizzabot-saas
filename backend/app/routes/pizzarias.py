@@ -264,21 +264,42 @@ async def delete_pizzaria(
         except Exception:  # noqa: BLE001
             log.warning("Falha ao remover instância %s da Evolution", pizz.instancia)
 
-    # Limpa as tabelas auxiliares que NÃO têm FK com cascade (criadas via
-    # ensure_table). As tabelas do ORM (produtos, clientes, pedidos, conversas,
-    # mensagens, equipe, personalidade) caem por ON DELETE CASCADE.
+    # Apaga TODOS os filhos explicitamente, em ordem filho→pai. NÃO dependemos de
+    # ON DELETE CASCADE estar configurado no banco: as tabelas foram criadas por
+    # migrations SQL, e nem todo FK foi criado com cascade (ex.: cardápio relacional).
+    # Cada DELETE roda num SAVEPOINT (begin_nested) pra que uma tabela ausente em
+    # algum ambiente não aborte a transação inteira.
     from sqlalchemy import text as _text
     pid = str(pizzaria_id)
-    auxiliares = (
-        "agente_memoria", "atendimento_estado", "app_config",
-        "llm_usage", "cardapio_arquivo", "assinatura_pizzaria",
-        "plataforma_alertas",
+    deletes = (
+        # Cardápio relacional (netos da pizzaria, via produtos/grupos)
+        "DELETE FROM public.produto_complementos WHERE produto_id IN (SELECT id FROM public.produtos WHERE pizzaria_id = :pid)",
+        "DELETE FROM public.produto_tamanhos WHERE produto_id IN (SELECT id FROM public.produtos WHERE pizzaria_id = :pid)",
+        "DELETE FROM public.complementos WHERE grupo_id IN (SELECT id FROM public.grupo_complementos WHERE pizzaria_id = :pid)",
+        # Filhos diretos (têm pizzaria_id) — ordem respeitando FKs entre eles
+        "DELETE FROM public.mensagens WHERE pizzaria_id = :pid",
+        "DELETE FROM public.pedidos WHERE pizzaria_id = :pid",
+        "DELETE FROM public.conversas WHERE pizzaria_id = :pid",
+        "DELETE FROM public.clientes WHERE pizzaria_id = :pid",
+        "DELETE FROM public.produtos WHERE pizzaria_id = :pid",
+        "DELETE FROM public.grupo_complementos WHERE pizzaria_id = :pid",
+        "DELETE FROM public.personalidade_atendente WHERE pizzaria_id = :pid",
+        "DELETE FROM public.equipe_pizzaria WHERE pizzaria_id = :pid",
+        # Auxiliares (criadas via ensure_table; podem não existir em todo ambiente)
+        "DELETE FROM public.agente_memoria WHERE pizzaria_id = :pid",
+        "DELETE FROM public.atendimento_estado WHERE pizzaria_id = :pid",
+        "DELETE FROM public.app_config WHERE pizzaria_id = :pid",
+        "DELETE FROM public.llm_usage WHERE pizzaria_id = :pid",
+        "DELETE FROM public.cardapio_arquivo WHERE pizzaria_id = :pid",
+        "DELETE FROM public.assinatura_pizzaria WHERE pizzaria_id = :pid",
+        "DELETE FROM public.plataforma_alertas WHERE pizzaria_id = :pid",
     )
-    for tabela in auxiliares:
+    for sql in deletes:
         try:
-            await db.execute(_text(f"DELETE FROM public.{tabela} WHERE pizzaria_id = :pid"), {"pid": pid})
-        except Exception:  # noqa: BLE001  (tabela pode não existir)
-            pass
+            async with db.begin_nested():
+                await db.execute(_text(sql), {"pid": pid})
+        except Exception as e:  # noqa: BLE001
+            log.warning("delete_pizzaria: falha ao limpar tabela filha: %s", e)
 
     # Limpa filas/locks no Redis desta pizzaria (best-effort).
     try:
