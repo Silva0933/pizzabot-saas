@@ -131,7 +131,7 @@ async def nlu_extract(
             try:
                 res = await openai_chat(
                     provider=provider, api_key=api_key, model=model,
-                    messages=messages, temperature=0.0, max_tokens=600,
+                    messages=messages, temperature=0.0, max_tokens=1000,
                     response_format={"type": "json_object"},
                 )
             except Exception as e_json:
@@ -142,12 +142,12 @@ async def nlu_extract(
                 _SEM_JSON_MODE.add(chave_modelo)
                 res = await openai_chat(
                     provider=provider, api_key=api_key, model=model,
-                    messages=messages, temperature=0.0, max_tokens=600,
+                    messages=messages, temperature=0.0, max_tokens=1000,
                 )
         else:
             res = await openai_chat(
                 provider=provider, api_key=api_key, model=model,
-                messages=messages, temperature=0.0, max_tokens=600,
+                messages=messages, temperature=0.0, max_tokens=1000,
             )
         usage = res.get("usage") or {}
         parsed = _extrair_json(res.get("content") or "")

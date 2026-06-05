@@ -36,6 +36,23 @@ def _parece_truncado(texto: str) -> bool:
     return True
 
 
+# Pontuação final de frase (pra "salvar" um texto truncado cortando no último ponto).
+_FIM_FRASE = re.compile(r"[.!?…][\"')\]]?(?=\s|$)")
+
+
+def _salvar_truncado(texto: str) -> str:
+    """Última linha de defesa: se o texto está truncado, corta de volta até a
+    ÚLTIMA frase completa. Se não houver nenhuma, devolve "" — melhor mandar nada
+    (o pipeline manda um 'pode repetir?' seguro) do que um fragmento sem sentido."""
+    t = (texto or "").replace(QUEBRA, " ").strip()
+    if not t:
+        return ""
+    matches = list(_FIM_FRASE.finditer(t))
+    if matches:
+        return t[: matches[-1].end()].strip()
+    return ""
+
+
 def _persona_linha(personalidade) -> str:
     nome = getattr(personalidade, "nome", None) or "Camila"
     estilo = getattr(personalidade, "estilo", None) or "casual"
@@ -97,36 +114,48 @@ async def gerar_voz(
     """Retorna (texto, usage). Refaz UMA vez se a 1ª resposta vier truncada."""
     from app.agent.providers import openai_chat
     try:
+        # max_tokens FOLGADO de propósito: modelos "thinking" (ex.: gemini-2.5-flash-lite)
+        # gastam tokens pensando ANTES do texto visível. Com teto baixo (300) a resposta
+        # saía cortada no meio quase sempre. max_tokens é só um TETO — resposta curta não
+        # gasta mais; só evita o corte.
         res = await openai_chat(
             provider=provider, api_key=api_key, model=model,
             messages=[{"role": "user", "content": comando}],
-            temperature=0.6, max_tokens=300,
+            temperature=0.6, max_tokens=800,
         )
         texto = (res.get("content") or "").strip()
         usage = res.get("usage") or {}
 
-        # O modelo às vezes corta a frase no meio (ex.: "Beleza! Mais"). Isso deixa
-        # o cliente sem entender e trava o atendimento. Detectamos e refazemos uma
-        # vez, com um empurrão pra completar a frase e mais espaço de tokens.
+        # Se mesmo assim vier truncada, refaz UMA vez com mais espaço e um empurrão
+        # pra completar a frase.
         if _parece_truncado(texto):
             log.warning("Voz FSM veio truncada (%r) — refazendo", texto[:60])
             res2 = await openai_chat(
                 provider=provider, api_key=api_key, model=model,
                 messages=[{
                     "role": "user",
-                    "content": comando + "\n\nIMPORTANTE: responda a frase COMPLETA, terminando o pensamento (não corte no meio).",
+                    "content": comando + "\n\nIMPORTANTE: responda a frase COMPLETA, terminando o pensamento (não corte no meio). Seja breve.",
                 }],
-                temperature=0.4, max_tokens=400,
+                temperature=0.4, max_tokens=1024,
             )
             texto2 = (res2.get("content") or "").strip()
             u2 = res2.get("usage") or {}
             for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
                 usage[k] = int(usage.get(k, 0) or 0) + int(u2.get(k, 0) or 0)
-            # Usa a 2ª se ela estiver completa; senão fica com a menos ruim.
-            if texto2 and not _parece_truncado(texto2):
-                texto = texto2
-            elif texto2 and not texto:
-                texto = texto2
+
+            # Escolhe a melhor: prioriza uma resposta COMPLETA (retry primeiro).
+            completas = [c for c in (texto2, texto) if c and not _parece_truncado(c)]
+            if completas:
+                texto = completas[0]
+            else:
+                # Nenhuma completa → NUNCA envia o fragmento. Salva a mais longa
+                # cortando na última frase fechada; se não der, devolve "" (o
+                # pipeline manda um 'pode repetir?' seguro).
+                candidatas = [c for c in (texto2, texto) if c]
+                base = max(candidatas, key=len) if candidatas else ""
+                salvo = _salvar_truncado(base)
+                log.warning("Voz FSM truncada nas 2 tentativas — salvando: %r", salvo[:60])
+                texto = salvo
 
         return texto, usage
     except Exception as e:  # noqa: BLE001
