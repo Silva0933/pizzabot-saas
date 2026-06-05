@@ -584,6 +584,15 @@ async def processar(
             # em texto" nem pergunta o sabor. Curta e objetiva, como pedido.
             decisao["mensagem_pronta"] = "Cardápio enviado aí em cima 👆 Assim que escolher, é só me falar! 😊"
 
+    # Sugestão pendente: no turno anterior o bot ofereceu um item alternativo (ex.:
+    # Coca no lugar da Fanta indisponível). Se o cliente confirmou agora ("pode ser",
+    # "sim"), adiciona esse item. Consumida sempre (pop): se ele não confirmou, expira.
+    _sugestao = estado.pop("sugestao_item", None)
+    if _sugestao and not dados.get("produtos") and not dados.get("remover") and _eh_confirmacao(intencao, user_input):
+        dados["produtos"] = [{"nome": _sugestao, "qtd": 1}]
+        if intencao in ("confirmar_resumo", "conversa_fiada", "duvida_geral"):
+            intencao = "adicionar_item"
+
     # Robustez de remoção: o cliente quer remover (intent remover_item) mas a NLU não
     # disse O QUÊ → infere do texto qual item do carrinho tirar. Ex.: "não quero mais o
     # refrigerante, só a pizza" deve remover a Coca, mesmo a NLU não devolvendo 'remover'.
@@ -651,9 +660,18 @@ async def processar(
                     try:
                         from app.agent.tools import buscar_cardapio
                         card_res = await buscar_cardapio(ctx, db, query="bebida", limit=15)
-                        bebidas = [f"{item['nome']} (R$ {item['preco']:.2f})" for item in card_res.get("items", []) if "preco" in item]
-                        if bebidas:
-                            decisao["fatos"].append("Bebidas reais disponíveis no cardápio: " + ", ".join(bebidas))
+                        items_beb = [i for i in card_res.get("items", []) if "preco" in i]
+                        if items_beb:
+                            principal = items_beb[0]["nome"]
+                            extras = ", ".join(i["nome"] for i in items_beb[1:5])
+                            decisao["fatos"].append(
+                                f"A bebida que o cliente pediu não existe. Ofereça como alternativa: {principal}"
+                                + (f" (também temos: {extras})" if extras else "")
+                                + ". Pergunte se pode ser."
+                            )
+                            # Guarda a sugestão: se no PRÓXIMO turno o cliente disser
+                            # "pode ser"/"sim", a gente adiciona ESTE item ao carrinho.
+                            estado["sugestao_item"] = principal
                     except Exception:
                         pass
                 else:
