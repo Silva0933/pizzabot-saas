@@ -107,7 +107,11 @@ async def openai_chat(
     if response_format:
         payload["response_format"] = response_format
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    # Timeout agressivo de propósito: o pipeline FSM tem teto de 15s e o legado de
+    # 40s. Um provedor lento (OpenRouter/OpenAI instável) não pode segurar o worker
+    # por 60s — falha rápido pra liberar a vaga de concorrência (--concurrency=4).
+    timeout = httpx.Timeout(20.0, connect=5.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
         if resp.status_code >= 400:
             raise RuntimeError(f"{provider} {resp.status_code}: {resp.text[:400]}")

@@ -63,12 +63,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import random
-import statistics
 import sys
 import time
 import uuid
 from dataclasses import dataclass, field
+
+# Bootstrap de path: rodando como `python scripts/load_test.py`, o Python só põe
+# `.../scripts` no sys.path — não o diretório `/app` que contém o pacote `app`.
+# Inserimos o pai de `scripts/` pra que `import app...` funcione sem PYTHONPATH.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # ------------------------------------------------------------------ #
 # Stubs de saída (aplicados ANTES de qualquer disparo)
