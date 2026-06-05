@@ -52,6 +52,29 @@ def strip_saudacao(texto: str, ja_apresentou: bool) -> tuple[str, bool]:
     return novo, True
 
 
+def strip_nome_proprio(texto: str, persona_nome: str | None, ja_apresentou: bool) -> tuple[str, bool]:
+    """Remove o nome da PRÓPRIA atendente quando ela o usa como vocativo dirigido ao
+    cliente (ex.: 'guaraná não temos, Camila.'). Ela é a Camila — não pode chamar o
+    cliente assim. Só age DEPOIS da apresentação; na saudação ('Sou a Camila') o nome
+    é legítimo. Retorna (texto, removeu?)."""
+    if not texto or not persona_nome or not ja_apresentou:
+        return texto, False
+    nome = re.escape(persona_nome.strip())
+    if not nome:
+        return texto, False
+    original = texto
+    # Vocativo no meio/fim: "..., Camila"
+    texto = re.sub(rf",\s*{nome}\b", "", texto, flags=re.IGNORECASE)
+    # Vocativo no início de oração: "Camila, ..."
+    texto = re.sub(rf"(^|[.!?…]\s+){nome}\s*,\s*", r"\1", texto, flags=re.IGNORECASE)
+    # Limpa espaço duplo e espaço antes de pontuação
+    texto = re.sub(r"\s{2,}", " ", texto)
+    texto = re.sub(r"\s+([.!?,])", r"\1", texto).strip()
+    if texto and texto[0].islower():
+        texto = texto[0].upper() + texto[1:]
+    return (texto, True) if (texto and texto != original) else (original, False)
+
+
 def neutralizar_precos(texto: str, validos: Any) -> tuple[str, list[float]]:
     """Troca por marcador neutro todo valor R$ citado que NÃO tem lastro no que o
     backend calculou (lista/conjunto `validos`). Retorna (texto, [removidos]).
@@ -80,16 +103,21 @@ def neutralizar_precos(texto: str, validos: Any) -> tuple[str, list[float]]:
     return novo, removidos
 
 
-def blindar(texto: str, *, ja_apresentou: bool, precos_validos: Any) -> tuple[str, dict[str, Any]]:
+def blindar(texto: str, *, ja_apresentou: bool, precos_validos: Any,
+            persona_nome: str | None = None) -> tuple[str, dict[str, Any]]:
     """Aplica todas as correções determinísticas. Retorna (texto, correcoes).
 
     `correcoes` traz o que foi mexido (pra alerta/observabilidade):
-      {"saudacao_removida": bool, "precos_neutralizados": [floats]}
+      {"saudacao_removida": bool, "nome_proprio_removido": bool,
+       "precos_neutralizados": [floats]}
     """
     correcoes: dict[str, Any] = {}
     texto, removeu_saud = strip_saudacao(texto, ja_apresentou)
     if removeu_saud:
         correcoes["saudacao_removida"] = True
+    texto, removeu_nome = strip_nome_proprio(texto, persona_nome, ja_apresentou)
+    if removeu_nome:
+        correcoes["nome_proprio_removido"] = True
     texto, precos = neutralizar_precos(texto, precos_validos)
     if precos:
         correcoes["precos_neutralizados"] = precos

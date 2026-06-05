@@ -60,6 +60,7 @@ def _persona_linha(personalidade) -> str:
 
 
 def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any], ja_apresentou: bool, user_input: str = "") -> str:
+    nome_atendente = getattr(personalidade, "nome", None) or "Camila"
     fatos = "\n".join(f"- {f}" for f in (decisao.get("fatos") or [])) or "- (nada novo)"
     dados = decisao.get("dados") or {}
     resumo = ""
@@ -99,6 +100,9 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
         "preço/sabor/taxa. Não repita bordões fixos "
         "('Perfeito!', 'Show!'). VOCÊ é a atendente: nunca diga que VOCÊ 'deu uma olhada', "
         "'escolheu' ou 'decidiu' algo pelo cliente — quem decide é ele. "
+        f"SEU nome é {nome_atendente}: NUNCA chame o cliente pelo seu nome nem coloque "
+        f"'{nome_atendente}' no meio da resposta (ex.: 'não temos, {nome_atendente}') — "
+        "seu nome só aparece na saudação inicial. "
         f"Use {QUEBRA} SÓ se forem conteúdos diferentes (ex.: resumo + pergunta) "
         "— nunca pra repetir a mesma ideia. Responda só a mensagem final ao cliente."
     )

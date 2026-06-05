@@ -142,6 +142,7 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
             texto, correcoes = blindar(
                 texto, ja_apresentou=ja_apresentou,
                 precos_validos=decisao.get("precos_validos") or [],
+                persona_nome=getattr(ctx.personalidade, "nome", None) or "Camila",
             )
             if correcoes.get("precos_neutralizados"):
                 # Pilar 5: preço inventado é sinal grave → alerta no painel.
