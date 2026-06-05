@@ -111,6 +111,7 @@ export interface BackendPizzaria {
   plano: string;
   bot_ativo_global: boolean;
   endereco: string | null;
+  endereco_maps_url?: string | null;
   telefone_admin: string | null;
   telefone_contato?: string | null;
   logo_url: string | null;
@@ -123,6 +124,8 @@ export interface BackendPizzaria {
   mp_access_token: string | null;
   tempo_entrega_min?: number | null;
   tempo_entrega_max?: number | null;
+  tempo_retirada_min?: number | null;
+  tempo_retirada_max?: number | null;
   taxa_entrega_info?: string | null;
   taxa_entrega_fixa?: number | null;
   taxas_bairro?: Array<{ bairro: string; taxa: number }> | null;

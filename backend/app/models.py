@@ -71,6 +71,9 @@ class Pizzaria(Base):
     pipeline_fsm: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     endereco: Mapped[str | None] = mapped_column(Text)
+    # Link do endereço no Google Maps (enviado ao cliente quando ele pergunta o
+    # endereço ou escolhe retirada).
+    endereco_maps_url: Mapped[str | None] = mapped_column(Text)
     telefone_admin: Mapped[str | None] = mapped_column(String)
     telefone_contato: Mapped[str | None] = mapped_column(String)
     instagram: Mapped[str | None] = mapped_column(String)

@@ -42,6 +42,7 @@ class PizzariaPatch(BaseModel):
     telefone_admin: str | None = None
     telefone_contato: str | None = None
     endereco: str | None = None
+    endereco_maps_url: str | None = None
     logo_url: str | None = None
     bot_ativo_global: bool | None = None
     horario_funcionamento: dict | None = None
@@ -53,6 +54,8 @@ class PizzariaPatch(BaseModel):
     mp_access_token: str | None = None
     tempo_entrega_min: int | None = None
     tempo_entrega_max: int | None = None
+    tempo_retirada_min: int | None = None
+    tempo_retirada_max: int | None = None
     taxa_entrega_info: str | None = None
     taxa_entrega_fixa: float | None = None
     taxas_bairro: list[dict] | None = None
@@ -70,6 +73,7 @@ class PizzariaOut(BaseModel):
     plano_vence_em: datetime | None = None
     pipeline_fsm: bool = False
     endereco: str | None
+    endereco_maps_url: str | None = None
     telefone_admin: str | None
     telefone_contato: str | None
     logo_url: str | None = None
@@ -82,6 +86,8 @@ class PizzariaOut(BaseModel):
     mp_access_token: str | None = None
     tempo_entrega_min: int | None = None
     tempo_entrega_max: int | None = None
+    tempo_retirada_min: int | None = None
+    tempo_retirada_max: int | None = None
     taxa_entrega_info: str | None = None
     taxa_entrega_fixa: float | None = None
     taxas_bairro: list[dict] | None = None

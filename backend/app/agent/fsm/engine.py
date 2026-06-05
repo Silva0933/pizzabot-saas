@@ -213,17 +213,28 @@ def _online(pagamento: str | None) -> bool:
 def _fatos_pizzaria(pizz) -> str:
     """Fatos reais da pizzaria pra voz responder dúvidas (sem inventar)."""
     partes = [f"Pizzaria: {getattr(pizz, 'nome', '') or ''}"]
-    if getattr(pizz, "endereco", None):
-        partes.append(f"Endereço: {pizz.endereco}")
+    endereco = getattr(pizz, "endereco", None)
+    maps_url = getattr(pizz, "endereco_maps_url", None)
+    if endereco:
+        partes.append(f"Endereço: {endereco}")
+    if maps_url:
+        partes.append(f"Link do endereço no mapa: {maps_url}")
     formas = getattr(pizz, "formas_pagamento_aceitas", None) or []
     if formas:
         partes.append("Pagamentos: " + ", ".join(formas))
     if getattr(pizz, "tempo_entrega_min", None):
         partes.append(f"Entrega ~{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min")
+    if getattr(pizz, "tempo_retirada_min", None):
+        partes.append(f"Retirada ~{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min")
     hf = getattr(pizz, "horario_funcionamento", None) or {}
     if hf:
         partes.append("Tem horário de funcionamento cadastrado (consulte se perguntarem).")
-    return "DADOS REAIS DA PIZZARIA (use só estes; não invente): " + " · ".join(partes)
+    base = "DADOS REAIS DA PIZZARIA (use só estes; não invente): " + " · ".join(partes)
+    if endereco:
+        instr = " | Se o cliente PERGUNTAR o endereço/localização, informe o endereço completo"
+        instr += " e envie o link do mapa." if maps_url else "."
+        base += instr
+    return base
 
 
 import re as _re
@@ -528,6 +539,17 @@ async def processar(
 
     if dados.get("observacoes"):
         decisao["fatos"].append(f"Observação anotada do cliente: '{dados.get('observacoes')}'")
+
+    # Cliente acabou de escolher RETIRADA → informe o endereço de retirada (+ link
+    # do mapa, se cadastrado). Dispara só no turno em que ele escolhe (a NLU só traz
+    # tipo_entrega quando ele menciona), evitando repetir nas próximas mensagens.
+    if dados.get("tipo_entrega") == "retirada" and getattr(ctx.pizzaria, "endereco", None):
+        _end = ctx.pizzaria.endereco
+        _maps = getattr(ctx.pizzaria, "endereco_maps_url", None)
+        _fato = f"O cliente escolheu RETIRADA. Informe o endereço para retirada: {_end}"
+        if _maps:
+            _fato += f" e envie o link do mapa: {_maps}"
+        decisao["fatos"].append(_fato)
 
     # Resolve o carrinho (preços reais) sempre que houver itens
     calc = None

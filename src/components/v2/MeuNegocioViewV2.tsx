@@ -102,6 +102,10 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           <Field label="Endereço" full>
             <input value={form.endereco ?? ""} onChange={(e) => setField("endereco", e.target.value)} className={inputCls}/>
           </Field>
+          <Field label="Link do Google Maps (enviado quando o cliente pergunta o endereço ou escolhe retirada)" full>
+            <input value={form.endereco_maps_url ?? ""} onChange={(e) => setField("endereco_maps_url", e.target.value)}
+              placeholder="https://maps.app.goo.gl/..." className={inputCls}/>
+          </Field>
           <Field label="URL do logo" full>
             <input value={form.logo_url ?? ""} onChange={(e) => setField("logo_url", e.target.value)} className={inputCls}/>
           </Field>
@@ -141,7 +145,7 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
         </div>
       </Card>
 
-      <Card icon={<Clock className="w-4 h-4" />} title="Tempos de entrega (minutos)" accent="sky">
+      <Card icon={<Clock className="w-4 h-4" />} title="Tempos de entrega e retirada (minutos)" accent="sky">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Field label="Delivery mín">
             <input type="number" value={form.tempo_entrega_min ?? 30}
@@ -150,6 +154,14 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           <Field label="Delivery máx">
             <input type="number" value={form.tempo_entrega_max ?? 60}
               onChange={(e) => setField("tempo_entrega_max", Number(e.target.value))} className={inputCls}/>
+          </Field>
+          <Field label="Retirada mín">
+            <input type="number" value={form.tempo_retirada_min ?? 15}
+              onChange={(e) => setField("tempo_retirada_min", Number(e.target.value))} className={inputCls}/>
+          </Field>
+          <Field label="Retirada máx">
+            <input type="number" value={form.tempo_retirada_max ?? 25}
+              onChange={(e) => setField("tempo_retirada_max", Number(e.target.value))} className={inputCls}/>
           </Field>
         </div>
       </Card>

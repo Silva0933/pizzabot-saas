@@ -1593,35 +1593,50 @@ def _resolver_adicionais(pizz_ou_lista, nomes: list[str]) -> tuple[float, list[s
     return round(preco_total, 2), formatados, faltantes
 
 
+def _bairro_taxa_valor(item: dict) -> float | None:
+    """Taxa de um item da tabela de bairros. Retorna None quando NÃO especificada
+    (em branco/ausente) — pra cair na taxa fixa. Um 0 explícito = entrega grátis."""
+    raw = item.get("taxa")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _taxa_para_bairro(pizz, bairro: str | None) -> dict[str, Any]:
-    """Resolve a taxa de entrega: tabela por bairro → taxa fixa → desconhecida."""
+    """Resolve a taxa de entrega: tabela por bairro → taxa fixa → desconhecida.
+
+    Um bairro cadastrado SEM taxa (campo em branco) NÃO vira 0: cai na taxa fixa.
+    Só é grátis quando a taxa do bairro for explicitamente 0.
+    """
     alvo = _normalizar(bairro)
     tabela = pizz.taxas_bairro or []
-    if alvo:
-        for item in tabela:
-            if not isinstance(item, dict):
-                continue
-            if _normalizar(item.get("bairro")) == alvo:
-                try:
-                    taxa = float(item.get("taxa") or 0)
-                except (TypeError, ValueError):
-                    taxa = 0.0
-                return {"bairro": item.get("bairro") or bairro, "taxa": taxa,
-                        "fonte": "bairro", "precisa_confirmar": False}
-        # match parcial (cliente escreve "jd europa", cadastro "Jardim Europa")
-        for item in tabela:
-            if not isinstance(item, dict):
-                continue
-            nb = _normalizar(item.get("bairro"))
-            if nb and (nb in alvo or alvo in nb):
-                try:
-                    taxa = float(item.get("taxa") or 0)
-                except (TypeError, ValueError):
-                    taxa = 0.0
-                return {"bairro": item.get("bairro") or bairro, "taxa": taxa,
-                        "fonte": "bairro_parcial", "precisa_confirmar": False}
-
     fixa = getattr(pizz, "taxa_entrega_fixa", None)
+
+    if alvo:
+        # 1) match exato
+        for item in tabela:
+            if isinstance(item, dict) and _normalizar(item.get("bairro")) == alvo:
+                tv = _bairro_taxa_valor(item)
+                if tv is not None:
+                    return {"bairro": item.get("bairro") or bairro, "taxa": tv,
+                            "fonte": "bairro", "precisa_confirmar": False}
+                break  # bairro existe mas sem taxa → usa a fixa abaixo
+        else:
+            # 2) match parcial ("jd europa" ↔ "Jardim Europa") — só se não houve exato
+            for item in tabela:
+                if not isinstance(item, dict):
+                    continue
+                nb = _normalizar(item.get("bairro"))
+                if nb and (nb in alvo or alvo in nb):
+                    tv = _bairro_taxa_valor(item)
+                    if tv is not None:
+                        return {"bairro": item.get("bairro") or bairro, "taxa": tv,
+                                "fonte": "bairro_parcial", "precisa_confirmar": False}
+                    break
+
     if fixa is not None:
         return {"bairro": bairro, "taxa": float(fixa), "fonte": "fixa", "precisa_confirmar": False}
 
