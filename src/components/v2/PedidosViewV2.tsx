@@ -1,64 +1,61 @@
 /**
- * Pedidos v2 — Kanban com colunas configuráveis, arraste pra mudar status.
- * Conectado ao backend Python.
+ * Pedidos v2 — "Gerenciamento de Pedidos".
+ *
+ * Tela inicial do painel: barra de métricas + filtros (status/data) + grid de
+ * cards com dropdown de status, botão de WhatsApp e excluir. Conectada ao
+ * backend Python. O checklist de onboarding aparece no topo enquanto houver
+ * passos pendentes.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { 
-  Loader2, AlertCircle, Package, Bike, Store as StoreIcon, Clock, 
-  ChevronLeft, ChevronRight, X, Phone, User, MapPin, CreditCard, Clipboard 
+import {
+  Loader2, AlertCircle, Package, Store as StoreIcon, Clock,
+  Phone, MapPin, CreditCard, Trash2, ClipboardList, Hourglass,
+  ChefHat, DollarSign, Filter, MessageCircle, User,
 } from "lucide-react";
 import { pedidosApi, BackendPedido } from "../../lib/api";
+import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
 
 interface Props {
   pizzariaId: string;
   columnNames?: Record<string, string>;
   liveEvent?: { tipo: string; payload: any } | null;
+  onboarding?: OnboardingItem[];
+  onNavigate?: (key: string) => void;
 }
 
-const STATUS_FLOW = ["novo", "confirmado", "no_forno", "a_caminho", "entregue"];
+const STATUS_LIST = ["novo", "confirmado", "no_forno", "a_caminho", "entregue", "cancelado"];
 
-function statusLabelPt(s: string): string {
-  const m: Record<string, string> = {
-    novo: "Novos",
-    confirmado: "Confirmados",
-    no_forno: "No forno",
-    a_caminho: "A caminho",
-    entregue: "Entregues",
-    cancelado: "Cancelados",
-  };
-  return m[s] || s;
-}
-
-type Coluna = {
-  key: string;
-  titulo: string;
-  col: string;      // fundo da coluna
-  grad: string;     // gradiente do cabeçalho
-  dot: string;      // cor do contador/acento
-  bar: string;      // barra lateral do card
+const STATUS_META: Record<string, { label: string; badge: string; dot: string }> = {
+  novo:       { label: "Novo",       badge: "bg-blue-50 text-blue-700 border-blue-200",       dot: "bg-blue-500" },
+  confirmado: { label: "Confirmado", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500" },
+  no_forno:   { label: "No forno",   badge: "bg-amber-50 text-amber-700 border-amber-200",     dot: "bg-amber-500" },
+  a_caminho:  { label: "A caminho",  badge: "bg-violet-50 text-violet-700 border-violet-200",   dot: "bg-violet-500" },
+  entregue:   { label: "Entregue",   badge: "bg-green-50 text-green-700 border-green-200",      dot: "bg-green-500" },
+  cancelado:  { label: "Cancelado",  badge: "bg-rose-50 text-rose-700 border-rose-200",         dot: "bg-rose-500" },
 };
 
-const COLUNAS_DEFAULT: Coluna[] = [
-  { key: "novo",       titulo: "Novos",       col: "bg-blue-50/60 border-blue-200",       grad: "from-blue-500 to-sky-500",       dot: "bg-blue-500",     bar: "bg-blue-400" },
-  { key: "confirmado", titulo: "Confirmados", col: "bg-emerald-50/60 border-emerald-200", grad: "from-emerald-500 to-teal-500",   dot: "bg-emerald-500",  bar: "bg-emerald-400" },
-  { key: "no_forno",   titulo: "No forno",    col: "bg-amber-50/60 border-amber-200",     grad: "from-amber-500 to-orange-500",   dot: "bg-amber-500",    bar: "bg-amber-400" },
-  { key: "a_caminho",  titulo: "A caminho",   col: "bg-violet-50/60 border-violet-200",   grad: "from-violet-500 to-fuchsia-500", dot: "bg-violet-500",   bar: "bg-violet-400" },
-  { key: "entregue",   titulo: "Entregues",   col: "bg-slate-50 border-slate-200",        grad: "from-slate-500 to-slate-600",    dot: "bg-slate-500",    bar: "bg-slate-300" },
-  { key: "cancelado",  titulo: "Cancelados",  col: "bg-rose-50/60 border-rose-200",       grad: "from-rose-500 to-red-500",       dot: "bg-rose-500",     bar: "bg-rose-400" },
-];
+const brl = (n: number | string) =>
+  Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
+export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, onNavigate }: Props) {
   const [pedidos, setPedidos] = useState<BackendPedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [selectedPedido, setSelectedPedido] = useState<BackendPedido | null>(null);
-  const [activeTabMobile, setActiveTabMobile] = useState<string>("novo");
-  // Pedidos com uma mudança de status em andamento (evita clique duplo + lag).
   const [movingIds, setMovingIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+
+  // Filtros
+  const [statusFiltro, setStatusFiltro] = useState<string>("");
+  const [dataDe, setDataDe] = useState<string>("");
+  const [dataAte, setDataAte] = useState<string>("");
+
+  const statusLabel = (key: string) => columnNames?.[key] || STATUS_META[key]?.label || key;
 
   function load() {
-    // Só pedidos de hoje — o fluxo de atendimento começa zerado todo dia.
-    return pedidosApi.list(pizzariaId, { hoje: true }).then(setPedidos).catch((e) => setErr(e.message));
+    return pedidosApi
+      .list(pizzariaId, { limit: 200 })
+      .then(setPedidos)
+      .catch((e) => setErr(e.message));
   }
 
   useEffect(() => {
@@ -68,57 +65,73 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
 
   useEffect(() => {
     if (!liveEvent) return;
-    if (liveEvent.tipo === "pedidos.limpos") { setPedidos([]); setSelectedPedido(null); return; }
+    if (liveEvent.tipo === "pedidos.limpos") { setPedidos([]); return; }
     if (liveEvent.tipo === "pedido.novo" || liveEvent.tipo === "pedido.atualizado") {
-      load().then(() => {
-        if (selectedPedido) {
-          pedidosApi.get(pizzariaId, selectedPedido.id)
-            .then(setSelectedPedido)
-            .catch(() => {});
-        }
-      });
+      load();
     }
   }, [liveEvent]);
 
-  const colunas = useMemo(
-    () => COLUNAS_DEFAULT.map((c) => ({ ...c, titulo: columnNames?.[c.key] || c.titulo })),
-    [columnNames],
-  );
+  // Lista filtrada (status + intervalo de datas), client-side.
+  const filtrados = useMemo(() => {
+    return pedidos.filter((p) => {
+      if (statusFiltro && p.status !== statusFiltro) return false;
+      if (dataDe || dataAte) {
+        const d = new Date(p.created_at);
+        if (dataDe && d < new Date(`${dataDe}T00:00:00`)) return false;
+        if (dataAte && d > new Date(`${dataAte}T23:59:59`)) return false;
+      }
+      return true;
+    });
+  }, [pedidos, statusFiltro, dataDe, dataAte]);
 
-  const grouped = useMemo(() => {
-    const m: Record<string, BackendPedido[]> = {};
-    for (const c of colunas) m[c.key] = [];
-    for (const p of pedidos) {
-      (m[p.status] ||= []).push(p);
-    }
-    return m;
-  }, [pedidos, colunas]);
+  // Métricas (sobre a lista filtrada).
+  const stats = useMemo(() => {
+    const total = filtrados.length;
+    const pendentes = filtrados.filter((p) => p.status === "novo" || p.status === "confirmado").length;
+    const preparando = filtrados.filter((p) => p.status === "no_forno" || p.status === "a_caminho").length;
+    const faturamento = filtrados
+      .filter((p) => p.status !== "cancelado")
+      .reduce((acc, p) => acc + Number(p.valor_total || 0), 0);
+    return { total, pendentes, preparando, faturamento };
+  }, [filtrados]);
 
   async function moveStatus(pedidoId: string, novoStatus: string) {
-    // Bloqueia clique duplo enquanto a ação anterior do mesmo pedido roda.
     if (movingIds.has(pedidoId)) return;
     const anterior = pedidos.find((p) => p.id === pedidoId);
     if (!anterior || anterior.status === novoStatus) return;
 
     setErr(null);
     setMovingIds((s) => new Set(s).add(pedidoId));
-    // Atualização OTIMISTA: move o card imediatamente (sem esperar o servidor).
+    // Otimista
     setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? { ...p, status: novoStatus } : p)));
-    if (selectedPedido?.id === pedidoId) {
-      setSelectedPedido((sp) => (sp ? { ...sp, status: novoStatus } : sp));
-    }
-
     try {
       const updated = await pedidosApi.updateStatus(pizzariaId, pedidoId, novoStatus);
       setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? updated : p)));
-      if (selectedPedido?.id === pedidoId) setSelectedPedido(updated);
     } catch (e: any) {
-      // Falhou → reverte pro estado anterior.
       setErr(e.message);
       setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? anterior : p)));
-      if (selectedPedido?.id === pedidoId) setSelectedPedido(anterior);
     } finally {
       setMovingIds((s) => { const n = new Set(s); n.delete(pedidoId); return n; });
+    }
+  }
+
+  async function removerPedido(p: BackendPedido) {
+    if (deletingIds.has(p.id)) return;
+    const ok = window.confirm(`Excluir o Pedido #${p.numero_pedido ?? "—"}? Esta ação é irreversível.`);
+    if (!ok) return;
+
+    setErr(null);
+    setDeletingIds((s) => new Set(s).add(p.id));
+    const snapshot = pedidos;
+    // Otimista: remove já
+    setPedidos((ps) => ps.filter((x) => x.id !== p.id));
+    try {
+      await pedidosApi.remover(pizzariaId, p.id);
+    } catch (e: any) {
+      setErr(e.message);
+      setPedidos(snapshot); // reverte
+    } finally {
+      setDeletingIds((s) => { const n = new Set(s); n.delete(p.id); return n; });
     }
   }
 
@@ -131,323 +144,268 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent }: Props) {
   }
 
   return (
-    <div className="p-4 md:p-6 pb-24 md:pb-6">
+    <div className="p-4 md:p-6 pb-24 md:pb-6 space-y-4">
+      {/* Onboarding (só enquanto houver pendências) */}
+      {onboarding && onboarding.length > 0 && (
+        <OnboardingChecklist
+          items={onboarding.map((it) => ({
+            ...it,
+            action: it.action,
+          }))}
+        />
+      )}
+
       {err && (
-        <div className="mb-3 flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
           <AlertCircle className="w-4 h-4" /> {err}
         </div>
       )}
 
-      {/* Abas Mobile */}
-      <div className="md:hidden flex gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-none">
-        {colunas.map((col) => {
-          const list = grouped[col.key] || [];
-          const isActive = activeTabMobile === col.key;
-          return (
-            <button
-              key={col.key}
-              type="button"
-              onClick={() => setActiveTabMobile(col.key)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 border cursor-pointer ${
-                isActive 
-                  ? "bg-slate-800 text-white border-slate-800 shadow-sm"
-                  : "bg-white text-slate-600 border-slate-200"
-              }`}
-            >
-              <span>{col.titulo}</span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-extrabold ${
-                isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
-              }`}>
-                {list.length}
-              </span>
-            </button>
-          );
-        })}
+      {/* Barra de métricas */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={ClipboardList} tone="orange" label="Total de Pedidos" value={String(stats.total)} />
+        <StatCard icon={Hourglass} tone="amber" label="Pendentes" value={String(stats.pendentes)} />
+        <StatCard icon={ChefHat} tone="violet" label="Em preparo" value={String(stats.preparando)} />
+        <StatCard icon={DollarSign} tone="emerald" label="Faturamento" value={brl(stats.faturamento)} />
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-3 w-full">
-        {colunas.map((col) => {
-          const list = grouped[col.key] || [];
-          const isMobileActive = activeTabMobile === col.key;
-          return (
-            <div
-              key={col.key}
-              className={`rounded-2xl border ${col.col} p-2.5 transition-all ${
-                isMobileActive 
-                  ? "w-full min-w-0 flex flex-col" 
-                  : "hidden md:flex md:flex-col md:min-w-[270px] md:flex-1"
-              }`}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                const id = e.dataTransfer.getData("pedido_id");
-                if (id) moveStatus(id, col.key);
-              }}
-            >
-              {/* Cabeçalho colorido */}
-              <div className={`flex items-center justify-between rounded-xl px-3 py-2 mb-2.5 bg-gradient-to-r ${col.grad} text-white shadow-sm`}>
-                <h3 className="text-sm font-semibold">{col.titulo}</h3>
-                <span className="text-xs font-bold bg-white/25 rounded-full min-w-[20px] h-5 px-1.5 grid place-items-center">
-                  {list.length}
-                </span>
-              </div>
+      {/* Cabeçalho + filtros */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-4 md:px-5 py-3.5 bg-gradient-to-r from-orange-500 to-rose-500 text-white flex items-center gap-2.5">
+          <ClipboardList className="w-5 h-5" />
+          <h2 className="font-bold text-base md:text-lg">Gerenciamento de Pedidos</h2>
+        </div>
 
-              <div className="space-y-2">
-                {list.map((p) => {
-                  const isDelivery = (p.tipo || "").toLowerCase().includes("entrega");
-                  const statusIdx = STATUS_FLOW.indexOf(p.status);
-                  return (
-                    <article
-                      key={p.id}
-                      draggable
-                      onDragStart={(e) => e.dataTransfer.setData("pedido_id", p.id)}
-                      onClick={() => setSelectedPedido(p)}
-                      className="relative bg-white border border-slate-200 rounded-xl p-3 pl-3.5 shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all overflow-hidden"
-                    >
-                      <span className={`absolute left-0 top-0 bottom-0 w-1 ${col.bar}`} />
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-                          #{p.numero_pedido ?? "—"}
-                          {p.cliente?.nome && (
-                            <span className="text-[11px] font-normal text-slate-500 max-w-[120px] truncate">
-                              · {p.cliente.nome}
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-sm font-bold text-emerald-600">
-                          {Number(p.valor_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                        </span>
-                      </div>
-                      <ul className="text-xs text-slate-600 space-y-0.5">
-                        {(p.itens || []).slice(0, 3).map((it, idx) => (
-                          <li key={idx} className="flex gap-1.5">
-                            <span className="text-orange-500 font-semibold">{(it.quantidade ?? (it as any).qtd ?? 1)}×</span>
-                            <span className="truncate">{it.nome}</span>
-                          </li>
-                        ))}
-                        {(p.itens?.length ?? 0) > 3 && (
-                          <li className="text-slate-400">+{p.itens.length - 3} itens</li>
-                        )}
-                        {(p.itens?.length ?? 0) === 0 && (
-                          <li className="text-slate-400 italic text-[11px]">Rascunho (sem itens)</li>
-                        )}
-                      </ul>
-                      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-100">
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                          isDelivery ? "bg-sky-50 text-sky-600" : "bg-amber-50 text-amber-600"
-                        }`}>
-                          {isDelivery ? <Bike className="w-3 h-3" /> : <StoreIcon className="w-3 h-3" />}
-                          {isDelivery ? "Entrega" : "Retirada"}
-                        </span>
-                        
-                        {/* Botões de seta para mudar status */}
-                        <div className="flex items-center gap-1 ml-auto">
-                          {statusIdx > 0 && (
-                            <button
-                              type="button"
-                              disabled={movingIds.has(p.id)}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveStatus(p.id, STATUS_FLOW[statusIdx - 1]);
-                              }}
-                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-wait"
-                              title="Voltar status"
-                            >
-                              <ChevronLeft className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {new Date(p.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                          {statusIdx < STATUS_FLOW.length - 1 && statusIdx >= 0 && (
-                            <button
-                              type="button"
-                              disabled={movingIds.has(p.id)}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                moveStatus(p.id, STATUS_FLOW[statusIdx + 1]);
-                              }}
-                              className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-wait"
-                              title="Avançar status"
-                            >
-                              <ChevronRight className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-                {list.length === 0 && (
-                  <div className="text-xs text-slate-400 text-center py-8">
-                    <Package className="w-5 h-5 mx-auto mb-1.5 opacity-40" />
-                    Nenhum pedido
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modal de Resumo do Pedido */}
-      {selectedPedido && (
-        <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-          onClick={() => setSelectedPedido(null)}
-        >
-          <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]"
-            onClick={(e) => e.stopPropagation()}
+        <div className="p-3 md:p-4 flex flex-col sm:flex-row gap-2.5 border-b border-slate-100">
+          <select
+            value={statusFiltro}
+            onChange={(e) => setStatusFiltro(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:border-orange-400 bg-white"
           >
-            {/* Header */}
-            <div className="relative px-5 py-4 bg-gradient-to-r from-orange-500 to-rose-500 text-white flex items-center justify-between shrink-0">
-              <div>
-                <h3 className="font-bold text-lg">Resumo do Pedido #{selectedPedido.numero_pedido ?? "—"}</h3>
-                <p className="text-xs text-white/80">Criado em {new Date(selectedPedido.created_at).toLocaleString("pt-BR")}</p>
-              </div>
-              <button 
-                onClick={() => setSelectedPedido(null)}
-                className="p-1.5 rounded-lg hover:bg-white/20 transition-colors cursor-pointer text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+            <option value="">Todos os status</option>
+            {STATUS_LIST.map((s) => (
+              <option key={s} value={s}>{statusLabel(s)}</option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={dataDe}
+            onChange={(e) => setDataDe(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:border-orange-400"
+          />
+          <input
+            type="date"
+            value={dataAte}
+            onChange={(e) => setDataAte(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 outline-none focus:border-orange-400"
+          />
+          <button
+            type="button"
+            onClick={() => { setLoading(true); load().finally(() => setLoading(false)); }}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 text-white rounded-lg text-sm font-semibold transition-opacity shadow-sm shadow-orange-500/20 shrink-0 cursor-pointer"
+          >
+            <Filter className="w-4 h-4" /> Filtrar
+          </button>
+        </div>
+
+        {/* Grid de cards */}
+        <div className="p-3 md:p-4">
+          {filtrados.length === 0 ? (
+            <div className="text-sm text-slate-400 text-center py-14">
+              <Package className="w-7 h-7 mx-auto mb-2 opacity-40" />
+              Nenhum pedido encontrado para os filtros selecionados.
             </div>
-
-            {/* Conteúdo rolável */}
-            <div className="p-6 space-y-5 overflow-y-auto">
-              
-              {/* Cliente */}
-              <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-slate-500" /> Dados do Cliente
-                </h4>
-                <div className="space-y-1 text-sm">
-                  <p className="font-bold text-slate-800">{selectedPedido.cliente?.nome || "Cliente Novo"}</p>
-                  <p className="text-slate-600 flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-slate-400" />
-                    {selectedPedido.cliente?.telefone ? (
-                      <a href={`https://wa.me/${selectedPedido.cliente.telefone}`} target="_blank" rel="noopener noreferrer" className="text-orange-500 hover:underline">
-                        {selectedPedido.cliente.telefone}
-                      </a>
-                    ) : "—"}
-                  </p>
-                </div>
-              </div>
-
-              {/* Itens */}
-              <div>
-                <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                  <Package className="w-3.5 h-3.5 text-slate-500" /> Itens do Pedido
-                </h4>
-                <div className="border border-slate-100 rounded-xl overflow-hidden divide-y divide-slate-100">
-                  {selectedPedido.itens && selectedPedido.itens.length > 0 ? (
-                    selectedPedido.itens.map((it, idx) => (
-                      <div key={idx} className="p-3 bg-white flex items-start justify-between gap-3 text-sm">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex gap-2 items-center">
-                            <span className="text-orange-500 font-bold shrink-0">{(it.quantidade ?? (it as any).qtd ?? 1)}×</span>
-                            <span className="font-medium text-slate-800 truncate">{it.nome}</span>
-                          </div>
-                          {it.observacao && (
-                            <p className="text-xs text-slate-400 mt-0.5 pl-6">{it.observacao}</p>
-                          )}
-                        </div>
-                        <span className="font-semibold text-slate-700 shrink-0">
-                          {(() => {
-                            const pu = Number((it as any).preco_unit ?? (it as any).preco ?? 0);
-                            const q = Number(it.quantidade ?? (it as any).qtd ?? 1);
-                            return pu > 0 ? (pu * q).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—";
-                          })()}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-4 bg-slate-50/50 text-slate-400 text-xs text-center italic">
-                      Nenhum item adicionado (rascunho de pedido em criação)
-                    </div>
-                  )}
-                  <div className="p-3 bg-slate-50/30 flex justify-between items-center text-sm border-t border-slate-100 font-bold text-slate-800">
-                    <span>Total</span>
-                    <span className="text-emerald-600 text-base">
-                      {Number(selectedPedido.valor_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Detalhes de entrega / pagamento */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100/60">
-                  <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-slate-500" /> Entrega
-                  </h5>
-                  <p className="text-xs font-semibold text-slate-700">
-                    {selectedPedido.tipo === "delivery" ? "Delivery / Entrega" : "Retirada no Balcão"}
-                  </p>
-                  {selectedPedido.tipo === "delivery" && (
-                    <p className="text-xs text-slate-500 mt-1 break-words">{selectedPedido.endereco_entrega || "Endereço não informado"}</p>
-                  )}
-                </div>
-
-                <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100/60">
-                  <h5 className="text-[11px] font-bold text-slate-400 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                    <CreditCard className="w-3.5 h-3.5 text-slate-500" /> Pagamento
-                  </h5>
-                  <p className="text-xs font-semibold text-slate-700 capitalize">
-                    {selectedPedido.forma_pagamento || "Não informado"}
-                  </p>
-                  <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
-                    <span className={`w-2 h-2 rounded-full ${selectedPedido.payment_status === "approved" ? "bg-emerald-500" : "bg-amber-500"}`} />
-                    Status: {selectedPedido.payment_status === "approved" ? "Aprovado" : "Pendente"}
-                  </p>
-                </div>
-              </div>
-
-              {/* Observações adicionais */}
-              {selectedPedido.observacoes && (
-                <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3">
-                  <h5 className="text-[11px] font-bold text-amber-800 uppercase tracking-wide mb-1 flex items-center gap-1">
-                    <Clipboard className="w-3.5 h-3.5 text-amber-600" /> Observações do Pedido
-                  </h5>
-                  <p className="text-xs text-amber-900">{selectedPedido.observacoes}</p>
-                </div>
-              )}
-
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filtrados.map((p) => (
+                <PedidoCard
+                  key={p.id}
+                  pedido={p}
+                  statusLabel={statusLabel}
+                  moving={movingIds.has(p.id)}
+                  deleting={deletingIds.has(p.id)}
+                  onStatus={(s) => moveStatus(p.id, s)}
+                  onDelete={() => removerPedido(p)}
+                />
+              ))}
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-            {/* Rodapé / Ações rápidas de status */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2 justify-between shrink-0">
-              {STATUS_FLOW.indexOf(selectedPedido.status) > 0 ? (
-                <button
-                  onClick={() => {
-                    const statusIdx = STATUS_FLOW.indexOf(selectedPedido.status);
-                    const prevStatus = STATUS_FLOW[statusIdx - 1];
-                    moveStatus(selectedPedido.id, prevStatus);
-                  }}
-                  className="flex items-center gap-1 px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-bold transition-colors shadow-sm cursor-pointer"
-                >
-                  <ChevronLeft className="w-4 h-4" /> Voltar para {statusLabelPt(STATUS_FLOW[STATUS_FLOW.indexOf(selectedPedido.status) - 1])}
-                </button>
-              ) : <div />}
+// ============================================
+// Card de métrica
+// ============================================
+const TONE: Record<string, { bg: string; text: string }> = {
+  orange:  { bg: "bg-orange-50",  text: "text-orange-600" },
+  amber:   { bg: "bg-amber-50",   text: "text-amber-600" },
+  violet:  { bg: "bg-violet-50",  text: "text-violet-600" },
+  emerald: { bg: "bg-emerald-50", text: "text-emerald-600" },
+};
 
-              {STATUS_FLOW.indexOf(selectedPedido.status) < STATUS_FLOW.length - 1 && STATUS_FLOW.indexOf(selectedPedido.status) >= 0 ? (
-                <button
-                  onClick={() => {
-                    const statusIdx = STATUS_FLOW.indexOf(selectedPedido.status);
-                    const nextStatus = STATUS_FLOW[statusIdx + 1];
-                    moveStatus(selectedPedido.id, nextStatus);
-                  }}
-                  className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 text-white rounded-xl text-xs font-bold transition-colors shadow-md shadow-orange-500/20 cursor-pointer"
-                >
-                  Avançar para {statusLabelPt(STATUS_FLOW[STATUS_FLOW.indexOf(selectedPedido.status) + 1])} <ChevronRight className="w-4 h-4" />
-                </button>
-              ) : <div />}
-            </div>
+interface StatCardProps {
+  icon: React.ComponentType<{ className?: string }>;
+  tone: string; label: string; value: string;
+}
 
+const StatCard: React.FC<StatCardProps> = ({ icon: Icon, tone, label, value }) => {
+  const t = TONE[tone] || TONE.orange;
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-3.5 shadow-sm flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-xl ${t.bg} flex items-center justify-center shrink-0`}>
+        <Icon className={`w-5 h-5 ${t.text}`} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide truncate">{label}</p>
+        <p className="text-lg font-bold text-slate-800 leading-tight truncate">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Card de pedido
+// ============================================
+interface PedidoCardProps {
+  pedido: BackendPedido;
+  statusLabel: (k: string) => string;
+  moving: boolean;
+  deleting: boolean;
+  onStatus: (s: string) => void;
+  onDelete: () => void;
+}
+
+const PedidoCard: React.FC<PedidoCardProps> = ({ pedido: p, statusLabel, moving, deleting, onStatus, onDelete }) => {
+  const isDelivery = (p.tipo || "").toLowerCase().includes("deliv") || (p.tipo || "").toLowerCase().includes("entrega");
+  const meta = STATUS_META[p.status] || STATUS_META.novo;
+  const tel = p.cliente?.telefone;
+
+  return (
+    <article className="relative bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-2 border-b border-slate-100">
+        <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+          <ClipboardList className="w-4 h-4 text-slate-400" />
+          Pedido #{p.numero_pedido ?? "—"}
+        </span>
+        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${meta.badge}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+          {statusLabel(p.status)}
+        </span>
+      </div>
+
+      <div className="px-4 py-3 space-y-2.5 flex-1">
+        {/* Cliente / contato */}
+        <div className="space-y-1 text-sm">
+          <p className="flex items-center gap-1.5 text-slate-700">
+            <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="font-semibold truncate">{p.cliente?.nome || "Cliente novo"}</span>
+          </p>
+          <p className="flex items-center gap-1.5 text-slate-500 text-xs">
+            <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            {tel ? (
+              <a href={`https://wa.me/${tel}`} target="_blank" rel="noopener noreferrer" className="text-orange-600 hover:underline">{tel}</a>
+            ) : "—"}
+          </p>
+          <p className="flex items-start gap-1.5 text-slate-500 text-xs">
+            {isDelivery ? <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" /> : <StoreIcon className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />}
+            <span className="break-words">
+              {isDelivery ? (p.endereco_entrega || "Endereço não informado") : "Retirada no balcão"}
+            </span>
+          </p>
+        </div>
+
+        {/* Itens */}
+        <div className="pt-2 border-t border-slate-100">
+          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Itens</p>
+          <ul className="space-y-0.5 text-xs text-slate-600">
+            {(p.itens || []).length === 0 && (
+              <li className="text-slate-400 italic">Rascunho (sem itens)</li>
+            )}
+            {(p.itens || []).map((it, idx) => {
+              const q = Number(it.quantidade ?? (it as any).qtd ?? 1);
+              const pu = Number((it as any).preco_unit ?? (it as any).preco ?? 0);
+              return (
+                <li key={idx} className="flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    <span className="text-orange-500 font-semibold">{q}×</span> {it.nome}
+                  </span>
+                  {pu > 0 && <span className="text-slate-500 shrink-0">{brl(pu * q)}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        {/* Total / pagamento */}
+        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[11px] text-slate-400">Total</p>
+            <p className="text-base font-bold text-emerald-600">{brl(p.valor_total)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] text-slate-400">Pagamento</p>
+            <p className="text-xs font-semibold text-slate-700 flex items-center gap-1 justify-end capitalize">
+              <CreditCard className="w-3.5 h-3.5 text-slate-400" />
+              {p.forma_pagamento || "—"}
+            </p>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Observações */}
+        {p.observacoes && (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
+            <span className="font-semibold">Obs:</span> {p.observacoes}
+          </p>
+        )}
+      </div>
+
+      {/* Footer: status + WhatsApp + excluir */}
+      <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
+        <div className="flex items-center gap-2">
+          <select
+            value={p.status}
+            disabled={moving}
+            onChange={(e) => onStatus(e.target.value)}
+            className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-orange-400 disabled:opacity-50 cursor-pointer"
+          >
+            {STATUS_LIST.map((s) => (
+              <option key={s} value={s}>{statusLabel(s)}</option>
+            ))}
+          </select>
+          {moving && <Loader2 className="w-4 h-4 animate-spin text-orange-500 shrink-0" />}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {tel && (
+            <a
+              href={`https://wa.me/${tel}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={deleting}
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            Excluir
+          </button>
+        </div>
+
+        <p className="text-[10px] text-slate-400 flex items-center gap-1 pt-0.5">
+          <Clock className="w-3 h-3" />
+          {new Date(p.created_at).toLocaleString("pt-BR")}
+        </p>
+      </div>
+    </article>
   );
 }

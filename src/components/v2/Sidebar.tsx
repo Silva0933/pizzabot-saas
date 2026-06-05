@@ -6,7 +6,6 @@
  */
 import React from "react";
 import {
-  Home,
   MessageSquare,
   ClipboardList,
   UtensilsCrossed,
@@ -33,10 +32,9 @@ export interface SidebarProps {
 }
 
 const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "inicio",    label: "Início",       icon: Home },
+  { key: "pedidos",   label: "Pedidos",      icon: ClipboardList },
   { key: "analise",   label: "Análise",      icon: TrendingUp },
   { key: "conversas", label: "Conversas",    icon: MessageSquare },
-  { key: "pedidos",   label: "Pedidos",      icon: ClipboardList },
   { key: "cardapio",  label: "Cardápio",     icon: UtensilsCrossed },
   { key: "negocio",   label: "Meu Negócio",  icon: Store },
 ];

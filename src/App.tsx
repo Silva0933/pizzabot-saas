@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock } from "lucide-react";
 import {
-  AppShell, NAV_PAGE_META, InicioDashboard, LandingPage,
+  AppShell, NAV_PAGE_META, LandingPage,
 } from "./components/v2";
 import type { NavKey } from "./components/v2/Sidebar";
 import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
@@ -23,7 +23,7 @@ import { MetricasView } from "./components/v2/MetricasView";
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent,
-  backendToPizzeria, backendToOrder, backendToConversation,
+  backendToOrder, backendToConversation,
   clearTokens, getToken, ApiError,
 } from "./lib/api";
 
@@ -93,7 +93,7 @@ export default function App() {
   const [conversations, setConversations] = useState<any[]>([]);
   const [productCount, setProductCount] = useState(0);
   const [atendenteOk, setAtendenteOk] = useState(false);
-  const [nav, setNav] = useState<NavKey>("inicio");
+  const [nav, setNav] = useState<NavKey>("pedidos");
   const [liveEvent, setLiveEvent] = useState<WsEvent | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -153,10 +153,10 @@ export default function App() {
     if (pizzaria) refreshData(pizzaria);
   }, [pizzaria?.id]);
 
-  // Ao voltar pro Início, recarrega os dados para o checklist refletir
-  // configurações concluídas em outras telas (ex.: produtos cadastrados).
+  // Ao voltar pra tela inicial (Pedidos), recarrega os dados para o checklist
+  // de onboarding refletir configurações concluídas em outras telas.
   useEffect(() => {
-    if (pizzaria && nav === "inicio") refreshData(pizzaria);
+    if (pizzaria && nav === "pedidos") refreshData(pizzaria);
   }, [nav]);
 
   // ============================================
@@ -324,7 +324,6 @@ export default function App() {
   // Render: painel completo
   // ============================================
   const meta = NAV_PAGE_META[nav];
-  const pizzeriaOld = backendToPizzeria(pizzaria);
 
   return (
     <AppShell
@@ -334,7 +333,7 @@ export default function App() {
         if (k === "admin" && user.is_platform_admin) {
           setPizzaria(null);
           loadPizzarias();
-          setNav("inicio");
+          setNav("pedidos");
           return;
         }
         setNav(k as NavKey);
@@ -358,12 +357,13 @@ export default function App() {
     >
       <AssinaturaAviso venceEm={pizzaria.plano_vence_em ?? null} suspensa={pizzaria.suspensa ?? false} />
 
-      {nav === "inicio" && (
-        <InicioDashboard
-          pizzeria={pizzeriaOld}
-          orders={orders}
-          conversations={conversations}
-          productCount={productCount}
+      {nav === "conversas" && <ConversasViewV2 pizzariaId={pizzaria.id} liveEvent={liveEvent}/>}
+      {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
+      {nav === "pedidos"   && (
+        <PedidosViewV2
+          pizzariaId={pizzaria.id}
+          columnNames={pizzaria.nomes_colunas ?? undefined}
+          liveEvent={liveEvent}
           onNavigate={(k) => setNav(k as NavKey)}
           onboarding={[
             {
@@ -390,10 +390,6 @@ export default function App() {
           ]}
         />
       )}
-
-      {nav === "conversas" && <ConversasViewV2 pizzariaId={pizzaria.id} liveEvent={liveEvent}/>}
-      {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
-      {nav === "pedidos"   && <PedidosViewV2 pizzariaId={pizzaria.id} columnNames={pizzaria.nomes_colunas ?? undefined} liveEvent={liveEvent}/>}
       {nav === "cardapio"  && <CardapioViewV2 pizzariaId={pizzaria.id}/>}
       {nav === "negocio"   && (
         <MeuNegocioViewV2 pizzaria={pizzaria} onUpdated={setPizzaria}/>

@@ -233,3 +233,45 @@ async def apagar_todos_pedidos(
         },
     )
     return {"ok": True, "pedidos_deletados": deletados}
+
+
+# ============================================
+# Apagar UM pedido (painel + banco)
+# ============================================
+# IMPORTANTE: declarada DEPOIS de "/todos" para que o roteamento case a rota
+# literal "/todos" antes deste path param "/{pedido_id}".
+@router.delete("/{pedido_id}")
+async def deletar_pedido(
+    pizzaria_id: uuid.UUID,
+    pedido_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Exclui um pedido específico (irreversível). Notifica o painel via WS."""
+    p = (
+        await db.execute(
+            select(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+        )
+    ).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
+
+    numero = p.numero_pedido
+    await db.execute(
+        delete(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+    )
+    await db.commit()
+
+    await broadcaster.publish(
+        pizzaria_id,
+        {
+            "tipo": "pedido.atualizado",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {
+                "pedido_id": str(pedido_id),
+                "numero_pedido": numero,
+                "deletado": True,
+            },
+        },
+    )
+    return {"ok": True}

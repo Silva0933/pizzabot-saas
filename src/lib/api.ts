@@ -337,6 +337,8 @@ export const pedidosApi = {
       `/pizzarias/${pizzariaId}/pedidos/todos`,
       { method: "DELETE", headers: { "X-Confirm-Delete": "true" } as any },
     ),
+  remover: (pizzariaId: string, pedidoId: string) =>
+    api.delete<{ ok: boolean }>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}`),
 };
 
 // ============================================
