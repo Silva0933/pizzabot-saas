@@ -154,6 +154,18 @@ export default function App() {
     if (pizzaria) refreshData(pizzaria);
   }, [pizzaria?.id]);
 
+  // Re-busca a pizzaria ao focar a aba: pega mudanças feitas fora (ex.: o admin
+  // suspendeu/reativou) sem o operador precisar recarregar a página.
+  useEffect(() => {
+    if (!pizzaria) return;
+    const pid = pizzaria.id;
+    function onFocus() {
+      pizzariasApi.get(pid).then(setPizzaria).catch(() => {});
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [pizzaria?.id]);
+
   // Ao voltar pra tela inicial (Pedidos), recarrega os dados para o checklist
   // de onboarding refletir configurações concluídas em outras telas.
   useEffect(() => {
@@ -301,7 +313,12 @@ export default function App() {
       userName={user.nome}
       pizzarias={pizzarias}
       onRefresh={() => loadPizzarias().then(() => {})}
-      onEnter={(p) => setPizzaria(p)}
+      onEnter={async (p) => {
+        // Busca o estado FRESCO ao entrar (ex.: suspensa/vencimento podem ter
+        // mudado no admin) — senão o painel entraria com um objeto em cache.
+        try { setPizzaria(await pizzariasApi.get(p.id)); }
+        catch { setPizzaria(p); }
+      }}
       onLogout={handleLogout}
     />
   );
@@ -353,7 +370,11 @@ export default function App() {
       notifPermission={"default" as NotificationPermission}
       onEnableNotifications={() => {}}
     >
-      <AssinaturaAviso venceEm={pizzaria.plano_vence_em ?? null} suspensa={pizzaria.suspensa ?? false} />
+      <AssinaturaAviso
+        venceEm={pizzaria.plano_vence_em ?? null}
+        suspensa={pizzaria.suspensa ?? false}
+        suspensaMotivo={pizzaria.suspensa_motivo ?? null}
+      />
 
       {nav === "conversas" && <ConversasViewV2 pizzariaId={pizzaria.id} liveEvent={liveEvent}/>}
       {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
@@ -404,27 +425,39 @@ export default function App() {
 // ============================================
 // Aviso sutil de assinatura (atraso / suspensão) no painel do dono
 // ============================================
-function AssinaturaAviso({ venceEm, suspensa }: { venceEm: string | null; suspensa: boolean }) {
-  if (!suspensa && !venceEm) return null;
-
-  let dias: number | null = null;
-  if (venceEm) {
-    dias = Math.ceil((new Date(venceEm).getTime() - Date.now()) / 86_400_000);
+function AssinaturaAviso({ venceEm, suspensa, suspensaMotivo }: {
+  venceEm: string | null;
+  suspensa: boolean;
+  suspensaMotivo?: string | null;
+}) {
+  // ---- Suspensão: aviso PROMINENTE e fixo (não pode passar despercebido) ----
+  if (suspensa) {
+    return (
+      <div className="sticky top-0 z-20 mx-3 md:mx-6 mt-3 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3.5 flex items-start gap-3 shadow-sm">
+        <AlertCircle className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-sm md:text-base font-bold text-red-800">Seu painel está suspenso</p>
+          <p className="text-xs md:text-sm text-red-700 mt-1 leading-snug">
+            O atendimento automático no WhatsApp está <strong>desligado</strong>
+            {suspensaMotivo ? <> — motivo: <strong>{suspensaMotivo}</strong></> : null}.
+            {" "}Para reativar e obter mais informações, entre em contato com o administrador / suporte.
+          </p>
+        </div>
+      </div>
+    );
   }
 
-  // Só mostra se suspensa, vencida (dias<0) ou bem perto (<=3 dias).
-  if (!suspensa && (dias === null || dias > 3)) return null;
+  // ---- Vencimento de assinatura: aviso discreto ----
+  if (!venceEm) return null;
+  const dias = Math.ceil((new Date(venceEm).getTime() - Date.now()) / 86_400_000);
+  // Só mostra se vencida (dias<0) ou bem perto (<=3 dias).
+  if (dias > 3) return null;
 
   let cls = "bg-amber-50 border-amber-200 text-amber-800";
-  let msg = "";
-  if (suspensa) {
-    cls = "bg-red-50 border-red-200 text-red-800";
-    msg = "Atendimento suspenso por pendência financeira. Regularize com o suporte para reativar.";
-  } else if (dias !== null && dias < 0) {
+  let msg = `Sua assinatura vence em ${dias} dia(s). Fique atento para não interromper o atendimento.`;
+  if (dias < 0) {
     cls = "bg-red-50 border-red-200 text-red-800";
     msg = `Sua assinatura está em atraso há ${Math.abs(dias)} dia(s). Regularize para evitar a suspensão do atendimento.`;
-  } else {
-    msg = `Sua assinatura vence em ${dias} dia(s). Fique atento para não interromper o atendimento.`;
   }
 
   return (
