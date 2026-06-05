@@ -11,8 +11,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock } from "lucide-react";
 import {
-  AppShell, NAV_PAGE_META, LandingPage,
+  AppShell, NAV_PAGE_META,
 } from "./components/v2";
+// LandingPage desconectada por opção do dono (vai direto pro login). O componente
+// continua existindo em ./components/v2 — pra reativar, reimporte-o aqui.
 import type { NavKey } from "./components/v2/Sidebar";
 import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
 import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
@@ -82,7 +84,6 @@ export default function App() {
   const [authSenha, setAuthSenha] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authErr, setAuthErr] = useState<string | null>(null);
-  const [showLogin, setShowLogin] = useState(false);
 
   // ============================================
   // Workspace
@@ -278,21 +279,18 @@ export default function App() {
   // Render: login
   // ============================================
   if (!user) {
-    if (showLogin) {
-      return (
-        <LoginScreen
-          email={authEmail}
-          setEmail={setAuthEmail}
-          senha={authSenha}
-          setSenha={setAuthSenha}
-          loading={authLoading}
-          err={authErr}
-          onSubmit={handleLogin}
-          onBack={() => setShowLogin(false)}
-        />
-      );
-    }
-    return <LandingPage onAccessLogin={() => setShowLogin(true)} />;
+    // Sem LandingPage: usuário não autenticado cai direto na tela de login.
+    return (
+      <LoginScreen
+        email={authEmail}
+        setEmail={setAuthEmail}
+        senha={authSenha}
+        setSenha={setAuthSenha}
+        loading={authLoading}
+        err={authErr}
+        onSubmit={handleLogin}
+      />
+    );
   }
 
   // ============================================
