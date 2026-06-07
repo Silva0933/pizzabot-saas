@@ -52,6 +52,9 @@ class PizzariaPatch(BaseModel):
     gateway_pagamento: str | None = None
     asaas_api_key: str | None = None
     mp_access_token: str | None = None
+    modo_pagamento_online: str | None = None
+    pix_manual_copia_cola: str | None = None
+    pix_manual_titular: str | None = None
     tempo_entrega_min: int | None = None
     tempo_entrega_max: int | None = None
     tempo_retirada_min: int | None = None
@@ -84,6 +87,9 @@ class PizzariaOut(BaseModel):
     gateway_pagamento: str | None = None
     asaas_api_key: str | None = None
     mp_access_token: str | None = None
+    modo_pagamento_online: str | None = None
+    pix_manual_copia_cola: str | None = None
+    pix_manual_titular: str | None = None
     tempo_entrega_min: int | None = None
     tempo_entrega_max: int | None = None
     tempo_retirada_min: int | None = None

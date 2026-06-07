@@ -98,6 +98,14 @@ class Pizzaria(Base):
     gateway_pagamento: Mapped[str] = mapped_column(String, default="mercadopago", nullable=False)
     mp_access_token: Mapped[str | None] = mapped_column(Text)
     asaas_api_key: Mapped[str | None] = mapped_column(Text)
+    # Modo de pagamento na conversa: 'automatico' (gateway MP/Asaas — padrão),
+    # 'manual' (Pix copia-e-cola próprio + conferência manual) ou 'desativado'
+    # (só na entrega/retirada; a atendente não oferece pagamento online).
+    modo_pagamento_online: Mapped[str] = mapped_column(String, default="automatico", nullable=False)
+    # Pix copia-e-cola próprio da pizzaria (modo manual). NÃO é segredo — é
+    # compartilhado com o cliente — então guardado em texto puro (sem cripto).
+    pix_manual_copia_cola: Mapped[str | None] = mapped_column(Text)
+    pix_manual_titular: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

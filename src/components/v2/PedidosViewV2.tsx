@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Loader2, AlertCircle, Package, Store as StoreIcon, Clock,
   Phone, MapPin, CreditCard, Trash2, ClipboardList, Hourglass,
-  ChefHat, DollarSign, Filter, MessageCircle, User,
+  ChefHat, DollarSign, Filter, MessageCircle, User, Receipt, Check, X,
 } from "lucide-react";
 import { pedidosApi, BackendPedido } from "../../lib/api";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
@@ -43,6 +43,9 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   const [err, setErr] = useState<string | null>(null);
   const [movingIds, setMovingIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [payingIds, setPayingIds] = useState<Set<string>>(new Set());
+  // Pedidos cujo comprovante já chegou nesta sessão (destaque mais forte no card).
+  const [comprovanteIds, setComprovanteIds] = useState<Set<string>>(new Set());
 
   // Filtros
   const [statusFiltro, setStatusFiltro] = useState<string>("");
@@ -66,7 +69,17 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   useEffect(() => {
     if (!liveEvent) return;
     if (liveEvent.tipo === "pedidos.limpos") { setPedidos([]); return; }
-    if (liveEvent.tipo === "pedido.novo" || liveEvent.tipo === "pedido.atualizado") {
+    if (liveEvent.tipo === "pedido.comprovante" || liveEvent.tipo === "pagamento.comprovante") {
+      const pid = liveEvent.payload?.pedido_id;
+      if (pid) setComprovanteIds((s) => new Set(s).add(pid));
+      load();
+      return;
+    }
+    if (
+      liveEvent.tipo === "pedido.novo" ||
+      liveEvent.tipo === "pedido.atualizado" ||
+      liveEvent.tipo === "pagamento.manual_pendente"
+    ) {
       load();
     }
   }, [liveEvent]);
@@ -132,6 +145,25 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       setPedidos(snapshot); // reverte
     } finally {
       setDeletingIds((s) => { const n = new Set(s); n.delete(p.id); return n; });
+    }
+  }
+
+  // Conferência do Pix manual: confirma (aprova + avisa cliente) ou rejeita.
+  async function conferirPagamento(pedidoId: string, acao: "confirmar" | "rejeitar") {
+    if (payingIds.has(pedidoId)) return;
+    if (acao === "rejeitar" && !window.confirm("Rejeitar este pagamento? O cliente será avisado para tentar de novo ou pagar na entrega.")) return;
+    setErr(null);
+    setPayingIds((s) => new Set(s).add(pedidoId));
+    try {
+      const updated = acao === "confirmar"
+        ? await pedidosApi.confirmarPagamento(pizzariaId, pedidoId)
+        : await pedidosApi.rejeitarPagamento(pizzariaId, pedidoId);
+      setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? updated : p)));
+      setComprovanteIds((s) => { const n = new Set(s); n.delete(pedidoId); return n; });
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setPayingIds((s) => { const n = new Set(s); n.delete(pedidoId); return n; });
     }
   }
 
@@ -224,8 +256,11 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
                   statusLabel={statusLabel}
                   moving={movingIds.has(p.id)}
                   deleting={deletingIds.has(p.id)}
+                  paying={payingIds.has(p.id)}
+                  comprovante={comprovanteIds.has(p.id)}
                   onStatus={(s) => moveStatus(p.id, s)}
                   onDelete={() => removerPedido(p)}
+                  onConferir={(acao) => conferirPagamento(p.id, acao)}
                 />
               ))}
             </div>
@@ -274,17 +309,22 @@ interface PedidoCardProps {
   statusLabel: (k: string) => string;
   moving: boolean;
   deleting: boolean;
+  paying: boolean;
+  comprovante: boolean;
   onStatus: (s: string) => void;
   onDelete: () => void;
+  onConferir: (acao: "confirmar" | "rejeitar") => void;
 }
 
-const PedidoCard: React.FC<PedidoCardProps> = ({ pedido: p, statusLabel, moving, deleting, onStatus, onDelete }) => {
+const PedidoCard: React.FC<PedidoCardProps> = ({ pedido: p, statusLabel, moving, deleting, paying, comprovante, onStatus, onDelete, onConferir }) => {
   const isDelivery = (p.tipo || "").toLowerCase().includes("deliv") || (p.tipo || "").toLowerCase().includes("entrega");
   const meta = STATUS_META[p.status] || STATUS_META.novo;
   const tel = p.cliente?.telefone;
+  // Pix manual aguardando conferência da equipe.
+  const aguardandoConferencia = p.payment_status === "em_analise";
 
   return (
-    <article className="relative bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+    <article className={`relative bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col ${aguardandoConferencia ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200"}`}>
       {/* Header */}
       <div className="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-2 border-b border-slate-100">
         <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
@@ -296,6 +336,14 @@ const PedidoCard: React.FC<PedidoCardProps> = ({ pedido: p, statusLabel, moving,
           {statusLabel(p.status)}
         </span>
       </div>
+
+      {/* Faixa de conferência do Pix manual */}
+      {aguardandoConferencia && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+          <Receipt className="w-3.5 h-3.5" />
+          {comprovante ? "Comprovante recebido — confira o pagamento" : "Pix manual — aguardando comprovante"}
+        </div>
+      )}
 
       <div className="px-4 py-3 space-y-2.5 flex-1">
         {/* Cliente / contato */}
@@ -365,6 +413,30 @@ const PedidoCard: React.FC<PedidoCardProps> = ({ pedido: p, statusLabel, moving,
 
       {/* Footer: status + WhatsApp + excluir */}
       <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/60 space-y-2">
+        {/* Conferência do Pix manual: confirmar / rejeitar o pagamento */}
+        {aguardandoConferencia && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onConferir("confirmar")}
+              disabled={paying}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              {paying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              Confirmar pagamento
+            </button>
+            <button
+              type="button"
+              onClick={() => onConferir("rejeitar")}
+              disabled={paying}
+              className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              Rejeitar
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <select
             value={p.status}

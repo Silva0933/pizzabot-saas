@@ -127,21 +127,58 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
       </Card>
 
       <Card icon={<CreditCard className="w-4 h-4" />} title="Pagamentos" accent="violet">
-        <div className="grid md:grid-cols-2 gap-3">
-          <Field label="Gateway">
-            <select value={form.gateway_pagamento ?? "mercadopago"}
-              onChange={(e) => setField("gateway_pagamento", e.target.value)} className={inputCls}>
-              <option value="mercadopago">Mercado Pago</option>
-              <option value="asaas">Asaas</option>
-              <option value="manual">Manual (sem cobrança automática)</option>
+        <div className="space-y-3">
+          <Field label="Pagamento na conversa — como a atendente recebe do cliente">
+            <select value={form.modo_pagamento_online ?? "automatico"}
+              onChange={(e) => setField("modo_pagamento_online", e.target.value)} className={inputCls}>
+              <option value="automatico">Automático — cobrança pelo provedor (Mercado Pago / Asaas)</option>
+              <option value="manual">Manual — Pix próprio (você confere o comprovante)</option>
+              <option value="desativado">Desativado — só na entrega/retirada</option>
             </select>
           </Field>
-          <Field label="MP access token">
-            <input type="password" value={form.mp_access_token ?? ""} onChange={(e) => setField("mp_access_token", e.target.value)} className={inputCls}/>
-          </Field>
-          <Field label="Asaas API key" full>
-            <input type="password" value={form.asaas_api_key ?? ""} onChange={(e) => setField("asaas_api_key", e.target.value)} className={inputCls}/>
-          </Field>
+
+          {(form.modo_pagamento_online ?? "automatico") === "automatico" && (
+            <div className="grid md:grid-cols-2 gap-3">
+              <Field label="Gateway">
+                <select value={form.gateway_pagamento ?? "mercadopago"}
+                  onChange={(e) => setField("gateway_pagamento", e.target.value)} className={inputCls}>
+                  <option value="mercadopago">Mercado Pago</option>
+                  <option value="asaas">Asaas</option>
+                </select>
+              </Field>
+              <Field label="MP access token">
+                <input type="password" value={form.mp_access_token ?? ""} onChange={(e) => setField("mp_access_token", e.target.value)} className={inputCls}/>
+              </Field>
+              <Field label="Asaas API key" full>
+                <input type="password" value={form.asaas_api_key ?? ""} onChange={(e) => setField("asaas_api_key", e.target.value)} className={inputCls}/>
+              </Field>
+            </div>
+          )}
+
+          {(form.modo_pagamento_online ?? "automatico") === "manual" && (
+            <div className="space-y-3">
+              <Field label="Pix copia-e-cola (a atendente envia este código pro cliente pagar)" full>
+                <textarea value={form.pix_manual_copia_cola ?? ""}
+                  onChange={(e) => setField("pix_manual_copia_cola", e.target.value)}
+                  placeholder="Cole aqui o seu código Pix copia-e-cola (gerado no app do seu banco)"
+                  rows={3} className={inputCls}/>
+              </Field>
+              <Field label="Nome do recebedor (opcional — aparece como 'em nome de …')">
+                <input value={form.pix_manual_titular ?? ""} onChange={(e) => setField("pix_manual_titular", e.target.value)} className={inputCls}/>
+              </Field>
+              <p className="text-xs text-slate-500">
+                A atendente envia o código automaticamente e pede o comprovante. Você confere e
+                confirma o pagamento no card do pedido (Pedidos → Confirmar/Rejeitar).
+              </p>
+            </div>
+          )}
+
+          {(form.modo_pagamento_online ?? "automatico") === "desativado" && (
+            <p className="text-xs text-slate-500">
+              A atendente <strong>não oferece pagamento online</strong>: o cliente paga só na
+              entrega ou retirada (dinheiro/cartão).
+            </p>
+          )}
         </div>
       </Card>
 

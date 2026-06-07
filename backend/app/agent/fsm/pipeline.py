@@ -7,15 +7,76 @@ Retorna um AgentResult (compatível com o runner antigo) OU None para indicar
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
 CONFIANCA_MINIMA = 0.6
 QUEBRA = "[QUEBRA]"
+
+# Sinais de que o cliente está enviando o comprovante do Pix manual.
+_COMPROVANTE_KW = re.compile(
+    r"(paguei|pagei|comprovante|fiz o pix|ja paguei|já paguei|ta pago|tá pago|"
+    r"transferi|segue o|comprov|pagamento feito|acabei de pagar)",
+    re.IGNORECASE,
+)
+
+
+def _parece_comprovante(user_input: str) -> bool:
+    """True se a mensagem é (provavelmente) o comprovante: imagem ou frase de 'paguei'."""
+    t = (user_input or "").lower()
+    if "[imagem]" in t:
+        return True
+    return bool(_COMPROVANTE_KW.search(t))
+
+
+async def _checar_comprovante_manual(db: AsyncSession, ctx, telefone: str, user_input: str):
+    """Pix manual: se há um pedido aguardando conferência ('em_analise') e o cliente
+    mandou o comprovante (imagem/'paguei'), dá um ack, notifica o painel e RETORNA —
+    sem rodar o funil, pra a LLM não reabrir o pedido. Aditivo: só atua nesse caso."""
+    from app.agent.memory import append_turn
+    from app.agent.runner import AgentResult
+    from app.agent.tools import _notificar_painel_pagamento_manual
+    from app.models import Pedido
+
+    if not _parece_comprovante(user_input) or not ctx.cliente:
+        return None
+
+    ped = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id == ctx.cliente.id,
+            Pedido.payment_status == "em_analise",
+            Pedido.status.in_(["novo", "confirmado", "no_forno"]),
+        ).order_by(Pedido.created_at.desc())
+    )).scalars().first()
+    if not ped:
+        return None
+
+    await _notificar_painel_pagamento_manual(
+        db, ctx.pizzaria.id, ped, telefone,
+        evento="pagamento.comprovante",
+        texto_sistema=(
+            f"📎 Comprovante recebido do cliente (pedido #{ped.numero_pedido}) — "
+            "confira e confirme o pagamento."
+        ),
+    )
+
+    msg = "Recebi! 🙏 Vou conferir com a equipe e já te confirmo, tá?"
+    try:
+        await append_turn(db, ctx.pizzaria.id, telefone, role="user", content=user_input)
+        await append_turn(db, ctx.pizzaria.id, telefone, role="assistant", content=msg)
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao salvar memória (comprovante): %s", e)
+    await db.commit()
+    return AgentResult(
+        texto=msg, iteracoes=1, tool_calls=["fsm:comprovante_recebido"], precos_tool=set(),
+    )
 
 
 async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str, user_input: str):
@@ -36,6 +97,12 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     if provider not in ("openai", "openrouter", "gemini") or not api_key:
         # FSM atual roda no caminho OpenAI-compatível (NLU/voz via chat). Sem isso, fallback.
         return None
+
+    # Pix manual: comprovante de um pedido aguardando conferência tem prioridade —
+    # responde, notifica o painel e NÃO roda o funil (a LLM não reabre o pedido).
+    res_comprovante = await _checar_comprovante_manual(db, ctx, telefone, user_input)
+    if res_comprovante is not None:
+        return res_comprovante
 
     # Estado (carrinho/etapa). Se não for FSM ainda, inicia.
     estado = await load_state(db, pizzaria_id, telefone)

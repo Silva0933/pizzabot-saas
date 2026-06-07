@@ -119,6 +119,8 @@ def _montar_registro_msg(numero: Any, tempo: str | None, metodo_cobr: str | None
         linhas.append(f"Fica pronto em aproximadamente {tempo}.")
     if cobr_ok and metodo_cobr == "pix":
         linhas.append("O QR e o código Pix estão aí em cima — assim que o pagamento cair, eu confirmo pra você! 😊")
+    elif cobr_ok and metodo_cobr == "pix_manual":
+        linhas.append("O código Pix está aí em cima — é só pagar e me mandar o comprovante que a equipe confirma! 😊")
     elif cobr_ok and metodo_cobr:
         linhas.append("O link de pagamento está aí em cima — é só finalizar por lá. 😊")
     else:
@@ -258,6 +260,12 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
 
 def _online(pagamento: str | None) -> bool:
     return (pagamento or "") in ("pix", "cartao")
+
+
+def _modo_pagamento(pizz) -> str:
+    """Modo de pagamento na conversa: 'automatico' | 'manual' | 'desativado'.
+    Default 'automatico' (comportamento histórico)."""
+    return getattr(pizz, "modo_pagamento_online", None) or "automatico"
 
 
 def _fatos_pizzaria(pizz) -> str:
@@ -791,7 +799,16 @@ async def processar(
         "observacoes": estado.get("observacoes"),
     }
 
-    falta_pagar_agora = _online(estado.get("pagamento")) and estado.get("pagar_agora") is None
+    # Modo de pagamento na conversa. Em 'desativado', nunca há "pagar agora pela
+    # conversa": força pagar na entrega mesmo que o cliente tenha dito Pix.
+    modo_pag = _modo_pagamento(ctx.pizzaria)
+    if modo_pag == "desativado":
+        estado["pagar_agora"] = False
+    falta_pagar_agora = (
+        modo_pag != "desativado"
+        and _online(estado.get("pagamento"))
+        and estado.get("pagar_agora") is None
+    )
     tudo_coletado = (
         bool(estado.get("tipo"))
         and (estado["tipo"] != "delivery" or bool(estado.get("endereco")))
@@ -821,13 +838,16 @@ async def processar(
         decisao["acao"] = "pedido_registrado"
         pag = reg.get("pagamento") or {}
         cobr_ok = bool(pag.get("ok"))
-        metodo_cobr = pag.get("metodo")  # "pix" | "link" (cartão/checkout)
+        metodo_cobr = pag.get("metodo")  # "pix" | "pix_manual" | "link" (cartão/checkout)
         decisao["dados"] = {"numero_pedido": reg.get("numero_pedido"),
                             "tempo_estimado": reg.get("tempo_estimado")}
         # Mensagem de pagamento adaptada ao MÉTODO real (não assume Pix).
         if cobr_ok and metodo_cobr == "pix":
             pag_fato = "O QR e o código Pix JÁ foram enviados ao cliente acima."
             pag_pergunta = "Avise que o Pix (QR + código) está aí em cima e que você confirma assim que o pagamento cair."
+        elif cobr_ok and metodo_cobr == "pix_manual":
+            pag_fato = "O código Pix (copia-e-cola) JÁ foi enviado ao cliente acima."
+            pag_pergunta = "Avise que o Pix está aí em cima e que, assim que ele mandar o comprovante, a equipe confere e confirma."
         elif cobr_ok and metodo_cobr:  # link de cartão/checkout
             pag_fato = "O LINK de pagamento (cartão) JÁ foi enviado ao cliente acima."
             pag_pergunta = "Avise que o link de pagamento está aí em cima e que você confirma assim que o pagamento cair."
@@ -888,14 +908,21 @@ async def processar(
         # Se temos o cálculo com a taxa de entrega resolvida, instrui a IA a informá-la
         bairro = (calc.get("bairro_detectado") or "seu bairro") if calc else "seu bairro"
         taxa = float(calc.get("taxa_entrega") or 0.0) if calc else 0.0
+        # Em 'desativado' não há pagamento online: ofereça só na entrega/retirada.
+        local = "na retirada" if estado.get("tipo") == "retirada" else "na entrega"
+        formas_txt = (
+            f"a forma de pagamento (dinheiro ou cartão {local})"
+            if modo_pag == "desativado"
+            else "a forma de pagamento (pix, cartão ou dinheiro)"
+        )
         if calc and calc.get("ok") and estado.get("tipo") == "delivery":
             taxa_str = f"de R$ {taxa:.2f}".replace(".", ",") if taxa > 0 else "grátis"
             decisao["proxima_pergunta"] = (
                 f"Informe ao cliente que a taxa de entrega para {bairro} é {taxa_str}. "
-                "Em seguida, pergunte SÓ a forma de pagamento (pix, cartão ou dinheiro). Não repita o total."
+                f"Em seguida, pergunte SÓ {formas_txt}. Não repita o total."
             )
         else:
-            decisao["proxima_pergunta"] = "Pergunte SÓ a forma de pagamento (pix, cartão ou dinheiro). Não repita o total."
+            decisao["proxima_pergunta"] = f"Pergunte SÓ {formas_txt}. Não repita o total."
         return {"decisao": decisao, "estado": estado}
 
     # 4) pagar agora ou na entrega (se online)

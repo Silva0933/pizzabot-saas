@@ -1105,7 +1105,18 @@ async def registrar_pedido(
     # Confirmação condicionada ao pagamento: se for PAGAR AGORA via pix/cartão,
     # o pedido fica "novo" (aguardando pagamento) e só vira "confirmado" quando o
     # webhook do gateway aprovar. Pagar na entrega/dinheiro → confirma na hora.
-    aguardando_pagamento = bool(_metodo_online(forma_pagamento) and pagar_agora)
+    # Modo de pagamento na conversa da pizzaria.
+    modo_pag = getattr(ctx.pizzaria, "modo_pagamento_online", None) or "automatico"
+    pix_manual_cfg = (getattr(ctx.pizzaria, "pix_manual_copia_cola", None) or "").strip()
+    # 'manual' sem copia-e-cola cadastrado → não dá pra cobrar online: trata como
+    # pagamento na entrega (nunca promete um Pix que não vai enviar).
+    manual_indisponivel = modo_pag == "manual" and not pix_manual_cfg
+    aguardando_pagamento = bool(
+        _metodo_online(forma_pagamento)
+        and pagar_agora
+        and modo_pag != "desativado"
+        and not manual_indisponivel
+    )
     novo_status = "novo" if aguardando_pagamento else "confirmado"
 
     status_anterior = ped.status if ped else None
@@ -1176,7 +1187,14 @@ async def registrar_pedido(
         "aguardando_pagamento": aguardando_pagamento,
         "status_pedido": novo_status,
     }
-    if aguardando_pagamento:
+    if aguardando_pagamento and modo_pag == "manual":
+        resultado["instrucao"] = (
+            "Pedido registrado, mas AINDA NÃO confirmado: o cliente vai pagar via Pix e MANDAR O "
+            "COMPROVANTE. NÃO diga 'pedido confirmado/no preparo' agora. Diga que mandou o Pix "
+            "(copia-e-cola) e que, assim que ele enviar o comprovante, a equipe confere e confirma. "
+            "NÃO diga que a confirmação é automática."
+        )
+    elif aguardando_pagamento:
         resultado["instrucao"] = (
             "Pedido registrado, mas AINDA NÃO confirmado: ele só entra no preparo quando o "
             "Pix/cartão for pago. NÃO diga 'pedido confirmado/no preparo' agora. Diga que mandou "
@@ -1203,9 +1221,12 @@ async def registrar_pedido(
 
     # Cobrança só é gerada se o cliente escolheu PAGAR AGORA via pix/cartão.
     metodo = _metodo_online(forma_pagamento)
-    if metodo and pagar_agora:
-        cobranca = await _gerar_cobranca(ctx, db, ped, metodo)
-        resultado["pagamento"] = cobranca
+    if metodo and pagar_agora and modo_pag == "manual" and pix_manual_cfg:
+        # Pix manual: envia o copia-e-cola próprio da pizzaria + conferência manual.
+        resultado["pagamento"] = await _enviar_pix_manual(ctx, db, ped, pix_manual_cfg)
+    elif metodo and pagar_agora and modo_pag == "automatico":
+        resultado["pagamento"] = await _gerar_cobranca(ctx, db, ped, metodo)
+    # 'desativado' ou manual-indisponível: sem cobrança online (pagamento na entrega).
 
     return resultado
 
@@ -1294,6 +1315,97 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
             "confirme o pedido e avise que o QR e o código Pix foram enviados acima."
             if cob.metodo == "pix"
             else "Link de pagamento gerado. Envie o link_pagamento ao cliente."
+        ),
+    }
+
+
+async def _notificar_painel_pagamento_manual(
+    db: AsyncSession,
+    pizzaria_id: uuid.UUID,
+    ped: Pedido,
+    telefone: str,
+    *,
+    evento: str,
+    texto_sistema: str,
+) -> None:
+    """Posta uma mensagem de sistema na conversa e avisa o painel em tempo real.
+    Reusado pelo envio do Pix manual e pela chegada do comprovante. Best-effort."""
+    from app.services.broadcaster import broadcaster
+    try:
+        conv = (await db.execute(
+            select(Conversa).where(
+                Conversa.pizzaria_id == pizzaria_id,
+                Conversa.cliente_telefone == telefone,
+            )
+        )).scalar_one_or_none()
+        if conv:
+            m = Mensagem(
+                conversa_id=conv.id, pizzaria_id=pizzaria_id, origem="sistema",
+                tipo="texto", conteudo=texto_sistema,
+                metadata_json={"trigger": evento, "pedido_id": str(ped.id)},
+            )
+            db.add(m)
+            conv.last_message = texto_sistema
+            await db.flush()
+            await broadcaster.publish(pizzaria_id, {
+                "tipo": "mensagem.nova", "pizzaria_id": str(pizzaria_id),
+                "payload": {
+                    "conversa_id": str(conv.id), "mensagem_id": str(m.id),
+                    "telefone": telefone, "conteudo": texto_sistema, "origem": "sistema",
+                },
+            })
+        await broadcaster.publish(pizzaria_id, {
+            "tipo": evento, "pizzaria_id": str(pizzaria_id),
+            "payload": {
+                "pedido_id": str(ped.id), "numero_pedido": ped.numero_pedido,
+                "telefone": telefone, "payment_status": ped.payment_status,
+            },
+        })
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao notificar painel (pagamento manual): %s", e)
+
+
+async def _enviar_pix_manual(ctx: AgentContext, db: AsyncSession, ped: Pedido, copia_cola: str) -> dict[str, Any]:
+    """Modo manual: envia o copia-e-cola PRÓPRIO da pizzaria ao cliente, marca o
+    pedido como 'em_analise' (aguardando conferência da equipe) e notifica o painel.
+    Não usa gateway — a confirmação é feita à mão no Kanban."""
+    from app.services.evolution import evolution
+
+    ped.payment_status = "em_analise"
+    await db.flush()
+
+    titular = (getattr(ctx.pizzaria, "pix_manual_titular", None) or "").strip()
+    valor_str = f"R$ {float(ped.valor_total):.2f}".replace(".", ",")
+
+    # Envia o Pix ao cliente: intro com o valor + o código copia-e-cola SOZINHO numa
+    # mensagem separada (facilita copiar com um toque), igual ao fluxo do gateway.
+    if ctx.pizzaria.instancia:
+        try:
+            intro = f"💳 Pix de {valor_str}"
+            if titular:
+                intro += f" (em nome de {titular})"
+            intro += (
+                " — copie o código abaixo e pague no app do seu banco. "
+                "Depois me manda o comprovante que a equipe confirma! 🙏"
+            )
+            await evolution.send_text(instancia=ctx.pizzaria.instancia, numero=ctx.telefone, texto=intro)
+            await evolution.send_text(instancia=ctx.pizzaria.instancia, numero=ctx.telefone, texto=copia_cola)
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha ao enviar Pix manual (copia-e-cola): %s", e)
+
+    await _notificar_painel_pagamento_manual(
+        db, ctx.pizzaria.id, ped, ctx.telefone,
+        evento="pagamento.manual_pendente",
+        texto_sistema=f"💸 Pix manual enviado ({valor_str}) — aguardando o comprovante do cliente.",
+    )
+
+    return {
+        "ok": True,
+        "metodo": "pix_manual",
+        "valor": float(ped.valor_total),
+        "instrucao": (
+            "Pix (copia-e-cola) JÁ enviado ao cliente acima — NÃO repita o código no seu texto. "
+            "Confirme o pedido e avise que, assim que ele mandar o comprovante, a equipe confere e confirma."
         ),
     }
 

@@ -183,6 +183,88 @@ async def update_status(
 
 
 # ============================================
+# Pagamento manual: confirmar / rejeitar (conferência do comprovante)
+# ============================================
+async def _broadcast_pagamento(pizzaria_id: uuid.UUID, p: Pedido, old_payment: str) -> None:
+    await broadcaster.publish(
+        pizzaria_id,
+        {
+            "tipo": "pedido.atualizado",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {
+                "pedido_id": str(p.id),
+                "numero_pedido": p.numero_pedido,
+                "payment_status": p.payment_status,
+                "payment_status_anterior": old_payment,
+                "status": p.status,
+            },
+        },
+    )
+
+
+@router.post("/{pedido_id}/pagamento/confirmar", response_model=PedidoOut)
+async def confirmar_pagamento(
+    pizzaria_id: uuid.UUID,
+    pedido_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> Pedido:
+    """Confirma manualmente o pagamento (Pix manual conferido pela equipe).
+    Avança o pedido para 'confirmado' e avisa o cliente."""
+    p = (
+        await db.execute(
+            select(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+        )
+    ).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
+
+    old_payment = p.payment_status
+    if old_payment == "approved":
+        return p  # idempotente
+
+    p.payment_status = "approved"
+    if p.status == "novo":
+        p.status = "confirmado"
+    await db.flush()
+    await enviar_mensagem_status(db, p, "pagamento_aprovado")
+    await db.commit()
+    await db.refresh(p)
+    await _broadcast_pagamento(pizzaria_id, p, old_payment)
+    return p
+
+
+@router.post("/{pedido_id}/pagamento/rejeitar", response_model=PedidoOut)
+async def rejeitar_pagamento(
+    pizzaria_id: uuid.UUID,
+    pedido_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> Pedido:
+    """Rejeita o pagamento manual (comprovante não bateu). Mantém o pedido em 'novo'
+    e avisa o cliente pra tentar de novo ou pagar na entrega."""
+    p = (
+        await db.execute(
+            select(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+        )
+    ).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
+
+    old_payment = p.payment_status
+    if old_payment == "approved":
+        raise HTTPException(status.HTTP_409_CONFLICT, "Pagamento já aprovado; não pode ser rejeitado.")
+
+    p.payment_status = "rejected"
+    await db.flush()
+    await enviar_mensagem_status(db, p, "pagamento_falhou")
+    await db.commit()
+    await db.refresh(p)
+    await _broadcast_pagamento(pizzaria_id, p, old_payment)
+    return p
+
+
+# ============================================
 # Apagar TODOS os pedidos da pizzaria (painel + banco)
 # ============================================
 @router.delete("/todos")

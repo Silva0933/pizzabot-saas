@@ -122,6 +122,9 @@ export interface BackendPizzaria {
   gateway_pagamento: string;
   asaas_api_key: string | null;
   mp_access_token: string | null;
+  modo_pagamento_online?: string | null;
+  pix_manual_copia_cola?: string | null;
+  pix_manual_titular?: string | null;
   tempo_entrega_min?: number | null;
   tempo_entrega_max?: number | null;
   tempo_retirada_min?: number | null;
@@ -342,6 +345,10 @@ export const pedidosApi = {
     ),
   remover: (pizzariaId: string, pedidoId: string) =>
     api.delete<{ ok: boolean }>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}`),
+  confirmarPagamento: (pizzariaId: string, pedidoId: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/pagamento/confirmar`),
+  rejeitarPagamento: (pizzariaId: string, pedidoId: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/pagamento/rejeitar`),
 };
 
 // ============================================
