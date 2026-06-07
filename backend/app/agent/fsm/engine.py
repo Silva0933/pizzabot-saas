@@ -9,6 +9,7 @@ o pedido quando confirmado. Devolve uma "decisão" estruturada para a camada de 
 from __future__ import annotations
 
 import logging
+import re as _re
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -266,6 +267,63 @@ def _modo_pagamento(pizz) -> str:
     """Modo de pagamento na conversa: 'automatico' | 'manual' | 'desativado'.
     Default 'automatico' (comportamento histórico)."""
     return getattr(pizz, "modo_pagamento_online", None) or "automatico"
+
+
+# Recusa explícita ao upsell ("não", "só a pizza", "tá bom assim", "pode fechar").
+_RECUSA_UPSELL_RE = _re.compile(
+    r"\b(n[aã]o|nada|só (a|o|isso|essa|esse)|so (a|o|isso|essa|esse)|"
+    r"t[aá] (bom|certo|ok|tranquilo)|deixa( pra)? (la|lá)|sem mais|"
+    r"pode fechar|fechar o pedido|s[oó] (isso|essa|esse))\b",
+    _re.IGNORECASE,
+)
+# Aceite ao upsell ("quero", "sim", "pode", "manda", "aceito", "também"...).
+_ACEITA_UPSELL_RE = _re.compile(
+    r"^\s*(quero|sim|claro|pode|pode ser|aceito|bora|manda|vou querer|quero sim|"
+    r"isso|opa sim|tamb[eé]m|tambem|por que n[aã]o|adoraria|com certeza)\b",
+    _re.IGNORECASE,
+)
+
+
+def _afirmou_upsell(intencao: str | None, texto: str) -> bool:
+    """True quando o cliente ACEITOU o upsell (quer adicionar algo) — mesmo sem
+    dizer o quê. Recusa explícita ('não', 'só a pizza') tem prioridade e vence."""
+    t = (texto or "").strip().lower()
+    if _RECUSA_UPSELL_RE.search(t):
+        return False
+    if intencao in ("confirmar_resumo", "adicionar_item"):
+        return True
+    return bool(_ACEITA_UPSELL_RE.match(t))
+
+
+async def _opcoes_upsell(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
+    """Levanta o que a pizzaria REALMENTE tem pra oferecer no upsell: bebidas (do
+    cardápio) e bordas/adicionais (cadastro da casa). Só oferecemos o que existe —
+    assim a atendente nunca propõe algo que não há. Best-effort."""
+    bebidas: list[str] = []
+    try:
+        from sqlalchemy import text as _text
+        rows = (await db.execute(_text(
+            "SELECT nome FROM public.produtos "
+            "WHERE pizzaria_id = :pid AND disponivel = true "
+            "AND (categoria ILIKE '%bebida%' OR categoria ILIKE '%refri%' "
+            "     OR categoria ILIKE '%suco%' OR categoria ILIKE '%drink%') "
+            "ORDER BY ordem, nome LIMIT 12"
+        ), {"pid": str(ctx.pizzaria.id)})).fetchall()
+        bebidas = [r[0] for r in rows if r[0]]
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao consultar bebidas p/ upsell: %s", e)
+
+    bordas: list[str] = []
+    adicionais: list[str] = []
+    adic_cfg = getattr(ctx.pizzaria, "adicionais", None)
+    if isinstance(adic_cfg, list):
+        for a in adic_cfg:
+            if not isinstance(a, dict) or not a.get("nome"):
+                continue
+            tipo = (a.get("tipo") or "adicional").lower()
+            (bordas if "borda" in tipo else adicionais).append(a["nome"])
+
+    return {"bebidas": bebidas, "bordas": bordas, "adicionais": adicionais}
 
 
 def _fatos_pizzaria(pizz) -> str:
@@ -868,24 +926,63 @@ async def processar(
         )
         return {"decisao": decisao, "estado": estado}
 
-    # 0) UPSELL sutil — uma única vez, logo após o 1º item entrar no carrinho.
+    # 0a) RESPOSTA ao upsell: no turno anterior oferecemos bebida/borda/adicional e
+    # estamos esperando o cliente responder. Se ele ACEITOU mas NÃO disse o quê
+    # (ex.: só "quero"), LISTAMOS as opções reais e perguntamos qual — em vez de
+    # seguir direto pro funil (bug: pedido fechava sem a bebida que o cliente quis).
+    if estado.get("aguardando_upsell"):
+        estado["aguardando_upsell"] = False
+        adicionou_algo = bool(dados.get("produtos"))  # _aplicar_nlu já pôs no carrinho
+        if not adicionou_algo and _afirmou_upsell(intencao, user_input):
+            opc = await _opcoes_upsell(ctx, db)
+            partes = []
+            if opc["bebidas"]:
+                partes.append("Bebidas: " + ", ".join(opc["bebidas"][:8]))
+            if opc["bordas"]:
+                partes.append("Bordas: " + ", ".join(opc["bordas"][:8]))
+            if opc["adicionais"]:
+                partes.append("Adicionais: " + ", ".join(opc["adicionais"][:8]))
+            if partes:
+                estado["etapa"] = "COLETA_ITENS"
+                decisao["acao"] = "coletar_item"
+                decisao["fatos"].append(
+                    "O cliente quer adicionar algo, mas não disse o quê. Opções REAIS "
+                    "disponíveis (ofereça só estas, com os nomes exatos) — " + " | ".join(partes)
+                )
+                decisao["proxima_pergunta"] = (
+                    "Liste de forma curta as opções acima e pergunte QUAL ele quer. "
+                    "NÃO adicione nada ainda nem invente itens; espere ele escolher."
+                )
+                return {"decisao": decisao, "estado": estado}
+        # Recusou, mudou de assunto, ou já escolheu um item → segue o funil normal.
+
+    # 0b) UPSELL sutil — uma única vez, logo após o 1º item entrar no carrinho.
+    # Só oferece o que a casa REALMENTE tem (bebida/borda/adicional); se não há nada
+    # pra oferecer, pula o upsell silenciosamente.
     if not estado.get("upsell_feito"):
         estado["upsell_feito"] = True
-        estado["etapa"] = "COLETA_ITENS"
-        decisao["acao"] = "upsell"
-        tem_borda = any(
-            isinstance(a, dict) and (a.get("tipo") or "").lower() == "borda"
-            for a in (getattr(ctx.pizzaria, "adicionais", None) or [])
-        )
-        # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
-        itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
-        decisao["fatos"].append("Anotei: " + "; ".join(itens_nomes))
-        oferta = "uma borda recheada ou uma bebida" if tem_borda else "uma bebida"
-        decisao["proxima_pergunta"] = (
-            f"De forma SUTIL e curta, pergunte se ele quer adicionar mais alguma coisa ({oferta}). "
-            "Só ofereça borda se eu citei que há borda. Uma vez só, sem insistir; se ele recusar, siga."
-        )
-        return {"decisao": decisao, "estado": estado}
+        opc = await _opcoes_upsell(ctx, db)
+        ofertas = []
+        if opc["bordas"]:
+            ofertas.append("uma borda recheada")
+        if opc["adicionais"]:
+            ofertas.append("um adicional")
+        if opc["bebidas"]:
+            ofertas.append("uma bebida")
+        if ofertas:
+            estado["etapa"] = "COLETA_ITENS"
+            estado["aguardando_upsell"] = True
+            decisao["acao"] = "upsell"
+            # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
+            itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
+            decisao["fatos"].append("Anotei: " + "; ".join(itens_nomes))
+            oferta = " ou ".join(ofertas)
+            decisao["proxima_pergunta"] = (
+                f"De forma SUTIL e curta, pergunte se ele quer adicionar {oferta}. "
+                "Ofereça SÓ o que eu citei aqui. Uma vez só, sem insistir; se ele recusar, siga."
+            )
+            return {"decisao": decisao, "estado": estado}
+        # Nada pra oferecer → não faz upsell; cai direto no funil (entrega/pagamento).
 
     # 1) tipo de entrega
     if not estado.get("tipo"):
