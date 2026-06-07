@@ -720,24 +720,37 @@ async def processar(
             estado["etapa"] = "COLETA_ITENS"
 
             if prod_inv:
-                prod_inv_lower = prod_inv.lower()
-                is_beverage = any(k in prod_inv_lower for k in ("bebida", "refrigerante", "refri", "suco", "agua", "coca", "fanta", "guarana", "sprite", "soda", "cerva", "cerveja", "chopp", "lata", "garrafa"))
+                import unicodedata as _ud
+                # Normaliza (sem acento) pra casar 'guaraná'→'guarana', 'água'→'agua' etc.
+                prod_inv_norm = "".join(
+                    c for c in _ud.normalize("NFD", prod_inv.lower()) if _ud.category(c) != "Mn"
+                )
+                is_beverage = any(k in prod_inv_norm for k in ("bebida", "refrigerante", "refri", "suco", "agua", "coca", "fanta", "guarana", "sprite", "soda", "cerva", "cerveja", "chopp", "lata", "garrafa"))
                 if is_beverage:
                     try:
-                        from app.agent.tools import buscar_cardapio
-                        card_res = await buscar_cardapio(ctx, db, query="bebida", limit=15)
-                        items_beb = [i for i in card_res.get("items", []) if "preco" in i]
-                        if items_beb:
-                            principal = items_beb[0]["nome"]
-                            extras = ", ".join(i["nome"] for i in items_beb[1:5])
+                        # Usa a consulta por CATEGORIA (não query texto, que cai no
+                        # cardápio inteiro): pega só as bebidas reais, pelos nomes.
+                        opc = await _opcoes_upsell(ctx, db)
+                        nomes_beb = opc.get("bebidas") or []
+                        if len(nomes_beb) == 1:
                             decisao["fatos"].append(
-                                f"A bebida que o cliente pediu não existe. Ofereça como alternativa: {principal}"
-                                + (f" (também temos: {extras})" if extras else "")
-                                + ". Pergunte se pode ser."
+                                "O cliente pediu uma bebida que NÃO existe no cardápio. Diga com clareza "
+                                f"que não temos essa e ofereça PELO NOME a ÚNICA bebida que temos: {nomes_beb[0]}. "
+                                f"NÃO diga 'outras opções' nem invente — temos só {nomes_beb[0]}. Pergunte se pode ser."
                             )
-                            # Guarda a sugestão: se no PRÓXIMO turno o cliente disser
-                            # "pode ser"/"sim", a gente adiciona ESTE item ao carrinho.
-                            estado["sugestao_item"] = principal
+                            estado["sugestao_item"] = nomes_beb[0]
+                        elif nomes_beb:
+                            decisao["fatos"].append(
+                                "O cliente pediu uma bebida que NÃO existe no cardápio. Diga que não temos essa "
+                                f"e ofereça PELO NOME as bebidas que TEMOS: {', '.join(nomes_beb[:6])}. "
+                                "Pergunte qual ele quer. NÃO invente bebidas fora dessa lista."
+                            )
+                            estado["sugestao_item"] = nomes_beb[0]
+                        else:
+                            decisao["fatos"].append(
+                                "O cliente pediu uma bebida e a casa NÃO tem bebidas cadastradas. Diga com "
+                                "clareza que não temos bebidas e siga com o pedido. NÃO invente nenhuma."
+                            )
                     except Exception:
                         pass
                 else:
@@ -976,10 +989,23 @@ async def processar(
             # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
             itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
             decisao["fatos"].append("Anotei: " + "; ".join(itens_nomes))
-            oferta = " ou ".join(ofertas)
+            # Passa os nomes REAIS pra voz oferecer sem inventar marca/sabor (bug:
+            # ela oferecia "coca ou guaraná" mesmo sem guaraná no cardápio).
+            partes = []
+            if opc["bebidas"]:
+                partes.append("bebidas (" + ", ".join(opc["bebidas"][:6]) + ")")
+            if opc["bordas"]:
+                partes.append("bordas (" + ", ".join(opc["bordas"][:6]) + ")")
+            if opc["adicionais"]:
+                partes.append("adicionais (" + ", ".join(opc["adicionais"][:6]) + ")")
+            decisao["fatos"].append(
+                "Opções REAIS disponíveis (use SÓ estes nomes exatos, nada além): " + " · ".join(partes)
+            )
             decisao["proxima_pergunta"] = (
-                f"De forma SUTIL e curta, pergunte se ele quer adicionar {oferta}. "
-                "Ofereça SÓ o que eu citei aqui. Uma vez só, sem insistir; se ele recusar, siga."
+                "De forma SUTIL e curta, pergunte se ele quer adicionar algo pra acompanhar, "
+                "citando SOMENTE as opções reais que eu listei acima (pelos nomes exatos). "
+                "NUNCA invente bebidas, marcas, sabores, bordas ou adicionais fora dessa lista. "
+                "Uma vez só, sem insistir; se ele recusar, siga."
             )
             return {"decisao": decisao, "estado": estado}
         # Nada pra oferecer → não faz upsell; cai direto no funil (entrega/pagamento).

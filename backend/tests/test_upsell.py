@@ -90,9 +90,12 @@ class TestOfertaUpsell:
 
         assert out["decisao"]["acao"] == "upsell"
         assert out["estado"]["aguardando_upsell"] is True
-        pergunta = out["decisao"]["proxima_pergunta"].lower()
-        assert "bebida" in pergunta
-        assert "borda" not in pergunta  # não tem borda cadastrada → não oferece
+        # Os nomes reais vão nos FATOS (a voz oferece SÓ esses, sem inventar).
+        fatos = " ".join(out["decisao"]["fatos"]).lower()
+        assert "coca" in fatos          # nomeia a bebida real
+        assert "borda" not in fatos     # não tem borda → não menciona
+        # A pergunta proíbe explicitamente inventar marcas/sabores.
+        assert "invente" in out["decisao"]["proxima_pergunta"].lower()
 
     def test_pula_upsell_quando_nada_a_oferecer(self):
         from app.agent.fsm import engine
@@ -146,3 +149,45 @@ class TestRespostaUpsell:
         assert out["decisao"]["acao"] == "pedir_info"
         assert "entrega" in out["decisao"]["proxima_pergunta"].lower()
         assert out["estado"]["aguardando_upsell"] is False
+
+
+# ============================================================
+# Bebida pedida que NÃO existe → nomeia a real, sem "outras opções" vago
+# ============================================================
+class TestBebidaInexistente:
+    def test_nomeia_a_unica_bebida_real(self):
+        """Bug: cliente pede 'guaraná' (não existe) e a atendente dizia 'temos outras
+        opções' (vago/errado) quando só há uma bebida. Agora nomeia a real."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [{"nome": "guaraná", "qtd": 1}]}}
+        calc_fail = {"ok": False, "erro": "produto não encontrado", "produto_invalido": "guaraná"}
+
+        with patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc_fail)):
+            with patch("app.agent.fsm.engine._opcoes_upsell",
+                       new=AsyncMock(return_value={"bebidas": ["Coca-Cola 2L"], "bordas": [], "adicionais": []})):
+                out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="quero guarana"))
+
+        assert out["decisao"]["acao"] == "pendencia"
+        fatos = " ".join(out["decisao"]["fatos"]).lower()
+        assert "coca-cola 2l" in fatos          # nomeia a bebida real
+        assert "única" in fatos                 # deixa claro que só há uma (não 'outras opções')
+        assert out["estado"]["sugestao_item"] == "Coca-Cola 2L"
+
+    def test_varias_bebidas_lista_todas(self):
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [{"nome": "fanta", "qtd": 1}]}}
+        calc_fail = {"ok": False, "erro": "não encontrado", "produto_invalido": "fanta"}
+
+        with patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc_fail)):
+            with patch("app.agent.fsm.engine._opcoes_upsell",
+                       new=AsyncMock(return_value={"bebidas": ["Coca-Cola 2L", "Suco de Laranja"], "bordas": [], "adicionais": []})):
+                out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="quero tubaina"))
+
+        fatos = " ".join(out["decisao"]["fatos"]).lower()
+        assert "coca-cola 2l" in fatos and "suco de laranja" in fatos
