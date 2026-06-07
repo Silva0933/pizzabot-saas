@@ -13,9 +13,10 @@ import {
   Pizza,
   ShieldCheck,
   TrendingUp,
+  HelpCircle,
 } from "lucide-react";
 
-export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "admin";
+export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "ajuda" | "admin";
 
 export interface NavBadges {
   conversas?: number;
@@ -37,6 +38,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ class
   { key: "conversas", label: "Conversas",    icon: MessageSquare },
   { key: "cardapio",  label: "Cardápio",     icon: UtensilsCrossed },
   { key: "negocio",   label: "Meu Negócio",  icon: Store },
+  { key: "ajuda",     label: "Ajuda",        icon: HelpCircle },
 ];
 
 export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatformAdmin, badges }: SidebarProps) {

@@ -22,6 +22,7 @@ import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import { MetricasView } from "./components/v2/MetricasView";
+import { AjudaView } from "./components/v2/AjudaView";
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent,
@@ -413,6 +414,7 @@ export default function App() {
       {nav === "negocio"   && (
         <MeuNegocioViewV2 pizzaria={pizzaria} onUpdated={setPizzaria}/>
       )}
+      {nav === "ajuda"     && <AjudaView/>}
       {nav === "admin" && user.is_platform_admin && (
         <div className="p-6 text-center text-slate-500">
           Painel SaaS admin — em breve via API nova.

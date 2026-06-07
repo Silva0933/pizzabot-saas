@@ -98,5 +98,6 @@ export const NAV_PAGE_META: Record<NavKey, { title: string; subtitle?: string }>
   pedidos:   { title: "Pedidos",   subtitle: "Acompanhe o fluxo dos pedidos" },
   cardapio:  { title: "Cardápio",  subtitle: "Produtos, categorias e preços" },
   negocio:   { title: "Meu Negócio", subtitle: "Tudo sobre sua pizzaria" },
+  ajuda:     { title: "Ajuda", subtitle: "Guia rápido de cada funcionalidade" },
   admin:     { title: "Plataforma", subtitle: "Visão de administrador da SaaS" },
 };
