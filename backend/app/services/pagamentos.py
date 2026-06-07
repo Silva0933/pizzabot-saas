@@ -22,6 +22,12 @@ from app.services.secrets import decrypt_secret
 log = logging.getLogger(__name__)
 _settings = get_settings()
 
+# Janela de validade do Pix. Após esse tempo sem pagamento, o gateway dispara o
+# webhook "expired" e o cliente recebe o aviso de "não consegui confirmar /
+# pague na entrega" (status_messages.pagamento_falhou). Mantida curta de
+# propósito: com o padrão de 24h do MP, esse aviso só chegava no dia seguinte.
+PIX_EXPIRATION_MINUTES = 30
+
 
 @dataclass
 class CobrancaResult:
@@ -115,6 +121,7 @@ class MercadoPagoClient:
         """Cria um pagamento Pix e devolve o copia-e-cola + QR (base64)."""
         import re
         import uuid as _uuid
+        from datetime import datetime, timedelta, timezone
 
         first_name = re.sub(r"[^a-zA-ZÀ-ɏ ]", "", (nome_cliente or "Cliente"))[:30].strip() or "Cliente"
         tel_digits = re.sub(r"\D", "", telefone or "")
@@ -126,6 +133,12 @@ class MercadoPagoClient:
             "payment_method_id": "pix",
             "payer": {"email": email, "first_name": first_name},
             "external_reference": external_reference,
+            # ISO 8601 com offset (ex.: 2026-06-07T18:30:00.000+00:00). Sem este
+            # campo o MP usa o padrão de 24h e o aviso de falha só chegaria no
+            # dia seguinte. Ver PIX_EXPIRATION_MINUTES.
+            "date_of_expiration": (
+                datetime.now(timezone.utc) + timedelta(minutes=PIX_EXPIRATION_MINUTES)
+            ).isoformat(timespec="milliseconds"),
         }
         if notification_url:
             body["notification_url"] = notification_url
