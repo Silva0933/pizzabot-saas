@@ -205,8 +205,8 @@ async def uso_pizzaria(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(membership),
 ) -> dict:
-    """Consumo de IA do mês corrente vs. limite do plano (visível ao dono)."""
-    from app.services.app_config import uso_mes
+    """Atendimentos do mês vs. cota do plano (visível ao dono)."""
+    from app.services.app_config import conversas_atendidas_mes, uso_mes
     from app.services.plans import plan_info
 
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
@@ -215,13 +215,17 @@ async def uso_pizzaria(
 
     u = await uso_mes(db, pizzaria_id)
     limites = plan_info(pizz.plano).get("limites") or {}
-    limite = int(limites.get("mensagens_ia_mes") or 0)
-    usados = u["mensagens"]
+    limite = int(limites.get("conversas_mes") or 0)
+    usados = await conversas_atendidas_mes(db, pizzaria_id)
     pct = round(usados / limite * 100, 1) if limite else 0.0
     return {
         "plano": pizz.plano,
-        "ia_mensagens": usados,
-        "ia_limite": limite,
+        # Atendimentos = conversas distintas atendidas pela IA no mês (cota do plano).
+        "atendimentos": usados,
+        "atendimentos_limite": limite,
+        "atendimentos_restante": max(limite - usados, 0) if limite else 0,
+        # Referência de IA (não é a cota): rodadas e tokens.
+        "ia_mensagens": u["mensagens"],
         "ia_tokens": u["tokens"],
         "percentual": pct,
         "limite_atingido": bool(limite and usados >= limite),

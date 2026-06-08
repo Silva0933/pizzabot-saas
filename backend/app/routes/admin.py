@@ -232,8 +232,9 @@ async def listar_assinaturas(
         "plano_vence_em, suspensa FROM public.pizzarias ORDER BY plano_vence_em NULLS LAST"
     ))).fetchall()
 
-    from app.services.app_config import uso_mes_todas
+    from app.services.app_config import conversas_atendidas_mes_todas, uso_mes_todas
     uso = await uso_mes_todas(db)
+    atend = await conversas_atendidas_mes_todas(db)  # atendimentos (cota) por pizzaria
 
     agora = datetime.now(timezone.utc)
     itens = []
@@ -261,8 +262,10 @@ async def listar_assinaturas(
         info = plan_info(r[2])
         pid = str(r[0])
         u = uso.get(pid, {"mensagens": 0, "tokens": 0})
-        limite_ia = int((info.get("limites") or {}).get("mensagens_ia_mes") or 0)
-        if limite_ia and u["mensagens"] >= limite_ia:
+        atendimentos = int(atend.get(pid, 0))
+        # Cota do plano = atendimentos (conversas/mês), não rodadas de IA.
+        limite_ia = int((info.get("limites") or {}).get("conversas_mes") or 0)
+        if limite_ia and atendimentos >= limite_ia:
             contagem["limite_ia"] += 1
         custo = round(u["tokens"] / 1_000_000 * CUSTO_POR_1M_TOKENS_BRL, 2)
         tokens_total += u["tokens"]
@@ -280,8 +283,10 @@ async def listar_assinaturas(
             "dias_restantes": dias,
             "alerta": alerta,
             "suspensa": bool(r[5]),
-            "ia_mensagens": u["mensagens"],
+            # ia_mensagens/ia_limite passam a refletir a COTA (atendimentos do mês).
+            "ia_mensagens": atendimentos,
             "ia_limite": limite_ia,
+            "ia_rodadas": u["mensagens"],
             "ia_tokens": u["tokens"],
             "ia_custo": custo,
         })

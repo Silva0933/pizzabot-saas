@@ -5,10 +5,15 @@ Fonte única de verdade para preços e limites de cada plano. No futuro,
 a cobrança será integrada ao Stripe — por enquanto o valor mensal é
 calculado a partir daqui (MRR = soma dos planos das pizzarias ativas).
 
-Diferenciação por limites:
-  - basico:  bem limitado
-  - pro:     intermediário
-  - premium: ~10x o básico
+Diferenciação por limites (atendimentos/mês — 1 por cliente atendido pela IA):
+  - basico:  100 atendimentos/mês
+  - pro:     300 atendimentos/mês
+  - premium: 500 atendimentos/mês
+
+O limite ENFORÇADO é `conversas_mes` (atendimentos): cada cliente que a IA atende
+no mês conta como 1, mesmo trocando várias mensagens. Dimensionado para dar margem
+sobre o custo de API por atendimento (~R$0,07–0,15). `mensagens_ia_mes` fica só
+como referência histórica e NÃO é mais usado para bloquear.
 """
 from __future__ import annotations
 
@@ -21,8 +26,8 @@ PLANS: dict[str, dict] = {
         "ordem": 1,
         "limites": {
             "produtos": 30,
-            "conversas_mes": 500,
-            "mensagens_ia_mes": 1000,
+            "conversas_mes": 100,
+            "mensagens_ia_mes": 1000,  # referência (não enforçado)
             "equipe": 1,
         },
     },
@@ -33,8 +38,8 @@ PLANS: dict[str, dict] = {
         "ordem": 2,
         "limites": {
             "produtos": 100,
-            "conversas_mes": 2000,
-            "mensagens_ia_mes": 4000,
+            "conversas_mes": 300,
+            "mensagens_ia_mes": 4000,  # referência (não enforçado)
             "equipe": 3,
         },
     },
@@ -43,11 +48,10 @@ PLANS: dict[str, dict] = {
         "nome": "Premium",
         "preco_mensal": 297.0,
         "ordem": 3,
-        # ~10x o básico
         "limites": {
             "produtos": 300,
-            "conversas_mes": 5000,
-            "mensagens_ia_mes": 10000,
+            "conversas_mes": 500,
+            "mensagens_ia_mes": 10000,  # referência (não enforçado)
             "equipe": 10,
         },
     },

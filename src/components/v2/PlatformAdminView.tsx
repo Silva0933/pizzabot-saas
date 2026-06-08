@@ -1122,7 +1122,7 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
                       <>
                         {" · "}
                         <span className={a.ia_mensagens >= a.ia_limite ? "text-orange-600 font-semibold" : ""}>
-                          IA {a.ia_mensagens}/{a.ia_limite}
+                          Atend. {a.ia_mensagens}/{a.ia_limite}
                         </span>
                       </>
                     )}

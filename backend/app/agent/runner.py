@@ -308,28 +308,35 @@ async def process_and_reply(
         )
         return {"ok": False, "motivo": "humano_assumiu"}
 
-    # ---- Limite de mensagens de IA do plano (C2) ----
-    # Se a pizzaria estourou a cota mensal do plano, não aciona a IA (protege o
-    # custo). O cliente não recebe resposta automática; o painel sinaliza o limite.
+    # ---- Cota de ATENDIMENTOS do plano (C2) ----
+    # Limite por conversa/cliente no mês (não por mensagem). Conversas JÁ em
+    # andamento neste mês continuam (não cortamos um pedido no meio); só conversas
+    # NOVAS além da cota são bloqueadas. Cliente bloqueado não recebe resposta
+    # automática — o painel sinaliza pro dono assumir manualmente se quiser.
     try:
-        from app.services.app_config import uso_mes
+        from app.services.app_config import conversa_ja_atendida_mes, conversas_atendidas_mes
         from app.services.plans import plan_info
-        limite = int((plan_info(pizz.plano).get("limites") or {}).get("mensagens_ia_mes") or 0)
+        limite = int((plan_info(pizz.plano).get("limites") or {}).get("conversas_mes") or 0)
         if limite > 0:
-            usados = (await uso_mes(db, pizzaria_id)).get("mensagens", 0)
-            if usados >= limite:
-                log.warning("Limite de IA atingido: pizzaria=%s (%s/%s) — pulando resposta", pizzaria_id, usados, limite)
-                await broadcaster.publish(
-                    pizzaria_id,
-                    {
-                        "tipo": "limite.ia",
-                        "pizzaria_id": str(pizzaria_id),
-                        "payload": {"usados": usados, "limite": limite},
-                    },
-                )
-                return {"ok": False, "motivo": "limite_ia_atingido", "usados": usados, "limite": limite}
+            ja_atendida = bool(conv) and await conversa_ja_atendida_mes(db, pizzaria_id, conv.id)
+            if not ja_atendida:
+                usados = await conversas_atendidas_mes(db, pizzaria_id)
+                if usados >= limite:
+                    log.warning(
+                        "Cota de atendimentos atingida: pizzaria=%s (%s/%s) — nova conversa bloqueada",
+                        pizzaria_id, usados, limite,
+                    )
+                    await broadcaster.publish(
+                        pizzaria_id,
+                        {
+                            "tipo": "limite.ia",
+                            "pizzaria_id": str(pizzaria_id),
+                            "payload": {"usados": usados, "limite": limite, "telefone": telefone},
+                        },
+                    )
+                    return {"ok": False, "motivo": "limite_conversas_atingido", "usados": usados, "limite": limite}
     except Exception as e:  # noqa: BLE001
-        log.debug("Falha ao checar limite de IA: %s", e)
+        log.debug("Falha ao checar cota de atendimentos: %s", e)
 
     # ---- Envia indicador de "digitando" ANTES de processar ----
     try:

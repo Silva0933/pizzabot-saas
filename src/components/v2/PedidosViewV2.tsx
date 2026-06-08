@@ -10,9 +10,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Loader2, AlertCircle, Package, Store as StoreIcon, Clock,
   Phone, MapPin, CreditCard, Trash2, ClipboardList, Hourglass,
-  ChefHat, DollarSign, Filter, MessageCircle, User, Receipt, Check, X,
+  ChefHat, DollarSign, Filter, MessageCircle, User, Receipt, Check, X, Gauge,
 } from "lucide-react";
-import { pedidosApi, BackendPedido } from "../../lib/api";
+import { pedidosApi, pizzariasApi, BackendPedido, UsoPizzaria } from "../../lib/api";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
 
 interface Props {
@@ -46,6 +46,12 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   const [payingIds, setPayingIds] = useState<Set<string>>(new Set());
   // Pedidos cujo comprovante já chegou nesta sessão (destaque mais forte no card).
   const [comprovanteIds, setComprovanteIds] = useState<Set<string>>(new Set());
+  // Cota de atendimentos do plano (contador discreto + aviso).
+  const [uso, setUso] = useState<UsoPizzaria | null>(null);
+
+  function loadUso() {
+    return pizzariasApi.uso(pizzariaId).then(setUso).catch(() => {});
+  }
 
   // Filtros
   const [statusFiltro, setStatusFiltro] = useState<string>("");
@@ -64,11 +70,13 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   useEffect(() => {
     setLoading(true);
     load().finally(() => setLoading(false));
+    loadUso();
   }, [pizzariaId]);
 
   useEffect(() => {
     if (!liveEvent) return;
     if (liveEvent.tipo === "pedidos.limpos") { setPedidos([]); return; }
+    if (liveEvent.tipo === "limite.ia") { loadUso(); return; }
     if (liveEvent.tipo === "pedido.comprovante" || liveEvent.tipo === "pagamento.comprovante") {
       const pid = liveEvent.payload?.pedido_id;
       if (pid) setComprovanteIds((s) => new Set(s).add(pid));
@@ -81,6 +89,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       liveEvent.tipo === "pagamento.manual_pendente"
     ) {
       load();
+      loadUso();  // novos pedidos podem refletir um novo atendimento contabilizado
     }
   }, [liveEvent]);
 
@@ -193,6 +202,9 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
         </div>
       )}
 
+      {/* Aviso de cota de atendimentos do plano (perto/atingido) */}
+      <CotaAviso uso={uso} />
+
       {/* Barra de métricas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={ClipboardList} tone="orange" label="Total de Pedidos" value={String(stats.total)} />
@@ -206,6 +218,15 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
         <div className="px-4 md:px-5 py-3.5 bg-gradient-to-r from-orange-500 to-rose-500 text-white flex items-center gap-2.5">
           <ClipboardList className="w-5 h-5" />
           <h2 className="font-bold text-base md:text-lg">Gerenciamento de Pedidos</h2>
+          {uso && uso.atendimentos_limite > 0 && (
+            <span
+              title={`Atendimentos da IA neste mês (cota do plano ${uso.plano}). Faltam ${uso.atendimentos_restante}.`}
+              className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold bg-white/15 rounded-full px-2.5 py-1"
+            >
+              <Gauge className="w-3.5 h-3.5" />
+              {uso.atendimentos}/{uso.atendimentos_limite} atendimentos
+            </span>
+          )}
         </div>
 
         <div className="p-3 md:p-4 flex flex-col sm:flex-row gap-2.5 border-b border-slate-100">
@@ -299,6 +320,46 @@ const StatCard: React.FC<StatCardProps> = ({ icon: Icon, tone, label, value }) =
       </div>
     </div>
   );
+}
+
+// ============================================
+// Aviso de cota de atendimentos do plano
+// ============================================
+function CotaAviso({ uso }: { uso: UsoPizzaria | null }) {
+  if (!uso || uso.atendimentos_limite <= 0) return null;
+
+  if (uso.limite_atingido) {
+    return (
+      <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200 text-rose-800 px-3.5 py-2.5 rounded-xl text-sm">
+        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+        <div>
+          <p className="font-semibold">Limite de atendimentos do plano atingido ({uso.atendimentos}/{uso.atendimentos_limite}).</p>
+          <p className="text-rose-700 text-xs mt-0.5">
+            Novos clientes não estão sendo atendidos automaticamente pela IA neste mês — conversas já em
+            andamento continuam normalmente. Você pode assumir os novos em <strong>Conversas</strong>, ou
+            fazer upgrade do plano para liberar mais atendimentos.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (uso.proximo_do_limite) {
+    return (
+      <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 text-amber-800 px-3.5 py-2.5 rounded-xl text-sm">
+        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+        <div>
+          <p className="font-semibold">Você está chegando no limite do seu plano ({uso.atendimentos}/{uso.atendimentos_limite}).</p>
+          <p className="text-amber-700 text-xs mt-0.5">
+            Faltam {uso.atendimentos_restante} atendimentos neste mês. Ao atingir o limite, novos clientes
+            deixam de ser atendidos automaticamente pela IA.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 // ============================================

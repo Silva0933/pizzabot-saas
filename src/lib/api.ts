@@ -514,8 +514,9 @@ export interface AssinaturaItem {
   dias_restantes: number | null;
   alerta: "sem_plano" | "em_dia" | "vence_amanha" | "vencida";
   suspensa: boolean;
-  ia_mensagens: number;
-  ia_limite: number;
+  ia_mensagens: number;   // atendimentos do mês (cota do plano)
+  ia_limite: number;      // cota de atendimentos do plano
+  ia_rodadas?: number;    // rodadas de IA (referência)
   ia_tokens: number;
   ia_custo?: number;
 }
@@ -533,8 +534,10 @@ export interface AssinaturasResp {
 }
 export interface UsoPizzaria {
   plano: string;
-  ia_mensagens: number;
-  ia_limite: number;
+  atendimentos: number;            // conversas distintas atendidas pela IA no mês
+  atendimentos_limite: number;     // cota do plano
+  atendimentos_restante: number;
+  ia_mensagens: number;            // rodadas de IA (referência)
   ia_tokens: number;
   percentual: number;
   limite_atingido: boolean;

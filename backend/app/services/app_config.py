@@ -120,6 +120,58 @@ async def uso_mes(db: AsyncSession, pizzaria_id: Any, *, mes: str | None = None)
         return {"mensagens": 0, "tokens": 0}
 
 
+async def conversas_atendidas_mes(db: AsyncSession, pizzaria_id: Any) -> int:
+    """Nº de ATENDIMENTOS da IA no mês: conversas DISTINTAS que receberam ao menos
+    uma resposta do bot (1 por cliente/mês, mesmo trocando várias mensagens).
+    É a métrica de cota dos planos."""
+    try:
+        row = (await db.execute(text("""
+            SELECT COUNT(DISTINCT conversa_id)
+            FROM public.mensagens
+            WHERE pizzaria_id = :pid AND origem = 'bot'
+              AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo')
+                                AT TIME ZONE 'America/Sao_Paulo'
+        """), {"pid": str(pizzaria_id)})).first()
+        return int(row[0] or 0) if row else 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+async def conversa_ja_atendida_mes(db: AsyncSession, pizzaria_id: Any, conversa_id: Any) -> bool:
+    """True se ESTA conversa já recebeu resposta do bot no mês — ou seja, já conta
+    como atendimento. Usado para NÃO bloquear (nem recontar) conversas em andamento."""
+    try:
+        row = (await db.execute(text("""
+            SELECT 1 FROM public.mensagens
+            WHERE pizzaria_id = :pid AND origem = 'bot' AND conversa_id = :cid
+              AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo')
+                                AT TIME ZONE 'America/Sao_Paulo'
+            LIMIT 1
+        """), {"pid": str(pizzaria_id), "cid": str(conversa_id)})).first()
+        return bool(row)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+async def conversas_atendidas_mes_todas(db: AsyncSession) -> dict[str, int]:
+    """Atendimentos do mês por pizzaria (pizzaria_id → nº de conversas distintas)."""
+    out: dict[str, int] = {}
+    try:
+        rows = (await db.execute(text("""
+            SELECT pizzaria_id, COUNT(DISTINCT conversa_id)
+            FROM public.mensagens
+            WHERE pizzaria_id IS NOT NULL AND origem = 'bot'
+              AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/Sao_Paulo')
+                                AT TIME ZONE 'America/Sao_Paulo'
+            GROUP BY pizzaria_id
+        """))).fetchall()
+        for r in rows:
+            out[str(r[0])] = int(r[1] or 0)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 async def uso_mes_todas(db: AsyncSession) -> dict[str, dict[str, int]]:
     """Uso de IA do mês corrente por pizzaria (mapa pizzaria_id → {mensagens, tokens})."""
     out: dict[str, dict[str, int]] = {}
