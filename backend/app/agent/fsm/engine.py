@@ -694,6 +694,23 @@ async def processar(
                 f"Cliente aceitou repetir o pedido de sempre: {de_sempre}."
             )
 
+    # Aceite do upsell de ITEM ÚNICO: quando a oferta nomeou UM item específico
+    # ("Quer uma Coca Cola 2L pra acompanhar?") e o cliente respondeu "quero"
+    # sem dizer o quê, é ESSE item — adiciona direto, sem perguntar "qual?"
+    # (bug real: a atendente listava a única opção e perguntava qual). Injeta
+    # antes do _aplicar_nlu pra cair no cálculo de preço normal deste turno.
+    if (
+        estado.get("aguardando_upsell")
+        and estado.get("upsell_item_unico")
+        and not dados.get("produtos")
+        and _afirmou_upsell(intencao, user_input)
+    ):
+        item = estado["upsell_item_unico"]
+        dados["produtos"] = [{"nome": item, "qtd": 1}]
+        decisao["fatos"].append(
+            f"Cliente aceitou o item que você ofereceu ({item}) — já adicionado ao pedido."
+        )
+
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
 
@@ -986,6 +1003,7 @@ async def processar(
     # seguir direto pro funil (bug: pedido fechava sem a bebida que o cliente quis).
     if estado.get("aguardando_upsell"):
         estado["aguardando_upsell"] = False
+        estado.pop("upsell_item_unico", None)  # consumido no aceite ou descartado aqui
         adicionou_algo = bool(dados.get("produtos"))  # _aplicar_nlu já pôs no carrinho
         if not adicionou_algo and _afirmou_upsell(intencao, user_input):
             opc = await _opcoes_upsell(ctx, db)
@@ -1026,6 +1044,12 @@ async def processar(
         if ofertas:
             estado["etapa"] = "COLETA_ITENS"
             estado["aguardando_upsell"] = True
+            # Uma ÚNICA opção no total (ex.: só a Coca Cola 2L)? Guarda o nome:
+            # se o cliente aceitar com um "quero" seco, adicionamos ESSE item
+            # direto — jamais "qual você quer?" com uma opção só.
+            todas_opcoes = opc["bebidas"] + opc["bordas"] + opc["adicionais"]
+            if len(todas_opcoes) == 1:
+                estado["upsell_item_unico"] = todas_opcoes[0]
             decisao["acao"] = "upsell"
             # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
             itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]

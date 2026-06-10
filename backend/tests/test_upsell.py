@@ -3,8 +3,11 @@ Testes do upsell do FSM (oferta de bebida/borda/adicional após o 1º item).
 
 Travam o comportamento pedido pelo dono do produto:
   - só oferece o que a casa REALMENTE tem (verifica antes de oferecer);
-  - quando o cliente aceita mas não diz o quê (só "quero"), LISTA as opções e
-    pergunta qual — não fecha o pedido sem o item (bug reportado);
+  - quando o cliente aceita mas não diz o quê (só "quero") e há VÁRIAS opções,
+    LISTA as opções e pergunta qual — não fecha o pedido sem o item;
+  - quando a oferta nomeou UM item específico ("Quer uma Coca Cola 2L?") e o
+    cliente diz "quero", adiciona ESSE item direto — nunca pergunta "qual?"
+    com uma opção só (bug reportado em produção);
   - recusar não trava o fluxo.
 """
 from __future__ import annotations
@@ -149,6 +152,96 @@ class TestRespostaUpsell:
         assert out["decisao"]["acao"] == "pedir_info"
         assert "entrega" in out["decisao"]["proxima_pergunta"].lower()
         assert out["estado"]["aguardando_upsell"] is False
+
+
+# ============================================================
+# Upsell de ITEM ÚNICO: "quero" adiciona direto (nunca "qual?" com 1 opção)
+# ============================================================
+def _calc_ok_com_coca():
+    return {
+        "ok": True,
+        "itens": [
+            {"nome": "Portuguesa (M)", "quantidade": 1, "preco_unit": 45.0},
+            {"nome": "Coca Cola 2L", "quantidade": 1, "preco_unit": 12.0},
+        ],
+        "valor_total": 57.0,
+        "taxa_entrega": 0,
+    }
+
+
+class TestUpsellItemUnico:
+    def test_oferta_com_opcao_unica_grava_o_item(self):
+        """Só existe a Coca → a oferta guarda o nome pro aceite seco."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        nlu = {"intencao": "adicionar_item", "dados": {}}
+
+        with patch("app.agent.fsm.engine._opcoes_upsell",
+                   new=AsyncMock(return_value={"bebidas": ["Coca Cola 2L"], "bordas": [], "adicionais": []})):
+            out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="ok"))
+
+        assert out["decisao"]["acao"] == "upsell"
+        assert out["estado"]["upsell_item_unico"] == "Coca Cola 2L"
+
+    def test_aceite_seco_adiciona_o_item_oferecido(self):
+        """Bug de produção: ofereceu 'Coca Cola 2L', cliente disse 'quero' e a
+        atendente listou a única opção e perguntou qual. Agora adiciona direto."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        estado["upsell_feito"] = True
+        estado["aguardando_upsell"] = True
+        estado["upsell_item_unico"] = "Coca Cola 2L"
+        nlu = {"intencao": "confirmar_resumo", "dados": {}}  # "quero"
+
+        with patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=_calc_ok_com_coca())):
+            with patch("app.agent.fsm.engine._sincronizar_rascunho", new=AsyncMock()):
+                out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="quero"))
+
+        # Item entrou no carrinho e o funil SEGUE (pergunta entrega/retirada) —
+        # nada de "qual você quer adicionar?".
+        nomes = [i["nome"].lower() for i in out["estado"]["carrinho"]]
+        assert any("coca" in n for n in nomes)
+        assert out["decisao"]["acao"] == "pedir_info"
+        assert "entrega" in out["decisao"]["proxima_pergunta"].lower()
+        fatos = " ".join(out["decisao"]["fatos"]).lower()
+        assert "coca cola 2l" in fatos
+        assert out["estado"]["aguardando_upsell"] is False
+        assert "upsell_item_unico" not in out["estado"]
+
+    def test_recusa_descarta_o_item_unico(self):
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        estado["upsell_feito"] = True
+        estado["aguardando_upsell"] = True
+        estado["upsell_item_unico"] = "Coca Cola 2L"
+        nlu = {"intencao": "conversa_fiada", "dados": {}}
+
+        out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="não, só a pizza"))
+
+        nomes = [i["nome"].lower() for i in out["estado"]["carrinho"]]
+        assert not any("coca" in n for n in nomes)
+        assert out["decisao"]["acao"] == "pedir_info"
+        assert "upsell_item_unico" not in out["estado"]
+
+    def test_aceite_com_varias_opcoes_continua_listando(self):
+        """Com VÁRIAS opções o comportamento antigo continua: lista e pergunta."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        estado["upsell_feito"] = True
+        estado["aguardando_upsell"] = True  # sem upsell_item_unico
+        nlu = {"intencao": "confirmar_resumo", "dados": {}}
+
+        with patch("app.agent.fsm.engine._opcoes_upsell",
+                   new=AsyncMock(return_value={"bebidas": ["Coca", "Guaraná"], "bordas": [], "adicionais": []})):
+            out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="quero"))
+
+        assert out["decisao"]["acao"] == "coletar_item"
+        fatos = " ".join(out["decisao"]["fatos"]).lower()
+        assert "coca" in fatos and "guaraná" in fatos
 
 
 # ============================================================
