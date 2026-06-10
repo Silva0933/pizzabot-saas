@@ -119,7 +119,19 @@ def _extract_content(data: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
         metadata["figurinha"] = sticker
         return "[figurinha]", "figurinha", metadata
     if loc := msg.get("locationMessage"):
-        metadata["localizacao"] = loc
+        # Guarda só o essencial (o payload tem thumbnail base64 enorme).
+        lat = loc.get("degreesLatitude")
+        lon = loc.get("degreesLongitude")
+        metadata["localizacao"] = {
+            "lat": lat, "lon": lon,
+            "name": loc.get("name"), "address": loc.get("address"),
+        }
+        if lat is not None and lon is not None:
+            # Formato estruturado que o pipeline FSM converte em endereço via
+            # reverse geocoding (fsm/pipeline._nlu_localizacao).
+            extras = " · ".join(str(x) for x in (loc.get("name"), loc.get("address")) if x)
+            texto = f"[localizacao lat={lat} lon={lon}]" + (f" {extras}" if extras else "")
+            return texto, "localizacao", metadata
         return "[localização]", "localizacao", metadata
     return "[mensagem não suportada]", "texto", metadata
 

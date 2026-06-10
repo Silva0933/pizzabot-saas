@@ -243,8 +243,23 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         estado["tipo"] = dados["tipo_entrega"]
     end = dados.get("endereco")
     if isinstance(end, dict) and any(end.get(k) for k in ("rua", "numero", "bairro")):
-        partes = [end.get("rua"), end.get("numero"), end.get("bairro"), end.get("referencia")]
-        estado["endereco"] = ", ".join(str(x) for x in partes if x)
+        if (
+            estado.get("endereco")
+            and end.get("numero")
+            and not end.get("rua")
+            and not end.get("bairro")
+        ):
+            # Só o NÚMERO chegou (complemento do endereço já coletado — ex.:
+            # localização do WhatsApp sem número): ANEXA em vez de substituir,
+            # senão "123" apagaria a rua/bairro inteiros.
+            num = str(end["numero"]).strip()
+            if num and f"nº {num}" not in estado["endereco"]:
+                estado["endereco"] = f"{estado['endereco']}, nº {num}"
+                if end.get("referencia"):
+                    estado["endereco"] += f" ({end['referencia']})"
+        else:
+            partes = [end.get("rua"), end.get("numero"), end.get("bairro"), end.get("referencia")]
+            estado["endereco"] = ", ".join(str(x) for x in partes if x)
     if dados.get("forma_pagamento") in ("pix", "cartao", "dinheiro"):
         estado["pagamento"] = dados["forma_pagamento"]
     if isinstance(dados.get("pagar_agora"), bool):
@@ -714,6 +729,25 @@ async def processar(
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
 
+    # Qualquer resposta após pedirmos o número da casa consome a flag (se o
+    # cliente respondeu outra coisa, o funil segue normal sem insistir).
+    estado.pop("aguardando_numero", None)
+
+    # Localização do WhatsApp SEM número da casa: confirma o endereço resolvido
+    # e pergunta só o número/complemento — UMA vez, antes de seguir o funil.
+    if dados.get("_localizacao_sem_numero") and estado.get("endereco"):
+        estado["etapa"] = "ENDERECO"
+        estado["aguardando_numero"] = True
+        decisao["acao"] = "pedir_info"
+        decisao["fatos"].append(
+            f"Localização recebida e convertida em endereço: {estado['endereco']}."
+        )
+        decisao["proxima_pergunta"] = (
+            "Agradeça a localização e confirme o endereço encontrado (rua e bairro, sem inventar). "
+            "Depois pergunte SÓ o número da casa e o complemento (apto/bloco), se tiver."
+        )
+        return {"decisao": decisao, "estado": estado}
+
     if dados.get("observacoes"):
         decisao["fatos"].append(f"Observação anotada do cliente: '{dados.get('observacoes')}'")
 
@@ -1086,7 +1120,11 @@ async def processar(
     if estado["tipo"] == "delivery" and not estado.get("endereco"):
         estado["etapa"] = "ENDERECO"
         decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Peça SÓ o endereço completo (rua, número, bairro, referência). Não repita o total."
+        decisao["proxima_pergunta"] = (
+            "Peça SÓ o endereço completo (rua, número, bairro, referência) e mencione que, "
+            "se preferir, ele pode mandar a LOCALIZAÇÃO pelo WhatsApp (clipe 📎 → Localização). "
+            "Não repita o total."
+        )
         return {"decisao": decisao, "estado": estado}
 
     # 3) forma de pagamento

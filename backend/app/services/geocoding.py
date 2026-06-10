@@ -91,6 +91,57 @@ async def geocode_address(endereco: str) -> dict[str, Any]:
     }
 
 
+async def reverse_geocode(lat: float, lon: float) -> dict[str, Any]:
+    """
+    Converte coordenadas (localização enviada pelo WhatsApp) em endereço via
+    Nominatim /reverse. Retorna:
+      - ok: bool
+      - rua, numero, bairro, cidade: str | None
+      - display_name: str | None
+    """
+    url = "https://nominatim.openstreetmap.org/reverse"
+    params = {
+        "lat": f"{lat:.7f}",
+        "lon": f"{lon:.7f}",
+        "format": "jsonv2",
+        "addressdetails": 1,
+        "zoom": 18,  # nível de edifício/rua
+    }
+    headers = {
+        "User-Agent": "PizzaBot-Geocoding/1.0 (contato: admin@pizzabot.com)"
+    }
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.get(url, params=params, headers=headers)
+            if r.status_code == 200:
+                data = r.json() or {}
+                addr = data.get("address") or {}
+                rua = addr.get("road") or addr.get("pedestrian") or addr.get("residential")
+                bairro = (
+                    addr.get("suburb")
+                    or addr.get("neighbourhood")
+                    or addr.get("quarter")
+                    or addr.get("city_district")
+                    or addr.get("hamlet")
+                    or addr.get("village")
+                )
+                cidade = addr.get("city") or addr.get("town") or addr.get("municipality")
+                if rua or bairro:
+                    return {
+                        "ok": True,
+                        "rua": rua,
+                        "numero": addr.get("house_number"),
+                        "bairro": bairro,
+                        "cidade": cidade,
+                        "display_name": data.get("display_name"),
+                    }
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha no reverse geocoding Nominatim: %s", e)
+
+    return {"ok": False, "rua": None, "numero": None, "bairro": None,
+            "cidade": None, "display_name": None}
+
+
 def _extract_bairro_regex(endereco: str) -> str | None:
     """Extração ingênua de bairro via Regex."""
     # Procura por "bairro <nome>" ou "bairro: <nome>" ou "b. <nome>"

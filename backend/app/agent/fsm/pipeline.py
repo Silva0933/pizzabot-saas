@@ -56,6 +56,60 @@ _RECUSA_PURA_RE = re.compile(
 )
 
 
+# Localização enviada pelo WhatsApp (formatada pelo webhook em
+# "[localizacao lat=... lon=...]"): vira endereço via reverse geocoding,
+# sem LLM. Mandar a localização implica entrega (delivery).
+_LOCALIZACAO_RE = re.compile(
+    r"\[localizacao lat=(-?\d+(?:\.\d+)?) lon=(-?\d+(?:\.\d+)?)\]"
+)
+
+
+def _usage_zero() -> dict[str, int]:
+    return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
+async def _nlu_localizacao(user_input: str) -> dict[str, Any] | None:
+    """
+    Se a mensagem contém uma localização do WhatsApp, converte em
+    'informar_endereco' com o endereço resolvido por reverse geocoding.
+    Sem número da casa (comum no GPS), marca _localizacao_sem_numero para o
+    engine confirmar e pedir só o número. Falhou o geocoding → None (NLU LLM).
+    """
+    m = _LOCALIZACAO_RE.search(user_input or "")
+    if not m:
+        return None
+    try:
+        lat, lon = float(m.group(1)), float(m.group(2))
+    except ValueError:
+        return None
+
+    from app.services.geocoding import reverse_geocode
+    geo = await reverse_geocode(lat, lon)
+    if not geo.get("ok"):
+        log.info("Localização recebida mas reverse geocoding falhou (lat=%s lon=%s)", lat, lon)
+        return None
+
+    dados: dict[str, Any] = {
+        "tipo_entrega": "delivery",
+        "endereco": {
+            "rua": geo.get("rua"),
+            "numero": geo.get("numero"),
+            "bairro": geo.get("bairro"),
+            "referencia": "localização enviada pelo WhatsApp",
+        },
+    }
+    if not geo.get("numero"):
+        dados["_localizacao_sem_numero"] = True
+    log.info(
+        "Localização convertida em endereço (sem LLM): %s, %s — numero=%s",
+        geo.get("rua"), geo.get("bairro"), geo.get("numero") or "(pendente)",
+    )
+    return {
+        "intencao": "informar_endereco", "confianca": 1.0, "dados": dados,
+        "_usage": _usage_zero(), "_deterministica": True,
+    }
+
+
 def _nlu_deterministica(user_input: str, estado: dict[str, Any]) -> dict[str, Any] | None:
     """
     Resolve sem LLM os casos inequívocos. Retorna o MESMO formato do nlu_extract
@@ -77,11 +131,11 @@ def _nlu_deterministica(user_input: str, estado: dict[str, Any]) -> dict[str, An
     if not tl:
         return None
 
-    def _res(intencao: str) -> dict[str, Any]:
+    def _res(intencao: str, dados: dict[str, Any] | None = None) -> dict[str, Any]:
         log.info("NLU determinística (sem LLM): '%s' → %s", t[:30], intencao)
         return {
-            "intencao": intencao, "confianca": 1.0, "dados": {},
-            "_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "intencao": intencao, "confianca": 1.0, "dados": dados or {},
+            "_usage": _usage_zero(),
             "_deterministica": True,
         }
 
@@ -101,6 +155,15 @@ def _nlu_deterministica(user_input: str, estado: dict[str, Any]) -> dict[str, An
     # 3) Saudação pura na abertura da conversa (carrinho vazio).
     if not estado.get("carrinho") and not estado.get("apresentou") and _SAUDACAO_PURA_RE.fullmatch(tl):
         return _res("saudacao")
+
+    # 4) Número da casa após a localização do WhatsApp ("123", "nº 123 apto 4").
+    if estado.get("aguardando_numero"):
+        m = re.fullmatch(r"(?:n[ºo°.]?\s*)?(\d{1,6})(?:[,\s]+(.{1,40}))?", tl)
+        if m:
+            end: dict[str, Any] = {"numero": m.group(1)}
+            if m.group(2):
+                end["referencia"] = m.group(2).strip()
+            return _res("informar_endereco", {"endereco": end})
 
     return None
 
@@ -191,7 +254,9 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     estado_resumo = engine.resumo_estado(estado)
     nlu_model = (cfg.get("nlu_model") or "").strip() or model
 
-    res_nlu = _nlu_deterministica(user_input, estado)
+    res_nlu = await _nlu_localizacao(user_input)
+    if res_nlu is None:
+        res_nlu = _nlu_deterministica(user_input, estado)
     nlu_provider_usado, nlu_model_usado = provider, nlu_model
     if res_nlu is None:
         async def _nlu(prov: str, key: str, mdl: str):
