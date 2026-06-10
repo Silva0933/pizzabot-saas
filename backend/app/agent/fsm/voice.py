@@ -103,8 +103,10 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
         f"SEU nome é {nome_atendente}: NUNCA chame o cliente pelo seu nome nem coloque "
         f"'{nome_atendente}' no meio da resposta (ex.: 'não temos, {nome_atendente}') — "
         "seu nome só aparece na saudação inicial. "
-        f"Use {QUEBRA} SÓ se forem conteúdos diferentes (ex.: resumo + pergunta) "
-        "— nunca pra repetir a mesma ideia. Responda só a mensagem final ao cliente."
+        f"Use {QUEBRA} para separar conteúdos DIFERENTES em balões curtos, como uma pessoa digitando "
+        f"no WhatsApp (ex.: saudação {QUEBRA} pergunta; resposta à dúvida {QUEBRA} próxima pergunta) "
+        "— nunca pra repetir a mesma ideia, e no máximo 2 quebras por resposta. "
+        "Responda só a mensagem final ao cliente."
     )
 
 

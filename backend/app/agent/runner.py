@@ -750,6 +750,31 @@ async def process_and_reply(
     except Exception as e:  # noqa: BLE001
         log.debug("Falha ao agendar lembrete de confirmação: %s", e)
 
+    # ---- Resgate de carrinho abandonado ----
+    # Pedido com itens parado no meio do funil: agenda UM follow-up gentil para
+    # ~25 min depois. A task só envia se a conversa continuar fria (cada resposta
+    # nova reagenda; o check de updated_at descarta os agendamentos antigos) e
+    # no máximo 1 resgate por conversa (flag resgate_enviado).
+    try:
+        from app.services.conversation_state import load_state as _load_state
+        from app.workers.tasks import (
+            _ETAPAS_RESGATE,
+            RESGATE_CARRINHO_SECONDS,
+            resgatar_carrinho,
+        )
+        _est = await _load_state(db, pizzaria_id, telefone)
+        if (
+            isinstance(_est, dict)
+            and _est.get("carrinho")
+            and _est.get("etapa") in _ETAPAS_RESGATE
+            and not _est.get("resgate_enviado")
+        ):
+            resgatar_carrinho.apply_async(
+                args=[str(pizzaria_id), telefone], countdown=RESGATE_CARRINHO_SECONDS,
+            )
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao agendar resgate de carrinho: %s", e)
+
     return {
         "ok": True,
         "texto": result.texto,

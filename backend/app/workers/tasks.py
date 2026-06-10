@@ -44,6 +44,121 @@ def lembrar_confirmacao(pizzaria_id: str, telefone: str) -> dict:
     return asyncio.run(_lembrar_confirmacao_async(uuid.UUID(pizzaria_id), telefone))
 
 
+# Tempo (segundos) com o pedido parado no meio do funil até UM toque de resgate.
+# Recupera carrinho abandonado ("posso fechar seu pedido?") — 1x por conversa.
+RESGATE_CARRINHO_SECONDS = 25 * 60  # 25 min
+# Etapas em que faz sentido resgatar (cliente já tinha itens, sumiu antes do fim).
+_ETAPAS_RESGATE = ("COLETA_ITENS", "ENTREGA", "ENDERECO", "PAGAMENTO")
+
+
+@celery_app.task(name="pizzabot.resgatar_carrinho")
+def resgatar_carrinho(pizzaria_id: str, telefone: str) -> dict:
+    """Carrinho abandonado: se o pedido parou no meio do funil, manda UM resgate."""
+    return asyncio.run(_resgatar_carrinho_async(uuid.UUID(pizzaria_id), telefone))
+
+
+async def _resgatar_carrinho_async(pizzaria_id: uuid.UUID, telefone: str) -> dict:
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select, text
+
+    from app.db import AsyncSessionLocal, engine
+    from app.models import Conversa, Mensagem, Pizzaria
+    from app.services.broadcaster import broadcaster
+    from app.services.conversation_state import load_state, save_state
+    from app.services.evolution import evolution
+
+    try:
+        async with AsyncSessionLocal() as db:
+            estado = await load_state(db, pizzaria_id, telefone)
+            # Só resgata se AINDA está no meio do funil com itens no carrinho.
+            if (
+                not isinstance(estado, dict)
+                or estado.get("etapa") not in _ETAPAS_RESGATE
+                or not estado.get("carrinho")
+            ):
+                return {"ok": False, "motivo": "fora_do_funil"}
+            if estado.get("resgate_enviado"):
+                return {"ok": False, "motivo": "ja_resgatado"}
+
+            # Conversa mexeu depois do agendamento? Então o cliente voltou sozinho
+            # (cada resposta do bot agenda um novo resgate; só o lote "frio" envia).
+            row = (await db.execute(text("""
+                SELECT updated_at FROM public.atendimento_estado
+                WHERE pizzaria_id = :pid AND telefone = :tel
+            """), {"pid": str(pizzaria_id), "tel": telefone})).first()
+            if row and row[0]:
+                idade = datetime.now(timezone.utc) - row[0]
+                if idade < timedelta(seconds=RESGATE_CARRINHO_SECONDS - 60):
+                    return {"ok": False, "motivo": "conversa_ativa"}
+
+            conv = (await db.execute(select(Conversa).where(
+                Conversa.pizzaria_id == pizzaria_id,
+                Conversa.cliente_telefone == telefone,
+            ))).scalar_one_or_none()
+            # Humano assumiu → não interfere.
+            if conv is not None and not getattr(conv, "bot_ativo", True):
+                return {"ok": False, "motivo": "humano_assumiu"}
+
+            pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+            if not pizz or not pizz.instancia or getattr(pizz, "suspensa", False):
+                return {"ok": False, "motivo": "pizzaria_indisponivel"}
+
+            # Template fixo (sem LLM — custo zero), gentil e única.
+            texto = (
+                "Oi! Vi que seu pedido ficou pela metade 😊 Quer que eu finalize pra você? "
+                "É só me responder por aqui!"
+            )
+            try:
+                await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
+            except Exception as e_send:  # noqa: BLE001
+                log.warning("Falha ao enviar resgate de carrinho: %s", e_send)
+                return {"ok": False, "erro": str(e_send)}
+
+            estado["resgate_enviado"] = True
+            await save_state(db, pizzaria_id, telefone, estado)
+            try:
+                from app.agent.memory import append_turn
+                await append_turn(db, pizzaria_id, telefone, role="assistant", content=texto)
+            except Exception:  # noqa: BLE001
+                pass
+
+            if conv is not None:
+                msg = Mensagem(
+                    conversa_id=conv.id, pizzaria_id=pizzaria_id,
+                    origem="bot", tipo="texto", conteudo=texto,
+                    metadata_json={"trigger": "resgate_carrinho"},
+                )
+                db.add(msg)
+                conv.last_message = texto
+                conv.last_timestamp = datetime.now(timezone.utc)
+                await db.commit()
+                await broadcaster.publish(pizzaria_id, {
+                    "tipo": "mensagem.nova", "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id), "mensagem_id": str(msg.id),
+                        "telefone": telefone, "conteudo": texto, "origem": "bot",
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    },
+                })
+            else:
+                await db.commit()
+            log.info("Resgate de carrinho enviado: pizzaria=%s tel=%s", pizzaria_id, telefone)
+            return {"ok": True}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha no resgate de carrinho: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:
+            pass
+        try:
+            await evolution.close()
+        except Exception:
+            pass
+
+
 async def _lembrar_confirmacao_async(pizzaria_id: uuid.UUID, telefone: str) -> dict:
     from datetime import datetime, timezone
 

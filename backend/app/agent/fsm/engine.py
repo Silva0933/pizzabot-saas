@@ -370,6 +370,12 @@ def _eh_confirmacao(intencao: str | None, texto: str) -> bool:
     return bool(_CONFIRMA_RE.match(t)) and len(t) <= 25
 
 
+def _item_de_sempre(ctx) -> str | None:
+    """Nome do 'pedido de sempre' do cliente — só string real não-vazia."""
+    v = getattr(ctx, "ultimo_pedido_resumo", None)
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 def _eh_grosseria(texto: str) -> bool:
     # Detecta ofensa explícita (não inclui pedido educado de atendente, que tem
     # intenção própria 'falar_humano' na NLU).
@@ -667,6 +673,27 @@ async def processar(
         if alvos:
             dados["remover"] = alvos
 
+    # "O de sempre": no turno anterior oferecemos repetir o pedido padrão do
+    # cliente recorrente. Se ele aceitou ("sim", "pode ser", "o de sempre") sem
+    # pedir outra coisa, injeta o item como se a NLU o tivesse extraído — segue
+    # o funil normal (preço atual via _calcular_pedido). Flag consumida aqui.
+    if estado.pop("ofereceu_de_sempre", False):
+        de_sempre = _item_de_sempre(ctx)
+        pediu_de_sempre = bool(_re.search(
+            r"\b(de sempre|o mesmo|de costume)\b", (user_input or "").lower()
+        ))
+        aceitou = pediu_de_sempre or _eh_confirmacao(intencao, user_input) or _afirmou_upsell(intencao, user_input)
+        if (
+            aceitou
+            and not estado["carrinho"]
+            and not dados.get("produtos")
+            and de_sempre
+        ):
+            dados["produtos"] = [{"nome": de_sempre, "qtd": 1}]
+            decisao["fatos"].append(
+                f"Cliente aceitou repetir o pedido de sempre: {de_sempre}."
+            )
+
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
 
@@ -839,7 +866,21 @@ async def processar(
             ja_tem_cardapio = bool(estado.get("cardapio_enviado"))
             if not estado.get("apresentou"):
                 decisao["acao"] = "saudacao"
-                if ja_tem_cardapio:
+                de_sempre = _item_de_sempre(ctx)
+                if de_sempre:
+                    # Cliente recorrente com padrão real (mesmo item nos últimos
+                    # pedidos): oferece "o de sempre" — toque de casa que conhece
+                    # o freguês. O aceite é tratado antes do _aplicar_nlu.
+                    estado["ofereceu_de_sempre"] = True
+                    decisao["fatos"].append(
+                        f"Cliente recorrente; o pedido de sempre dele é: {de_sempre}."
+                    )
+                    decisao["proxima_pergunta"] = (
+                        "Cumprimente pelo nome (nome + pizzaria, só na 1ª vez), com tom de quem "
+                        f"reconhece o cliente, e pergunte se hoje vai ser o de sempre ({de_sempre}). "
+                        "Ex.: 'Oi, que bom te ver de novo! 😊 Hoje vai ser o de sempre?'"
+                    )
+                elif ja_tem_cardapio:
                     decisao["proxima_pergunta"] = "Cumprimente (nome + pizzaria, só na 1ª vez) e pergunte o que ele vai querer hoje."
                 else:
                     decisao["proxima_pergunta"] = (

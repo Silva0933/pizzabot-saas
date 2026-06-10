@@ -433,6 +433,28 @@ async def evolution_webhook(
     await db.commit()
     await db.refresh(msg)
 
+    # ---- Reação ✅ ao comprovante do Pix manual (best-effort, decorativa) ----
+    # Se há pedido aguardando conferência e a mensagem parece o comprovante
+    # (imagem ou "paguei"), reage com ✅ na própria mensagem — feedback imediato
+    # e humano; o ack textual continua por conta do pipeline.
+    if evolution_msg_id:
+        try:
+            from app.agent.fsm.pipeline import _parece_comprovante
+            texto_check = conteudo if tipo == "texto" else f"[{tipo}]"
+            if _parece_comprovante(texto_check):
+                em_analise = (await db.execute(select(Pedido).where(
+                    Pedido.pizzaria_id == pizz.id,
+                    Pedido.cliente_id == cli.id,
+                    Pedido.payment_status == "em_analise",
+                ))).scalars().first()
+                if em_analise:
+                    await evolution.send_reaction(
+                        instancia=pizz.instancia, numero=remote_jid,
+                        message_id=evolution_msg_id, emoji="✅",
+                    )
+        except Exception as e:  # noqa: BLE001
+            log.debug("Reação ao comprovante falhou (não-fatal): %s", e)
+
     # ---- fila + broadcast (não bloqueia retorno) ----
     if pizz.bot_ativo_global and conv.bot_ativo:
         from app.services.business_hours import esta_aberto
