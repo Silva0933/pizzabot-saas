@@ -9,7 +9,7 @@ celery_app = Celery(
     "pizzabot",
     broker=_settings.redis_url,
     backend=_settings.redis_url,
-    include=["app.workers.tasks"],
+    include=["app.workers.tasks", "app.workers.periodic"],
 )
 
 celery_app.conf.update(
@@ -24,3 +24,11 @@ celery_app.conf.update(
     task_default_retry_delay=5,
     task_default_max_retries=3,
 )
+
+# Jobs periódicos (rodam no serviço com APP_ROLE=beat; ver workers/periodic.py).
+celery_app.conf.beat_schedule = {
+    "verificar-conexoes-whatsapp": {
+        "task": "pizzabot.verificar_conexoes_whatsapp",
+        "schedule": 300.0,  # a cada 5 min — rede de segurança do CONNECTION_UPDATE
+    },
+}

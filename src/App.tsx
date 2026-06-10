@@ -241,6 +241,13 @@ export default function App() {
       if (ev.tipo === "conversas.limpas") {
         setConversations([]);
       }
+      // Estado da conexão WhatsApp (indicador no Topbar + banner)
+      if (ev.tipo === "whatsapp.status") {
+        const estado = ev.payload?.estado;
+        if (estado) {
+          setPizzaria((prev) => (prev ? { ...prev, whatsapp_estado: estado } : prev));
+        }
+      }
     });
     wsRef.current = ws;
     return () => { ws.close(); wsRef.current = null; };
@@ -366,6 +373,8 @@ export default function App() {
       userEmail={user.email}
       botAtivo={pizzaria.bot_ativo_global}
       onToggleBot={handleToggleBot}
+      whatsappEstado={pizzaria.instancia ? pizzaria.whatsapp_estado ?? null : null}
+      onWhatsAppClick={() => setNav("negocio")}
       isPlatformAdmin={user.is_platform_admin}
       onLogout={handleLogout}
       notifPermission={"default" as NotificationPermission}

@@ -205,6 +205,44 @@ async def _handle_presence(payload: EvolutionWebhookPayload, db: AsyncSession) -
     return {"ok": True, "typing": True, "extended": esticou}
 
 
+async def _handle_connection_update(
+    payload: EvolutionWebhookPayload, db: AsyncSession
+) -> dict[str, Any]:
+    """
+    Trata o CONNECTION_UPDATE da Evolution: persiste o estado da conexão da
+    instância ('open'/'connecting'/'close'), avisa o painel em tempo real e
+    registra alerta quando a pizzaria desconecta (atendimento parado).
+    A lógica de aplicação é compartilhada com o poll periódico do Beat.
+    """
+    if not payload.instance:
+        return {"ignored": "no_instance"}
+
+    data = payload.data or {}
+    estado = data.get("state")
+    if not estado and isinstance(data.get("instance"), dict):
+        estado = data["instance"].get("state")
+    if estado not in ("open", "connecting", "close"):
+        return {"ignored": "unknown_state", "state": estado}
+
+    pizz = (
+        await db.execute(select(Pizzaria).where(Pizzaria.instancia == payload.instance))
+    ).scalar_one_or_none()
+    if not pizz:
+        return {"ignored": "unknown_instance"}
+
+    if estado == pizz.whatsapp_estado:
+        return {"ok": True, "unchanged": estado}
+
+    from app.services.whatsapp_status import aplicar_estado_conexao
+    await aplicar_estado_conexao(db, pizz, estado)
+    await db.commit()
+    log.info(
+        "Conexão WhatsApp atualizada: pizzaria=%s instancia=%s estado=%s",
+        pizz.id, payload.instance, estado,
+    )
+    return {"ok": True, "estado": estado}
+
+
 # ============================================
 # Endpoint
 # ============================================
@@ -229,6 +267,10 @@ async def evolution_webhook(
     # "Digitando…" do cliente: estica o debounce em vez de responder na hora.
     if payload.event in ("presence.update", "presence_update"):
         return await _handle_presence(payload, db)
+
+    # Estado da conexão da instância (monitor de WhatsApp desconectado).
+    if payload.event in ("connection.update", "connection_update"):
+        return await _handle_connection_update(payload, db)
 
     if payload.event not in (None, "messages.upsert"):
         return {"ignored": payload.event}

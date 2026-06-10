@@ -108,6 +108,7 @@ export interface BackendPizzaria {
   id: string;
   nome: string;
   instancia: string | null;
+  whatsapp_estado?: string | null; // 'open' | 'connecting' | 'close'
   plano: string;
   bot_ativo_global: boolean;
   endereco: string | null;
@@ -599,6 +600,7 @@ export interface WsEvent {
     | "atendimento.humano"
     | "conversas.limpas"
     | "pedidos.limpos"
+    | "whatsapp.status"
     | "system.hello";
   pizzaria_id: string;
   payload: Record<string, any>;

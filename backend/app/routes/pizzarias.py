@@ -69,6 +69,7 @@ class PizzariaOut(BaseModel):
     id: uuid.UUID
     nome: str
     instancia: str | None
+    whatsapp_estado: str | None = None
     plano: str
     bot_ativo_global: bool
     suspensa: bool = False

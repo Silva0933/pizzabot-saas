@@ -4,7 +4,7 @@
  * Fica fixa no topo da área de conteúdo, sempre visível.
  */
 import React, { useState } from "react";
-import { Bot, BellRing, LogOut, ChevronDown, Power, User } from "lucide-react";
+import { Bot, BellRing, LogOut, ChevronDown, Power, User, Wifi, WifiOff } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Tooltip } from "./Tooltip";
 
@@ -15,6 +15,9 @@ export interface TopbarProps {
   userEmail?: string;
   botAtivo: boolean;
   onToggleBot: () => void;
+  /** Estado da conexão WhatsApp: 'open' | 'connecting' | 'close' | null (desconhecido). */
+  whatsappEstado?: string | null;
+  onWhatsAppClick?: () => void;
   onLogout?: () => void;
   notifPermission?: NotificationPermission;
   onEnableNotifications?: () => void;
@@ -27,6 +30,8 @@ export function Topbar({
   userEmail,
   botAtivo,
   onToggleBot,
+  whatsappEstado,
+  onWhatsAppClick,
   onLogout,
   notifPermission,
   onEnableNotifications,
@@ -43,6 +48,37 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {/* Status da conexão WhatsApp */}
+        {whatsappEstado != null && (
+          <Tooltip
+            position="bottom"
+            content={whatsappEstado === "open"
+              ? "WhatsApp conectado e recebendo mensagens."
+              : whatsappEstado === "connecting"
+                ? "WhatsApp conectando…"
+                : "WhatsApp DESCONECTADO — o atendimento está parado. Clique para reconectar."}
+          >
+            <button
+              type="button"
+              onClick={onWhatsAppClick}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                whatsappEstado === "open"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                  : whatsappEstado === "connecting"
+                    ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                    : "bg-red-50 border-red-200 text-red-700 hover:bg-red-100"
+              }`}
+            >
+              {whatsappEstado === "open"
+                ? <Wifi className="w-3.5 h-3.5" />
+                : <WifiOff className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">
+                {whatsappEstado === "open" ? "WhatsApp" : whatsappEstado === "connecting" ? "Conectando…" : "Desconectado"}
+              </span>
+            </button>
+          </Tooltip>
+        )}
+
         {/* Status do bot */}
         <Tooltip
           position="bottom"

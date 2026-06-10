@@ -67,6 +67,21 @@ services:
     volumes:
       - ./app:/app/app
 
+  # Agendador dos jobs periódicos (monitor de WhatsApp, dunning de assinaturas).
+  # Só DISPARA as tasks — quem executa é o worker. Rodar SEMPRE 1 única réplica.
+  beat:
+    image: pizzabot-backend:latest    # reusa a mesma imagem
+    container_name: pizzabot-beat
+    restart: unless-stopped
+    depends_on:
+      worker:   { condition: service_started }
+      redis:    { condition: service_healthy }
+      postgres: { condition: service_healthy }
+    env_file: [.env]
+    command: celery -A app.workers.celery_app beat --loglevel=INFO --pidfile=/tmp/celerybeat.pid --schedule=/tmp/celerybeat-schedule
+    volumes:
+      - ./app:/app/app
+
 volumes:
   postgres_data:
   redis_data:

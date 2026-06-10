@@ -128,7 +128,9 @@ class EvolutionClient:
             "webhookBase64": False,
             # PRESENCE_UPDATE = eventos de "digitando/gravando" do cliente,
             # usados pra esticar o debounce enquanto ele ainda está escrevendo.
-            "events": ["MESSAGES_UPSERT", "PRESENCE_UPDATE"],
+            # CONNECTION_UPDATE = estado da conexão da instância (open/close),
+            # usado pelo monitor de WhatsApp (alerta quando desconecta).
+            "events": ["MESSAGES_UPSERT", "PRESENCE_UPDATE", "CONNECTION_UPDATE"],
         }
 
     # =========================

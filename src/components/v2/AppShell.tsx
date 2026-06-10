@@ -23,6 +23,9 @@ export interface AppShellProps {
   pageSubtitle?: string;
   botAtivo: boolean;
   onToggleBot: () => void;
+  /** Estado da conexão WhatsApp ('open' | 'connecting' | 'close' | null). */
+  whatsappEstado?: string | null;
+  onWhatsAppClick?: () => void;
 
   // Identidade
   pizzariaNome?: string;
@@ -48,6 +51,8 @@ export function AppShell({
   pageSubtitle,
   botAtivo,
   onToggleBot,
+  whatsappEstado,
+  onWhatsAppClick,
   pizzariaNome,
   pizzariaLogo,
   userName,
@@ -77,10 +82,29 @@ export function AppShell({
           userEmail={userEmail}
           botAtivo={botAtivo}
           onToggleBot={onToggleBot}
+          whatsappEstado={whatsappEstado}
+          onWhatsAppClick={onWhatsAppClick}
           onLogout={onLogout}
           notifPermission={notifPermission}
           onEnableNotifications={onEnableNotifications}
         />
+
+        {whatsappEstado === "close" && (
+          <div className="bg-red-600 text-white text-sm px-4 py-2 flex items-center justify-between gap-3">
+            <span>
+              <strong>WhatsApp desconectado.</strong> Os clientes não estão sendo atendidos.
+            </span>
+            {onWhatsAppClick && (
+              <button
+                type="button"
+                onClick={onWhatsAppClick}
+                className="shrink-0 bg-white/15 hover:bg-white/25 rounded-lg px-3 py-1 text-xs font-semibold"
+              >
+                Reconectar agora
+              </button>
+            )}
+          </div>
+        )}
 
         <main className="flex-1 min-w-0">
           {children}

@@ -95,6 +95,10 @@ class Pizzaria(Base):
     nomes_colunas: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     instancia: Mapped[str | None] = mapped_column(String, unique=True)
+    # Estado da conexão WhatsApp (Evolution): 'open' | 'connecting' | 'close'.
+    # Atualizado pelo webhook CONNECTION_UPDATE e pelo poll periódico do Beat.
+    whatsapp_estado: Mapped[str | None] = mapped_column(String)
+    whatsapp_estado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     gateway_pagamento: Mapped[str] = mapped_column(String, default="mercadopago", nullable=False)
     mp_access_token: Mapped[str | None] = mapped_column(Text)
     asaas_api_key: Mapped[str | None] = mapped_column(Text)
