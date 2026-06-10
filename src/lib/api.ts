@@ -98,6 +98,13 @@ export const authApi = {
     return r.user;
   },
   me: () => api.get<UserMe>(`/auth/me`),
+  signup: async (body: { nome_pizzaria: string; nome?: string; email: string; senha: string }) => {
+    const r = await api.post<{ access_token: string; refresh_token: string; user: UserMe }>(
+      "/auth/signup", body
+    );
+    setTokens(r.access_token, r.refresh_token);
+    return r.user;
+  },
   logout: () => clearTokens(),
 };
 
@@ -212,6 +219,9 @@ export const pizzariasApi = {
   list: () => api.get<BackendPizzaria[]>("/pizzarias"),
   get: (id: string) => api.get<BackendPizzaria>(`/pizzarias/${id}`),
   uso: (id: string) => api.get<UsoPizzaria>(`/pizzarias/${id}/uso`),
+  assinatura: (id: string) => api.get<AssinaturaInfo>(`/pizzarias/${id}/assinatura`),
+  contratarAssinatura: (id: string, body: { plano: string; cobranca_email: string; cobranca_cpf_cnpj: string }) =>
+    api.post<{ ok: boolean; subscription_id?: string; primeira_fatura?: FaturaInfo | null }>(`/pizzarias/${id}/assinatura`, body),
   create: (body: {
     nome: string; instancia?: string; telefone_admin?: string; endereco?: string;
     owner_email?: string; owner_senha?: string; owner_nome?: string;
@@ -535,6 +545,41 @@ export interface AssinaturasResp {
     preco_por_1m_tokens: number;
   };
 }
+export interface FaturaInfo {
+  id: string;
+  valor: number;
+  status: "pendente" | "paga" | "vencida" | "cancelada" | string;
+  vencimento: string | null;
+  pago_em: string | null;
+  link_pagamento: string | null;
+  created_at: string | null;
+}
+
+export interface PlanoCatalogo {
+  id: string;
+  nome: string;
+  preco_mensal: number;
+  ordem: number;
+  limites: { produtos: number; conversas_mes: number; equipe: number; [k: string]: number };
+}
+
+export interface AssinaturaInfo {
+  plano: string;
+  plano_info: PlanoCatalogo;
+  status: "trial" | "em_dia" | "vence_breve" | "vencida" | "suspensa" | "sem_assinatura" | string;
+  vence_em: string | null;
+  trial_fim: string | null;
+  suspensa_motivo: string | null;
+  carencia_dias: number;
+  tem_assinatura: boolean;
+  cobranca_email: string | null;
+  cobranca_cpf_cnpj: string | null;
+  billing_disponivel: boolean;
+  fatura_aberta: FaturaInfo | null;
+  faturas: FaturaInfo[];
+  planos: PlanoCatalogo[];
+}
+
 export interface UsoPizzaria {
   plano: string;
   atendimentos: number;            // conversas distintas atendidas pela IA no mês
@@ -579,7 +624,21 @@ export const adminApi = {
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),
   llmUsage: (days = 30) => api.get<LLMUsage>(`/admin/llm/usage?days=${days}`),
   zerarLlmUsage: () => api.delete(`/admin/llm/usage`),
+  faturas: (limit = 50) =>
+    api.get<{ faturas: AdminFaturaItem[]; recebido_mes: number; pendentes: number; vencidas: number }>(`/admin/faturas?limit=${limit}`),
 };
+
+export interface AdminFaturaItem {
+  id: string;
+  pizzaria_id: string;
+  pizzaria_nome: string;
+  valor: number;
+  status: string;
+  vencimento: string | null;
+  pago_em: string | null;
+  link_pagamento: string | null;
+  created_at: string | null;
+}
 
 export interface LLMUsage {
   periodo_dias: number;

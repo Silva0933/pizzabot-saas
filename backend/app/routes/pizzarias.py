@@ -234,6 +234,106 @@ async def uso_pizzaria(
     }
 
 
+# ============================================
+# Assinatura da plataforma (plano + faturas, visível ao dono)
+# ============================================
+class AssinaturaIn(BaseModel):
+    plano: str = Field(min_length=2)
+    cobranca_email: EmailStr
+    cobranca_cpf_cnpj: str = Field(min_length=11)
+
+
+def _status_assinatura(pizz: Pizzaria) -> str:
+    from datetime import timezone as _tz
+    agora = datetime.now(_tz.utc)
+    if pizz.suspensa:
+        return "suspensa"
+    if (pizz.plano or "") == "trial":
+        return "trial"
+    if not pizz.plano_vence_em:
+        return "sem_assinatura"
+    if pizz.plano_vence_em < agora:
+        return "vencida"
+    if (pizz.plano_vence_em - agora).days <= 3:
+        return "vence_breve"
+    return "em_dia"
+
+
+@router.get("/{pizzaria_id}/assinatura")
+async def assinatura_pizzaria(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Plano, status, vencimento e faturas — alimenta a aba Assinatura."""
+    from app.models import Fatura
+    from app.services.billing_plataforma import (
+        GRACE_DAYS,
+        billing_configurado,
+        fatura_dict,
+    )
+    from app.services.plans import plan_info, plans_catalog
+
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+
+    faturas = (await db.execute(
+        select(Fatura).where(Fatura.pizzaria_id == pizzaria_id)
+        .order_by(Fatura.created_at.desc()).limit(12)
+    )).scalars().all()
+    aberta = next((f for f in faturas if f.status in ("pendente", "vencida")), None)
+
+    return {
+        "plano": pizz.plano,
+        "plano_info": plan_info(pizz.plano),
+        "status": _status_assinatura(pizz),
+        "vence_em": pizz.plano_vence_em.isoformat() if pizz.plano_vence_em else None,
+        "trial_fim": pizz.trial_fim.isoformat() if pizz.trial_fim else None,
+        "suspensa_motivo": pizz.suspensa_motivo,
+        "carencia_dias": GRACE_DAYS,
+        "tem_assinatura": bool(pizz.asaas_subscription_id),
+        "cobranca_email": pizz.cobranca_email,
+        "cobranca_cpf_cnpj": pizz.cobranca_cpf_cnpj,
+        "billing_disponivel": billing_configurado(),
+        "fatura_aberta": fatura_dict(aberta) if aberta else None,
+        "faturas": [fatura_dict(f) for f in faturas],
+        "planos": plans_catalog(),
+    }
+
+
+@router.post("/{pizzaria_id}/assinatura")
+async def contratar_assinatura(
+    pizzaria_id: uuid.UUID,
+    body: AssinaturaIn,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """
+    Contrata/troca o plano: cria a assinatura mensal no Asaas da plataforma.
+    O plano só vira oficial quando o 1º pagamento confirmar (webhook) —
+    trial não ganha cota cheia antes de pagar.
+    """
+    from app.services.billing_plataforma import BillingError, ativar_assinatura
+
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+
+    pizz.cobranca_email = body.cobranca_email.lower().strip()
+    pizz.cobranca_cpf_cnpj = body.cobranca_cpf_cnpj.strip()
+
+    try:
+        resultado = await ativar_assinatura(db, pizz, body.plano)
+    except BillingError as e:
+        await db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+
+    log.info("Assinatura criada: pizzaria=%s plano=%s sub=%s",
+             pizzaria_id, body.plano, resultado.get("subscription_id"))
+    return {"ok": True, **resultado}
+
+
 @router.patch("/{pizzaria_id}", response_model=PizzariaOut)
 async def update_pizzaria(
     pizzaria_id: uuid.UUID,

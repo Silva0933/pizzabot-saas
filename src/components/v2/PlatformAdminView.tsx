@@ -20,7 +20,7 @@ import {
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
   QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins,
 } from "lucide-react";
-import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, LLMConfig, LLMUsage, WhatsAppConnect } from "../../lib/api";
+import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, AdminFaturaItem, LLMConfig, LLMUsage, WhatsAppConnect } from "../../lib/api";
 
 interface Props {
   userName: string;
@@ -257,6 +257,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         )}
 
         <AssinaturasCard catalogo={ov?.catalogo ?? []} />
+        <FaturasCard />
         <AlertasCard />
 
         {loadingOv && !ov ? (
@@ -623,6 +624,87 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           ))}
         </div>
       </main>
+    </div>
+  );
+}
+
+// ============================================
+// Faturas da plataforma (assinaturas via Asaas)
+// ============================================
+const FATURA_BADGE: Record<string, string> = {
+  paga: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  pendente: "bg-amber-50 text-amber-700 border-amber-200",
+  vencida: "bg-red-50 text-red-700 border-red-200",
+  cancelada: "bg-slate-100 text-slate-500 border-slate-200",
+};
+
+function FaturasCard() {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [faturas, setFaturas] = useState<AdminFaturaItem[] | null>(null);
+  const [resumo, setResumo] = useState<{ recebido_mes: number; pendentes: number; vencidas: number } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const brlFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const fmtData = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—");
+
+  useEffect(() => {
+    if (!open || faturas) return;
+    setLoading(true);
+    adminApi.faturas(50)
+      .then((r) => {
+        setFaturas(r.faturas);
+        setResumo({ recebido_mes: r.recebido_mes, pendentes: r.pendentes, vencidas: r.vencidas });
+      })
+      .catch((e) => setErr(e.message))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line
+  }, [open]);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 p-4 hover:bg-slate-50 transition-colors text-left">
+        <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white grid place-items-center shrink-0">
+          <Receipt className="w-5 h-5" />
+        </span>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-slate-800">Faturas da plataforma</h2>
+          <p className="text-xs text-slate-500 truncate">
+            {resumo
+              ? `${brlFmt(resumo.recebido_mes)} recebidos no mês · ${resumo.pendentes} pendente(s) · ${resumo.vencidas} vencida(s)`
+              : "Cobranças das assinaturas das pizzarias (Asaas)."}
+          </p>
+        </div>
+        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+          {err && <p className="text-sm text-red-600 mb-2">{err}</p>}
+          {loading && !faturas ? (
+            <div className="py-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-emerald-500" /></div>
+          ) : !faturas || faturas.length === 0 ? (
+            <p className="text-sm text-slate-400 py-2">
+              Nenhuma fatura ainda. Elas aparecem quando as pizzarias contratam um plano na aba Assinatura.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+              {faturas.map((f) => (
+                <div key={f.id} className="py-2 flex items-center justify-between gap-3 text-sm">
+                  <div className="min-w-0">
+                    <span className="font-medium text-slate-800 truncate">{f.pizzaria_nome}</span>
+                    <span className="text-slate-400"> · {brlFmt(f.valor)} · venc. {fmtData(f.vencimento)}</span>
+                  </div>
+                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${FATURA_BADGE[f.status] || FATURA_BADGE.pendente}`}>
+                    {f.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -23,6 +23,7 @@ import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import { MetricasView } from "./components/v2/MetricasView";
 import { AjudaView } from "./components/v2/AjudaView";
+import { AssinaturaView } from "./components/v2/AssinaturaView";
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent,
@@ -85,6 +86,7 @@ export default function App() {
   const [authSenha, setAuthSenha] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authErr, setAuthErr] = useState<string | null>(null);
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
 
   // ============================================
   // Workspace
@@ -299,6 +301,14 @@ export default function App() {
   // Render: login
   // ============================================
   if (!user) {
+    if (authMode === "signup") {
+      return (
+        <SignupScreen
+          onDone={(u) => setUser(u)}
+          onBackToLogin={() => setAuthMode("login")}
+        />
+      );
+    }
     // Sem LandingPage: usuário não autenticado cai direto na tela de login.
     return (
       <LoginScreen
@@ -309,6 +319,7 @@ export default function App() {
         loading={authLoading}
         err={authErr}
         onSubmit={handleLogin}
+        onSignup={() => setAuthMode("signup")}
       />
     );
   }
@@ -423,6 +434,7 @@ export default function App() {
       {nav === "negocio"   && (
         <MeuNegocioViewV2 pizzaria={pizzaria} onUpdated={setPizzaria}/>
       )}
+      {nav === "assinatura" && <AssinaturaView pizzariaId={pizzaria.id}/>}
       {nav === "ajuda"     && <AjudaView/>}
       {nav === "admin" && user.is_platform_admin && (
         <div className="p-6 text-center text-slate-500">
@@ -488,6 +500,7 @@ function LoginScreen(props: {
   loading: boolean; err: string | null;
   onSubmit: (e: React.FormEvent) => void;
   onBack?: () => void;
+  onSignup?: () => void;
 }) {
   return (
     <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
@@ -562,6 +575,18 @@ function LoginScreen(props: {
             )}
           </button>
         </form>
+        {props.onSignup && (
+          <p className="mt-5 text-center text-xs text-slate-400">
+            Ainda não tem conta?{" "}
+            <button
+              type="button"
+              onClick={props.onSignup}
+              className="text-orange-400 hover:text-orange-300 font-semibold transition-colors"
+            >
+              Teste grátis por 14 dias
+            </button>
+          </p>
+        )}
         {props.onBack && (
           <button
             type="button"
@@ -571,6 +596,103 @@ function LoginScreen(props: {
             ← Voltar para a página inicial
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// Tela de cadastro público (trial 14 dias)
+// ============================================
+function SignupScreen({ onDone, onBackToLogin }: {
+  onDone: (u: UserMe) => void;
+  onBackToLogin: () => void;
+}) {
+  const [nomePizzaria, setNomePizzaria] = useState("");
+  const [email, setEmail] = useState("");
+  const [senha, setSenha] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setErr(null);
+    try {
+      const u = await authApi.signup({
+        nome_pizzaria: nomePizzaria.trim(),
+        email: email.trim(),
+        senha,
+      });
+      onDone(u);
+    } catch (e: any) {
+      setErr(
+        e.status === 409 ? "Este e-mail já tem conta. Faça login." :
+        e.status === 429 ? "Muitos cadastros agora. Tente novamente mais tarde." :
+        (e.message || "Erro ao criar conta.")
+      );
+      setLoading(false);
+    }
+  }
+
+  const inputCls = "w-full px-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all";
+
+  return (
+    <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
+      <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-orange-600/10 rounded-full blur-[100px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+      <div className="relative bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-3xl shadow-2xl p-10 w-full max-w-md mx-4">
+        <div className="flex flex-col items-center text-center mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25 mb-4">
+            <Pizza className="w-7 h-7 text-white" />
+          </div>
+          <h1 className="text-2xl font-extrabold text-white tracking-tight">Teste grátis por 14 dias</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Sua atendente de IA no WhatsApp em minutos. Sem cartão de crédito.
+          </p>
+        </div>
+
+        <form onSubmit={submit} className="space-y-4">
+          <div className="space-y-1.5">
+            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">Nome da pizzaria</span>
+            <input required minLength={2} maxLength={80} value={nomePizzaria}
+              onChange={(e) => setNomePizzaria(e.target.value)}
+              className={inputCls} placeholder="Pizzaria do João" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">E-mail</span>
+            <input type="email" required value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={inputCls} placeholder="voce@suapizzaria.com" />
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">Senha</span>
+            <input type="password" required minLength={8} value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              className={inputCls} placeholder="Mínimo 8 caracteres" />
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 px-3 py-2.5 rounded-xl text-xs">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{err}</span>
+            </div>
+          )}
+
+          <button type="submit" disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-orange-600 to-amber-500 hover:from-orange-500 hover:to-amber-400 text-white rounded-xl font-bold text-sm tracking-wide shadow-lg shadow-orange-950/40 transition-all duration-300 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Criar minha conta grátis"}
+          </button>
+        </form>
+
+        <p className="mt-5 text-center text-xs text-slate-400">
+          Já tem conta?{" "}
+          <button type="button" onClick={onBackToLogin}
+            className="text-orange-400 hover:text-orange-300 font-semibold transition-colors">
+            Entrar
+          </button>
+        </p>
       </div>
     </div>
   );

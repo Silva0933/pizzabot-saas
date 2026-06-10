@@ -5,13 +5,14 @@ Espelham o schema definido em migrations/001_initial.sql.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -65,6 +66,13 @@ class Pizzaria(Base):
     # Assinatura: quando o plano foi ativado e quando vence (ciclo de 30 dias).
     plano_ativado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     plano_vence_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Cobrança da PLATAFORMA (assinatura mensal via Asaas da plataforma).
+    asaas_customer_id: Mapped[str | None] = mapped_column(Text)
+    asaas_subscription_id: Mapped[str | None] = mapped_column(Text)
+    cobranca_email: Mapped[str | None] = mapped_column(Text)
+    cobranca_cpf_cnpj: Mapped[str | None] = mapped_column(Text)
+    # Fim do período de teste grátis (plano 'trial'). Nulo = não é/foi trial.
+    trial_fim: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Pipeline FSM (NLU→backend→voz): quando True, o atendimento usa o novo
     # pipeline determinístico em vez do agente de tool-calling. Padrão = True
     # (ambiente de testes; fallback automático pro agente legado em baixa confiança).
@@ -111,6 +119,26 @@ class Pizzaria(Base):
     pix_manual_copia_cola: Mapped[str | None] = mapped_column(Text)
     pix_manual_titular: Mapped[str | None] = mapped_column(Text)
 
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Faturas (cobrança da plataforma — assinatura mensal via Asaas)
+# ============================================
+class Fatura(Base):
+    __tablename__ = "faturas"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    asaas_payment_id: Mapped[str | None] = mapped_column(Text, unique=True)
+    asaas_subscription_id: Mapped[str | None] = mapped_column(Text)
+    valor: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # pendente | paga | vencida | cancelada
+    status: Mapped[str] = mapped_column(String, default="pendente", nullable=False)
+    vencimento: Mapped[date | None] = mapped_column(Date)
+    pago_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    link_pagamento: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

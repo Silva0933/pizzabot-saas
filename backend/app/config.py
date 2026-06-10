@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     llm_provider: str = ""   # gemini | openai | openrouter
     llm_model: str = ""
     mp_webhook_secret: str = ""
+    # --- Cobrança da PLATAFORMA (assinatura mensal das pizzarias via Asaas) ---
+    # Conta Asaas do DONO da plataforma — separada das contas das pizzarias.
+    asaas_platform_api_key: str = ""
+    # Token de autenticação do webhook (configurado no Asaas em Webhooks →
+    # "Token de autenticação"; chega no header asaas-access-token).
+    asaas_platform_webhook_token: str = ""
+    # Base da API (troque para https://api-sandbox.asaas.com/v3 nos testes).
+    asaas_platform_base_url: str = "https://api.asaas.com/v3"
     # Segredo que a Evolution devolve na URL do webhook (?token=...). Se vazio,
     # a validação fica DESLIGADA (compatível com o estado atual). Defina no
     # ambiente para ativar a proteção anti-spoofing do webhook.

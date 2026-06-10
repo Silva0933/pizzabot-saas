@@ -30,9 +30,17 @@ celery_app.conf.update(
 )
 
 # Jobs periódicos (rodam no serviço com APP_ROLE=beat; ver workers/periodic.py).
+from celery.schedules import crontab  # noqa: E402
+
 celery_app.conf.beat_schedule = {
     "verificar-conexoes-whatsapp": {
         "task": "pizzabot.verificar_conexoes_whatsapp",
         "schedule": 300.0,  # a cada 5 min — rede de segurança do CONNECTION_UPDATE
+    },
+    "verificar-assinaturas": {
+        "task": "pizzabot.verificar_assinaturas",
+        # Diário às 08:00 (timezone America/Sao_Paulo, configurada acima):
+        # avisos de vencimento + suspensão por inadimplência/trial expirado.
+        "schedule": crontab(hour=8, minute=0),
     },
 }

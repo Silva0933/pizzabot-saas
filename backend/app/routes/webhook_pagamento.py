@@ -173,3 +173,44 @@ async def webhook_asaas(request: Request, db: AsyncSession = Depends(get_db)) ->
     novo_status = asaas_status_para_interno(pagamento.get("status", "PENDING"))
     await _aplicar_pagamento(db, pedido_id, payment_id=payment_id, payment_status=novo_status)
     return {"ok": True, "status": novo_status}
+
+
+# ============================================
+# Asaas — cobrança da PLATAFORMA (assinatura mensal das pizzarias)
+# ============================================
+@router.post("/asaas-plataforma", status_code=status.HTTP_200_OK)
+async def webhook_asaas_plataforma(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    asaas_access_token: str | None = Header(default=None),
+) -> dict:
+    """
+    Webhook da conta Asaas do DONO da plataforma (assinaturas das pizzarias).
+
+    Eventos tratados:
+      PAYMENT_CREATED            → registra a fatura pendente
+      PAYMENT_RECEIVED/CONFIRMED → fatura paga + renova plano_vence_em (+30d),
+                                   reativa suspensa e converte trial no plano
+      PAYMENT_OVERDUE            → fatura vencida + alerta no admin
+    """
+    # Autenticação: token configurado no Asaas (Webhooks → Token de autenticação).
+    token = (_settings.asaas_platform_webhook_token or "").strip()
+    if token and asaas_access_token != token:
+        log.warning("Webhook plataforma rejeitado: token inválido")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido")
+    if not token:
+        log.warning("ASAAS_PLATFORM_WEBHOOK_TOKEN vazio — webhook SEM autenticação")
+
+    body = await request.json()
+    evento = (body.get("event") or "").upper()
+    payment = body.get("payment") or {}
+    log.info("Asaas plataforma webhook: event=%s payment=%s", evento, payment.get("id"))
+
+    if evento not in ("PAYMENT_CREATED", "PAYMENT_RECEIVED", "PAYMENT_CONFIRMED",
+                      "PAYMENT_OVERDUE", "PAYMENT_UPDATED"):
+        return {"ignored": evento or "no_event"}
+    if not payment.get("id"):
+        return {"ignored": "no_payment"}
+
+    from app.services.billing_plataforma import aplicar_pagamento_plataforma
+    return await aplicar_pagamento_plataforma(db, evento, payment)

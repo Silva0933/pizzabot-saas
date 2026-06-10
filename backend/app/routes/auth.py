@@ -47,6 +47,18 @@ class RegisterIn(BaseModel):
     is_platform_admin: bool = False
 
 
+class SignupIn(BaseModel):
+    """Cadastro público (trial de 14 dias)."""
+    nome_pizzaria: str = Field(min_length=2, max_length=80)
+    nome: str | None = Field(default=None, max_length=80)
+    email: EmailStr
+    senha: str = Field(min_length=8)
+
+
+# Duração do teste grátis (plano 'trial' — cota reduzida em services/plans.py).
+TRIAL_DIAS = 14
+
+
 # ============================================
 # Endpoints
 # ============================================
@@ -142,3 +154,69 @@ async def register(
     await db.commit()
     await db.refresh(user)
     return {"id": str(user.id), "email": user.email}
+
+
+@router.post("/signup", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+async def signup(body: SignupIn, request: Request, db: AsyncSession = Depends(get_db)) -> TokenOut:
+    """
+    Cadastro PÚBLICO: cria o dono + a pizzaria já no plano 'trial' (14 dias,
+    cota reduzida) e loga direto. O funil segue no painel: conectar WhatsApp
+    (Meu Negócio), cadastrar cardápio e, na aba Assinatura, contratar um plano.
+    """
+    from datetime import timedelta
+
+    from app.models import EquipePizzaria, Pizzaria
+    from app.routes.pizzarias import _slugify, _unique_instancia
+
+    # Anti-abuso: 3 cadastros por hora por IP (Redis, fail-open).
+    if not await allow(f"signup:{client_ip(request)}", max_hits=3, window_seconds=3600):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Muitos cadastros deste endereço. Tente novamente mais tarde.",
+        )
+
+    existing = (
+        await db.execute(
+            select(Usuario).where(func.lower(Usuario.email) == body.email.lower())
+        )
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Email já cadastrado. Faça login.")
+
+    user = Usuario(
+        email=body.email.lower(),
+        senha_hash=hash_password(body.senha),
+        nome=(body.nome or body.nome_pizzaria).strip(),
+        is_platform_admin=False,
+    )
+    db.add(user)
+    await db.flush()
+
+    pizz = Pizzaria(
+        nome=body.nome_pizzaria.strip(),
+        plano="trial",
+        trial_fim=datetime.now(timezone.utc) + timedelta(days=TRIAL_DIAS),
+    )
+    db.add(pizz)
+    await db.flush()
+    pizz.instancia = await _unique_instancia(db, _slugify(pizz.nome), pizz.id)
+
+    db.add(EquipePizzaria(
+        pizzaria_id=pizz.id,
+        usuario_id=user.id,
+        email=user.email,
+        role="admin",
+        status="proprietario",
+    ))
+    await db.commit()
+
+    return TokenOut(
+        access_token=create_access_token(str(user.id)),
+        refresh_token=create_refresh_token(str(user.id)),
+        user={
+            "id": str(user.id),
+            "email": user.email,
+            "nome": user.nome,
+            "is_platform_admin": False,
+        },
+    )

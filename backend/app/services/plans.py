@@ -18,7 +18,20 @@ como referência histórica e NÃO é mais usado para bloquear.
 from __future__ import annotations
 
 # Ordem importa para exibição (do menor pro maior).
+# ordem 0 = trial (não aparece no catálogo de venda; ver plans_catalog()).
 PLANS: dict[str, dict] = {
+    "trial": {
+        "id": "trial",
+        "nome": "Teste grátis",
+        "preco_mensal": 0.0,
+        "ordem": 0,
+        "limites": {
+            "produtos": 30,
+            "conversas_mes": 20,
+            "mensagens_ia_mes": 200,  # referência (não enforçado)
+            "equipe": 1,
+        },
+    },
     "basico": {
         "id": "basico",
         "nome": "Básico",
@@ -70,5 +83,5 @@ def plan_price(plano: str | None) -> float:
 
 
 def plans_catalog() -> list[dict]:
-    """Lista de planos ordenada para exibição."""
-    return sorted(PLANS.values(), key=lambda p: p["ordem"])
+    """Lista de planos VENDÁVEIS ordenada para exibição (exclui o trial)."""
+    return sorted((p for p in PLANS.values() if p["ordem"] > 0), key=lambda p: p["ordem"])

@@ -306,6 +306,49 @@ async def listar_assinaturas(
     }
 
 
+@router.get("/faturas")
+async def listar_faturas(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Faturas da cobrança da plataforma (assinaturas das pizzarias via Asaas)."""
+    rows = (await db.execute(text("""
+        SELECT f.id, f.pizzaria_id, COALESCE(pz.nome,'(removida)') AS pizzaria_nome,
+               f.valor, f.status, f.vencimento, f.pago_em, f.link_pagamento, f.created_at
+        FROM public.faturas f
+        LEFT JOIN public.pizzarias pz ON pz.id = f.pizzaria_id
+        ORDER BY f.created_at DESC
+        LIMIT :lim
+    """), {"lim": limit})).fetchall()
+
+    tot = (await db.execute(text("""
+        SELECT
+            COALESCE(SUM(valor) FILTER (WHERE status = 'paga'
+                AND pago_em >= date_trunc('month', now())), 0) AS recebido_mes,
+            COUNT(*) FILTER (WHERE status = 'pendente') AS pendentes,
+            COUNT(*) FILTER (WHERE status = 'vencida') AS vencidas
+        FROM public.faturas
+    """))).fetchone()
+
+    return {
+        "faturas": [
+            {
+                "id": str(r[0]), "pizzaria_id": str(r[1]), "pizzaria_nome": r[2],
+                "valor": float(r[3] or 0), "status": r[4],
+                "vencimento": r[5].isoformat() if r[5] else None,
+                "pago_em": r[6].isoformat() if r[6] else None,
+                "link_pagamento": r[7],
+                "created_at": r[8].isoformat() if r[8] else None,
+            }
+            for r in rows
+        ],
+        "recebido_mes": float(tot[0] or 0),
+        "pendentes": int(tot[1] or 0),
+        "vencidas": int(tot[2] or 0),
+    }
+
+
 @router.get("/alertas")
 async def listar_alertas_endpoint(
     limit: int = Query(50, ge=1, le=200),
