@@ -1,0 +1,45 @@
+# CI — roda em todo push/PR: testes do backend (pytest) + type-check do frontend (tsc).
+# Os testes não precisam de Postgres/Redis reais (mocks); os 2 testes de fila
+# que exigem Redis pulam automaticamente sem REDIS_URL.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_SECRET_KEY: ci-secret-key-apenas-para-testes-0123456789abcdef
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+      DATABASE_URL_SYNC: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Instala dependências
+        run: pip install -e ".[dev]"
+      - name: Testes
+        run: pytest tests -q
+
+  frontend:
+    name: Frontend (tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Instala dependências
+        run: npm ci
+      - name: Type-check
+        run: npm run lint
