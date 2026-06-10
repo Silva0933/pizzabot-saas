@@ -150,4 +150,11 @@ async def openai_chat(
         "completion_tokens": u.get("completion_tokens", 0) or 0,
         "total_tokens": u.get("total_tokens", 0) or 0,
     }
+    # Prompt caching (OpenAI/Gemini cacheiam o prefixo estável automaticamente):
+    # tokens cacheados custam ~10-25% do preço — logamos pra acompanhar a economia.
+    cached = ((u.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+              or u.get("cached_content_token_count", 0) or 0)
+    if cached:
+        usage["cached_tokens"] = cached
+        log.debug("Prompt cache hit: %s tokens cacheados de %s", cached, usage["prompt_tokens"])
     return {"content": msg.get("content"), "tool_calls": tool_calls, "usage": usage}

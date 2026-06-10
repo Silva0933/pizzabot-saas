@@ -514,6 +514,7 @@ export interface LLMConfig {
   transcription_model?: string;
   fallback_provider?: string;
   fallback_model?: string;
+  nlu_model?: string;
 }
 
 export interface AssinaturaItem {
@@ -532,6 +533,8 @@ export interface AssinaturaItem {
   ia_rodadas?: number;    // rodadas de IA (referência)
   ia_tokens: number;
   ia_custo?: number;
+  custo_por_atendimento?: number | null; // custo médio de IA por atendimento (R$)
+  margem?: number | null;                // preço do plano − custo de IA do mês (R$)
 }
 export interface AssinaturasResp {
   assinaturas: AssinaturaItem[];
@@ -618,7 +621,7 @@ export const adminApi = {
   togglePipeline: (pizzariaId: string, fsm: boolean) =>
     api.patch<{ ok: boolean; pipeline_fsm: boolean }>(`/admin/pizzarias/${pizzariaId}/pipeline`, { fsm }),
   llm: () => api.get<LLMConfig>(`/admin/llm`),
-  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string>; transcription_model?: string; fallback_provider?: string; fallback_model?: string }) =>
+  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string>; transcription_model?: string; fallback_provider?: string; fallback_model?: string; nlu_model?: string }) =>
     api.put<{ ok: boolean }>(`/admin/llm`, body),
   testarLlm: () =>
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),

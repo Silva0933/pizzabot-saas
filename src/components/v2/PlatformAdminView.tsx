@@ -723,6 +723,7 @@ function LLMConfigCard() {
   const [transcriptionModel, setTranscriptionModel] = useState("");
   const [fallbackProvider, setFallbackProvider] = useState("");
   const [fallbackModel, setFallbackModel] = useState("");
+  const [nluModel, setNluModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -737,6 +738,7 @@ function LLMConfigCard() {
     setTranscriptionModel(c.transcription_model || "");
     setFallbackProvider(c.fallback_provider || "");
     setFallbackModel(c.fallback_model || "");
+    setNluModel(c.nlu_model || "");
   }
 
   function load() {
@@ -763,7 +765,7 @@ function LLMConfigCard() {
   async function save() {
     setSaving(true); setMsg(null);
     try {
-      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano, transcription_model: transcriptionModel.trim(), fallback_provider: fallbackProvider, fallback_model: fallbackModel.trim() });
+      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano, transcription_model: transcriptionModel.trim(), fallback_provider: fallbackProvider, fallback_model: fallbackModel.trim(), nlu_model: nluModel.trim() });
       setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor/modelo." });
       load();
     } catch (e: any) { setMsg({ ok: false, text: e.message }); }
@@ -853,6 +855,15 @@ function LLMConfigCard() {
                 </div>
               </div>
             )}
+
+            {/* Modelo barato para a NLU (economia) */}
+            <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <span className="text-xs font-semibold text-slate-700">Modelo p/ NLU (economia)</span>
+              <p className="text-[11px] text-slate-400 mb-1.5">A NLU só extrai JSON — um modelo barato (ex.: gemini-2.0-flash-lite) corta o custo sem perder qualidade. Vazio = mesmo modelo principal.</p>
+              <input value={nluModel} onChange={(e) => setNluModel(e.target.value)}
+                placeholder="ex.: gemini-2.0-flash-lite"
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
+            </label>
 
             {/* Modelo de transcrição de áudio (separado) */}
             <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3">
@@ -1235,6 +1246,17 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
                         {" · "}
                         <span className={a.ia_mensagens >= a.ia_limite ? "text-orange-600 font-semibold" : ""}>
                           Atend. {a.ia_mensagens}/{a.ia_limite}
+                        </span>
+                      </>
+                    )}
+                    {a.custo_por_atendimento != null && (
+                      <> {" · "}custo/atend. {brl(a.custo_por_atendimento)}</>
+                    )}
+                    {a.margem != null && (
+                      <>
+                        {" · "}
+                        <span className={a.margem < 0 ? "text-red-600 font-semibold" : "text-emerald-600"}>
+                          margem {brl(a.margem)}
                         </span>
                       </>
                     )}

@@ -231,6 +231,9 @@ DEFAULT_LLM_CONFIG: dict[str, Any] = {
     # chave inválida). Vazio = sem failover.
     "fallback_provider": "",
     "fallback_model": "",
+    # Modelo BARATO para a NLU (extração de JSON — não precisa do modelo bom).
+    # Vazio = usa o modelo principal. Ex.: gemini-2.0-flash-lite.
+    "nlu_model": "",
 }
 
 
@@ -285,10 +288,14 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     fallback_provider = (cfg.get("fallback_provider") or "").lower().strip()
     fallback_model = (cfg.get("fallback_model") or "").strip()
 
+    # Modelo barato para a NLU (extração JSON). Cai no modelo principal se vazio.
+    nlu_model = (cfg.get("nlu_model") or "").strip() or model
+
     return {
         "provider": provider, "model": model, "keys": keys,
         "modelos_plano": modelos_plano, "transcription_model": transcription_model,
         "fallback_provider": fallback_provider, "fallback_model": fallback_model,
+        "nlu_model": nlu_model,
     }
 
 

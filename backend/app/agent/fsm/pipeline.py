@@ -35,6 +35,76 @@ def _parece_comprovante(user_input: str) -> bool:
     return bool(_COMPROVANTE_KW.search(t))
 
 
+# ============================================
+# NLU determinística (curto-circuito sem LLM)
+# ============================================
+# Mensagens triviais e inequívocas ("sim", "não", "oi") não precisam de LLM:
+# sintetizamos o MESMO formato de saída da NLU com custo zero. Só disparamos
+# quando a mensagem é PURA (nada além da confirmação/recusa/saudação) — qualquer
+# conteúdo extra ("sim, mas sem cebola") segue para a NLU LLM normal.
+_PONTUACAO_FINAL_RE = re.compile(r"[\s!.,…~?]+$")
+
+# Saudação pura no início da conversa (sem pedido junto).
+_SAUDACAO_PURA_RE = re.compile(
+    r"^\s*(oi+|ol[aá]+|opa|eae|eai|e a[ií]|al[oô]|bom dia|boa tarde|boa noite)$",
+    re.IGNORECASE,
+)
+# Recusa pura ao upsell ("não", "nada não", "não quero, obrigado").
+_RECUSA_PURA_RE = re.compile(
+    r"^\s*(n[aã]o|nada)(\s+n[aã]o)?(\s+quero|\s+precisa)?([,\s]+(obrigad[oa]u?|valeu|brigad[oa]))?$",
+    re.IGNORECASE,
+)
+
+
+def _nlu_deterministica(user_input: str, estado: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Resolve sem LLM os casos inequívocos. Retorna o MESMO formato do nlu_extract
+    (intencao/confianca/dados/_usage) ou None para seguir à NLU normal.
+    As intenções espelham o que a NLU real produziria; os regex de confirmação/
+    aceite vêm do próprio engine (mesmas regras → mesmo comportamento).
+
+    A "pureza" é checada com fullmatch sobre o texto SEM a pontuação final:
+    o padrão precisa consumir a mensagem inteira ("sim!" passa; "sim, mas sem
+    cebola" não) — com fullmatch o backtracking encontra a alternativa mais
+    longa ("pode fechar"), o que o .match() comum não garante.
+    """
+    from app.agent.fsm.engine import _ACEITA_UPSELL_RE, _CONFIRMA_RE
+
+    t = (user_input or "").strip()
+    if not t or len(t) > 30:
+        return None
+    tl = _PONTUACAO_FINAL_RE.sub("", t.lower())
+    if not tl:
+        return None
+
+    def _res(intencao: str) -> dict[str, Any]:
+        log.info("NLU determinística (sem LLM): '%s' → %s", t[:30], intencao)
+        return {
+            "intencao": intencao, "confianca": 1.0, "dados": {},
+            "_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "_deterministica": True,
+        }
+
+    # 1) Confirmação pura do resumo ("sim", "pode fechar", "fechado").
+    if estado.get("etapa") == "AGUARDANDO_CONFIRMACAO" and _CONFIRMA_RE.fullmatch(tl):
+        return _res("confirmar_resumo")
+
+    # 2) Resposta pura ao upsell: recusa ("não, obrigado") ou aceite ("quero").
+    if estado.get("aguardando_upsell"):
+        if _RECUSA_PURA_RE.fullmatch(tl):
+            # O engine decide pela recusa via texto (_afirmou_upsell); a intenção
+            # neutra só precisa não desviar o fluxo antes do handler de upsell.
+            return _res("conversa_fiada")
+        if _ACEITA_UPSELL_RE.fullmatch(tl):
+            return _res("confirmar_resumo")
+
+    # 3) Saudação pura na abertura da conversa (carrinho vazio).
+    if not estado.get("carrinho") and not estado.get("apresentou") and _SAUDACAO_PURA_RE.fullmatch(tl):
+        return _res("saudacao")
+
+    return None
+
+
 async def _checar_comprovante_manual(db: AsyncSession, ctx, telefone: str, user_input: str):
     """Pix manual: se há um pedido aguardando conferência ('em_analise') e o cliente
     mandou o comprovante (imagem/'paguei'), dá um ack, notifica o painel e RETORNA —
@@ -113,20 +183,29 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     msgs = await load_history_messages(db, pizzaria_id, telefone)
     hist_txt = "\n".join(f"{m['role']}: {m['content']}" for m in msgs[-6:])
 
-    # 1) NLU (com failover para o provedor reserva, se configurado)
+    # 1) NLU — primeiro o curto-circuito determinístico (mensagens triviais não
+    # gastam LLM); senão, a NLU LLM com modelo barato dedicado (nlu_model) e
+    # failover para o provedor reserva.
     from app.agent.failover import com_failover
 
     estado_resumo = engine.resumo_estado(estado)
+    nlu_model = (cfg.get("nlu_model") or "").strip() or model
 
-    async def _nlu(prov: str, key: str, mdl: str):
-        return await nlu.nlu_extract(
-            provider=prov, api_key=key, model=mdl,
-            estado_resumo=estado_resumo,
-            historico_texto=hist_txt,
-            user_input=user_input,
+    res_nlu = _nlu_deterministica(user_input, estado)
+    nlu_provider_usado, nlu_model_usado = provider, nlu_model
+    if res_nlu is None:
+        async def _nlu(prov: str, key: str, mdl: str):
+            return await nlu.nlu_extract(
+                provider=prov, api_key=key, model=mdl,
+                estado_resumo=estado_resumo,
+                historico_texto=hist_txt,
+                user_input=user_input,
+            )
+
+        res_nlu, nlu_provider_usado, nlu_model_usado = await com_failover(
+            _nlu, cfg=cfg, model=nlu_model
         )
-
-    res_nlu, provider_usado, model_usado = await com_failover(_nlu, cfg=cfg, model=model)
+    provider_usado, model_usado = provider, model
 
     # Controle de falhas consecutivas de NLU (confiança < 0.5)
     confianca = res_nlu.get("confianca", 1.0)
@@ -236,18 +315,27 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
             log.debug("Guard FSM falhou (texto segue como veio): %s", e)
     texto = texto.replace(QUEBRA, "\n\n")
 
-    # Registra uso/custo (NLU + voz) — alimenta o limite por plano (C2) e o
-    # dashboard de custo (C3), igual ao agente legado.
+    # Registra uso/custo — alimenta o limite por plano (C2) e o dashboard de
+    # custo (C3). NLU e voz são registradas separadas (modelos podem diferir);
+    # o curto-circuito determinístico não registra (custo zero).
     try:
         from app.services.app_config import record_usage
         nlu_usage = res_nlu.get("_usage") or {}
-        pt = int(nlu_usage.get("prompt_tokens", 0)) + int(voz_usage.get("prompt_tokens", 0))
-        ct = int(nlu_usage.get("completion_tokens", 0)) + int(voz_usage.get("completion_tokens", 0))
-        tt = int(nlu_usage.get("total_tokens", 0)) + int(voz_usage.get("total_tokens", 0))
-        await record_usage(
-            db, pizzaria_id=pizzaria_id, provider=provider_usado, model=model_usado,
-            prompt_tokens=pt, completion_tokens=ct, total_tokens=tt or (pt + ct), calls=2,
-        )
+        if not res_nlu.get("_deterministica"):
+            await record_usage(
+                db, pizzaria_id=pizzaria_id,
+                provider=nlu_provider_usado, model=nlu_model_usado,
+                prompt_tokens=int(nlu_usage.get("prompt_tokens", 0)),
+                completion_tokens=int(nlu_usage.get("completion_tokens", 0)),
+                total_tokens=int(nlu_usage.get("total_tokens", 0)), calls=1,
+            )
+        if any(voz_usage.values()):
+            await record_usage(
+                db, pizzaria_id=pizzaria_id, provider=provider_usado, model=model_usado,
+                prompt_tokens=int(voz_usage.get("prompt_tokens", 0)),
+                completion_tokens=int(voz_usage.get("completion_tokens", 0)),
+                total_tokens=int(voz_usage.get("total_tokens", 0)), calls=1,
+            )
     except Exception as e:  # noqa: BLE001
         log.debug("Falha ao registrar uso FSM: %s", e)
 

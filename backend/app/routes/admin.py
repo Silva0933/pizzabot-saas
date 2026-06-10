@@ -289,6 +289,10 @@ async def listar_assinaturas(
             "ia_rodadas": u["mensagens"],
             "ia_tokens": u["tokens"],
             "ia_custo": custo,
+            # Economia/saúde por tenant: custo médio por atendimento e margem
+            # estimada do mês (preço do plano − custo de IA).
+            "custo_por_atendimento": round(custo / atendimentos, 3) if atendimentos else None,
+            "margem": round(float(info["preco_mensal"]) - custo, 2),
         })
 
     custo_total = round(custo_total, 2)
@@ -435,6 +439,8 @@ class LLMConfigIn(BaseModel):
     # Provedor reserva (failover) quando o primário falha. Vazio = sem failover.
     fallback_provider: str | None = None
     fallback_model: str | None = None
+    # Modelo barato p/ NLU (extração JSON). Vazio = mesmo modelo principal.
+    nlu_model: str | None = None
 
 
 @router.get("/llm")
@@ -457,6 +463,8 @@ async def get_llm(
         "transcription_model": cfg.get("transcription_model") or "",
         "fallback_provider": cfg.get("fallback_provider") or "",
         "fallback_model": cfg.get("fallback_model") or "",
+        # Devolve o valor CONFIGURADO (cru), não o resolvido — vazio = herda o principal.
+        "nlu_model": (raw.get("nlu_model") or "").strip(),
     }
 
 
@@ -498,12 +506,14 @@ async def put_llm(
         "transcription_model": (body.transcription_model or "").strip(),
         "fallback_provider": fallback_provider,
         "fallback_model": fallback_model,
+        "nlu_model": (body.nlu_model or "").strip(),
     })
     return {"ok": True, "provider": provider, "model": body.model.strip(),
             "modelos_plano": modelos_plano,
             "transcription_model": (body.transcription_model or "").strip(),
             "fallback_provider": fallback_provider,
             "fallback_model": fallback_model,
+            "nlu_model": (body.nlu_model or "").strip(),
             "keys_configuradas": {k: bool(decrypt_secret(v) or v) for k, v in keys.items()}}
 
 
