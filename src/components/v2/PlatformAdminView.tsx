@@ -639,6 +639,8 @@ function LLMConfigCard() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [modelosPlano, setModelosPlano] = useState<Record<string, string>>({});
   const [transcriptionModel, setTranscriptionModel] = useState("");
+  const [fallbackProvider, setFallbackProvider] = useState("");
+  const [fallbackModel, setFallbackModel] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -651,6 +653,8 @@ function LLMConfigCard() {
     setCustomMode(!modelos.includes(c.model));
     setModelosPlano(c.modelos_plano || {});
     setTranscriptionModel(c.transcription_model || "");
+    setFallbackProvider(c.fallback_provider || "");
+    setFallbackModel(c.fallback_model || "");
   }
 
   function load() {
@@ -677,7 +681,7 @@ function LLMConfigCard() {
   async function save() {
     setSaving(true); setMsg(null);
     try {
-      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano, transcription_model: transcriptionModel.trim() });
+      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano, transcription_model: transcriptionModel.trim(), fallback_provider: fallbackProvider, fallback_model: fallbackModel.trim() });
       setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor/modelo." });
       load();
     } catch (e: any) { setMsg({ ok: false, text: e.message }); }
@@ -776,6 +780,32 @@ function LLMConfigCard() {
                 placeholder="ex.: google/gemini-2.5-flash-lite"
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
             </label>
+
+            {/* Provedor reserva (failover) */}
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <p className="text-xs font-semibold text-slate-700 mb-1">Provedor reserva (failover)</p>
+              <p className="text-[11px] text-slate-400 mb-2">Se o provedor principal falhar (instabilidade, chave inválida), a atendente tenta este automaticamente. Precisa da chave de API configurada abaixo. Vazio = sem reserva.</p>
+              <div className="grid md:grid-cols-2 gap-2">
+                <label className="block">
+                  <span className="text-[11px] font-medium text-slate-600">Provedor</span>
+                  <select value={fallbackProvider}
+                    onChange={(e) => setFallbackProvider(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
+                    <option value="">(sem reserva)</option>
+                    {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
+                      <option key={id} value={id}>{p.nome}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-medium text-slate-600">Modelo</span>
+                  <input value={fallbackModel} onChange={(e) => setFallbackModel(e.target.value)}
+                    placeholder="ex.: gpt-4o-mini"
+                    disabled={!fallbackProvider}
+                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono disabled:opacity-50" />
+                </label>
+              </div>
+            </div>
 
             <div className="space-y-2.5">
               {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (

@@ -113,13 +113,20 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     msgs = await load_history_messages(db, pizzaria_id, telefone)
     hist_txt = "\n".join(f"{m['role']}: {m['content']}" for m in msgs[-6:])
 
-    # 1) NLU
-    res_nlu = await nlu.nlu_extract(
-        provider=provider, api_key=api_key, model=model,
-        estado_resumo=engine.resumo_estado(estado),
-        historico_texto=hist_txt,
-        user_input=user_input,
-    )
+    # 1) NLU (com failover para o provedor reserva, se configurado)
+    from app.agent.failover import com_failover
+
+    estado_resumo = engine.resumo_estado(estado)
+
+    async def _nlu(prov: str, key: str, mdl: str):
+        return await nlu.nlu_extract(
+            provider=prov, api_key=key, model=mdl,
+            estado_resumo=estado_resumo,
+            historico_texto=hist_txt,
+            user_input=user_input,
+        )
+
+    res_nlu, provider_usado, model_usado = await com_failover(_nlu, cfg=cfg, model=model)
 
     # Controle de falhas consecutivas de NLU (confiança < 0.5)
     confianca = res_nlu.get("confianca", 1.0)
@@ -199,7 +206,10 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
             ja_apresentou=ja_apresentou,
             user_input=user_input,
         )
-        texto, voz_usage = await voice.gerar_voz(provider=provider, api_key=api_key, model=model, comando=comando)
+        async def _voz(prov: str, key: str, mdl: str):
+            return await voice.gerar_voz(provider=prov, api_key=key, model=mdl, comando=comando)
+
+        (texto, voz_usage), provider_usado, model_usado = await com_failover(_voz, cfg=cfg, model=model)
         if not texto:
             texto = "Pode repetir, por favor? 😊"
         # BLINDAGEM (Pilar 3): guard-rail determinístico sobre o texto da LLM —
@@ -235,7 +245,7 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         ct = int(nlu_usage.get("completion_tokens", 0)) + int(voz_usage.get("completion_tokens", 0))
         tt = int(nlu_usage.get("total_tokens", 0)) + int(voz_usage.get("total_tokens", 0))
         await record_usage(
-            db, pizzaria_id=pizzaria_id, provider=provider, model=model,
+            db, pizzaria_id=pizzaria_id, provider=provider_usado, model=model_usado,
             prompt_tokens=pt, completion_tokens=ct, total_tokens=tt or (pt + ct), calls=2,
         )
     except Exception as e:  # noqa: BLE001

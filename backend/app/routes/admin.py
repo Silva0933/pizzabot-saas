@@ -389,6 +389,9 @@ class LLMConfigIn(BaseModel):
     modelos_plano: dict[str, str] = {}
     # Modelo separado p/ transcrever áudio (ex.: google/gemini-2.5-flash-lite).
     transcription_model: str | None = None
+    # Provedor reserva (failover) quando o primário falha. Vazio = sem failover.
+    fallback_provider: str | None = None
+    fallback_model: str | None = None
 
 
 @router.get("/llm")
@@ -409,6 +412,8 @@ async def get_llm(
         "modelos_plano": cfg.get("modelos_plano") or {},
         "planos": list(PLANS.keys()),
         "transcription_model": cfg.get("transcription_model") or "",
+        "fallback_provider": cfg.get("fallback_provider") or "",
+        "fallback_model": cfg.get("fallback_model") or "",
     }
 
 
@@ -438,14 +443,24 @@ async def put_llm(
         if p.lower() in PLANS and (m or "").strip()
     }
 
+    # Failover (opcional): provider precisa ser conhecido; vazio desliga.
+    fallback_provider = (body.fallback_provider or "").lower().strip()
+    if fallback_provider and fallback_provider not in LLM_PROVIDERS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Fallback provider inválido. Use: {list(LLM_PROVIDERS)}")
+    fallback_model = (body.fallback_model or "").strip()
+
     await set_config(db, LLM_KEY, {
         "provider": provider, "model": body.model.strip(),
         "keys": keys, "modelos_plano": modelos_plano,
         "transcription_model": (body.transcription_model or "").strip(),
+        "fallback_provider": fallback_provider,
+        "fallback_model": fallback_model,
     })
     return {"ok": True, "provider": provider, "model": body.model.strip(),
             "modelos_plano": modelos_plano,
             "transcription_model": (body.transcription_model or "").strip(),
+            "fallback_provider": fallback_provider,
+            "fallback_model": fallback_model,
             "keys_configuradas": {k: bool(decrypt_secret(v) or v) for k, v in keys.items()}}
 
 

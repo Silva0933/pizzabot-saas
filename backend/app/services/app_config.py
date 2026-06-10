@@ -227,6 +227,10 @@ DEFAULT_LLM_CONFIG: dict[str, Any] = {
     "provider": "gemini",            # gemini | openai | openrouter
     "model": "gemini-2.0-flash",
     "keys": {"gemini": "", "openai": "", "openrouter": ""},
+    # Provedor reserva (failover): usado quando o primário falha (timeout/5xx/
+    # chave inválida). Vazio = sem failover.
+    "fallback_provider": "",
+    "fallback_model": "",
 }
 
 
@@ -277,9 +281,14 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     # pro modelo de resposta. Cai no modelo de texto se não configurado.
     transcription_model = (cfg.get("transcription_model") or "").strip() or model
 
+    # Provedor reserva (failover) — opcional, configurado no painel admin.
+    fallback_provider = (cfg.get("fallback_provider") or "").lower().strip()
+    fallback_model = (cfg.get("fallback_model") or "").strip()
+
     return {
         "provider": provider, "model": model, "keys": keys,
         "modelos_plano": modelos_plano, "transcription_model": transcription_model,
+        "fallback_provider": fallback_provider, "fallback_model": fallback_model,
     }
 
 
