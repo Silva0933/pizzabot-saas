@@ -30,6 +30,11 @@ settings = get_settings()
 logging.basicConfig(level=settings.log_level)
 log = logging.getLogger("pizzabot")
 
+# Sentry (no-op sem SENTRY_DSN)
+from app.observability import init_sentry  # noqa: E402
+
+init_sentry("api")
+
 
 async def _resync_webhooks_presence() -> None:
     """Reaplica o webhook (com PRESENCE_UPDATE) em todas as instâncias ativas."""

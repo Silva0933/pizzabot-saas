@@ -43,6 +43,9 @@ dependencies = [
 
     # Logging
     "structlog==24.4.0",
+
+    # Observabilidade (erros com stack trace; desligado sem SENTRY_DSN)
+    "sentry-sdk[fastapi,celery]==2.19.2",
 ]
 
 [project.optional-dependencies]

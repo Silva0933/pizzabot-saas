@@ -2,8 +2,12 @@
 from celery import Celery
 
 from app.config import get_settings
+from app.observability import init_sentry
 
 _settings = get_settings()
+
+# Sentry no worker/beat (no-op sem SENTRY_DSN)
+init_sentry("worker")
 
 celery_app = Celery(
     "pizzabot",

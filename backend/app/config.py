@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal["json", "text"] = "json"
 
+    # --- Observabilidade ---
+    # DSN do Sentry (https://sentry.io). Vazio = monitoramento DESLIGADO.
+    sentry_dsn: str = ""
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
