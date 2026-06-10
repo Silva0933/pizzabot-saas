@@ -1,7 +1,7 @@
 """Endpoints de autenticação: login, refresh, register (apenas platform admin)."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.auth import (
 from app.db import get_db
 from app.deps import current_user, require_platform_admin
 from app.models import Usuario
+from app.services.rate_limit import allow, client_ip
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -50,7 +51,14 @@ class RegisterIn(BaseModel):
 # Endpoints
 # ============================================
 @router.post("/login", response_model=TokenOut)
-async def login(body: LoginIn, db: AsyncSession = Depends(get_db)) -> TokenOut:
+async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_db)) -> TokenOut:
+    # Anti força bruta: 5 tentativas por minuto por IP (Redis, fail-open).
+    if not await allow(f"login:{client_ip(request)}", max_hits=5, window_seconds=60):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Muitas tentativas de login. Aguarde 1 minuto e tente novamente.",
+        )
+
     user = (
         await db.execute(
             select(Usuario).where(func.lower(Usuario.email) == body.email.lower())
