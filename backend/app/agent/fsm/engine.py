@@ -1113,7 +1113,12 @@ async def processar(
     if not estado.get("tipo"):
         estado["etapa"] = "ENTREGA"
         decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Pergunte SÓ se vai ser ENTREGA ou RETIRADA (não repita o total)."
+        decisao["proxima_pergunta"] = (
+            "Se os FATOS citarem um item que o cliente acabou de aceitar (ex.: a bebida "
+            "que você ofereceu), confirme-o pelo nome em 2-3 palavras (ex.: 'Coca anotada!') — "
+            "não responda só 'Beleza'. Em seguida pergunte se vai ser ENTREGA ou RETIRADA "
+            "(não repita o total)."
+        )
         return {"decisao": decisao, "estado": estado}
 
     # 2) endereço (se delivery)
@@ -1121,9 +1126,9 @@ async def processar(
         estado["etapa"] = "ENDERECO"
         decisao["acao"] = "pedir_info"
         decisao["proxima_pergunta"] = (
-            "Peça SÓ o endereço completo (rua, número, bairro, referência) e mencione que, "
-            "se preferir, ele pode mandar a LOCALIZAÇÃO pelo WhatsApp (clipe 📎 → Localização). "
-            "Não repita o total."
+            "Peça o endereço completo (rua, número, bairro, referência) e OBRIGATORIAMENTE "
+            "diga também que, se preferir, ele pode só mandar a LOCALIZAÇÃO aqui pelo WhatsApp "
+            "(é mais fácil) — não omita essa opção. Não repita o total."
         )
         return {"decisao": decisao, "estado": estado}
 
@@ -1144,8 +1149,9 @@ async def processar(
         if calc and calc.get("ok") and estado.get("tipo") == "delivery":
             taxa_str = f"de R$ {taxa:.2f}".replace(".", ",") if taxa > 0 else "grátis"
             decisao["proxima_pergunta"] = (
-                f"Informe ao cliente que a taxa de entrega para {bairro} é {taxa_str}. "
-                f"Em seguida, pergunte SÓ {formas_txt}. Não repita o total."
+                f"Informe ao cliente que a taxa de entrega para o bairro \"{bairro}\" é {taxa_str} "
+                f"— use EXATAMENTE esse nome de bairro (NUNCA repita a última mensagem do cliente "
+                f"como se fosse o lugar). Em seguida, pergunte SÓ {formas_txt}. Não repita o total."
             )
         else:
             decisao["proxima_pergunta"] = f"Pergunte SÓ {formas_txt}. Não repita o total."
