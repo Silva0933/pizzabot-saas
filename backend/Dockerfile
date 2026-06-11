@@ -48,4 +48,6 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=25s --retries=3 \
 #   APP_ROLE=worker  -> celery worker
 #   APP_ROLE=beat    -> celery beat (dispara os jobs periódicos; precisa de 1 SÓ)
 #   (default/api)     -> uvicorn
-CMD ["sh", "-c", "if [ \"$APP_ROLE\" = \"worker\" ]; then exec celery -A app.workers.celery_app worker --loglevel=INFO --concurrency=4; elif [ \"$APP_ROLE\" = \"beat\" ]; then exec celery -A app.workers.celery_app beat --loglevel=INFO --pidfile=/tmp/celerybeat.pid --schedule=/tmp/celerybeat-schedule; else python migrations/apply.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2; fi"]
+#   (concorrência do worker vem de CELERY_CONCURRENCY via celery_app.conf — não
+#    fixar --concurrency aqui, senão o flag sobrescreve o env)
+CMD ["sh", "-c", "if [ \"$APP_ROLE\" = \"worker\" ]; then exec celery -A app.workers.celery_app worker --loglevel=INFO; elif [ \"$APP_ROLE\" = \"beat\" ]; then exec celery -A app.workers.celery_app beat --loglevel=INFO --pidfile=/tmp/celerybeat.pid --schedule=/tmp/celerybeat-schedule; else python migrations/apply.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2; fi"]
