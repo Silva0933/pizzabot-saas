@@ -77,6 +77,9 @@ class Pizzaria(Base):
     # pipeline determinístico em vez do agente de tool-calling. Padrão = True
     # (ambiente de testes; fallback automático pro agente legado em baixa confiança).
     pipeline_fsm: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Etapa 1 — opt-in pelo dispatcher assíncrono (Redis Streams) em vez do worker
+    # Celery. Rollout gradual + rollback instantâneo (basta voltar pra False).
+    usar_dispatcher: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     endereco: Mapped[str | None] = mapped_column(Text)
     # Link do endereço no Google Maps (enviado ao cliente quando ele pergunta o

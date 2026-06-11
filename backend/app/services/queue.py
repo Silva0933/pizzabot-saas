@@ -166,3 +166,36 @@ async def confirm_processed(pizzaria_id: uuid.UUID, telefone: str) -> None:
     lote é reprocessado numa reentrega da task — evitando perder a mensagem.
     """
     await redis.delete(_inflight_key(pizzaria_id, telefone))
+
+
+# --------------------------------------------------------------------------- #
+# Dispatcher assíncrono (Etapa 1) — caminho alternativo ao Celery, por pizzaria.
+# Em vez de agendar uma task Celery, "arma" a conversa no ZSET de prazos que o
+# serviço APP_ROLE=dispatcher drena. Reaproveita pending/inflight/lock acima.
+# --------------------------------------------------------------------------- #
+async def arm_dispatcher(pizzaria_id: uuid.UUID, telefone: str) -> bool:
+    """Sincroniza o ZSET de prazos do dispatcher com o `flush_at` atual da conversa.
+
+    ZADD GT: nunca ANTECIPA o prazo (só adia), então o typing que estica o
+    debounce também adia o despacho. Chamado pelo webhook após enfileirar e ao
+    esticar por presença. Retorna True se armou (havia flush_at pendente).
+    """
+    from app.dispatcher.streams import DUE_KEY
+
+    flush_at_raw = await redis.get(_flush_key(pizzaria_id, telefone))
+    if not flush_at_raw:
+        return False
+    await redis.zadd(DUE_KEY, {f"{pizzaria_id}:{telefone}": float(flush_at_raw)}, gt=True)
+    return True
+
+
+async def rearm_dispatcher(pizzaria_id: uuid.UUID | str, telefone: str, delay: float) -> None:
+    """Recoloca a conversa no ZSET pra reprocessar em ~delay s.
+
+    Usado pelo dispatcher quando o lock está preso por outra execução ou o cap de
+    concorrência por pizzaria foi atingido (backpressure). Sobrescreve o score
+    (retry responsivo — o drain idempotente cobre uma eventual antecipação).
+    """
+    from app.dispatcher.streams import DUE_KEY
+
+    await redis.zadd(DUE_KEY, {f"{pizzaria_id}:{telefone}": time.time() + delay})

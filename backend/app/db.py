@@ -21,13 +21,19 @@ def _int_env(name: str, default: int) -> int:
 
 
 # Pool ROLE-AWARE. O worker Celery roda asyncio.run + engine.dispose() a cada task
-# (loop novo por task) → NÃO reaproveita conexões. Um pool grande no worker só
-# desperdiça e arrisca estourar o max_connections do Postgres quando subimos a
-# concorrência (Etapa 0). Por isso worker/beat usam um pool enxuto; a API, que tem
-# loop persistente, mantém o pool maior. Tudo tunável por env (Coolify).
+# (loop novo por task) → NÃO reaproveita conexões: pool enxuto. A API tem loop
+# persistente: pool médio. O dispatcher (Etapa 1) também tem loop persistente E
+# alta concorrência — a sessão fica aberta durante a chamada do LLM, então cada
+# conversa em voo segura 1 conexão; o pool acompanha DISPATCHER_CONCURRENCY.
+# Tudo tunável por env (Coolify): DB_POOL_SIZE / DB_MAX_OVERFLOW.
 _role = (os.getenv("APP_ROLE") or "api").lower()
-_is_worker = _role in ("worker", "beat")
-_default_pool, _default_overflow = (2, 3) if _is_worker else (10, 20)
+if _role in ("worker", "beat"):
+    _default_pool, _default_overflow = 2, 3
+elif _role == "dispatcher":
+    _conc = _int_env("DISPATCHER_CONCURRENCY", 40)
+    _default_pool, _default_overflow = _conc, max(10, _conc // 4)
+else:  # api
+    _default_pool, _default_overflow = 10, 20
 _pool_size = _int_env("DB_POOL_SIZE", _default_pool)
 _max_overflow = _int_env("DB_MAX_OVERFLOW", _default_overflow)
 

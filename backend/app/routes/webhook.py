@@ -209,11 +209,16 @@ async def _handle_presence(payload: EvolutionWebhookPayload, db: AsyncSession) -
 
     esticou = await touch_typing(pizz.id, telefone)
     if esticou:
-        # Reagenda a checagem de flush pra depois da janela de digitação.
-        from app.workers.tasks import flush_conversation
-        flush_conversation.apply_async(
-            args=[str(pizz.id), telefone], countdown=TYPING_GRACE_SECONDS + 0.5,
-        )
+        if getattr(pizz, "usar_dispatcher", False):
+            # Dispatcher: sincroniza o ZSET de prazos com o flush_at esticado.
+            from app.services.queue import arm_dispatcher
+            await arm_dispatcher(pizz.id, telefone)
+        else:
+            # Celery: reagenda a checagem de flush pra depois da janela de digitação.
+            from app.workers.tasks import flush_conversation
+            flush_conversation.apply_async(
+                args=[str(pizz.id), telefone], countdown=TYPING_GRACE_SECONDS + 0.5,
+            )
     return {"ok": True, "typing": True, "extended": esticou}
 
 
@@ -482,13 +487,18 @@ async def evolution_webhook(
                 conteudo=conteudo,
                 metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
             )
-            # Agenda flush_conversation alinhado ao debounce base (+ folga).
-            from app.services.queue import DEBOUNCE_SECONDS
-            from app.workers.tasks import flush_conversation
-            flush_conversation.apply_async(
-                args=[str(pizz.id), telefone],
-                countdown=DEBOUNCE_SECONDS + 0.5,
-            )
+            if getattr(pizz, "usar_dispatcher", False):
+                # Etapa 1: arma no ZSET de prazos; o serviço dispatcher drena.
+                from app.services.queue import arm_dispatcher
+                await arm_dispatcher(pizz.id, telefone)
+            else:
+                # Caminho Celery: agenda flush alinhado ao debounce base (+ folga).
+                from app.services.queue import DEBOUNCE_SECONDS
+                from app.workers.tasks import flush_conversation
+                flush_conversation.apply_async(
+                    args=[str(pizz.id), telefone],
+                    countdown=DEBOUNCE_SECONDS + 0.5,
+                )
 
     await broadcaster.publish(
         pizz.id,
