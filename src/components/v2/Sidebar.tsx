@@ -15,6 +15,7 @@ import {
   TrendingUp,
   HelpCircle,
   CreditCard,
+  MoreHorizontal,
 } from "lucide-react";
 
 export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "assinatura" | "ajuda" | "admin";
@@ -43,7 +44,18 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ class
   { key: "ajuda",     label: "Ajuda",        icon: HelpCircle },
 ];
 
+// No mobile a bottom-nav só comporta ~5 slots. Os principais ficam fixos; o
+// resto (Análise, Assinatura, Ajuda + Plataforma do admin) vai pra folha "Mais"
+// — antes os 7 itens espremidos faziam "Assinatura" sumir/sobrepor os vizinhos.
+const MOBILE_PRIMARY: NavKey[] = ["pedidos", "conversas", "cardapio", "negocio"];
+const MOBILE_PRIMARY_ITEMS = NAV_ITEMS.filter((i) => MOBILE_PRIMARY.includes(i.key));
+const MOBILE_OVERFLOW_ITEMS = NAV_ITEMS.filter((i) => !MOBILE_PRIMARY.includes(i.key));
+
 export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatformAdmin, badges }: SidebarProps) {
+  const [moreOpen, setMoreOpen] = React.useState(false);
+  const overflowActive =
+    MOBILE_OVERFLOW_ITEMS.some((i) => i.key === active) ||
+    (isPlatformAdmin && active === "admin");
   return (
     <>
       {/* Desktop sidebar (vertical, fixa à esquerda) */}
@@ -120,9 +132,51 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
         </div>
       </aside>
 
+      {/* Folha "Mais" (mobile) — itens secundários que não cabem na bottom-nav */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-black/30" />
+          <div
+            className="absolute bottom-14 left-0 right-0 bg-white border-t border-slate-200 rounded-t-2xl p-2 shadow-lg safe-area-inset-bottom"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="grid grid-cols-3 gap-1">
+              {MOBILE_OVERFLOW_ITEMS.map(({ key, label, icon: Icon }) => {
+                const isActive = active === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => { onChange(key); setMoreOpen(false); }}
+                    className={`flex flex-col items-center gap-1 py-3 rounded-xl text-sm font-medium transition-colors ${
+                      isActive ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 ${isActive ? "text-orange-600" : "text-slate-400"}`} />
+                    <span className="text-[11px]">{label}</span>
+                  </button>
+                );
+              })}
+              {isPlatformAdmin && (
+                <button
+                  type="button"
+                  onClick={() => { onChange("admin"); setMoreOpen(false); }}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-xl text-sm font-medium transition-colors ${
+                    active === "admin" ? "bg-violet-50 text-violet-700" : "text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <ShieldCheck className={`w-5 h-5 ${active === "admin" ? "text-violet-600" : "text-slate-400"}`} />
+                  <span className="text-[11px]">Plataforma</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile bottom-nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200 flex items-center justify-around py-1 safe-area-inset-bottom">
-        {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-white border-t border-slate-200 flex items-center justify-around py-1 safe-area-inset-bottom">
+        {MOBILE_PRIMARY_ITEMS.map(({ key, label, icon: Icon }) => {
           const isActive = active === key;
           const badge =
             key === "conversas" ? badges?.conversas :
@@ -131,11 +185,11 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
             <button
               key={key}
               type="button"
-              onClick={() => onChange(key)}
+              onClick={() => { onChange(key); setMoreOpen(false); }}
               className="flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-0 flex-1 relative"
             >
               <Icon className={`w-5 h-5 ${isActive ? "text-orange-600" : "text-slate-400"}`} />
-              <span className={`text-[10px] ${isActive ? "text-orange-700 font-semibold" : "text-slate-500"}`}>
+              <span className={`text-[10px] truncate max-w-full ${isActive ? "text-orange-700 font-semibold" : "text-slate-500"}`}>
                 {label}
               </span>
               {badge !== undefined && badge > 0 && (
@@ -146,6 +200,18 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
             </button>
           );
         })}
+
+        {/* Botão "Mais" — abre a folha com os itens secundários */}
+        <button
+          type="button"
+          onClick={() => setMoreOpen((o) => !o)}
+          className="flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-0 flex-1 relative"
+        >
+          <MoreHorizontal className={`w-5 h-5 ${overflowActive || moreOpen ? "text-orange-600" : "text-slate-400"}`} />
+          <span className={`text-[10px] ${overflowActive || moreOpen ? "text-orange-700 font-semibold" : "text-slate-500"}`}>
+            Mais
+          </span>
+        </button>
       </nav>
     </>
   );
