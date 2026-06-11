@@ -790,6 +790,7 @@ async def processar(
             pagar_agora=bool(estado.get("pagar_agora")),
             endereco_entrega=estado.get("endereco"),
             observacoes=estado.get("observacoes"),
+            bairro_confirmado=estado.get("endereco_bairro"),
         )
         if not calc.get("ok"):
             # Se for erro de item/sabor não encontrado no cardápio, removemos do carrinho
@@ -1009,6 +1010,7 @@ async def processar(
             endereco_entrega=estado.get("endereco"),
             observacoes=estado.get("observacoes"),
             confirmado=True,  # FSM já validou a confirmação
+            bairro_confirmado=estado.get("endereco_bairro"),
         )
         if not reg.get("ok"):
             decisao["acao"] = "pendencia"

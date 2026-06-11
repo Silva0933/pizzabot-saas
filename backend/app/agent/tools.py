@@ -726,6 +726,7 @@ async def _calcular_pedido(
     endereco_entrega: str | None = None,
     observacoes: str | None = None,
     nome_cliente: str | None = None,
+    bairro_confirmado: str | None = None,
 ) -> dict[str, Any]:
     if tipo not in ("delivery", "retirada"):
         return {"ok": False, "erro": "tipo deve ser 'delivery' ou 'retirada'. Pergunte ao cliente: 'vai ser entrega ou retirada?'"}
@@ -881,6 +882,14 @@ async def _calcular_pedido(
                 bairro_detectado = _nome
                 break
 
+        # 0.5) Bairro CONFIRMADO pelo funil (ex.: reverse geocoding da localização
+        # do WhatsApp, guardado em estado.endereco_bairro). É confiável e evita que
+        # o fallback do split pegue lixo do endereço ("nº 3 (na rua 2)"). Pode não
+        # estar cadastrado na tabela (cai na taxa fixa), mas o NOME exibido fica
+        # certo ("Santa Bárbara") — é o que a voz repete ao informar a taxa.
+        if not bairro_detectado and bairro_confirmado and bairro_confirmado.strip():
+            bairro_detectado = bairro_confirmado.strip()
+
         if not bairro_detectado:
             try:
                 from app.services.geocoding import geocode_address
@@ -941,6 +950,7 @@ async def preparar_resumo_pedido(
     endereco_entrega: str | None = None,
     observacoes: str | None = None,
     nome_cliente: str | None = None,
+    bairro_confirmado: str | None = None,
 ) -> dict[str, Any]:
     calculo = await _calcular_pedido(
         ctx,
@@ -952,6 +962,7 @@ async def preparar_resumo_pedido(
         endereco_entrega=endereco_entrega,
         observacoes=observacoes,
         nome_cliente=nome_cliente,
+        bairro_confirmado=bairro_confirmado,
     )
     if not calculo.get("ok"):
         return calculo
@@ -1029,6 +1040,7 @@ async def registrar_pedido(
     observacoes: str | None = None,
     nome_cliente: str | None = None,
     confirmado: bool = False,
+    bairro_confirmado: str | None = None,
 ) -> dict[str, Any]:
     try:
         _vt = float(valor_total)
@@ -1056,6 +1068,7 @@ async def registrar_pedido(
         endereco_entrega=endereco_entrega,
         observacoes=observacoes,
         nome_cliente=nome_cliente,
+        bairro_confirmado=bairro_confirmado,
     )
     if not calculo.get("ok"):
         return calculo

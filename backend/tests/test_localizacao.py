@@ -249,3 +249,69 @@ class TestEngineLocalizacao:
         # Mensagem verbatim (a voz omitia a opção): SEMPRE oferece a localização.
         assert "localiza" in (out["decisao"].get("mensagem_pronta") or "").lower()
         assert "endereço" in (out["decisao"].get("mensagem_pronta") or "").lower()
+
+
+# ============================================================
+# Taxa: o bairro CONFIRMADO pelo GPS vira o bairro_detectado
+# ============================================================
+class TestTaxaUsaBairroConfirmado:
+    def _ctx(self, taxas_bairro=None, fixa=3.0):
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        ctx.pizzaria.adicionais = []
+        ctx.pizzaria.taxas_bairro = taxas_bairro
+        ctx.pizzaria.taxa_entrega_fixa = fixa
+        return ctx
+
+    def test_bairro_confirmado_evita_lixo_no_split(self):
+        """Bug real (print do dono): GPS achou 'Santa Bárbara'; depois o cliente
+        mandou 'Número 3, na rua 2' e o endereço virou
+        'Santa Bárbara, localização enviada pelo WhatsApp, nº 3 (na rua 2)'.
+        Sem o bairro confirmado, o fallback do split pegava o ÚLTIMO trecho
+        ('nº 3 (na rua 2)') e a atendente falava 'A taxa pro bairro nº 3
+        (na rua 2)...'. Com bairro_confirmado, o nome exibido é 'Santa Bárbara'."""
+        from app.agent.tools import _calcular_pedido
+
+        ctx = self._ctx(taxas_bairro=None, fixa=3.0)  # bairro NÃO cadastrado → taxa fixa
+        db = AsyncMock()
+        endereco = "Santa Bárbara, localização enviada pelo WhatsApp, nº 3 (na rua 2)"
+
+        with patch("app.agent.tools._obter_preco_produto", return_value=(42.0, "4 Queijos (GG)")):
+            with patch("app.services.geocoding.geocode_address",
+                       new=AsyncMock(return_value={"ok": False, "bairro": None})):
+                r = asyncio.run(_calcular_pedido(
+                    ctx, db,
+                    itens=[{"nome": "4 Queijos", "tamanho": "GG", "qtd": 1}],
+                    tipo="delivery", forma_pagamento="dinheiro",
+                    endereco_entrega=endereco,
+                    bairro_confirmado="Santa Bárbara",
+                ))
+
+        assert r["ok"] is True
+        assert r["bairro_detectado"] == "Santa Bárbara"
+        assert "nº 3" not in r["bairro_detectado"]
+        assert r["taxa_entrega"] == 3.0  # taxa fixa (bairro não cadastrado)
+
+    def test_bairro_cadastrado_no_texto_tem_prioridade(self):
+        """Se um bairro CADASTRADO aparece no texto, ele continua ganhando do
+        bairro confirmado (taxa específica do bairro, não a fixa)."""
+        from app.agent.tools import _calcular_pedido
+
+        ctx = self._ctx(
+            taxas_bairro=[{"bairro": "Santa Bárbara", "taxa": 5.0}], fixa=99.0,
+        )
+        db = AsyncMock()
+        endereco = "Santa Bárbara, localização enviada pelo WhatsApp, nº 3"
+
+        with patch("app.agent.tools._obter_preco_produto", return_value=(42.0, "4 Queijos (GG)")):
+            r = asyncio.run(_calcular_pedido(
+                ctx, db,
+                itens=[{"nome": "4 Queijos", "tamanho": "GG", "qtd": 1}],
+                tipo="delivery", forma_pagamento="dinheiro",
+                endereco_entrega=endereco,
+                bairro_confirmado="Santa Bárbara",
+            ))
+
+        assert r["ok"] is True
+        assert r["bairro_detectado"] == "Santa Bárbara"
+        assert r["taxa_entrega"] == 5.0  # taxa do bairro cadastrado, não a fixa
