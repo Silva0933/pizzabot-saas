@@ -100,6 +100,10 @@ async def _nlu_localizacao(user_input: str) -> dict[str, Any] | None:
     }
     if not geo.get("numero"):
         dados["_localizacao_sem_numero"] = True
+    if not geo.get("rua"):
+        # GPS sem nome de rua mapeado (comum em bairros pequenos): além do
+        # número, o engine vai pedir também a rua.
+        dados["_localizacao_sem_rua"] = True
     log.info(
         "Localização convertida em endereço (sem LLM): %s, %s — numero=%s",
         geo.get("rua"), geo.get("bairro"), geo.get("numero") or "(pendente)",
@@ -156,9 +160,19 @@ def _nlu_deterministica(user_input: str, estado: dict[str, Any]) -> dict[str, An
     if not estado.get("carrinho") and not estado.get("apresentou") and _SAUDACAO_PURA_RE.fullmatch(tl):
         return _res("saudacao")
 
-    # 4) Número da casa após a localização do WhatsApp ("123", "nº 123 apto 4").
+    # 4) Aceite puro da OFERTA do cardápio ("sim", "quero", "pode mandar"):
+    # acabamos de perguntar se ele quer ver o cardápio — a resposta é sobre isso.
+    if (
+        estado.get("cardapio_ofertado")
+        and not estado.get("cardapio_enviado")
+        and not estado.get("carrinho")
+        and (_CONFIRMA_RE.fullmatch(tl) or _ACEITA_UPSELL_RE.fullmatch(tl))
+    ):
+        return _res("pedir_cardapio")
+
+    # 5) Número da casa após a localização do WhatsApp ("123", "número 3, rua 2").
     if estado.get("aguardando_numero"):
-        m = re.fullmatch(r"(?:n[ºo°.]?\s*)?(\d{1,6})(?:[,\s]+(.{1,40}))?", tl)
+        m = re.fullmatch(r"(?:n[uú]mero\s*|n[ºo°.]?\s*)?(\d{1,6})(?:[,\s]+(.{1,40}))?", tl)
         if m:
             end: dict[str, Any] = {"numero": m.group(1)}
             if m.group(2):

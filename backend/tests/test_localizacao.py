@@ -110,6 +110,14 @@ class TestNumeroAposLocalizacao:
         assert out["dados"]["endereco"]["numero"] == "45"
         assert "apto 12" in out["dados"]["endereco"]["referencia"]
 
+    def test_numero_por_extenso_com_rua(self):
+        """Caso real: 'Número 3, rua 2' após a localização."""
+        from app.agent.fsm.pipeline import _nlu_deterministica
+        out = _nlu_deterministica("Número 3, rua 2", {"aguardando_numero": True})
+        assert out is not None
+        assert out["dados"]["endereco"]["numero"] == "3"
+        assert "rua 2" in out["dados"]["endereco"]["referencia"]
+
     def test_sem_flag_nao_dispara(self):
         from app.agent.fsm.pipeline import _nlu_deterministica
         assert _nlu_deterministica("123", {}) is None
@@ -183,6 +191,44 @@ class TestEngineLocalizacao:
         engine._aplicar_nlu(estado, {"endereco": {"rua": "Av. Brasil", "numero": "10", "bairro": "Sul"}})
         assert estado["endereco"] == "Av. Brasil, 10, Sul"
 
+    def test_atualizacao_parcial_nao_perde_o_bairro(self):
+        """Bug real: localização achou 'Santa Bárbara'; cliente mandou 'rua 2,
+        número 3' e o bairro SUMIA do endereço (card mostrava só 'rua 2, 3')."""
+        from app.agent.fsm import engine
+        estado: dict = {}
+        # 1º turno: localização → bairro confirmado
+        engine._aplicar_nlu(estado, {"endereco": {
+            "bairro": "Santa Bárbara", "referencia": "localização enviada pelo WhatsApp",
+        }})
+        assert estado["endereco_bairro"] == "Santa Bárbara"
+        # 2º turno: NLU extraiu rua+numero (sem bairro) → bairro é preservado
+        engine._aplicar_nlu(estado, {"endereco": {"rua": "rua 2", "numero": "3"}})
+        assert "Santa Bárbara" in estado["endereco"]
+        assert "rua 2" in estado["endereco"] and "3" in estado["endereco"]
+
+    def test_sem_rua_pergunta_rua_e_numero(self):
+        """GPS sem rua mapeada: a atendente pede RUA e número (não só o número)."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        nlu = {
+            "intencao": "informar_endereco",
+            "dados": {
+                "tipo_entrega": "delivery",
+                "endereco": {"rua": None, "numero": None, "bairro": "Santa Bárbara",
+                             "referencia": "localização enviada pelo WhatsApp"},
+                "_localizacao_sem_numero": True,
+                "_localizacao_sem_rua": True,
+            },
+        }
+        out = asyncio.run(engine.processar(
+            db, ctx, estado, nlu, user_input="[localizacao lat=-2.59 lon=-44.21]"
+        ))
+        pergunta = out["decisao"]["proxima_pergunta"].lower()
+        assert "rua" in pergunta and "número" in pergunta
+        fatos = " ".join(out["decisao"]["fatos"])
+        assert "Santa Bárbara" in fatos
+
     def test_pergunta_de_endereco_oferece_localizacao(self):
         """Ao pedir o endereço, a atendente menciona a opção de mandar a localização."""
         from app.agent.fsm import engine
@@ -200,4 +246,6 @@ class TestEngineLocalizacao:
                 out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="entrega"))
 
         assert out["decisao"]["acao"] == "pedir_info"
-        assert "localiza" in out["decisao"]["proxima_pergunta"].lower()
+        # Mensagem verbatim (a voz omitia a opção): SEMPRE oferece a localização.
+        assert "localiza" in (out["decisao"].get("mensagem_pronta") or "").lower()
+        assert "endereço" in (out["decisao"].get("mensagem_pronta") or "").lower()

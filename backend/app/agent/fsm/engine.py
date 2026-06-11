@@ -243,6 +243,10 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         estado["tipo"] = dados["tipo_entrega"]
     end = dados.get("endereco")
     if isinstance(end, dict) and any(end.get(k) for k in ("rua", "numero", "bairro")):
+        # Memoriza o bairro confirmado (ex.: veio do reverse geocoding da
+        # localização) — atualizações parciais do endereço não podem perdê-lo.
+        if end.get("bairro"):
+            estado["endereco_bairro"] = str(end["bairro"]).strip()
         if (
             estado.get("endereco")
             and end.get("numero")
@@ -258,7 +262,10 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
                 if end.get("referencia"):
                     estado["endereco"] += f" ({end['referencia']})"
         else:
-            partes = [end.get("rua"), end.get("numero"), end.get("bairro"), end.get("referencia")]
+            # Sem bairro novo, reusa o bairro já confirmado (ex.: cliente mandou
+            # "rua 2, número 3" depois da localização → mantém "Santa Bárbara").
+            bairro = end.get("bairro") or estado.get("endereco_bairro")
+            partes = [end.get("rua"), end.get("numero"), bairro, end.get("referencia")]
             estado["endereco"] = ", ".join(str(x) for x in partes if x)
     if dados.get("forma_pagamento") in ("pix", "cartao", "dinheiro"):
         estado["pagamento"] = dados["forma_pagamento"]
@@ -643,7 +650,9 @@ async def processar(
         bool(estado.get("cardapio_ofertado"))
         and not estado.get("cardapio_enviado")
         and not estado["carrinho"]
-        and _eh_confirmacao(intencao, user_input)
+        and not dados.get("produtos")  # "quero uma calabresa" NÃO é pedir o cardápio
+        # "sim", "pode", "quero", "manda" — aceite em qualquer forma comum
+        and (_eh_confirmacao(intencao, user_input) or _afirmou_upsell(intencao, user_input))
     )
     if _quer_cardapio(intencao, user_input, dados) or confirmou_ver_cardapio:
         enviou_agora = False
@@ -733,18 +742,26 @@ async def processar(
     # cliente respondeu outra coisa, o funil segue normal sem insistir).
     estado.pop("aguardando_numero", None)
 
-    # Localização do WhatsApp SEM número da casa: confirma o endereço resolvido
-    # e pergunta só o número/complemento — UMA vez, antes de seguir o funil.
+    # Localização do WhatsApp SEM número da casa (e às vezes sem rua mapeada):
+    # confirma o que encontramos e pergunta SÓ o que falta — UMA vez.
     if dados.get("_localizacao_sem_numero") and estado.get("endereco"):
         estado["etapa"] = "ENDERECO"
         estado["aguardando_numero"] = True
         decisao["acao"] = "pedir_info"
+        bairro_loc = estado.get("endereco_bairro")
+        rua_loc = (dados.get("endereco") or {}).get("rua")
+        partes_achou = [p for p in (rua_loc, f"bairro {bairro_loc}" if bairro_loc else None) if p]
+        achou = ", ".join(str(p) for p in partes_achou) if partes_achou else estado["endereco"]
         decisao["fatos"].append(
-            f"Localização recebida e convertida em endereço: {estado['endereco']}."
+            f"Localização recebida; o mapa identificou: {achou}."
         )
+        if dados.get("_localizacao_sem_rua"):
+            faltando = "a RUA e o NÚMERO da casa (e complemento, se tiver)"
+        else:
+            faltando = "o NÚMERO da casa (e complemento apto/bloco, se tiver)"
         decisao["proxima_pergunta"] = (
-            "Agradeça a localização e confirme o endereço encontrado (rua e bairro, sem inventar). "
-            "Depois pergunte SÓ o número da casa e o complemento (apto/bloco), se tiver."
+            f"Agradeça a localização e confirme o que o mapa achou ({achou} — não invente além disso). "
+            f"Depois pergunte SÓ {faltando}."
         )
         return {"decisao": decisao, "estado": estado}
 
@@ -1126,9 +1143,12 @@ async def processar(
         estado["etapa"] = "ENDERECO"
         decisao["acao"] = "pedir_info"
         decisao["proxima_pergunta"] = (
-            "Peça o endereço completo (rua, número, bairro, referência) e OBRIGATORIAMENTE "
-            "diga também que, se preferir, ele pode só mandar a LOCALIZAÇÃO aqui pelo WhatsApp "
-            "(é mais fácil) — não omita essa opção. Não repita o total."
+            "Peça o endereço completo e ofereça a opção de mandar a localização."
+        )
+        # Verbatim (a voz vinha OMITINDO a opção da localização — assim sempre sai).
+        decisao["mensagem_pronta"] = (
+            "Me passa seu endereço completo? (rua, número e bairro) [QUEBRA] "
+            "Ou, se for mais fácil, é só me mandar sua localização aqui pelo WhatsApp 📍😉"
         )
         return {"decisao": decisao, "estado": estado}
 

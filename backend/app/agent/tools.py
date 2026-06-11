@@ -870,12 +870,24 @@ async def _calcular_pedido(
     taxa_entrega = 0.0
     bairro_detectado = None
     if tipo == "delivery" and endereco_entrega:
-        try:
-            from app.services.geocoding import geocode_address
-            geo = await geocode_address(endereco_entrega)
-            bairro_detectado = geo["bairro"]
-        except Exception as e:
-            log.warning("Erro de geocodificacao Nominatim em registrar_pedido: %s", e)
+        # 0) Match direto e determinístico: algum bairro CADASTRADO na tabela de
+        # taxas aparece no texto do endereço? (ex.: o bairro veio do reverse
+        # geocoding da localização do WhatsApp). É a fonte mais confiável — o
+        # Nominatim de um endereço parcial ("rua 2, 3") acha lugar errado.
+        end_norm = _normalizar(endereco_entrega)
+        for _b in (getattr(ctx.pizzaria, "taxas_bairro", None) or []):
+            _nome = (_b or {}).get("bairro") if isinstance(_b, dict) else None
+            if _nome and _normalizar(_nome) and _normalizar(_nome) in end_norm:
+                bairro_detectado = _nome
+                break
+
+        if not bairro_detectado:
+            try:
+                from app.services.geocoding import geocode_address
+                geo = await geocode_address(endereco_entrega)
+                bairro_detectado = geo["bairro"]
+            except Exception as e:
+                log.warning("Erro de geocodificacao Nominatim em registrar_pedido: %s", e)
 
         # Fallback local se falhar a geocodificação
         if not bairro_detectado:

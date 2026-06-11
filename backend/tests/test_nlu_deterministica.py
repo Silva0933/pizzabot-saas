@@ -83,6 +83,31 @@ class TestSaudacao:
         assert _nlu_deterministica("oi", _estado(carrinho=[{"x": 1}])) is None
 
 
+class TestCardapioOfertado:
+    """Bug real: bot ofereceu o cardápio, cliente disse 'Quero' e a atendente
+    respondeu 'Quero o quê?'. Aceite puro à oferta = pedir_cardapio."""
+
+    def _estado(self):
+        return _estado(apresentou=True, cardapio_ofertado=True)
+
+    @pytest.mark.parametrize("msg", ["quero", "sim", "pode mandar", "manda", "pode", "ok"])
+    def test_aceite_puro_vira_pedir_cardapio(self, msg):
+        out = _nlu_deterministica(msg, self._estado())
+        assert out is not None
+        assert out["intencao"] == "pedir_cardapio"
+
+    def test_com_pedido_junto_vai_para_llm(self):
+        assert _nlu_deterministica("quero uma calabresa", self._estado()) is None
+
+    def test_cardapio_ja_enviado_nao_dispara(self):
+        estado = self._estado()
+        estado["cardapio_enviado"] = True
+        assert _nlu_deterministica("quero", estado) is None
+
+    def test_sem_oferta_nao_dispara(self):
+        assert _nlu_deterministica("quero", _estado(apresentou=True)) is None
+
+
 class TestLimites:
     def test_mensagem_longa_nao_dispara(self):
         assert _nlu_deterministica("sim " * 20, _estado(etapa="AGUARDANDO_CONFIRMACAO")) is None
