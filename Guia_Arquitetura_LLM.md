@@ -34,7 +34,7 @@ Frontend (src/)
 React 19 + Vite + TypeScript
 Tailwind CSS + lucide-react + recharts + motion
 PWA (manifest + service worker)
-Telas atuais em src/components/v2/: Início, Conversas, Pedidos, Cardápio, Meu Negócio, Ajuda (guia rápido), PlatformAdminView
+Telas atuais em src/components/v2/: Início, Conversas, Pedidos, Cardápio, Meu Negócio, Assinatura (plano/faturas), Ajuda (guia rápido), PlatformAdminView — mais SignupScreen (cadastro público com trial) no App.tsx
 Componentes do agente IA (backend/app/agent/)
 runner, llm, providers, tools, prompt, memory, context. O agente é orientado por uma FSM (máquina de estados) — foco recente do desenvolvimento (ver commits). Tools: buscar_cardapio, registrar_pedido, gerar_pagamento, etc. A busca do cardápio usa SQL (não depende de embeddings); reindex semântico é opcional via Gemini.
 
@@ -61,6 +61,13 @@ Mudanças recentes (sessão SaaS de produção — ver seção "8" no fim)
 - Fluidez: resgate de carrinho abandonado (~25 min, 1x por conversa), "o de sempre" no pipeline FSM, reação ✅ ao comprovante do Pix manual, voz com balões múltiplos ([QUEBRA]).
 - Produção: Sentry opcional (SENTRY_DSN), rate limit no login (5/min/IP) e signup (3/h/IP), CI no GitHub Actions (pytest + tsc). Migrations vão até 014_billing_plataforma.sql.
 
+Mudanças recentes (lapidação da conversa + endereço por localização — ver seção "9" no fim)
+- Endereço por LOCALIZAÇÃO do WhatsApp: o cliente manda a localização (clipe 📎) e o sistema converte em endereço via reverse geocoding (Nominatim), sem LLM; sem número/rua no GPS, a atendente pergunta só o que falta.
+- Upsell de ITEM ÚNICO: "quero" depois de "Quer uma Coca Cola 2L?" adiciona o item direto (antes listava a única opção e perguntava "qual?").
+- Aceite da oferta do cardápio: "quero"/"sim"/"pode mandar" após "Gostaria de ver o cardápio?" envia o cardápio (antes: "Quero o quê?").
+- Endereço não perde o bairro: atualização parcial (rua/número depois da localização) preserva o bairro confirmado (estado.endereco_bairro); taxa de entrega prioriza bairro CADASTRADO citado no texto do endereço sobre o geocoding.
+- Falas críticas viraram verbatim/instrução reforçada: pergunta de endereço (sempre oferece a localização), confirmação do item aceito pelo nome, bairro exato ao informar a taxa.
+
 Como rodar
 Backend (Docker):
 
@@ -76,8 +83,14 @@ npm run lint     # tsc --noEmit (checagem de tipos)
 Configuração de IA e pagamentos
 Chaves de LLM / provedor / modelo: definidos no painel admin → Configuração de IA (tabela app_config), com teste de conexão e consumo de tokens.
 Pagamento na conversa: por pizzaria, em Meu Negócio → Geral. Campo modo_pagamento_online com 3 modos — Automático (Mercado Pago/Asaas; cobrança gerada ao "pagar agora", confirmação via webhook, Pix expira em 30 min), Manual (envia o copia-e-cola próprio da pizzaria, pede o comprovante, dono confere/aprova no card de Pedidos) e Desativado (só na entrega/retirada). Chaves do gateway continuam por pizzaria.
-Deploy
-Via Coolify a partir do repositório: backend e worker pelo backend/Dockerfile (worker com APP_ROLE=worker), painel via build Vite + Nginx, mais Postgres (pgvector) e Redis. Docs das fases em docs/.
+Deploy (estado REAL de produção — configurado em 2026-06-10)
+Coolify (https://coolify.secretariaai.eu.cc) com 4 serviços a partir do repositório github.com/Silva0933/pizzabot-saas (branch main, deploy key):
+- pizzabot-backend (API) — https://api.pizzabot.secretariaai.eu.cc — migrations rodam no boot
+- pizzabot-worker (APP_ROLE=worker) — roda o agente IA
+- pizzabot-beat (APP_ROLE=beat) — agendador dos jobs periódicos; SEMPRE 1 réplica
+- pizzabot-painel — https://pizzabot.secretariaai.eu.cc (build Vite + Nginx)
+Mais Postgres (pgvector) e Redis. Deploy via API do Coolify: POST /api/v1/deploy?uuid=<app> (backend primeiro).
+Cobrança da plataforma JÁ ATIVA: envs ASAAS_PLATFORM_* preenchidas nos 3 serviços Python e webhook criado na conta Asaas de produção apontando para /webhook/asaas-plataforma (autenticado por token). Docs das fases em docs/.
 
 # Guia de Arquitetura e Estrutura de Arquivos — PizzaBot
 
@@ -290,3 +303,38 @@ Quatro fases que transformam a ferramenta em SaaS pronto para produção. **Migr
 *   **Casos da NLU determinística**: `_nlu_deterministica` em [fsm/pipeline.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/pipeline.py).
 *   **Janela/template do resgate de carrinho**: [workers/tasks.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/workers/tasks.py) (`RESGATE_CARRINHO_SECONDS`, `_resgatar_carrinho_async`).
 *   **Failover/modelos (NLU, fallback, transcrição, por plano)**: card "Configuração de IA" do admin ([PlatformAdminView.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/PlatformAdminView.tsx) `LLMConfigCard`) + [services/app_config.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/services/app_config.py).
+
+---
+
+## 9. Endereço por Localização + Lapidação da Conversa (sessão atual)
+
+Correções vindas de conversas REAIS de teste em produção (prints do dono). Sem migrations novas. Testes: `test_localizacao.py` (20 casos), casos novos em `test_upsell.py` e `test_nlu_deterministica.py`.
+
+### 9.1. Endereço pela LOCALIZAÇÃO do WhatsApp (clipe 📎 → Localização)
+Fluxo completo, determinístico (sem LLM):
+1.  **Webhook** ([routes/webhook.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/webhook.py) `_extract_content`): `locationMessage` vira o texto `[localizacao lat=.. lon=..]` (metadata enxuto — sem o thumbnail base64).
+2.  **Reverse geocoding** ([services/geocoding.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/services/geocoding.py) `reverse_geocode`): Nominatim `/reverse` (zoom 18) → rua, número, bairro, cidade.
+3.  **Pipeline** ([fsm/pipeline.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/pipeline.py) `_nlu_localizacao`, roda ANTES da NLU): sintetiza `informar_endereco` com `tipo_entrega=delivery` implícito. Flags `_localizacao_sem_numero` / `_localizacao_sem_rua` quando o GPS não traz esses campos (comum). Geocoding fora do ar → cai na NLU LLM sem travar.
+4.  **Engine** ([fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py)): confirma SÓ o que o mapa achou e pergunta o que falta (rua e/ou número) UMA vez (`estado.aguardando_numero`); a resposta ("123", "Número 3, rua 2") é entendida sem LLM (caso 5 da `_nlu_deterministica`) e ANEXADA ao endereço.
+
+### 9.2. Endereço robusto (bugs reais corrigidos)
+*   **Bairro preservado**: o bairro confirmado fica em `estado.endereco_bairro`; atualização parcial (cliente manda "rua 2, número 3" depois da localização) NÃO apaga o bairro — `_aplicar_nlu` faz merge (antes o card mostrava só "rua 2, 3").
+*   **Resposta só com número ANEXA** (não substitui a rua/bairro inteiros).
+*   **Taxa de entrega — prioridade de detecção** ([agent/tools.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/tools.py) `_calcular_pedido`): 1º bairro CADASTRADO na tabela de taxas citado no texto do endereço (match normalizado, offline); 2º geocoding Nominatim; 3º último trecho do endereço. (Antes "rua 2, 3" geocodificava para um bairro errado de outra cidade.)
+
+### 9.3. Lapidação da conversa (motor, não prompt)
+*   **Upsell de ITEM ÚNICO**: quando a oferta tem UMA opção no total (ex.: só a Coca Cola 2L), o engine guarda `estado.upsell_item_unico`; o aceite seco ("quero") injeta ESSE item antes do `_aplicar_nlu` (preço real no mesmo turno). Com várias opções, continua listando e perguntando qual.
+*   **Aceite da oferta do cardápio**: "quero/sim/pode mandar" após "Gostaria de ver o cardápio?" → envia o cardápio. Determinístico no pipeline (caso 4) + `confirmou_ver_cardapio` ampliado no engine (`_eh_confirmacao` OU `_afirmou_upsell`, bloqueado se a mensagem já traz produtos).
+*   **Falas garantidas** (a LLM da voz vinha omitindo instruções):
+    - Pergunta de endereço é `mensagem_pronta` (verbatim, 2 balões): pede o endereço E oferece a localização — sempre.
+    - Após aceitar o upsell, a voz é obrigada a confirmar o item pelo nome ("Coca anotada!"), não um "Beleza!" seco.
+    - Ao informar a taxa, usa EXATAMENTE o `bairro_detectado` (a voz repetia a última mensagem do cliente como nome do lugar).
+
+### Onde mexer (seção 9)
+*   **Conversão da localização / flags sem rua-número**: [fsm/pipeline.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/pipeline.py) (`_nlu_localizacao`, `_LOCALIZACAO_RE`).
+*   **Reverse geocoding**: [services/geocoding.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/services/geocoding.py) (`reverse_geocode`).
+*   **Merge/anexo do endereço e bairro preservado**: [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py) (`_aplicar_nlu`).
+*   **Pergunta pós-localização (rua/número)**: bloco `_localizacao_sem_numero` em [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py).
+*   **Prioridade da detecção de bairro na taxa**: [agent/tools.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/tools.py) (`_calcular_pedido`, seção 2).
+*   **Upsell item único**: [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py) (`upsell_item_unico` — oferta no bloco 0b, aceite antes do `_aplicar_nlu`).
+*   **Texto verbatim da pergunta de endereço**: funil etapa 2 em [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py).
