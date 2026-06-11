@@ -12,10 +12,12 @@ process_and_reply, confirm_processed). O loop é PERSISTENTE → pool de DB e cl
 do LLM são reaproveitados (sem dispose/reset por mensagem, ao contrário do worker).
 """
 import asyncio
+import collections
 import logging
 import os
 import signal
 import socket
+import time
 import uuid as _uuid
 
 from app.dispatcher import streams
@@ -42,6 +44,7 @@ SCHEDULER_INTERVAL = float(os.getenv("DISPATCHER_SCHEDULER_INTERVAL") or 0.25)
 READ_COUNT = _int_env("DISPATCHER_READ_COUNT", 10)
 RECLAIM_INTERVAL = float(os.getenv("DISPATCHER_RECLAIM_INTERVAL") or 30.0)
 RECLAIM_MIN_IDLE_MS = _int_env("DISPATCHER_RECLAIM_MIN_IDLE_MS", 60000)
+METRICS_INTERVAL = float(os.getenv("DISPATCHER_METRICS_INTERVAL") or 30.0)
 LOCK_TTL = 90  # igual ao FLUSH_LOCK_TTL do worker — mesmo namespace de lock
 
 # Nome único por réplica (o consumer group exige consumers distintos por réplica,
@@ -50,6 +53,16 @@ _HOST = os.getenv("HOSTNAME") or socket.gethostname() or _uuid.uuid4().hex[:8]
 
 _stop = asyncio.Event()
 _inflight: set[asyncio.Task] = set()
+# Janela das últimas durações de handle (p50/p95 nas métricas periódicas).
+_durations: collections.deque[float] = collections.deque(maxlen=500)
+
+
+def _pct(values: list[float], p: float) -> float:
+    if not values:
+        return 0.0
+    s = sorted(values)
+    k = min(len(s) - 1, int(round((p / 100.0) * (len(s) - 1))))
+    return s[k]
 
 
 def _parse_conv(conv: str) -> tuple[str, str]:
@@ -109,6 +122,7 @@ async def _handle(entry_id: str, conv: str | None, sem: asyncio.Semaphore) -> No
             pid_uuid = _uuid.UUID(pid)
             pending = await drain_pending(pid_uuid, tel)
             if pending:
+                t0 = time.monotonic()
                 conteudo = "\n".join(p["conteudo"] for p in pending if p.get("conteudo"))
                 if conteudo.strip():
                     from app.agent.runner import process_and_reply
@@ -123,6 +137,12 @@ async def _handle(entry_id: str, conv: str | None, sem: asyncio.Semaphore) -> No
                                 await db.rollback()
                             except Exception:  # noqa: BLE001
                                 pass
+                dur = time.monotonic() - t0
+                _durations.append(dur)
+                log.info(
+                    "Dispatcher: conversa processada pid=%s tel=%s msgs=%d dur=%.2fs",
+                    pid, tel, len(pending), dur,
+                )
             await confirm_processed(pid_uuid, tel)
         finally:
             try:
@@ -194,6 +214,36 @@ async def _reclaim_loop(consumer: str, sem: asyncio.Semaphore) -> None:
             _spawn(_handle(entry_id, conv, sem))
 
 
+async def _metrics_loop(sem: asyncio.Semaphore) -> None:
+    """Loga métricas periódicas (profundidade de fila, PEL, em-voo, p50/p95).
+    Vira sinal de saturação/escala (Etapa 2)."""
+    from app.redis_client import redis
+
+    while not _stop.is_set():
+        try:
+            await asyncio.wait_for(_stop.wait(), timeout=METRICS_INTERVAL)
+            break  # _stop setado
+        except asyncio.TimeoutError:
+            pass
+        try:
+            due = await redis.zcard(streams.DUE_KEY)
+            ready = await redis.xlen(streams.READY_STREAM)
+            try:
+                pend = await redis.xpending(streams.READY_STREAM, streams.GROUP)
+                pel = pend.get("pending") if isinstance(pend, dict) else pend
+            except Exception:  # noqa: BLE001
+                pel = "?"
+            durs = list(_durations)
+            log.info(
+                "Dispatcher metrics: due=%s ready=%s pel=%s inflight=%s sem_free=%s "
+                "p50=%.2fs p95=%.2fs (n=%d)",
+                due, ready, pel, len(_inflight), sem._value,
+                _pct(durs, 50), _pct(durs, 95), len(durs),
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("Dispatcher metrics falhou: %s", e)
+
+
 async def run_dispatcher() -> None:
     init_sentry("dispatcher")
     await streams.ensure_group()
@@ -205,6 +255,7 @@ async def run_dispatcher() -> None:
     tasks = [
         asyncio.create_task(_scheduler_loop()),
         asyncio.create_task(_reclaim_loop(f"{_HOST}-reclaim", sem)),
+        asyncio.create_task(_metrics_loop(sem)),
     ]
     for i in range(READERS):
         tasks.append(asyncio.create_task(_reader_loop(f"{_HOST}-c{i}", sem)))
@@ -231,6 +282,8 @@ def _install_signals(loop: asyncio.AbstractEventLoop) -> None:
 
 def main() -> None:
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    # httpx loga cada request em INFO — ruidoso. Deixa o sinal do dispatcher limpo.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     _install_signals(loop)

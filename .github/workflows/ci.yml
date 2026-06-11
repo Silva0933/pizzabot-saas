@@ -19,6 +19,19 @@ jobs:
       APP_SECRET_KEY: ci-secret-key-apenas-para-testes-0123456789abcdef
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
       DATABASE_URL_SYNC: postgresql://ci:ci@localhost:5432/ci
+      # Com REDIS_URL setado, os testes de integração do dispatcher (Lua do
+      # scheduler, consumer group, XAUTOCLAIM, carga) rodam de verdade.
+      REDIS_URL: redis://localhost:6379/0
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
