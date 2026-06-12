@@ -2,7 +2,7 @@
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_serializer
@@ -283,7 +283,19 @@ async def assinatura_pizzaria(
         select(Fatura).where(Fatura.pizzaria_id == pizzaria_id)
         .order_by(Fatura.created_at.desc()).limit(12)
     )).scalars().all()
-    aberta = next((f for f in faturas if f.status in ("pendente", "vencida")), None)
+
+    # Distingue "pagar agora" de "próxima cobrança": uma fatura pendente cujo
+    # vencimento ainda está no futuro (plano já ativo/concedido) NÃO é uma conta
+    # vencida — é a próxima cobrança. Só vira "fatura_aberta" (pague agora) se já
+    # venceu ou vence em até 2 dias. Evita o painel parecer "assinou e deve um mês".
+    hoje = date.today()
+    pendentes = [f for f in faturas if f.status in ("pendente", "vencida")]
+
+    def _due_now(f: Fatura) -> bool:
+        return f.status == "vencida" or f.vencimento is None or f.vencimento <= hoje + timedelta(days=2)
+
+    aberta = next((f for f in pendentes if _due_now(f)), None)
+    proxima = next((f for f in pendentes if not _due_now(f)), None)
 
     return {
         "plano": pizz.plano,
@@ -298,6 +310,7 @@ async def assinatura_pizzaria(
         "cobranca_cpf_cnpj": pizz.cobranca_cpf_cnpj,
         "billing_disponivel": billing_configurado(),
         "fatura_aberta": fatura_dict(aberta) if aberta else None,
+        "proxima_cobranca": fatura_dict(proxima) if proxima else None,
         "faturas": [fatura_dict(f) for f in faturas],
         "planos": plans_catalog(),
     }

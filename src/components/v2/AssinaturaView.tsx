@@ -63,14 +63,19 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
         cobranca_cpf_cnpj: cpfCnpj.trim(),
       });
       const fat = r.primeira_fatura;
+      // "Pagar agora" só se a 1ª cobrança vence já; se for futura (plano já
+      // concedido/pago até lá), é a PRÓXIMA cobrança — não abre o Pix nem assusta.
+      const dueNow = !!fat && (!fat.vencimento ||
+        new Date(fat.vencimento).getTime() <= Date.now() + 2 * 86400000);
       setMsg({
         ok: true,
-        text: fat
-          ? "Assinatura criada! Pague abaixo — o plano ativa assim que o pagamento confirmar."
-          : "Assinatura criada! A fatura chega por e-mail (e aparece aqui em instantes).",
+        text: !fat
+          ? "Assinatura criada! A fatura chega por e-mail (e aparece aqui em instantes)."
+          : dueNow
+            ? "Assinatura criada! Pague abaixo — o plano ativa assim que o pagamento confirmar."
+            : `Plano agendado! Sua próxima cobrança é em ${fmtData(fat.vencimento)} — o atendimento segue ativo até lá.`,
       });
-      // Abre o checkout Pix branded direto (sem mandar pra página do Asaas).
-      if (fat?.id) setCheckoutFatura({ id: fat.id, valor: fat.valor });
+      if (fat?.id && dueNow) setCheckoutFatura({ id: fat.id, valor: fat.valor });
       setPlanoEscolhido(null);
       load();
     } catch (e: any) {
@@ -159,7 +164,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
           </div>
         </div>
 
-        {info.fatura_aberta && (
+        {info.fatura_aberta ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm text-amber-900">
               <strong>Fatura em aberto:</strong> {brl(info.fatura_aberta.valor)} · vence {fmtData(info.fatura_aberta.vencimento)}
@@ -170,7 +175,21 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
               Pagar agora <QrCode className="w-3.5 h-3.5" />
             </button>
           </div>
-        )}
+        ) : info.proxima_cobranca ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm text-emerald-900 inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                <strong>Plano ativo.</strong> Próxima cobrança: {brl(info.proxima_cobranca.valor)} em {fmtData(info.proxima_cobranca.vencimento)}.
+              </span>
+            </div>
+            <button type="button"
+              onClick={() => setCheckoutFatura({ id: info.proxima_cobranca!.id, valor: info.proxima_cobranca!.valor })}
+              className="inline-flex items-center gap-1.5 text-emerald-700 hover:text-emerald-800 text-xs font-semibold">
+              Pagar antecipado <QrCode className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {checkoutFatura && (

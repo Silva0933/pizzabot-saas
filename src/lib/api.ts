@@ -590,7 +590,8 @@ export interface AssinaturaInfo {
   cobranca_email: string | null;
   cobranca_cpf_cnpj: string | null;
   billing_disponivel: boolean;
-  fatura_aberta: FaturaInfo | null;
+  fatura_aberta: FaturaInfo | null;       // pagar AGORA (vencida/vencendo)
+  proxima_cobranca?: FaturaInfo | null;   // próxima cobrança futura (plano já ativo)
   faturas: FaturaInfo[];
   planos: PlanoCatalogo[];
 }
