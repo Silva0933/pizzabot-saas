@@ -88,6 +88,41 @@ def test_pump_due_promove_so_vencidos_e_e_atomico():
     asyncio.run(run())
 
 
+def test_stream_e_podado_por_maxlen():
+    async def run():
+        from unittest.mock import patch
+
+        from app.dispatcher import streams
+
+        r = await _fresh_redis()
+        import app.redis_client as rc
+        rc.redis = r
+        streams.redis = r
+        streams._pump_script = None
+
+        await r.delete(streams.DUE_KEY, streams.READY_STREAM)
+        try:
+            await r.xgroup_destroy(streams.READY_STREAM, streams.GROUP)
+        except Exception:
+            pass
+        await streams.ensure_group()
+
+        pid = uuid.uuid4()
+        # 500 conversas vencidas; com MAXLEN ~ 10 o stream tem que ser podado.
+        await r.zadd(streams.DUE_KEY, {f"{pid}:55{i:09d}": 0 for i in range(500)})
+        with patch.object(streams, "STREAM_MAXLEN", 10):
+            streams._pump_script = None
+            promovidos = await streams.pump_due(1000)
+        assert promovidos == 500
+        xlen = await r.xlen(streams.READY_STREAM)
+        assert xlen < 500, f"stream não foi podado (xlen={xlen})"
+
+        await r.delete(streams.DUE_KEY, streams.READY_STREAM)
+        await r.aclose()
+
+    asyncio.run(run())
+
+
 def test_rearm_volta_pro_zset():
     async def run():
         from app.dispatcher import streams
