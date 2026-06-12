@@ -59,4 +59,8 @@ celery_app.conf.beat_schedule = {
         # avisos de vencimento + suspensão por inadimplência/trial expirado.
         "schedule": crontab(hour=8, minute=0),
     },
+    "monitorar-fila-dispatcher": {
+        "task": "pizzabot.monitorar_fila_dispatcher",
+        "schedule": 120.0,  # a cada 2 min — alerta de saturação do dispatcher
+    },
 }

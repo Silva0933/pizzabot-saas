@@ -17,10 +17,21 @@ o serviço com APP_ROLE=beat só dispara, quem processa é o worker.
 """
 import asyncio
 import logging
+import os
 
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
+
+# --- Monitor de saturação do dispatcher (autoscaling ASSISTIDO) ---
+# O Coolify (StandaloneDocker) não tem autoscaling nativo, mas o dispatcher é um
+# consumer de fila e escala por réplicas. Este job vê a fila a cada ~2min e
+# ALERTA (log WARNING → Sentry) quando satura por checagens consecutivas, pra o
+# operador escalar manual (subir DISPATCHER_CONCURRENCY ou +1 réplica). Tudo env.
+_ALERT_DUE = int(os.getenv("DISPATCHER_ALERT_DUE") or 50)       # conversas vencidas na fila
+_ALERT_PEL = int(os.getenv("DISPATCHER_ALERT_PEL") or 30)       # entradas em voo (PEL)
+_ALERT_STREAK = int(os.getenv("DISPATCHER_ALERT_STREAK") or 2)  # checagens seguidas saturadas
+_ALERT_COOLDOWN = int(os.getenv("DISPATCHER_ALERT_COOLDOWN") or 1800)  # s entre alertas
 
 
 @celery_app.task(name="pizzabot.verificar_conexoes_whatsapp")
@@ -179,3 +190,60 @@ async def _verificar_assinaturas_async() -> dict:
             await engine.dispose()
         except Exception:
             pass
+
+
+@celery_app.task(name="pizzabot.monitorar_fila_dispatcher")
+def monitorar_fila_dispatcher() -> dict:
+    return asyncio.run(_monitorar_fila_dispatcher_async())
+
+
+async def _monitorar_fila_dispatcher_async() -> dict:
+    # Client Redis próprio (asyncio.run cria loop novo por task → evita reusar o
+    # client global preso a outro loop).
+    from redis.asyncio import Redis
+
+    from app.config import get_settings
+
+    r = Redis.from_url(get_settings().redis_url, decode_responses=True)
+    try:
+        return await _avaliar_fila_dispatcher(r)
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao monitorar a fila do dispatcher: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await r.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _avaliar_fila_dispatcher(r) -> dict:
+    """Lê a profundidade da fila e alerta na saturação sustentada. Recebe o client
+    Redis (testável). Estado de streak/cooldown vive no próprio Redis."""
+    from app.dispatcher.streams import DUE_KEY, GROUP, READY_STREAM
+
+    due = await r.zcard(DUE_KEY)
+    try:
+        pend = await r.xpending(READY_STREAM, GROUP)
+        pel = (pend.get("pending") if isinstance(pend, dict) else pend) or 0
+    except Exception:  # noqa: BLE001
+        pel = 0
+
+    saturado = due >= _ALERT_DUE or pel >= _ALERT_PEL
+    if not saturado:
+        await r.delete("disp:alert:streak")
+        return {"due": due, "pel": pel, "saturado": False}
+
+    streak = await r.incr("disp:alert:streak")
+    await r.expire("disp:alert:streak", 600)
+    alerta = False
+    # Só alerta após N checagens seguidas e respeitando o cooldown (anti-spam).
+    if streak >= _ALERT_STREAK and await r.set("disp:alert:cooldown", "1", nx=True, ex=_ALERT_COOLDOWN):
+        alerta = True
+        log.warning(
+            "ALERTA: dispatcher saturado (due=%s, pel=%s; limites due>=%s ou pel>=%s por "
+            "%s checagens). Escale: aumente DISPATCHER_CONCURRENCY ou adicione 1 réplica do "
+            "pizzabot-dispatcher.",
+            due, pel, _ALERT_DUE, _ALERT_PEL, _ALERT_STREAK,
+        )
+    return {"due": due, "pel": pel, "saturado": True, "streak": streak, "alerta": alerta}
