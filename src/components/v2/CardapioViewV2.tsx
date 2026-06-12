@@ -555,8 +555,8 @@ export function CardapioViewV2({ pizzariaId }: Props) {
           onClick={cancel} 
         />
         
-        <div className="absolute inset-y-0 right-0 max-w-full flex pl-10">
-          <div 
+        <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10">
+          <div
             className={`w-screen max-w-xl bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
               isFormPanelOpen ? "translate-x-0" : "translate-x-full"
             }`}
@@ -579,8 +579,8 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               </button>
             </div>
 
-            {/* Abas de Navegação do Formulário */}
-            <div className="flex border-b border-slate-100 px-4 bg-slate-50/50">
+            {/* Abas de Navegação do Formulário (scroll horizontal no mobile) */}
+            <div className="flex border-b border-slate-100 px-4 bg-slate-50/50 overflow-x-auto scrollbar-none">
               {([
                 ["geral", "Geral", <LayoutGrid className="w-3.5 h-3.5" />],
                 ["tamanhos", "Tamanhos & Preços", <SlidersHorizontal className="w-3.5 h-3.5" />],
@@ -593,7 +593,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                     key={id}
                     type="button"
                     onClick={() => setActiveTab(id)}
-                    className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition-all -mb-px ${
+                    className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition-all -mb-px shrink-0 whitespace-nowrap ${
                       isActive
                         ? "border-orange-500 text-orange-600"
                         : "border-transparent text-slate-500 hover:text-slate-800"
@@ -621,7 +621,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                     />
                   </Field>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Categoria">
                       {novaCategoria ? (
                         <div className="flex gap-1.5">
@@ -870,7 +870,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                         </label>
 
                         {Boolean((form.regras as any)?.meia_meia?.permitido) && (
-                          <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200/50">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/50">
                             <Field label="Cálculo do Preço">
                               <select
                                 value={(form.regras as any)?.meia_meia?.calculo || "maior_valor"}

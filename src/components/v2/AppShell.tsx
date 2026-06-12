@@ -26,6 +26,9 @@ export interface AppShellProps {
   /** Estado da conexão WhatsApp ('open' | 'connecting' | 'close' | null). */
   whatsappEstado?: string | null;
   onWhatsAppClick?: () => void;
+  /** Pizzaria em período de teste — mostra chip "Teste" no Topbar. */
+  isTrial?: boolean;
+  onTrialClick?: () => void;
 
   // Identidade
   pizzariaNome?: string;
@@ -53,6 +56,8 @@ export function AppShell({
   onToggleBot,
   whatsappEstado,
   onWhatsAppClick,
+  isTrial,
+  onTrialClick,
   pizzariaNome,
   pizzariaLogo,
   userName,
@@ -84,6 +89,8 @@ export function AppShell({
           onToggleBot={onToggleBot}
           whatsappEstado={whatsappEstado}
           onWhatsAppClick={onWhatsAppClick}
+          isTrial={isTrial}
+          onTrialClick={onTrialClick}
           onLogout={onLogout}
           notifPermission={notifPermission}
           onEnableNotifications={onEnableNotifications}

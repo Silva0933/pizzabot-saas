@@ -9,7 +9,7 @@
  *  5. WebSocket pra updates ao vivo
  */
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock } from "lucide-react";
+import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock, Sparkles } from "lucide-react";
 import {
   AppShell, NAV_PAGE_META,
 } from "./components/v2";
@@ -386,6 +386,8 @@ export default function App() {
       onToggleBot={handleToggleBot}
       whatsappEstado={pizzaria.instancia ? pizzaria.whatsapp_estado ?? null : null}
       onWhatsAppClick={() => setNav("negocio")}
+      isTrial={pizzaria.plano === "trial" && !(pizzaria.suspensa ?? false)}
+      onTrialClick={() => setNav("assinatura")}
       isPlatformAdmin={user.is_platform_admin}
       onLogout={handleLogout}
       notifPermission={"default" as NotificationPermission}
@@ -397,6 +399,13 @@ export default function App() {
         suspensaMotivo={pizzaria.suspensa_motivo ?? null}
       />
 
+      <TrialBanner
+        plano={pizzaria.plano}
+        venceEm={pizzaria.trial_fim ?? pizzaria.plano_vence_em ?? null}
+        suspensa={pizzaria.suspensa ?? false}
+        onAssinar={() => setNav("assinatura")}
+      />
+
       {nav === "conversas" && <ConversasViewV2 pizzariaId={pizzaria.id} liveEvent={liveEvent}/>}
       {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
       {nav === "pedidos"   && (
@@ -405,6 +414,7 @@ export default function App() {
           columnNames={pizzaria.nomes_colunas ?? undefined}
           liveEvent={liveEvent}
           onNavigate={(k) => setNav(k as NavKey)}
+          onboardingKey={pizzaria.id}
           onboarding={[
             {
               id: "menu", title: "Cadastre seu cardápio",
@@ -413,12 +423,15 @@ export default function App() {
             },
             {
               id: "wpp", title: "Conecte o WhatsApp",
-              description: "Defina a instância Evolution em Meu Negócio",
-              done: Boolean(pizzaria.instancia), action: () => setNav("negocio"),
+              description: "Escaneie o QR code em Meu Negócio para ativar o atendimento",
+              // Só conta como feito quando a conexão está ATIVA ('open') — ter o
+              // nome da instância salvo não significa que o QR foi lido.
+              done: pizzaria.whatsapp_estado === "open", action: () => setNav("negocio"),
+              actionLabel: "Conectar",
             },
             {
               id: "pay", title: "Configure pagamento",
-              description: "Mercado Pago ou Asaas",
+              description: "Mercado Pago ou Asaas (opcional — pode pular)",
               done: pizzaria.gateway_pagamento !== "manual" && Boolean(pizzaria.mp_access_token || pizzaria.asaas_api_key),
               action: () => setNav("negocio"),
             },
@@ -442,6 +455,55 @@ export default function App() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+// ============================================
+// Banner de período de teste (trial) — informa o status e oferece assinar.
+// ============================================
+function TrialBanner({ plano, venceEm, suspensa, onAssinar }: {
+  plano: string;
+  venceEm: string | null;
+  suspensa: boolean;
+  onAssinar: () => void;
+}) {
+  // Só no trial e quando não está suspensa (suspensão tem aviso próprio acima).
+  if (plano !== "trial" || suspensa) return null;
+
+  const dias = venceEm
+    ? Math.ceil((new Date(venceEm).getTime() - Date.now()) / 86_400_000)
+    : null;
+  const venceu = dias !== null && dias < 0;
+  const restante =
+    dias === null ? "" : venceu
+      ? `expirou há ${Math.abs(dias)} dia(s)`
+      : dias === 0
+        ? "expira hoje"
+        : `${dias} dia(s) restante(s)`;
+
+  return (
+    <div className="mx-4 md:mx-6 mt-3 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50/60 px-4 py-3 flex items-center gap-3">
+      <span className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-violet-100">
+        <Sparkles className="w-4 h-4 text-violet-600" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-violet-900">
+          Você está no período de teste{restante ? ` · ${restante}` : ""}
+        </p>
+        <p className="text-xs text-violet-700/90 mt-0.5 leading-snug">
+          {venceu
+            ? "Seu teste acabou. Assine um plano para manter o atendimento ativo."
+            : "Aproveite tudo do PizzaBot. Assine um plano quando quiser para não interromper o atendimento."}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onAssinar}
+        className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white text-xs md:text-sm font-semibold px-3.5 py-2 rounded-lg"
+      >
+        Assinar um plano
+      </button>
+    </div>
   );
 }
 

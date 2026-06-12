@@ -20,6 +20,7 @@ interface Props {
   columnNames?: Record<string, string>;
   liveEvent?: { tipo: string; payload: any } | null;
   onboarding?: OnboardingItem[];
+  onboardingKey?: string;
   onNavigate?: (key: string) => void;
 }
 
@@ -37,7 +38,7 @@ const STATUS_META: Record<string, { label: string; badge: string; dot: string }>
 const brl = (n: number | string) =>
   Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, onNavigate }: Props) {
+export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, onboardingKey, onNavigate }: Props) {
   const [pedidos, setPedidos] = useState<BackendPedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -188,12 +189,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
     <div className="p-4 md:p-6 pb-24 md:pb-6 space-y-4">
       {/* Onboarding (só enquanto houver pendências) */}
       {onboarding && onboarding.length > 0 && (
-        <OnboardingChecklist
-          items={onboarding.map((it) => ({
-            ...it,
-            action: it.action,
-          }))}
-        />
+        <OnboardingChecklist items={onboarding} storageKey={onboardingKey} />
       )}
 
       {err && (

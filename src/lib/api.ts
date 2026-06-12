@@ -144,6 +144,7 @@ export interface BackendPizzaria {
   suspensa?: boolean;
   suspensa_motivo?: string | null;
   plano_vence_em?: string | null;
+  trial_fim?: string | null;
   pipeline_fsm?: boolean;
   created_at?: string | null;
 }

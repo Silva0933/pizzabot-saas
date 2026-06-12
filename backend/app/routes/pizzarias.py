@@ -75,6 +75,7 @@ class PizzariaOut(BaseModel):
     suspensa: bool = False
     suspensa_motivo: str | None = None
     plano_vence_em: datetime | None = None
+    trial_fim: datetime | None = None
     pipeline_fsm: bool = False
     endereco: str | None
     endereco_maps_url: str | None = None

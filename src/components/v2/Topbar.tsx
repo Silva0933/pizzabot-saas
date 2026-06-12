@@ -4,7 +4,7 @@
  * Fica fixa no topo da área de conteúdo, sempre visível.
  */
 import React, { useState } from "react";
-import { Bot, BellRing, LogOut, ChevronDown, Power, User, Wifi, WifiOff } from "lucide-react";
+import { Bot, BellRing, LogOut, ChevronDown, Power, User, Wifi, WifiOff, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Tooltip } from "./Tooltip";
 
@@ -18,6 +18,9 @@ export interface TopbarProps {
   /** Estado da conexão WhatsApp: 'open' | 'connecting' | 'close' | null (desconhecido). */
   whatsappEstado?: string | null;
   onWhatsAppClick?: () => void;
+  /** Pizzaria em período de teste — mostra chip "Teste" clicável (vai p/ Assinatura). */
+  isTrial?: boolean;
+  onTrialClick?: () => void;
   onLogout?: () => void;
   notifPermission?: NotificationPermission;
   onEnableNotifications?: () => void;
@@ -32,6 +35,8 @@ export function Topbar({
   onToggleBot,
   whatsappEstado,
   onWhatsAppClick,
+  isTrial,
+  onTrialClick,
   onLogout,
   notifPermission,
   onEnableNotifications,
@@ -48,6 +53,21 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        {/* Chip de período de teste (vai para a aba Assinatura) */}
+        {isTrial && (
+          <Tooltip position="bottom" content="Você está no período de teste. Clique para assinar um plano.">
+            <button
+              type="button"
+              onClick={onTrialClick}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100 transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Teste · Assinar</span>
+              <span className="sm:hidden">Teste</span>
+            </button>
+          </Tooltip>
+        )}
+
         {/* Status da conexão WhatsApp */}
         {whatsappEstado != null && (
           <Tooltip
