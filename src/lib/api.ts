@@ -223,6 +223,8 @@ export const pizzariasApi = {
   assinatura: (id: string) => api.get<AssinaturaInfo>(`/pizzarias/${id}/assinatura`),
   contratarAssinatura: (id: string, body: { plano: string; cobranca_email: string; cobranca_cpf_cnpj: string }) =>
     api.post<{ ok: boolean; subscription_id?: string; primeira_fatura?: FaturaInfo | null }>(`/pizzarias/${id}/assinatura`, body),
+  faturaPix: (id: string, faturaId: string) =>
+    api.get<PixCheckout>(`/pizzarias/${id}/assinatura/fatura/${faturaId}/pix`),
   create: (body: {
     nome: string; instancia?: string; telefone_admin?: string; endereco?: string;
     owner_email?: string; owner_senha?: string; owner_nome?: string;
@@ -557,6 +559,15 @@ export interface FaturaInfo {
   pago_em: string | null;
   link_pagamento: string | null;
   created_at: string | null;
+}
+
+export interface PixCheckout {
+  ok: boolean;
+  qr_base64?: string;       // PNG base64 (sem o prefixo data:)
+  copia_cola?: string;      // código Pix copia-e-cola
+  expira_em?: string | null;
+  valor?: number;
+  link_pagamento?: string | null; // fallback boleto/cartão (página Asaas)
 }
 
 export interface PlanoCatalogo {

@@ -103,6 +103,12 @@ class PlatformAsaasClient:
         data = await self._req("GET", f"/subscriptions/{subscription_id}/payments")
         return data.get("data") or []
 
+    async def pix_qr(self, payment_id: str) -> dict[str, Any]:
+        """QR Pix de uma cobrança: {encodedImage (base64 PNG), payload (copia-e-cola),
+        expirationDate}. Permite renderizar o Pix no NOSSO checkout (sem a página
+        hospedada do Asaas)."""
+        return await self._req("GET", f"/payments/{payment_id}/pixQrCode")
+
 
 # ============================================
 # Operações de negócio
@@ -225,6 +231,31 @@ def fatura_dict(f: Fatura) -> dict[str, Any]:
         "pago_em": f.pago_em.isoformat() if f.pago_em else None,
         "link_pagamento": f.link_pagamento,
         "created_at": f.created_at.isoformat() if f.created_at else None,
+    }
+
+
+async def pix_da_fatura(db: AsyncSession, pizzaria_id: uuid.UUID, fatura_id: uuid.UUID) -> dict[str, Any]:
+    """QR Pix de uma fatura da pizzaria, pro checkout branded no painel.
+    {ok, qr_base64, copia_cola, expira_em}. ok=False se não houver Pix disponível."""
+    fat = (await db.execute(
+        select(Fatura).where(Fatura.id == fatura_id, Fatura.pizzaria_id == pizzaria_id)
+    )).scalar_one_or_none()
+    if fat is None or not fat.asaas_payment_id or fat.status in ("paga", "cancelada"):
+        return {"ok": False}
+    try:
+        data = await PlatformAsaasClient().pix_qr(fat.asaas_payment_id)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao buscar Pix da fatura %s: %s", fatura_id, e)
+        return {"ok": False}
+    if not data.get("encodedImage") or not data.get("payload"):
+        return {"ok": False}
+    return {
+        "ok": True,
+        "qr_base64": data.get("encodedImage"),
+        "copia_cola": data.get("payload"),
+        "expira_em": data.get("expirationDate"),
+        "valor": float(fat.valor or 0),
+        "link_pagamento": fat.link_pagamento,  # fallback boleto/cartão (página Asaas)
     }
 
 

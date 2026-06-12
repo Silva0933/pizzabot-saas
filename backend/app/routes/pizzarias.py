@@ -303,6 +303,19 @@ async def assinatura_pizzaria(
     }
 
 
+@router.get("/{pizzaria_id}/assinatura/fatura/{fatura_id}/pix")
+async def fatura_pix(
+    pizzaria_id: uuid.UUID,
+    fatura_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """QR Pix de uma fatura — alimenta o checkout Pix branded no painel."""
+    from app.services.billing_plataforma import pix_da_fatura
+
+    return await pix_da_fatura(db, pizzaria_id, fatura_id)
+
+
 @router.post("/{pizzaria_id}/assinatura")
 async def contratar_assinatura(
     pizzaria_id: uuid.UUID,
