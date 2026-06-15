@@ -384,11 +384,22 @@ const PedidoCard: React.FC<PedidoCardProps> = ({ pedido: p, statusLabel, moving,
     <article className={`relative bg-white border rounded-2xl shadow-sm overflow-hidden flex flex-col ${aguardandoConferencia ? "border-amber-300 ring-1 ring-amber-200" : "border-slate-200"}`}>
       {/* Header */}
       <div className="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-2 border-b border-slate-100">
-        <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-          <ClipboardList className="w-4 h-4 text-slate-400" />
-          Pedido #{p.numero_pedido ?? "—"}
-        </span>
-        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${meta.badge}`}>
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
+            <ClipboardList className="w-4 h-4 text-slate-400" />
+            Pedido #{p.numero_pedido ?? "—"}
+          </span>
+          {isDelivery ? (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 shrink-0">
+              🛵 Entrega
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+              🏪 Retirada
+            </span>
+          )}
+        </div>
+        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${meta.badge} shrink-0`}>
           <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
           {statusLabel(p.status)}
         </span>
