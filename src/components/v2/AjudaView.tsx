@@ -8,7 +8,7 @@
 import React, { useState } from "react";
 import {
   HelpCircle, ClipboardList, TrendingUp, MessageSquare, UtensilsCrossed,
-  Store, CreditCard, Sparkles, Lightbulb, ChevronDown, Rocket,
+  Store, CreditCard, Sparkles, Lightbulb, ChevronDown, Rocket, Globe,
 } from "lucide-react";
 
 type HelpItem = { titulo: string; descricao: string };
@@ -50,7 +50,7 @@ const SECOES: HelpSection[] = [
     id: "analise",
     icon: TrendingUp,
     titulo: "3. Análise",
-    resumo: "Os números do seu negócio.",
+    resumo: "Os numbers do seu negócio.",
     itens: [
       { titulo: "Para que serve", descricao: "Mostra o desempenho: faturamento, quantidade de pedidos, ticket médio e gráficos de vendas ao longo do tempo." },
       { titulo: "Como usar", descricao: "Use para entender seus dias e horários mais fortes e acompanhar o crescimento das vendas." },
@@ -97,9 +97,22 @@ const SECOES: HelpSection[] = [
     ],
   },
   {
+    id: "cardapio_digital",
+    icon: Globe,
+    titulo: "7. Cardápio Digital (Site de Vendas)",
+    resumo: "Seu e-commerce próprio de pizza integrado ao WhatsApp.",
+    itens: [
+      { titulo: "O que é", descricao: "É o site de vendas exclusivo da sua pizzaria (ex: seudominio.com/m/sua-pizzaria) para você divulgar em redes sociais, anúncios ou direto no WhatsApp. Os clientes compram por ele sem precisar instalar nada." },
+      { titulo: "Carrinho de compras", descricao: "O cliente clica na Pizza, escolhe o tamanho, opcionais/adicionais e pode voltar ao menu para escolher uma bebida (refrigerante, etc.). A barra flutuante acumula e soma os preços em tempo real." },
+      { titulo: "Checkout e endereço", descricao: "O cliente preenche os dados de entrega. Se digitar o bairro, o sistema calcula a taxa de entrega baseado nas tabelas configuradas no painel. Também suporta Retirada." },
+      { titulo: "Integração instantânea", descricao: "Ao finalizar, o pedido entra imediatamente no seu painel em Pedidos (com origem 'Cardápio Digital') e o cliente recebe mensagem de confirmação automática no WhatsApp." },
+      { titulo: "Configuração do link", descricao: "Você ativa o cardápio, copia o link para compartilhar e personaliza o nome amigável (slug) do endereço em Meu Negócio → aba Geral, na seção 'Cardápio Digital'." },
+    ],
+  },
+  {
     id: "pagamentos",
     icon: CreditCard,
-    titulo: "7. Pagamentos na conversa",
+    titulo: "8. Pagamentos na conversa",
     resumo: "Os 3 modos de receber — escolha em Meu Negócio → Geral.",
     itens: [
       { titulo: "Automático (Mercado Pago / Asaas)", descricao: "A atendente gera a cobrança Pix/cartão na hora e o sistema confirma o pagamento sozinho. Precisa cadastrar o token do provedor. O Pix expira em 30 min." },
@@ -111,7 +124,7 @@ const SECOES: HelpSection[] = [
   {
     id: "atendente",
     icon: Sparkles,
-    titulo: "8. Como a atendente monta o pedido",
+    titulo: "9. Como a atendente monta o pedido",
     resumo: "O passo a passo que ela segue em cada conversa.",
     itens: [
       { titulo: "1) Saudação", descricao: "Ela cumprimenta e oferece mostrar o cardápio." },
@@ -126,7 +139,7 @@ const SECOES: HelpSection[] = [
   {
     id: "dicas",
     icon: Lightbulb,
-    titulo: "9. Dúvidas comuns",
+    titulo: "10. Dúvidas comuns",
     resumo: "Soluções rápidas para o dia a dia.",
     itens: [
       { titulo: "A atendente não está respondendo", descricao: "Verifique em Meu Negócio: o bot está ativo? O WhatsApp está conectado (QR Code)? Está dentro do horário de funcionamento?" },
