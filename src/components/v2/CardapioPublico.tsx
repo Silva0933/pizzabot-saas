@@ -207,27 +207,6 @@ export function CardapioPublico({ slug }: { slug: string }) {
     }
     setSubmitting(false);
   }
-
-  // ============================================
-  // Renders
-  // ============================================
-  if (loading) return (
-    <div className="cdp-loading">
-      <div className="cdp-spinner" />
-      <p>Carregando cardápio...</p>
-    </div>
-  );
-
-  if (error || !data) return (
-    <div className="cdp-error">
-      <span className="cdp-error-emoji">😕</span>
-      <h2>Cardápio não encontrado</h2>
-      <p>{error || "Verifique o link e tente novamente."}</p>
-    </div>
-  );
-
-  const pizz = data.pizzaria;
-
   // Adicionais e preços calculados de forma segura para o passo de produto
   const { precoAtual, precoAdicionais, precoTotal, adicionaisDisp } = useMemo(() => {
     if (!selectedProduto || !data) return { precoAtual: 0, precoAdicionais: 0, precoTotal: 0, adicionaisDisp: [] };
@@ -250,6 +229,26 @@ export function CardapioPublico({ slug }: { slug: string }) {
       adicionaisDisp: adsp
     };
   }, [selectedProduto, modalTamanho, modalAdicionais, modalQtd, data]);
+
+  // ============================================
+  // Renders
+  // ============================================
+  if (loading) return (
+    <div className="cdp-loading">
+      <div className="cdp-spinner" />
+      <p>Carregando cardápio...</p>
+    </div>
+  );
+
+  if (error || !data) return (
+    <div className="cdp-error">
+      <span className="cdp-error-emoji">😕</span>
+      <h2>Cardápio não encontrado</h2>
+      <p>{error || "Verifique o link e tente novamente."}</p>
+    </div>
+  );
+
+  const pizz = data.pizzaria;
 
   return (
     <div className="cdp-root">
