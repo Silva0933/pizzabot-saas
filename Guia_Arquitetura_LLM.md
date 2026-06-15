@@ -339,3 +339,35 @@ Fluxo completo, determinístico (sem LLM):
 *   **Prioridade da detecção de bairro na taxa**: [agent/tools.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/tools.py) (`_calcular_pedido`, seção 2).
 *   **Upsell item único**: [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py) (`upsell_item_unico` — oferta no bloco 0b, aceite antes do `_aplicar_nlu`).
 *   **Texto verbatim da pergunta de endereço**: funil etapa 2 em [fsm/engine.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/fsm/engine.py).
+
+---
+
+## 10. Cardápio Digital Público (Sessão Atual)
+
+Implementação do web-app do cardápio público (`/m/:slug`), transformando o WhatsApp bot também em uma plataforma de e-commerce própria (checkout inteligente por link). Migration `017_cardapio_digital.sql`.
+
+### 10.1. Slugs e Proteção
+*   **Geração Automática**: O campo `slug` foi adicionado à tabela `Pizzaria`. Ao criar ou atualizar o nome da pizzaria, o sistema gera o slug (`_slugify`) e garante unicidade (acrescentando hash caso já exista outro igual) em [pizzarias.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/pizzarias.py).
+*   **Link Público no Admin**: Na aba *Meu Negócio* (`Geral`), o dono da pizzaria tem a seção **Cardápio Digital** para visualizar, copiar, testar o link público (`/m/slug`) e customizar o seu slug manualmente (com validação anti-duplicidade em tempo real).
+
+### 10.2. Rota Frontend e Design Premium
+*   **SPA Interception**: Em [App.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/App.tsx), qualquer requisição começando com `/m/` é capturada pelo matcher antes de exigir autenticação.
+*   **Mobile-First (`CardapioPublico.tsx`)**: O componente público renderiza dados via `menuApi`. Conta com design premium:
+    - Busca e filtro rápido por categorias.
+    - Modal de customização de produto (tamanho + checkboxes dinâmicos para adicionais).
+    - Carrinho de compras flutuante com cálculo instantâneo.
+    - Tela de checkout robusta: captura dados pessoais, tipo de entrega, seleção visual de formas de pagamento, calcula taxa automática do bairro escolhido (lendo da configuração ativa da pizzaria) e "honeypot" para evitar submissão de bots.
+
+### 10.3. API Pública e Checkout
+*   **Endpoints Seguros**: O router `cardapio_publico.py` implementa `GET /menu/{slug}` (traz produtos e config) e `POST /menu/{slug}/pedido`. Esses endpoints usam Rate Limiting simples (ex: 30req/min para GET) pelo IP (`Request.client.host`) e rodam abertos sem JWT (Bearer).
+*   **Integração do Checkout**: Quando o cliente envia um pedido pelo cardápio, a `origem` do pedido é gravada como `cardapio_digital` (separando de pedidos do `whatsapp`).
+*   **Emissão de Evento e Notificação Automática**:
+    - O backend emite os eventos de WebSocket do *broadcaster* imediatamente. O card surge "ao vivo" no painel do administrador da loja (`PedidosViewV2`).
+    - Dispara nativamente a confirmação/aviso no WhatsApp do cliente via `status_messages.py` usando as credenciais da Evolution API para comprovar que o pedido caiu no sistema.
+
+### Onde mexer (seção 10)
+*   **Autogeração e edição de Slugs**: [routes/pizzarias.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/pizzarias.py) (rotas `POST` e `PATCH`).
+*   **API Pública e Envio de Pedido Web**: [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py).
+*   **Layout e Carrinho do Cardápio**: [components/v2/CardapioPublico.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/CardapioPublico.tsx).
+*   **Client API Web**: [lib/api.ts](file:///e:/Tops%20Ferramentas/PizzaBot/src/lib/api.ts) (`menuApi`).
+*   **Painel do Link Público**: [components/v2/MeuNegocioViewV2.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/MeuNegocioViewV2.tsx) (`CardapioDigitalCard`).

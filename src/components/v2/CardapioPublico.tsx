@@ -228,417 +228,439 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
   const pizz = data.pizzaria;
 
-  // ---- Tela de confirmação ----
-  if (step === "confirmacao" && resultado) return (
+  // Adicionais e preços calculados de forma segura para o passo de produto
+  const { precoAtual, precoAdicionais, precoTotal, adicionaisDisp } = useMemo(() => {
+    if (!selectedProduto || !data) return { precoAtual: 0, precoAdicionais: 0, precoTotal: 0, adicionaisDisp: [] };
+    const p = selectedProduto;
+    let precoAt = Number(p.preco);
+    if (p.tamanhos && modalTamanho) {
+      const t = p.tamanhos.find(t => t.tamanho === modalTamanho);
+      if (t) precoAt = Number(t.preco);
+    }
+    const adsp = data.pizzaria.adicionais || [];
+    let precoAds = 0;
+    for (const a of modalAdicionais) {
+      const info = adsp.find(ai => ai.nome === a);
+      if (info) precoAds += info.preco;
+    }
+    return {
+      precoAtual: precoAt,
+      precoAdicionais: precoAds,
+      precoTotal: (precoAt + precoAds) * modalQtd,
+      adicionaisDisp: adsp
+    };
+  }, [selectedProduto, modalTamanho, modalAdicionais, modalQtd, data]);
+
+  return (
     <div className="cdp-root">
-      <div className="cdp-confirmacao">
-        <div className="cdp-confirmacao-icon">✅</div>
-        <h2>Pedido #{resultado.numero_pedido} enviado!</h2>
-        <p className="cdp-confirmacao-sub">
-          Seu pedido foi recebido com sucesso. Você receberá a confirmação no seu WhatsApp.
-        </p>
-        <div className="cdp-confirmacao-info">
-          <div><strong>Total:</strong> {fmt(resultado.valor_total)}</div>
-          {resultado.taxa_entrega > 0 && (
-            <div><small>Inclui taxa de entrega: {fmt(resultado.taxa_entrega)}</small></div>
-          )}
-          <div><strong>Previsão:</strong> {resultado.tempo_estimado}</div>
-        </div>
-        <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setStep("menu"); setResultado(null); }}>
-          Fazer outro pedido
-        </button>
-      </div>
-    </div>
-  );
-
-  // ---- Checkout ----
-  if (step === "checkout") return (
-    <div className="cdp-root">
-      <div className="cdp-header-bar">
-        <button className="cdp-back-btn" onClick={() => setStep("carrinho")}>← Voltar</button>
-        <h2>Finalizar Pedido</h2>
-      </div>
-      <div className="cdp-checkout">
-        {/* Resumo do carrinho */}
-        <div className="cdp-checkout-section">
-          <h3>📋 Seu pedido</h3>
-          {cart.map(item => (
-            <div key={item.id} className="cdp-checkout-item">
-              <span>{item.quantidade}x {item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}</span>
-              <span className="cdp-checkout-item-price">{fmt(item.preco * item.quantidade)}</span>
+      <div className="cdp-wrapper">
+        {step === "confirmacao" && resultado ? (
+          <div className="cdp-confirmacao">
+            <div className="cdp-confirmacao-icon">✅</div>
+            <h2>Pedido #{resultado.numero_pedido} enviado!</h2>
+            <p className="cdp-confirmacao-sub">
+              Seu pedido foi recebido com sucesso. Você receberá a confirmação no seu WhatsApp.
+            </p>
+            <div className="cdp-confirmacao-info">
+              <div><strong>Total:</strong> {fmt(resultado.valor_total)}</div>
+              {resultado.taxa_entrega > 0 && (
+                <div><small>Inclui taxa de entrega: {fmt(resultado.taxa_entrega)}</small></div>
+              )}
+              <div><strong>Previsão:</strong> {resultado.tempo_estimado}</div>
             </div>
-          ))}
-          {checkoutForm.tipo === "delivery" && taxaEntrega > 0 && (
-            <div className="cdp-checkout-item cdp-checkout-taxa">
-              <span>🚚 Taxa de entrega</span>
-              <span className="cdp-checkout-item-price">{fmt(taxaEntrega)}</span>
-            </div>
-          )}
-          <div className="cdp-checkout-item cdp-checkout-total">
-            <span><strong>Total</strong></span>
-            <span className="cdp-checkout-total-price">{fmt(cartTotal + taxaEntrega)}</span>
-          </div>
-        </div>
-
-        {/* Dados pessoais */}
-        <div className="cdp-checkout-section">
-          <h3>👤 Seus dados</h3>
-          <input
-            placeholder="Seu nome completo"
-            value={checkoutForm.nome}
-            onChange={e => setCheckoutForm({ ...checkoutForm, nome: e.target.value })}
-            className="cdp-input"
-          />
-          <input
-            placeholder="WhatsApp (com DDD)"
-            value={checkoutForm.telefone}
-            onChange={e => setCheckoutForm({ ...checkoutForm, telefone: e.target.value })}
-            className="cdp-input"
-            type="tel"
-          />
-        </div>
-
-        {/* Tipo de entrega */}
-        <div className="cdp-checkout-section">
-          <h3>🚚 Como quer receber?</h3>
-          <div className="cdp-toggle-group">
-            <button
-              className={`cdp-toggle-btn ${checkoutForm.tipo === "delivery" ? "active" : ""}`}
-              onClick={() => setCheckoutForm({ ...checkoutForm, tipo: "delivery" })}
-            >
-              🛵 Entrega
-            </button>
-            <button
-              className={`cdp-toggle-btn ${checkoutForm.tipo === "retirada" ? "active" : ""}`}
-              onClick={() => setCheckoutForm({ ...checkoutForm, tipo: "retirada" })}
-            >
-              🏪 Retirada
+            <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setStep("menu"); setResultado(null); }}>
+              Fazer outro pedido
             </button>
           </div>
-        </div>
-
-        {/* Endereço (só para delivery) */}
-        {checkoutForm.tipo === "delivery" && (
-          <div className="cdp-checkout-section">
-            <h3>📍 Endereço de entrega</h3>
-            <input placeholder="Rua / Avenida" value={checkoutForm.rua}
-              onChange={e => setCheckoutForm({ ...checkoutForm, rua: e.target.value })} className="cdp-input" />
-            <div className="cdp-input-row">
-              <input placeholder="Número" value={checkoutForm.numero}
-                onChange={e => setCheckoutForm({ ...checkoutForm, numero: e.target.value })} className="cdp-input" />
-              <input placeholder="Bairro" value={checkoutForm.bairro}
-                onChange={e => setCheckoutForm({ ...checkoutForm, bairro: e.target.value })} className="cdp-input" />
-            </div>
-            <input placeholder="Ponto de referência (opcional)" value={checkoutForm.referencia}
-              onChange={e => setCheckoutForm({ ...checkoutForm, referencia: e.target.value })} className="cdp-input" />
-            {/* Mostra taxa se bairro selecionado */}
-            {checkoutForm.bairro && taxaEntrega > 0 && (
-              <p className="cdp-taxa-info">Taxa de entrega para {checkoutForm.bairro}: <strong>{fmt(taxaEntrega)}</strong></p>
-            )}
-          </div>
-        )}
-
-        {/* Forma de pagamento */}
-        <div className="cdp-checkout-section">
-          <h3>💳 Forma de pagamento</h3>
-          <div className="cdp-payment-options">
-            {(pizz.formas_pagamento_aceitas.length > 0
-              ? pizz.formas_pagamento_aceitas
-              : ["pix", "cartao", "dinheiro"]
-            ).map(fp => (
-              <button
-                key={fp}
-                className={`cdp-payment-btn ${checkoutForm.pagamento === fp ? "active" : ""}`}
-                onClick={() => setCheckoutForm({ ...checkoutForm, pagamento: fp })}
-              >
-                {fp === "pix" ? "💠 Pix" : fp === "cartao" ? "💳 Cartão" : fp === "dinheiro" ? "💵 Dinheiro" : fp}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Observações */}
-        <div className="cdp-checkout-section">
-          <h3>📝 Observações (opcional)</h3>
-          <textarea
-            placeholder="Ex: troco pra 100, apartamento 302..."
-            value={checkoutForm.observacoes}
-            onChange={e => setCheckoutForm({ ...checkoutForm, observacoes: e.target.value })}
-            className="cdp-textarea"
-            rows={3}
-          />
-        </div>
-
-        {/* Honeypot anti-bot */}
-        <input type="text" name="website" style={{ display: "none" }} tabIndex={-1} autoComplete="off" />
-
-        {submitError && <div className="cdp-error-inline">⚠️ {submitError}</div>}
-
-        <button
-          className="cdp-btn-primary cdp-btn-lg cdp-btn-submit"
-          disabled={submitting || !checkoutForm.nome || !checkoutForm.telefone || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
-          onClick={submitPedido}
-        >
-          {submitting ? "Enviando..." : `Finalizar Pedido • ${fmt(cartTotal + taxaEntrega)}`}
-        </button>
-      </div>
-    </div>
-  );
-
-  // ---- Carrinho ----
-  if (step === "carrinho") return (
-    <div className="cdp-root">
-      <div className="cdp-header-bar">
-        <button className="cdp-back-btn" onClick={() => setStep("menu")}>← Cardápio</button>
-        <h2>Seu Pedido</h2>
-      </div>
-      <div className="cdp-cart">
-        {cart.length === 0 ? (
-          <div className="cdp-cart-empty">
-            <span className="cdp-cart-empty-icon">🛒</span>
-            <p>Seu carrinho está vazio</p>
-            <button className="cdp-btn-secondary" onClick={() => setStep("menu")}>Ver cardápio</button>
-          </div>
-        ) : (
+        ) : step === "checkout" ? (
           <>
-            {cart.map(item => (
-              <div key={item.id} className="cdp-cart-item">
-                <div className="cdp-cart-item-info">
-                  <strong>{item.nome}</strong>
-                  {item.tamanho && <span className="cdp-cart-item-tag">{item.tamanho}</span>}
-                  {item.adicionais.length > 0 && (
-                    <span className="cdp-cart-item-extras">+ {item.adicionais.join(", ")}</span>
-                  )}
-                  {item.observacao && <span className="cdp-cart-item-obs">📝 {item.observacao}</span>}
-                </div>
-                <div className="cdp-cart-item-controls">
-                  <div className="cdp-qty-controls">
-                    <button onClick={() => updateCartQty(item.id, -1)}>−</button>
-                    <span>{item.quantidade}</span>
-                    <button onClick={() => updateCartQty(item.id, 1)}>+</button>
+            <div className="cdp-header-bar">
+              <button className="cdp-back-btn" onClick={() => setStep("carrinho")}>← Voltar</button>
+              <h2>Finalizar Pedido</h2>
+            </div>
+            <div className="cdp-checkout">
+              {/* Resumo do carrinho */}
+              <div className="cdp-checkout-section">
+                <h3>📋 Seu pedido</h3>
+                {cart.map(item => (
+                  <div key={item.id} className="cdp-checkout-item">
+                    <span>{item.quantidade}x {item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}</span>
+                    <span className="cdp-checkout-item-price">{fmt(item.preco * item.quantidade)}</span>
                   </div>
-                  <span className="cdp-cart-item-price">{fmt(item.preco * item.quantidade)}</span>
-                  <button className="cdp-cart-remove" onClick={() => removeFromCart(item.id)}>✕</button>
+                ))}
+                {checkoutForm.tipo === "delivery" && taxaEntrega > 0 && (
+                  <div className="cdp-checkout-item cdp-checkout-taxa">
+                    <span>🚚 Taxa de entrega</span>
+                    <span className="cdp-checkout-item-price">{fmt(taxaEntrega)}</span>
+                  </div>
+                )}
+                <div className="cdp-checkout-item cdp-checkout-total">
+                  <span><strong>Total</strong></span>
+                  <span className="cdp-checkout-total-price">{fmt(cartTotal + taxaEntrega)}</span>
                 </div>
               </div>
-            ))}
-            <div className="cdp-cart-footer">
-              <div className="cdp-cart-total">
-                <span>Subtotal</span>
-                <span>{fmt(cartTotal)}</span>
+
+              {/* Dados pessoais */}
+              <div className="cdp-checkout-section">
+                <h3>👤 Seus dados</h3>
+                <input
+                  placeholder="Seu nome completo"
+                  value={checkoutForm.nome}
+                  onChange={e => setCheckoutForm({ ...checkoutForm, nome: e.target.value })}
+                  className="cdp-input"
+                />
+                <input
+                  placeholder="WhatsApp (com DDD)"
+                  value={checkoutForm.telefone}
+                  onChange={e => setCheckoutForm({ ...checkoutForm, telefone: e.target.value })}
+                  className="cdp-input"
+                  type="tel"
+                />
               </div>
-              <button className="cdp-btn-primary cdp-btn-lg" onClick={() => setStep("checkout")}>
-                Continuar • {fmt(cartTotal)}
+
+              {/* Tipo de entrega */}
+              <div className="cdp-checkout-section">
+                <h3>🚚 Como quer receber?</h3>
+                <div className="cdp-toggle-group">
+                  <button
+                    className={`cdp-toggle-btn ${checkoutForm.tipo === "delivery" ? "active" : ""}`}
+                    onClick={() => setCheckoutForm({ ...checkoutForm, tipo: "delivery" })}
+                  >
+                    🛵 Entrega
+                  </button>
+                  <button
+                    className={`cdp-toggle-btn ${checkoutForm.tipo === "retirada" ? "active" : ""}`}
+                    onClick={() => setCheckoutForm({ ...checkoutForm, tipo: "retirada" })}
+                  >
+                    🏪 Retirada
+                  </button>
+                </div>
+              </div>
+
+              {/* Endereço (só para delivery) */}
+              {checkoutForm.tipo === "delivery" && (
+                <div className="cdp-checkout-section">
+                  <h3>📍 Endereço de entrega</h3>
+                  <input placeholder="Rua / Avenida" value={checkoutForm.rua}
+                    onChange={e => setCheckoutForm({ ...checkoutForm, rua: e.target.value })} className="cdp-input" />
+                  <div className="cdp-input-row">
+                    <input placeholder="Número" value={checkoutForm.numero}
+                      onChange={e => setCheckoutForm({ ...checkoutForm, numero: e.target.value })} className="cdp-input" />
+                    <input placeholder="Bairro" value={checkoutForm.bairro}
+                      onChange={e => setCheckoutForm({ ...checkoutForm, bairro: e.target.value })} className="cdp-input" />
+                  </div>
+                  <input placeholder="Ponto de referência (opcional)" value={checkoutForm.referencia}
+                    onChange={e => setCheckoutForm({ ...checkoutForm, referencia: e.target.value })} className="cdp-input" />
+                  {/* Mostra taxa se bairro selecionado */}
+                  {checkoutForm.bairro && taxaEntrega > 0 && (
+                    <p className="cdp-taxa-info">Taxa de entrega para {checkoutForm.bairro}: <strong>{fmt(taxaEntrega)}</strong></p>
+                  )}
+                </div>
+              )}
+
+              {/* Forma de pagamento */}
+              <div className="cdp-checkout-section">
+                <h3>💳 Forma de pagamento</h3>
+                <div className="cdp-payment-options">
+                  {(pizz.formas_pagamento_aceitas.length > 0
+                    ? pizz.formas_pagamento_aceitas
+                    : ["pix", "cartao", "dinheiro"]
+                  ).map(fp => (
+                    <button
+                      key={fp}
+                      className={`cdp-payment-btn ${checkoutForm.pagamento === fp ? "active" : ""}`}
+                      onClick={() => setCheckoutForm({ ...checkoutForm, pagamento: fp })}
+                    >
+                      {fp === "pix" ? "💠 Pix" : fp === "cartao" ? "💳 Cartão" : fp === "dinheiro" ? "💵 Dinheiro" : fp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Observações */}
+              <div className="cdp-checkout-section">
+                <h3>📝 Observações (opcional)</h3>
+                <textarea
+                  placeholder="Ex: troco pra 100, apartamento 302..."
+                  value={checkoutForm.observacoes}
+                  onChange={e => setCheckoutForm({ ...checkoutForm, observacoes: e.target.value })}
+                  className="cdp-textarea"
+                  rows={3}
+                />
+              </div>
+
+              {/* Honeypot anti-bot */}
+              <input type="text" name="website" style={{ display: "none" }} tabIndex={-1} autoComplete="off" />
+
+              {submitError && <div className="cdp-error-inline">⚠️ {submitError}</div>}
+
+              <button
+                className="cdp-btn-primary cdp-btn-lg cdp-btn-submit"
+                disabled={submitting || !checkoutForm.nome || !checkoutForm.telefone || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
+                onClick={submitPedido}
+              >
+                {submitting ? "Enviando..." : `Finalizar Pedido • ${fmt(cartTotal + taxaEntrega)}`}
               </button>
             </div>
           </>
-        )}
-      </div>
-    </div>
-  );
-
-  // ---- Modal de produto ----
-  if (step === "produto" && selectedProduto) {
-    const p = selectedProduto;
-    let precoAtual = Number(p.preco);
-    if (p.tamanhos && modalTamanho) {
-      const t = p.tamanhos.find(t => t.tamanho === modalTamanho);
-      if (t) precoAtual = Number(t.preco);
-    }
-    // Adicionais (bordas etc)
-    const adicionaisDisp = data?.pizzaria.adicionais || [];
-    let precoAdicionais = 0;
-    for (const a of modalAdicionais) {
-      const info = adicionaisDisp.find(ai => ai.nome === a);
-      if (info) precoAdicionais += info.preco;
-    }
-    const precoTotal = (precoAtual + precoAdicionais) * modalQtd;
-
-    return (
-      <div className="cdp-root">
-        <div className="cdp-header-bar">
-          <button className="cdp-back-btn" onClick={() => { setStep("menu"); setSelectedProduto(null); }}>← Voltar</button>
-        </div>
-        <div className="cdp-produto-detail">
-          {p.imagem_url ? (
-            <div className="cdp-produto-img-wrap">
-              <img src={p.imagem_url} alt={p.nome} className="cdp-produto-img" />
+        ) : step === "carrinho" ? (
+          <>
+            <div className="cdp-header-bar">
+              <button className="cdp-back-btn" onClick={() => setStep("menu")}>← Cardápio</button>
+              <h2>Seu Pedido</h2>
             </div>
-          ) : (
-            <div className="cdp-produto-img-placeholder">
-              <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
-            </div>
-          )}
-          <h2 className="cdp-produto-title">{p.nome}</h2>
-          {p.descricao && <p className="cdp-produto-desc">{p.descricao}</p>}
-
-          {/* Tamanhos */}
-          {p.tamanhos && p.tamanhos.length > 0 && (
-            <div className="cdp-section">
-              <h3>Escolha o tamanho</h3>
-              <div className="cdp-tamanho-list">
-                {p.tamanhos.map(t => (
-                  <button
-                    key={t.tamanho}
-                    className={`cdp-tamanho-btn ${modalTamanho === t.tamanho ? "active" : ""}`}
-                    onClick={() => setModalTamanho(t.tamanho)}
-                  >
-                    <span>{t.tamanho}</span>
-                    <span className="cdp-tamanho-price">{fmt(t.preco)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Adicionais/Bordas */}
-          {adicionaisDisp.length > 0 && (p.categoria === "pizza" || p.categoria === "lanche") && (
-            <div className="cdp-section">
-              <h3>Adicionais</h3>
-              <div className="cdp-adicionais-list">
-                {adicionaisDisp.map(a => (
-                  <label key={a.nome} className={`cdp-adicional-item ${modalAdicionais.includes(a.nome) ? "active" : ""}`}>
-                    <input
-                      type="checkbox"
-                      checked={modalAdicionais.includes(a.nome)}
-                      onChange={e => {
-                        if (e.target.checked) setModalAdicionais([...modalAdicionais, a.nome]);
-                        else setModalAdicionais(modalAdicionais.filter(x => x !== a.nome));
-                      }}
-                    />
-                    <span>{a.nome}</span>
-                    {a.preco > 0 && <span className="cdp-adicional-price">+{fmt(a.preco)}</span>}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Observação */}
-          <div className="cdp-section">
-            <h3>Alguma observação?</h3>
-            <input
-              placeholder="Ex: sem cebola, borda fina..."
-              value={modalObs}
-              onChange={e => setModalObs(e.target.value)}
-              className="cdp-input"
-            />
-          </div>
-
-          {/* Quantidade + Adicionar */}
-          <div className="cdp-produto-footer">
-            <div className="cdp-qty-controls cdp-qty-lg">
-              <button onClick={() => setModalQtd(Math.max(1, modalQtd - 1))}>−</button>
-              <span>{modalQtd}</span>
-              <button onClick={() => setModalQtd(modalQtd + 1)}>+</button>
-            </div>
-            <button className="cdp-btn-primary cdp-btn-add" onClick={confirmAddToCart}>
-              Adicionar • {fmt(precoTotal)}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Menu Principal ----
-  return (
-    <div className="cdp-root">
-      {/* Header da pizzaria */}
-      <header className="cdp-header">
-        <div className="cdp-header-bg" />
-        <div className="cdp-header-content">
-          {pizz.logo_url ? (
-            <img src={pizz.logo_url} alt={pizz.nome} className="cdp-logo" />
-          ) : (
-            <div className="cdp-logo-placeholder">🍕</div>
-          )}
-          <h1 className="cdp-name">{pizz.nome}</h1>
-          <div className="cdp-status-row">
-            <span className={`cdp-status ${pizz.aberto ? "open" : "closed"}`}>
-              {pizz.aberto ? "🟢 Aberto agora" : "🔴 Fechado"}
-            </span>
-            {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
-              <span className="cdp-tempo">🕐 {pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min</span>
-            )}
-          </div>
-          {pizz.endereco && <p className="cdp-endereco">📍 {pizz.endereco}</p>}
-        </div>
-      </header>
-
-      {/* Busca */}
-      <div className="cdp-search-wrap">
-        <input
-          type="text"
-          placeholder="Buscar no cardápio..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          className="cdp-search"
-        />
-        {searchQuery && (
-          <button className="cdp-search-clear" onClick={() => setSearchQuery("")}>✕</button>
-        )}
-      </div>
-
-      {/* Categorias */}
-      <nav className="cdp-cats">
-        {categorias.map(cat => (
-          <button
-            key={cat}
-            className={`cdp-cat-btn ${selectedCat === cat ? "active" : ""}`}
-            onClick={() => setSelectedCat(cat)}
-          >
-            <span>{CAT_EMOJI[cat] || "🍽️"}</span>
-            <span>{cat === "todos" ? "Todos" : cat}</span>
-          </button>
-        ))}
-      </nav>
-
-      {/* Grid de Produtos */}
-      <div className="cdp-products">
-        {produtosFiltrados.length === 0 ? (
-          <div className="cdp-empty">
-            <p>Nenhum produto encontrado</p>
-          </div>
-        ) : (
-          produtosFiltrados.map(p => {
-            const preco = p.tamanhos && p.tamanhos.length > 0
-              ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
-              : Number(p.preco);
-            const temVariacao = p.tamanhos && p.tamanhos.length > 0;
-            return (
-              <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
-                {p.imagem_url ? (
-                  <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
-                ) : (
-                  <div className="cdp-product-img-ph">
-                    <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
+            <div className="cdp-cart">
+              {cart.length === 0 ? (
+                <div className="cdp-cart-empty">
+                  <span className="cdp-cart-empty-icon">🛒</span>
+                  <p>Seu carrinho está vazio</p>
+                  <button className="cdp-btn-secondary" onClick={() => setStep("menu")}>Ver cardápio</button>
+                </div>
+              ) : (
+                <>
+                  {cart.map(item => (
+                    <div key={item.id} className="cdp-cart-item">
+                      <div className="cdp-cart-item-info">
+                        <strong>{item.nome}</strong>
+                        {item.tamanho && <span className="cdp-cart-item-tag">{item.tamanho}</span>}
+                        {item.adicionais.length > 0 && (
+                          <span className="cdp-cart-item-extras">+ {item.adicionais.join(", ")}</span>
+                        )}
+                        {item.observacao && <span className="cdp-cart-item-obs">📝 {item.observacao}</span>}
+                      </div>
+                      <div className="cdp-cart-item-controls">
+                        <div className="cdp-qty-controls">
+                          <button onClick={() => updateCartQty(item.id, -1)}>−</button>
+                          <span>{item.quantidade}</span>
+                          <button onClick={() => updateCartQty(item.id, 1)}>+</button>
+                        </div>
+                        <span className="cdp-cart-item-price">{fmt(item.preco * item.quantidade)}</span>
+                        <button className="cdp-cart-remove" onClick={() => removeFromCart(item.id)}>✕</button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="cdp-cart-footer">
+                    <div className="cdp-cart-total">
+                      <span>Subtotal</span>
+                      <span>{fmt(cartTotal)}</span>
+                    </div>
+                    <button className="cdp-btn-primary cdp-btn-lg" onClick={() => setStep("checkout")}>
+                      Continuar • {fmt(cartTotal)}
+                    </button>
                   </div>
-                )}
-                <div className="cdp-product-info">
-                  <h3 className="cdp-product-name">{p.nome}</h3>
-                  {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
-                  <div className="cdp-product-price-row">
-                    {temVariacao && <span className="cdp-price-from">a partir de</span>}
-                    <span className="cdp-price">{fmt(preco)}</span>
+                </>
+              )}
+            </div>
+          </>
+        ) : step === "produto" && selectedProduto ? (
+          <>
+            <div className="cdp-produto-media-header">
+              {selectedProduto.imagem_url ? (
+                <img src={selectedProduto.imagem_url} alt={selectedProduto.nome} className="cdp-produto-banner-img" />
+              ) : (
+                <div className="cdp-produto-banner-placeholder">
+                  <span>{CAT_EMOJI[selectedProduto.categoria || "outro"] || "🍽️"}</span>
+                </div>
+              )}
+              <button className="cdp-btn-back-circle" onClick={() => { setStep("menu"); setSelectedProduto(null); }}>
+                ←
+              </button>
+            </div>
+            <div className="cdp-produto-detail">
+              <div className="cdp-produto-info-header">
+                <h2 className="cdp-produto-title">{selectedProduto.nome}</h2>
+                {selectedProduto.descricao && <p className="cdp-produto-desc">{selectedProduto.descricao}</p>}
+                {!selectedProduto.tamanhos || selectedProduto.tamanhos.length === 0 ? (
+                  <div className="cdp-produto-price-badge">{fmt(Number(selectedProduto.preco))}</div>
+                ) : null}
+              </div>
+
+              {/* Tamanhos */}
+              {selectedProduto.tamanhos && selectedProduto.tamanhos.length > 0 && (
+                <div className="cdp-section">
+                  <div className="cdp-section-header">
+                    <h3>Escolha o tamanho</h3>
+                    <span className="cdp-badge-required">Obrigatório</span>
+                  </div>
+                  <div className="cdp-tamanho-list">
+                    {selectedProduto.tamanhos.map(t => (
+                      <button
+                        key={t.tamanho}
+                        className={`cdp-tamanho-btn ${modalTamanho === t.tamanho ? "active" : ""}`}
+                        onClick={() => setModalTamanho(t.tamanho)}
+                      >
+                        <div className="cdp-tamanho-info">
+                          <span className="cdp-tamanho-radio-icon"></span>
+                          <span className="cdp-tamanho-name">{t.tamanho}</span>
+                        </div>
+                        <span className="cdp-tamanho-price">{fmt(t.preco)}</span>
+                      </button>
+                    ))}
                   </div>
                 </div>
-              </button>
-            );
-          })
+              )}
+
+              {/* Adicionais/Bordas */}
+              {adicionaisDisp.length > 0 && (selectedProduto.categoria === "pizza" || selectedProduto.categoria === "lanche") && (
+                <div className="cdp-section">
+                  <div className="cdp-section-header">
+                    <h3>Adicionais</h3>
+                    <span className="cdp-badge-optional">Opcional</span>
+                  </div>
+                  <div className="cdp-adicionais-list">
+                    {adicionaisDisp.map(a => {
+                      const isActive = modalAdicionais.includes(a.nome);
+                      return (
+                        <label key={a.nome} className={`cdp-adicional-item ${isActive ? "active" : ""}`}>
+                          <div className="cdp-adicional-info">
+                            <input
+                              type="checkbox"
+                              checked={isActive}
+                              onChange={e => {
+                                if (e.target.checked) setModalAdicionais([...modalAdicionais, a.nome]);
+                                else setModalAdicionais(modalAdicionais.filter(x => x !== a.nome));
+                              }}
+                              className="cdp-checkbox-input"
+                            />
+                            <span className="cdp-adicional-name">{a.nome}</span>
+                          </div>
+                          {a.preco > 0 && <span className="cdp-adicional-price">+{fmt(a.preco)}</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Observação */}
+              <div className="cdp-section">
+                <div className="cdp-section-header">
+                  <h3>Alguma observação?</h3>
+                  <span className="cdp-badge-optional">Opcional</span>
+                </div>
+                <textarea
+                  placeholder="Ex: sem cebola, borda fina..."
+                  value={modalObs}
+                  onChange={e => setModalObs(e.target.value)}
+                  className="cdp-textarea-observacoes"
+                  rows={2}
+                />
+              </div>
+
+              {/* Quantidade + Adicionar */}
+              <div className="cdp-produto-footer">
+                <div className="cdp-qty-controls cdp-qty-lg">
+                  <button onClick={() => setModalQtd(Math.max(1, modalQtd - 1))}>−</button>
+                  <span>{modalQtd}</span>
+                  <button onClick={() => setModalQtd(modalQtd + 1)}>+</button>
+                </div>
+                <button className="cdp-btn-primary cdp-btn-add" onClick={confirmAddToCart}>
+                  Adicionar • {fmt(precoTotal)}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          /* Menu Principal */
+          <>
+            {/* Header da pizzaria */}
+            <header className="cdp-header">
+              <div className="cdp-header-bg" />
+              <div className="cdp-header-content">
+                {pizz.logo_url ? (
+                  <img src={pizz.logo_url} alt={pizz.nome} className="cdp-logo" />
+                ) : (
+                  <div className="cdp-logo-placeholder">🍕</div>
+                )}
+                <h1 className="cdp-name">{pizz.nome}</h1>
+                <div className="cdp-status-row">
+                  <span className={`cdp-status ${pizz.aberto ? "open" : "closed"}`}>
+                    {pizz.aberto ? "🟢 Aberto agora" : "🔴 Fechado"}
+                  </span>
+                  {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
+                    <span className="cdp-tempo">🕐 {pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min</span>
+                  )}
+                </div>
+                {pizz.endereco && <p className="cdp-endereco">📍 {pizz.endereco}</p>}
+              </div>
+            </header>
+
+            {/* Busca */}
+            <div className="cdp-search-wrap">
+              <input
+                type="text"
+                placeholder="Buscar no cardápio..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="cdp-search"
+              />
+              {searchQuery && (
+                <button className="cdp-search-clear" onClick={() => setSearchQuery("")}>✕</button>
+              )}
+            </div>
+
+            {/* Categorias */}
+            <nav className="cdp-cats">
+              {categorias.map(cat => (
+                <button
+                  key={cat}
+                  className={`cdp-cat-btn ${selectedCat === cat ? "active" : ""}`}
+                  onClick={() => setSelectedCat(cat)}
+                >
+                  <span>{CAT_EMOJI[cat] || "🍽️"}</span>
+                  <span>{cat === "todos" ? "Todos" : cat}</span>
+                </button>
+              ))}
+            </nav>
+
+            {/* Grid de Produtos */}
+            <div className="cdp-products">
+              {produtosFiltrados.length === 0 ? (
+                <div className="cdp-empty">
+                  <p>Nenhum produto encontrado</p>
+                </div>
+              ) : (
+                produtosFiltrados.map(p => {
+                  const preco = p.tamanhos && p.tamanhos.length > 0
+                    ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
+                    : Number(p.preco);
+                  const temVariacao = p.tamanhos && p.tamanhos.length > 0;
+                  return (
+                    <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
+                      {p.imagem_url ? (
+                        <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
+                      ) : (
+                        <div className="cdp-product-img-ph">
+                          <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
+                        </div>
+                      )}
+                      <div className="cdp-product-info">
+                        <h3 className="cdp-product-name">{p.nome}</h3>
+                        {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
+                        <div className="cdp-product-price-row">
+                          {temVariacao && <span className="cdp-price-from">a partir de</span>}
+                          <span className="cdp-price">{fmt(preco)}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Carrinho flutuante */}
+            {cartCount > 0 && (
+              <div className="cdp-floating-cart" onClick={() => setStep("carrinho")}>
+                <div className="cdp-floating-cart-info">
+                  <span className="cdp-floating-cart-badge">{cartCount}</span>
+                  <span>Ver pedido</span>
+                </div>
+                <span className="cdp-floating-cart-total">{fmt(cartTotal)}</span>
+              </div>
+            )}
+          </>
         )}
       </div>
-
-      {/* Carrinho flutuante */}
-      {cartCount > 0 && (
-        <div className="cdp-floating-cart" onClick={() => setStep("carrinho")}>
-          <div className="cdp-floating-cart-info">
-            <span className="cdp-floating-cart-badge">{cartCount}</span>
-            <span>Ver pedido</span>
-          </div>
-          <span className="cdp-floating-cart-total">{fmt(cartTotal)}</span>
-        </div>
-      )}
 
       <style>{CSS}</style>
     </div>
@@ -670,16 +692,29 @@ const CSS = `
   --green: #22c55e;
   --red: #ef4444;
   --radius: 16px;
-  --radius-sm: 10px;
+  --radius-sm: 12px;
 
   min-height: 100vh;
-  background: var(--bg);
+  background: #090a0f;
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  padding-bottom: 100px;
   -webkit-font-smoothing: antialiased;
+  display: flex;
+  justify-content: center;
 }
 .cdp-root *, .cdp-root *::before, .cdp-root *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.cdp-wrapper {
+  width: 100%;
+  max-width: 600px;
+  min-height: 100vh;
+  background: var(--bg);
+  box-shadow: 0 0 50px rgba(0,0,0,0.8);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding-bottom: 120px;
+}
 
 /* ============ LOADING & ERROR ============ */
 .cdp-loading, .cdp-error {
@@ -773,7 +808,6 @@ const CSS = `
   padding: 0 16px;
 }
 @media (min-width: 480px) { .cdp-products { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 768px) { .cdp-products { grid-template-columns: 1fr 1fr 1fr; } }
 
 .cdp-product-card {
   display: flex; gap: 12px; padding: 12px;
@@ -806,18 +840,24 @@ const CSS = `
 
 /* ============ FLOATING CART ============ */
 .cdp-floating-cart {
-  position: fixed; bottom: 16px; left: 16px; right: 16px;
-  max-width: 480px; margin: 0 auto;
+  position: fixed; bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 568px;
   background: var(--accent); color: white;
   border-radius: var(--radius); padding: 14px 20px;
   display: flex; align-items: center; justify-content: space-between;
   cursor: pointer; z-index: 50;
   box-shadow: 0 8px 32px rgba(249,115,22,0.3);
   transition: transform 0.2s;
-  animation: cdp-slideUp 0.3s ease-out;
+  animation: cdp-slideUp 0.3s ease-out forwards;
 }
-.cdp-floating-cart:hover { transform: translateY(-2px); }
-@keyframes cdp-slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.cdp-floating-cart:hover { transform: translateX(-50%) translateY(-2px); }
+@keyframes cdp-slideUp {
+  from { transform: translateX(-50%) translateY(100%); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
 .cdp-floating-cart-info { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
 .cdp-floating-cart-badge {
   width: 24px; height: 24px; border-radius: 50%;
@@ -880,53 +920,260 @@ const CSS = `
 }
 .cdp-qty-controls button:hover { background: var(--accent); color: white; }
 .cdp-qty-controls span { min-width: 24px; text-align: center; font-weight: 700; font-size: 14px; }
-.cdp-qty-lg button { width: 40px; height: 40px; font-size: 20px; }
-.cdp-qty-lg span { min-width: 32px; font-size: 18px; }
+.cdp-qty-lg button { width: 44px; height: 44px; font-size: 20px; }
+.cdp-qty-lg span { min-width: 36px; font-size: 18px; }
 
 /* ============ PRODUTO DETAIL ============ */
-.cdp-produto-detail { padding: 0 0 120px; }
-.cdp-produto-img-wrap { width: 100%; height: 240px; overflow: hidden; }
-.cdp-produto-img { width: 100%; height: 100%; object-fit: cover; }
-.cdp-produto-img-placeholder {
-  width: 100%; height: 200px; background: linear-gradient(135deg, var(--bg2), var(--bg3));
-  display: flex; align-items: center; justify-content: center; font-size: 64px;
+.cdp-produto-media-header {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  background: var(--bg2);
 }
-.cdp-produto-title { font-size: 22px; font-weight: 800; padding: 16px 16px 0; }
-.cdp-produto-desc { font-size: 14px; color: var(--text2); padding: 8px 16px 0; line-height: 1.5; }
+.cdp-produto-banner-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.cdp-produto-banner-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, var(--bg2), var(--bg3));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 80px;
+}
+.cdp-btn-back-circle {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: white;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s;
+  z-index: 10;
+}
+.cdp-btn-back-circle:hover {
+  background: rgba(0, 0, 0, 0.7);
+  transform: scale(1.05);
+}
 
-.cdp-section { padding: 16px; border-top: 1px solid var(--bg3); margin-top: 8px; }
-.cdp-section h3 { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--text2); }
+.cdp-produto-detail {
+  padding: 0 0 120px;
+  display: flex;
+  flex-direction: column;
+}
+.cdp-produto-info-header {
+  padding: 20px 16px;
+}
+.cdp-produto-title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.cdp-produto-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+.cdp-produto-price-badge {
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent);
+  background: var(--accent-glow);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+}
 
-.cdp-tamanho-list { display: flex; flex-direction: column; gap: 6px; }
+.cdp-section {
+  padding: 20px 16px;
+  border-top: 1px solid var(--bg3);
+}
+.cdp-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.cdp-section-header h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.cdp-badge-required {
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg3);
+  color: var(--accent);
+  padding: 4px 8px;
+  border-radius: 20px;
+}
+.cdp-badge-optional {
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255,255,255,0.05);
+  color: var(--text3);
+  padding: 4px 8px;
+  border-radius: 20px;
+}
+
+.cdp-tamanho-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .cdp-tamanho-btn {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 16px; background: var(--bg2); border: 2px solid var(--bg3);
-  border-radius: var(--radius-sm); cursor: pointer; color: var(--text);
-  font-size: 14px; font-weight: 600; transition: all 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: all 0.2s;
+  outline: none;
 }
-.cdp-tamanho-btn.active { border-color: var(--accent); background: var(--accent-glow); }
-.cdp-tamanho-btn:hover { border-color: var(--accent); }
-.cdp-tamanho-price { color: var(--accent); font-weight: 800; }
-
-.cdp-adicionais-list { display: flex; flex-direction: column; gap: 6px; }
-.cdp-adicional-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; background: var(--bg2); border: 2px solid var(--bg3);
-  border-radius: var(--radius-sm); cursor: pointer; font-size: 14px;
+.cdp-tamanho-btn:hover {
+  border-color: var(--accent2);
+}
+.cdp-tamanho-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.cdp-tamanho-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cdp-tamanho-radio-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--text3);
+  display: inline-block;
+  position: relative;
   transition: all 0.2s;
 }
-.cdp-adicional-item.active { border-color: var(--accent); background: var(--accent-glow); }
-.cdp-adicional-item input { accent-color: var(--accent); }
-.cdp-adicional-price { margin-left: auto; color: var(--accent); font-weight: 700; font-size: 13px; }
+.cdp-tamanho-btn.active .cdp-tamanho-radio-icon {
+  border-color: var(--accent);
+}
+.cdp-tamanho-btn.active .cdp-tamanho-radio-icon::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.cdp-tamanho-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cdp-tamanho-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.cdp-adicionais-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cdp-adicional-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--bg2);
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s;
+  user-select: none;
+}
+.cdp-adicional-item:hover {
+  border-color: var(--accent2);
+}
+.cdp-adicional-item.active {
+  border-color: var(--accent);
+  background: var(--accent-glow);
+}
+.cdp-adicional-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cdp-checkbox-input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.cdp-adicional-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.cdp-adicional-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.cdp-textarea-observacoes {
+  width: 100%;
+  padding: 14px;
+  background: var(--bg2);
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  resize: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+}
+.cdp-textarea-observacoes:focus {
+  border-color: var(--accent);
+}
 
 .cdp-produto-footer {
-  position: fixed; bottom: 0; left: 0; right: 0;
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px; background: var(--bg2);
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg2);
   border-top: 1px solid var(--bg3);
-  max-width: 600px; margin: 0 auto; z-index: 50;
+  z-index: 50;
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.4);
 }
-.cdp-btn-add { flex: 1; }
+.cdp-btn-add { flex: 1; height: 48px; font-size: 16px; }
 
 /* ============ BUTTONS ============ */
 .cdp-btn-primary {
