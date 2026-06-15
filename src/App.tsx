@@ -19,6 +19,7 @@ import type { NavKey } from "./components/v2/Sidebar";
 import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
 import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
 import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
+import { CardapioPublico } from "./components/v2/CardapioPublico";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import { MetricasView } from "./components/v2/MetricasView";
@@ -77,6 +78,22 @@ function playNotificationSound(type: "novo" | "confirmado") {
 }
 
 export default function App() {
+  // ============================================
+  // Rota pública do Cardápio Digital (/m/:slug)
+  // ============================================
+  const path = typeof window !== "undefined" ? window.location.pathname : "";
+  const menuMatch = path.match(/^\/m\/([a-z0-9-]+)/i);
+  if (menuMatch) {
+    return <CardapioPublico slug={menuMatch[1]} />;
+  }
+
+  // ============================================
+  // Painel Admin (continua normalmente)
+  // ============================================
+  return <AdminApp />;
+}
+
+function AdminApp() {
   // ============================================
   // Auth
   // ============================================

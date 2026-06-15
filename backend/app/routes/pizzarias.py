@@ -38,6 +38,7 @@ class PizzariaIn(BaseModel):
 class PizzariaPatch(BaseModel):
     """Todos opcionais — só atualiza o que vier."""
     nome: str | None = Field(default=None, min_length=2)
+    slug: str | None = None
     instancia: str | None = None
     telefone_admin: str | None = None
     telefone_contato: str | None = None
@@ -68,6 +69,7 @@ class PizzariaPatch(BaseModel):
 class PizzariaOut(BaseModel):
     id: uuid.UUID
     nome: str
+    slug: str | None = None
     instancia: str | None
     whatsapp_estado: str | None = None
     plano: str
@@ -136,11 +138,22 @@ async def create_pizzaria(
 ) -> Pizzaria:
     pizz = Pizzaria(
         nome=body.nome.strip(),
+        slug=_slugify(body.nome),
         instancia=body.instancia,
         telefone_admin=body.telefone_admin,
         endereco=body.endereco,
     )
     db.add(pizz)
+    await db.flush()
+
+    # Garante slug único
+    if not pizz.slug:
+        pizz.slug = _slugify(pizz.nome)
+    existing = (await db.execute(
+        select(Pizzaria.id).where(Pizzaria.slug == pizz.slug, Pizzaria.id != pizz.id)
+    )).scalar_one_or_none()
+    if existing:
+        pizz.slug = f"{pizz.slug}-{uuid.uuid4().hex[:6]}"
     await db.flush()
 
     if body.owner_email:
@@ -379,7 +392,23 @@ async def update_pizzaria(
                 if not v or looks_masked(v):
                     continue
                 v = encrypt_secret(v)
+            if k == "slug" and v:
+                # Valida slug informado manualmente: slugify + unicidade
+                v = _slugify(v)
+                dup = (await db.execute(
+                    select(Pizzaria.id).where(Pizzaria.slug == v, Pizzaria.id != pizzaria_id)
+                )).scalar_one_or_none()
+                if dup:
+                    raise HTTPException(status.HTTP_409_CONFLICT, f"O slug '{v}' já está em uso por outra pizzaria.")
             setattr(pizz, k, v)
+    # Auto-gera slug se a pizzaria ainda não tem
+    if not pizz.slug:
+        pizz.slug = _slugify(pizz.nome)
+        dup = (await db.execute(
+            select(Pizzaria.id).where(Pizzaria.slug == pizz.slug, Pizzaria.id != pizzaria_id)
+        )).scalar_one_or_none()
+        if dup:
+            pizz.slug = f"{pizz.slug}-{uuid.uuid4().hex[:6]}"
     await db.commit()
     await db.refresh(pizz)
     return pizz

@@ -328,6 +328,7 @@ class Pedido(Base):
     payment_status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
     link_pagamento: Mapped[str | None] = mapped_column(Text)
 
+    origem: Mapped[str] = mapped_column(String(30), default="whatsapp", nullable=False)
     bot_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     cancelado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelamento_motivo: Mapped[str | None] = mapped_column(Text)

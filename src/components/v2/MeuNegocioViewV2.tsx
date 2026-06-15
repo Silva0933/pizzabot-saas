@@ -91,6 +91,9 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
       {/* Conexão do WhatsApp */}
       <WhatsAppCard pizzaria={pizzaria} />
 
+      {/* Cardápio Digital */}
+      <CardapioDigitalCard pizzaria={pizzaria} onUpdated={onUpdated} />
+
       <Card icon={<Store className="w-4 h-4" />} title="Identidade" accent="orange">
         <div className="grid md:grid-cols-2 gap-3">
           <Field label="Nome da pizzaria" required>
@@ -248,6 +251,111 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           {savedAt && Date.now() - savedAt < 2500 && <span className="text-xs opacity-80">✓ salvo</span>}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// Card: Cardápio Digital (link público)
+// ============================================
+function CardapioDigitalCard({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpdated: (p: BackendPizzaria) => void }) {
+  const slug = pizzaria.slug || "";
+  const [editing, setEditing] = useState(false);
+  const [newSlug, setNewSlug] = useState(slug);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const link = slug ? `${baseUrl}/m/${slug}` : "";
+
+  function copyLink() {
+    if (!link) return;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  async function saveSlug() {
+    if (!newSlug.trim()) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const r = await pizzariasApi.update(pizzaria.id, { slug: newSlug.trim() } as any);
+      onUpdated(r);
+      setEditing(false);
+    } catch (e: any) {
+      setErr(e.message || "Erro ao salvar slug");
+    }
+    setSaving(false);
+  }
+
+  if (!slug) return (
+    <div className="rounded-2xl p-4 border border-dashed border-slate-300 bg-slate-50 flex items-center gap-4">
+      <div className="w-12 h-12 rounded-xl grid place-items-center bg-gradient-to-br from-orange-400 to-amber-500 text-white shrink-0">
+        <Store className="w-6 h-6" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-800">Cardápio Digital</p>
+        <p className="text-xs text-slate-500">Salve as alterações de nome para gerar o link do seu cardápio público.</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-2xl p-4 border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50/80 shadow-sm space-y-3">
+      <div className="flex items-center gap-4">
+        <div className="w-12 h-12 rounded-xl grid place-items-center bg-gradient-to-br from-orange-500 to-amber-500 text-white shrink-0">
+          <Store className="w-6 h-6" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-slate-800">Cardápio Digital</p>
+          <p className="text-xs text-orange-700/80">Link público para seus clientes fazerem pedidos</p>
+        </div>
+      </div>
+
+      {/* Link e ações */}
+      <div className="bg-white rounded-xl border border-orange-200/60 p-3 flex items-center gap-2">
+        <div className="flex-1 min-w-0 text-sm font-mono text-slate-700 truncate select-all">
+          {link}
+        </div>
+        <button onClick={copyLink} title="Copiar link"
+          className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 transition-colors">
+          {copied ? "✓ Copiado!" : "📋 Copiar"}
+        </button>
+        <a href={`/m/${slug}`} target="_blank" rel="noopener noreferrer"
+          className="shrink-0 px-3 py-1.5 text-xs font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors">
+          Abrir ↗
+        </a>
+      </div>
+
+      {/* Editar slug */}
+      {editing ? (
+        <div className="flex gap-2 items-center">
+          <span className="text-xs text-slate-500 whitespace-nowrap">{baseUrl}/m/</span>
+          <input value={newSlug} onChange={e => setNewSlug(e.target.value)}
+            className="flex-1 px-2 py-1.5 border border-orange-300 rounded-lg text-sm focus:border-orange-500 outline-none"
+            placeholder="minha-pizzaria" />
+          <button onClick={saveSlug} disabled={saving}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50">
+            {saving ? "..." : "Salvar"}
+          </button>
+          <button onClick={() => { setEditing(false); setErr(null); }}
+            className="text-xs text-slate-500 hover:text-slate-700">Cancelar</button>
+        </div>
+      ) : (
+        <button onClick={() => { setNewSlug(slug); setEditing(true); setErr(null); }}
+          className="text-xs text-orange-600 hover:text-orange-800 font-medium">
+          ✏️ Editar link do cardápio
+        </button>
+      )}
+
+      {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+
+      <p className="text-[11px] text-slate-500 leading-snug">
+        💡 Divulgue este link nos seus anúncios, Instagram e panfletos. Seus clientes podem pedir direto pelo celular sem instalar nada.
+      </p>
     </div>
   );
 }

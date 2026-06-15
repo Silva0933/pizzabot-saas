@@ -114,6 +114,7 @@ export const authApi = {
 export interface BackendPizzaria {
   id: string;
   nome: string;
+  slug?: string | null;
   instancia: string | null;
   whatsapp_estado?: string | null; // 'open' | 'connecting' | 'close'
   plano: string;
@@ -841,3 +842,100 @@ export function backendToConversation(b: BackendConversa): Conversation & { unre
     unreadCount: b.unread_count,
   } as Conversation & { unreadCount: number };
 }
+
+// ============================================
+// Cardápio Digital Público (sem autenticação)
+// ============================================
+export interface MenuPizzaria {
+  nome: string;
+  slug: string | null;
+  logo_url: string | null;
+  endereco: string | null;
+  telefone_contato: string | null;
+  instagram: string | null;
+  horario_funcionamento: Record<string, any>;
+  formas_pagamento_aceitas: string[];
+  taxa_entrega_info: string | null;
+  taxa_entrega_fixa: number | null;
+  taxas_bairro: Array<{ bairro: string; taxa: number }>;
+  adicionais: Array<{ nome: string; preco: number; tipo?: string }>;
+  tempo_entrega_min: number | null;
+  tempo_entrega_max: number | null;
+  tempo_retirada_min: number | null;
+  tempo_retirada_max: number | null;
+  aberto: boolean;
+}
+
+export interface MenuProduto {
+  id: string;
+  categoria: string | null;
+  nome: string;
+  descricao: string | null;
+  preco: number;
+  imagem_url: string | null;
+  ordem: number;
+  tamanhos?: Array<{ tamanho: string; preco: number }> | null;
+  opcoes?: Record<string, unknown>;
+  regras?: Record<string, unknown>;
+}
+
+export interface MenuResponse {
+  pizzaria: MenuPizzaria;
+  produtos: MenuProduto[];
+}
+
+export interface PedidoDigitalPayload {
+  nome_cliente: string;
+  telefone: string;
+  tipo: 'delivery' | 'retirada';
+  endereco_rua?: string;
+  endereco_numero?: string;
+  endereco_bairro?: string;
+  endereco_referencia?: string;
+  forma_pagamento: string;
+  observacoes?: string;
+  itens: Array<{
+    nome: string;
+    quantidade: number;
+    tamanho?: string;
+    preco_unit: number;
+    observacao?: string;
+    adicionais?: string[];
+  }>;
+  website?: string; // honeypot
+}
+
+export interface PedidoDigitalResponse {
+  ok: boolean;
+  numero_pedido: number;
+  valor_total: number;
+  taxa_entrega: number;
+  tempo_estimado: string;
+}
+
+/**
+ * API pública do cardápio digital (sem autenticação).
+ * Não usa Bearer token — é consumida pelo link público da pizzaria.
+ */
+export const menuApi = {
+  getBySlug: async (slug: string): Promise<MenuResponse> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}`, { method: 'GET' });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Cardápio não encontrado', b);
+    }
+    return res.json();
+  },
+  submitOrder: async (slug: string, data: PedidoDigitalPayload): Promise<PedidoDigitalResponse> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}/pedido`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Erro ao enviar pedido', b);
+    }
+    return res.json();
+  },
+};
