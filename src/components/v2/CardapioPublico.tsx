@@ -715,85 +715,120 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
             </header>
 
-            {/* Busca */}
-            <div className="cdp-search-wrap">
-              <span className="cdp-search-icon">
-                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              </span>
-              <input
-                type="text"
-                placeholder="Buscar no cardápio..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="cdp-search"
-              />
-              {searchQuery && (
-                <button className="cdp-search-clear" onClick={() => setSearchQuery("")}>✕</button>
-              )}
-            </div>
+            {/* ===== LAYOUT BODY (sidebar + main) ===== */}
+            <div className="cdp-menu-body">
 
-            {/* Categorias */}
-            <nav className="cdp-cats">
-              {categorias.map(cat => (
-                <button
-                  key={cat}
-                  className={`cdp-cat-btn ${selectedCat === cat ? "active" : ""}`}
-                  onClick={() => setSelectedCat(cat)}
-                  style={selectedCat === cat ? { "--cat-color": CAT_COLOR[cat] || "#f97316" } as any : {}}
-                >
-                  <span className="cdp-cat-emoji-wrap" style={{ background: selectedCat === cat ? (CAT_COLOR[cat] || "#f97316") + "33" : "transparent" }}>
-                    {CAT_EMOJI[cat] || "🍽️"}
+              {/* Sidebar esquerda (desktop) / inline (mobile) */}
+              <aside className="cdp-sidebar">
+                {/* Busca */}
+                <div className="cdp-search-wrap cdp-search-sidebar">
+                  <span className="cdp-search-icon">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                   </span>
-                  <span>{cat === "todos" ? "Todos" : cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
-                </button>
-              ))}
-            </nav>
+                  <input
+                    type="text"
+                    placeholder="Buscar no cardápio..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="cdp-search"
+                  />
+                  {searchQuery && (
+                    <button className="cdp-search-clear" onClick={() => setSearchQuery("")}>✕</button>
+                  )}
+                </div>
 
-            {/* Grid de Produtos */}
-            {produtosFiltrados.length === 0 ? (
-              <div className="cdp-empty">
-                <span>🔍</span>
-                <p>Nenhum produto encontrado</p>
-              </div>
-            ) : (
-              <div className="cdp-products">
-                {produtosFiltrados.map(p => {
-                  const preco = p.tamanhos && p.tamanhos.length > 0
-                    ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
-                    : Number(p.preco);
-                  const temVariacao = p.tamanhos && p.tamanhos.length > 0;
-                  return (
-                    <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
-                      <div className="cdp-product-img-wrap">
-                        {p.imagem_url ? (
-                          <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
-                        ) : (
-                          <div className="cdp-product-img-ph">
-                            <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
-                          </div>
-                        )}
-                        {p.categoria && (
-                          <span className="cdp-product-cat-tag">{CAT_EMOJI[p.categoria] || "🍽️"}</span>
-                        )}
-                      </div>
-                      <div className="cdp-product-info">
-                        <h3 className="cdp-product-name">{p.nome}</h3>
-                        {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
-                        <div className="cdp-product-footer">
-                          <div className="cdp-product-price-wrap">
-                            {temVariacao && <span className="cdp-price-from">a partir de</span>}
-                            <span className="cdp-price">{fmt(preco)}</span>
-                          </div>
-                          <div className="cdp-product-add-btn">+</div>
-                        </div>
-                      </div>
+                {/* Categorias */}
+                <nav className="cdp-cats">
+                  {categorias.map(cat => (
+                    <button
+                      key={cat}
+                      className={`cdp-cat-btn ${selectedCat === cat ? "active" : ""}`}
+                      onClick={() => setSelectedCat(cat)}
+                      style={selectedCat === cat ? { "--cat-color": CAT_COLOR[cat] || "#f97316" } as any : {}}
+                    >
+                      <span className="cdp-cat-emoji-wrap" style={{ background: selectedCat === cat ? (CAT_COLOR[cat] || "#f97316") + "33" : "transparent" }}>
+                        {CAT_EMOJI[cat] || "🍽️"}
+                      </span>
+                      <span>{cat === "todos" ? "Todos" : cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
                     </button>
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </nav>
 
-            {/* Carrinho flutuante */}
+                {/* Botão de carrinho (desktop sidebar) */}
+                {cartCount > 0 && (
+                  <div className="cdp-sidebar-cart" onClick={() => setStep("carrinho")}>
+                    <div className="cdp-sidebar-cart-header">
+                      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                      <span>Seu pedido</span>
+                      <span className="cdp-sidebar-cart-count">{cartCount}</span>
+                    </div>
+                    {cart.slice(0, 3).map(item => (
+                      <div key={item.id} className="cdp-sidebar-cart-item">
+                        <span className="cdp-sidebar-cart-qty">{item.quantidade}×</span>
+                        <span className="cdp-sidebar-cart-name">{item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}</span>
+                        <span className="cdp-sidebar-cart-price">{fmt(item.preco * item.quantidade)}</span>
+                      </div>
+                    ))}
+                    {cart.length > 3 && (
+                      <p className="cdp-sidebar-cart-more">+{cart.length - 3} mais...</p>
+                    )}
+                    <div className="cdp-sidebar-cart-total">
+                      <span>Total</span>
+                      <span>{fmt(cartTotal)}</span>
+                    </div>
+                    <div className="cdp-sidebar-cart-btn">Ver pedido completo →</div>
+                  </div>
+                )}
+              </aside>
+
+              {/* Área principal de produtos */}
+              <main className="cdp-main-area">
+                {produtosFiltrados.length === 0 ? (
+                  <div className="cdp-empty">
+                    <span>🔍</span>
+                    <p>Nenhum produto encontrado</p>
+                  </div>
+                ) : (
+                  <div className="cdp-products">
+                    {produtosFiltrados.map(p => {
+                      const preco = p.tamanhos && p.tamanhos.length > 0
+                        ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
+                        : Number(p.preco);
+                      const temVariacao = p.tamanhos && p.tamanhos.length > 0;
+                      return (
+                        <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
+                          <div className="cdp-product-img-wrap">
+                            {p.imagem_url ? (
+                              <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
+                            ) : (
+                              <div className="cdp-product-img-ph">
+                                <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
+                              </div>
+                            )}
+                            {p.categoria && (
+                              <span className="cdp-product-cat-tag">{CAT_EMOJI[p.categoria] || "🍽️"}</span>
+                            )}
+                          </div>
+                          <div className="cdp-product-info">
+                            <h3 className="cdp-product-name">{p.nome}</h3>
+                            {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
+                            <div className="cdp-product-footer">
+                              <div className="cdp-product-price-wrap">
+                                {temVariacao && <span className="cdp-price-from">a partir de</span>}
+                                <span className="cdp-price">{fmt(preco)}</span>
+                              </div>
+                              <div className="cdp-product-add-btn">+</div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </main>
+            </div>{/* fim cdp-menu-body */}
+
+            {/* Carrinho flutuante (mobile only) */}
             {cartCount > 0 && (
               <div className={`cdp-floating-cart ${cartPulse ? "pulse" : ""}`} onClick={() => setStep("carrinho")}>
                 <div className="cdp-floating-cart-left">
@@ -1527,4 +1562,191 @@ const CSS = `
 .cdp-root ::-webkit-scrollbar { width: 4px; height: 4px; }
 .cdp-root ::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
 .cdp-root ::-webkit-scrollbar-track { background: transparent; }
+
+/* ============ MOBILE — layout padrão (sidebar inline) ============ */
+.cdp-menu-body { display: flex; flex-direction: column; }
+.cdp-sidebar { display: contents; } /* no mobile: sidebar é transparente no flow */
+.cdp-main-area { display: contents; }
+.cdp-search-sidebar { padding: 8px 16px 0; }
+.cdp-sidebar-cart { display: none; } /* só aparece no desktop */
+
+/* ============ DESKTOP — layout de duas colunas ============ */
+@media (min-width: 860px) {
+  /* Fundo do body com gradiente sutil no desktop */
+  .cdp-root {
+    background: radial-gradient(ellipse 60% 40% at 50% 0%, rgba(249,115,22,0.08) 0%, #07080d 60%);
+    align-items: flex-start;
+  }
+
+  /* Wrapper expande para caber o layout completo */
+  .cdp-wrapper {
+    max-width: 1180px;
+    width: 95%;
+    margin: 0 auto;
+    border-radius: 20px;
+    box-shadow: 0 0 80px rgba(0,0,0,0.6), 0 0 0 1px var(--bg3);
+    min-height: auto;
+    padding-bottom: 40px;
+    overflow: hidden;
+  }
+
+  /* Header redesenhado para desktop */
+  .cdp-header {
+    padding: 40px 32px 32px;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(249,115,22,0.15) 0%, transparent 100%);
+  }
+  .cdp-logo { width: 96px; height: 96px; border-radius: 24px; }
+  .cdp-name { font-size: 30px; }
+
+  /* Layout 2 colunas: sidebar 260px + conteúdo */
+  .cdp-menu-body {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    align-items: start;
+    gap: 0;
+    padding: 0;
+    border-top: 1px solid var(--bg3);
+  }
+
+  /* Sidebar esquerda — sticky */
+  .cdp-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 20px 16px;
+    border-right: 1px solid var(--bg3);
+    background: var(--bg2);
+    scrollbar-width: thin;
+  }
+
+  /* Título da sidebar */
+  .cdp-sidebar::before {
+    content: 'CATEGORIAS';
+    display: block;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    color: var(--text3);
+    padding: 0 4px 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--bg3);
+  }
+
+  /* Busca fica inline no topo da sidebar */
+  .cdp-search-sidebar {
+    padding: 0;
+    margin-bottom: 12px;
+    order: -1; /* garante que fica no topo */
+  }
+
+  /* Categorias viram lista vertical na sidebar */
+  .cdp-cats {
+    flex-direction: column;
+    padding: 0;
+    gap: 4px;
+    overflow-x: visible;
+    overflow-y: visible;
+  }
+  .cdp-cat-btn {
+    width: 100%;
+    justify-content: flex-start;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+
+  /* Carrinho da sidebar — visível no desktop */
+  .cdp-sidebar-cart {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 16px;
+    background: var(--bg);
+    border: 1.5px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 14px;
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+    animation: cdp-slideUp 0.3s ease-out;
+  }
+  .cdp-sidebar-cart:hover { box-shadow: 0 4px 20px rgba(249,115,22,0.2); }
+  .cdp-sidebar-cart-header {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 800; color: var(--text);
+    padding-bottom: 8px; border-bottom: 1px solid var(--bg3);
+  }
+  .cdp-sidebar-cart-count {
+    margin-left: auto;
+    background: var(--accent); color: white;
+    width: 20px; height: 20px; border-radius: 50%;
+    font-size: 11px; font-weight: 900;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .cdp-sidebar-cart-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text2);
+  }
+  .cdp-sidebar-cart-qty { color: var(--accent); font-weight: 700; flex-shrink: 0; }
+  .cdp-sidebar-cart-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cdp-sidebar-cart-price { font-weight: 700; color: var(--text); white-space: nowrap; }
+  .cdp-sidebar-cart-more { font-size: 11px; color: var(--text3); }
+  .cdp-sidebar-cart-total {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 14px; font-weight: 800; color: var(--text);
+    padding-top: 8px; border-top: 1px solid var(--bg3);
+  }
+  .cdp-sidebar-cart-btn {
+    text-align: center; background: var(--accent);
+    color: white; border-radius: 8px; padding: 10px;
+    font-size: 13px; font-weight: 700;
+    transition: opacity 0.2s;
+  }
+  .cdp-sidebar-cart-btn:hover { opacity: 0.9; }
+
+  /* Área principal de produtos */
+  .cdp-main-area {
+    display: block;
+    padding: 20px;
+    min-height: 600px;
+  }
+
+  /* Grid de 3 colunas no desktop */
+  .cdp-products {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    padding: 0;
+  }
+
+  /* Imagem dos cards maior no desktop */
+  .cdp-product-img-wrap { height: 150px; }
+
+  /* Floating cart some no desktop (substituído pela sidebar) */
+  .cdp-floating-cart { display: none; }
+
+  /* Wrapper de outras telas (carrinho, checkout, produto) */
+  .cdp-cart-page,
+  .cdp-checkout,
+  .cdp-produto-hero,
+  .cdp-produto-body,
+  .cdp-confirmacao { max-width: 700px; margin: 0 auto; width: 100%; }
+
+  .cdp-produto-footer {
+    max-width: 1180px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  /* Topbar fica melhor no desktop */
+  .cdp-topbar { border-radius: 0; }
+}
+
+/* ============ TABLET (460-860px) — 2 colunas de produto ============ */
+@media (min-width: 460px) and (max-width: 859px) {
+  .cdp-products { grid-template-columns: 1fr 1fr; }
+  .cdp-product-img-wrap { height: 130px; }
+}
 `;
