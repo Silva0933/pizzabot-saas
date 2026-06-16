@@ -28,8 +28,8 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
   const [minhas, setMinhas] = useState<BackendPedido[]>([]);
   const [disponiveis, setDisponiveis] = useState<BackendPedido[]>([]);
   const [disponivel, setDisponivel] = useState(!!ent.disponivel);
+  const [resumo, setResumo] = useState<{ entregas_total: number; entregas_hoje: number } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   function load() {
@@ -39,14 +39,22 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     ]);
   }
 
+  function loadResumo() {
+    return entregadorApi.resumo(pid).then(setResumo).catch(() => {});
+  }
+
   useEffect(() => {
     setLoading(true);
     load().finally(() => setLoading(false));
+    loadResumo();
   }, [pid]);
 
   useEffect(() => {
     const ws = connectWebSocket(pid, (ev) => {
-      if (REFRESH_EVENTS.includes(ev.tipo)) load();
+      if (REFRESH_EVENTS.includes(ev.tipo)) {
+        load();
+        loadResumo();
+      }
     });
     return () => ws.close();
   }, [pid]);
@@ -61,31 +69,35 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     }
   }
 
+  // Otimista: a UI muda na hora; o servidor confirma em segundo plano.
   async function avancar(p: BackendPedido) {
     const novo = p.status === "a_caminho" ? "entregue" : "a_caminho";
-    setBusyId(p.id);
     setErr(null);
+    if (novo === "entregue") {
+      setMinhas((m) => m.filter((x) => x.id !== p.id)); // sai da lista
+    } else {
+      setMinhas((m) => m.map((x) => (x.id === p.id ? { ...x, status: novo } : x)));
+    }
     try {
       await entregadorApi.updateStatus(pid, p.id, novo);
-      await load();
+      if (novo === "entregue") loadResumo();
     } catch (e: any) {
       setErr(e.message || "Erro ao atualizar status");
-    } finally {
-      setBusyId(null);
+      load(); // reverte buscando o estado real
     }
   }
 
   async function pegar(p: BackendPedido) {
-    setBusyId(p.id);
     setErr(null);
+    // Move de "disponíveis" para "minhas" imediatamente.
+    setDisponiveis((d) => d.filter((x) => x.id !== p.id));
+    setMinhas((m) => [{ ...p, entregador_id: ent.id }, ...m]);
+    setTab("minhas");
     try {
       await entregadorApi.pegar(pid, p.id);
-      setTab("minhas");
-      await load();
     } catch (e: any) {
       setErr(e.message || "Não foi possível pegar o pedido");
-    } finally {
-      setBusyId(null);
+      load(); // reverte
     }
   }
 
@@ -115,6 +127,13 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
               <LogOut className="w-5 h-5" />
             </button>
           </div>
+
+          {resumo && (
+            <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-white/90 bg-white/10 rounded-lg px-2.5 py-1">
+              <PackageCheck className="w-3.5 h-3.5" />
+              <span><strong>{resumo.entregas_hoje}</strong> entregas hoje · {resumo.entregas_total} no total</span>
+            </div>
+          )}
 
           {/* Disponibilidade */}
           <button
@@ -167,7 +186,6 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
                 <DriverCard
                   pedido={p}
                   mode={tab}
-                  busy={busyId === p.id}
                   onAvancar={() => avancar(p)}
                   onPegar={() => pegar(p)}
                 />
@@ -199,11 +217,10 @@ function TabBtn({ active, onClick, label, count }: { active: boolean; onClick: (
 }
 
 function DriverCard({
-  pedido: p, mode, busy, onAvancar, onPegar,
+  pedido: p, mode, onAvancar, onPegar,
 }: {
   pedido: BackendPedido;
   mode: "minhas" | "disponiveis";
-  busy: boolean;
   onAvancar: () => void;
   onPegar: () => void;
 }) {
@@ -278,15 +295,15 @@ function DriverCard({
       {/* Ação */}
       <div className="px-4 pb-4">
         {mode === "disponiveis" ? (
-          <Button variant="primary" size="lg" fullWidth icon={Hand} isLoading={busy} onClick={onPegar}>
+          <Button variant="primary" size="lg" fullWidth icon={Hand} onClick={onPegar}>
             Pegar esta entrega
           </Button>
         ) : aCaminho ? (
-          <Button variant="success" size="lg" fullWidth icon={PackageCheck} isLoading={busy} onClick={onAvancar}>
+          <Button variant="success" size="lg" fullWidth icon={PackageCheck} onClick={onAvancar}>
             Marcar como entregue
           </Button>
         ) : (
-          <Button variant="primary" size="lg" fullWidth icon={Bike} isLoading={busy} onClick={onAvancar}>
+          <Button variant="primary" size="lg" fullWidth icon={Bike} onClick={onAvancar}>
             Saí para entrega
           </Button>
         )}

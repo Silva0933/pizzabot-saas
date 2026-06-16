@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import delete, desc, func, select
+from sqlalchemy import delete, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password
@@ -25,8 +25,11 @@ from app.models import Entregador, EquipePizzaria, Pedido, Pizzaria, Usuario
 from app.routes.pedidos import PedidoOut, _broadcast_atribuicao, apply_status_change
 from app.services.broadcaster import broadcaster
 
-# Status em que uma entrega está "em andamento" para o entregador.
-ENTREGA_ATIVA = ("confirmado", "no_forno", "a_caminho")
+# O entregador só enxerga o pedido a partir do FORNO (no_forno) — não em
+# "confirmado". "Minhas entregas" = atribuídos a ele e em preparo/saída.
+ENTREGA_ATIVA = ("no_forno", "a_caminho")
+# "Disponíveis" para pegar = só os que já estão no forno (prontos para sair logo).
+DISPONIVEL_STATUS = ("no_forno",)
 DRIVER_STATUSES = ("a_caminho", "entregue")
 
 owner_router = APIRouter(prefix="/pizzarias/{pizzaria_id}/entregadores", tags=["entregadores"])
@@ -43,6 +46,7 @@ class EntregadorOut(BaseModel):
     telefone: str | None = None
     disponivel: bool
     ativo: bool
+    entregas_concluidas: int = 0
     created_at: datetime
 
 
@@ -77,7 +81,7 @@ class DisponibilidadeIn(BaseModel):
     disponivel: bool
 
 
-def _out(ent: Entregador) -> EntregadorOut:
+def _out(ent: Entregador, entregas: int = 0) -> EntregadorOut:
     return EntregadorOut(
         id=ent.id,
         nome=ent.nome,
@@ -85,6 +89,7 @@ def _out(ent: Entregador) -> EntregadorOut:
         telefone=ent.telefone,
         disponivel=ent.disponivel,
         ativo=ent.ativo,
+        entregas_concluidas=entregas,
         created_at=ent.created_at,
     )
 
@@ -103,9 +108,22 @@ async def listar_entregadores(
             select(Entregador).where(Entregador.pizzaria_id == pizzaria_id).order_by(Entregador.created_at)
         )
     ).scalars().all()
+    # Quantas entregas cada entregador concluiu (status 'entregue').
+    count_rows = (
+        await db.execute(
+            select(Pedido.entregador_id, func.count())
+            .where(
+                Pedido.pizzaria_id == pizzaria_id,
+                Pedido.status == "entregue",
+                Pedido.entregador_id.isnot(None),
+            )
+            .group_by(Pedido.entregador_id)
+        )
+    ).all()
+    counts = {row[0]: row[1] for row in count_rows}
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
     return EntregadoresResp(
-        entregadores=[_out(e) for e in rows],
+        entregadores=[_out(e, counts.get(e.id, 0)) for e in rows],
         permitir_autoatribuicao=pizz.permitir_autoatribuicao_entregador,
     )
 
@@ -266,12 +284,37 @@ async def entregas_disponiveis(
                 Pedido.pizzaria_id == pizzaria_id,
                 Pedido.entregador_id.is_(None),
                 Pedido.tipo == "delivery",
-                Pedido.status.in_(ENTREGA_ATIVA),
+                Pedido.status.in_(DISPONIVEL_STATUS),
             )
             .order_by(desc(Pedido.created_at))
         )
     ).scalars().all()
     return list(rows)
+
+
+@driver_router.get("/resumo")
+async def resumo_entregador(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    ent: Entregador = Depends(current_entregador),
+) -> dict:
+    """Quantas entregas o entregador concluiu (total e hoje)."""
+    base = select(func.count()).where(
+        Pedido.pizzaria_id == pizzaria_id,
+        Pedido.entregador_id == ent.id,
+        Pedido.status == "entregue",
+    )
+    total = (await db.execute(base)).scalar_one()
+    hoje = (
+        await db.execute(
+            base.where(
+                text(
+                    "pedidos.updated_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"
+                )
+            )
+        )
+    ).scalar_one()
+    return {"entregas_total": int(total), "entregas_hoje": int(hoje)}
 
 
 @driver_router.post("/pedidos/{pedido_id}/pegar", response_model=PedidoOut)

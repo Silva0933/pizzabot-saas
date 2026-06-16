@@ -33,6 +33,46 @@ def enviar_nps(pizzaria_id: str, pedido_id: str) -> dict:
     return asyncio.run(_enviar_nps_async(uuid.UUID(pedido_id)))
 
 
+@celery_app.task(name="pizzabot.enviar_status_msg")
+def enviar_status_msg(pizzaria_id: str, pedido_id: str, status: str) -> dict:
+    """Envia a mensagem automática de status ao cliente em BACKGROUND.
+
+    Tira o envio do WhatsApp (presença 'digitando' + delay) do caminho crítico da
+    API: o dono/entregador muda o status e a resposta volta na hora; o aviso ao
+    cliente é entregue logo em seguida pelo worker."""
+    return asyncio.run(_enviar_status_msg_async(uuid.UUID(pedido_id), status))
+
+
+async def _enviar_status_msg_async(pedido_id: uuid.UUID, status: str) -> dict:
+    from sqlalchemy import select
+
+    from app.db import AsyncSessionLocal, engine
+    from app.models import Pedido
+    from app.services.status_messages import enviar_mensagem_status
+
+    try:
+        async with AsyncSessionLocal() as db:
+            ped = (await db.execute(select(Pedido).where(Pedido.id == pedido_id))).scalar_one_or_none()
+            if not ped:
+                return {"ok": False, "motivo": "pedido_inexistente"}
+            enviado = await enviar_mensagem_status(db, ped, status)
+            await db.commit()
+            return {"ok": enviado}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao enviar mensagem de status: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:
+            pass
+        try:
+            from app.services.evolution import evolution
+            await evolution.close()
+        except Exception:
+            pass
+
+
 # Tempo (segundos) sem confirmação até mandar UM lembrete perguntando se pode fechar.
 # Evita o cliente achar que o pedido já está fechado e ir buscar sem ter confirmado.
 CONFIRM_REMINDER_SECONDS = 480  # 8 min

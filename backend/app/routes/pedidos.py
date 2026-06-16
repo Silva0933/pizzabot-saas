@@ -94,10 +94,20 @@ async def apply_status_change(
         p.cancelado_at = datetime.now(timezone.utc)
         p.cancelamento_motivo = motivo
 
-    await db.flush()
-    await enviar_mensagem_status(db, p, novo_status)
     await db.commit()
     await db.refresh(p)
+
+    # Mensagem automática ao cliente em BACKGROUND (não trava a resposta da API).
+    # Se o agendamento falhar, manda inline como fallback (best-effort).
+    try:
+        from app.workers.tasks import enviar_status_msg
+        enviar_status_msg.apply_async(args=[str(pizzaria_id), str(p.id), novo_status])
+    except Exception:  # noqa: BLE001
+        try:
+            await enviar_mensagem_status(db, p, novo_status)
+            await db.commit()
+        except Exception:  # noqa: BLE001
+            pass
 
     # Pós-venda: ao sair para entrega, agenda a pesquisa de satisfação (NPS).
     if novo_status == "a_caminho":

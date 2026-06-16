@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import {
-  Bike, Plus, Pencil, Trash2, Loader2, AlertCircle, Phone, Mail, User, Lock,
+  Bike, Plus, Pencil, Trash2, Loader2, AlertCircle, Phone, Mail, User, Lock, PackageCheck,
 } from "lucide-react";
 import { entregadoresApi, BackendEntregador } from "../../lib/api";
 import { Button, Card, CardHeader, Badge, Modal, Field, Input } from "../ui";
@@ -188,6 +188,10 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
                     <Phone className="w-3 h-3" /> {e.telefone}
                   </p>
                 )}
+                <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1 mt-0.5">
+                  <PackageCheck className="w-3 h-3" />
+                  {e.entregas_concluidas ?? 0} entrega{(e.entregas_concluidas ?? 0) === 1 ? "" : "s"} concluída{(e.entregas_concluidas ?? 0) === 1 ? "" : "s"}
+                </p>
               </div>
               <div className="flex flex-col gap-1 shrink-0">
                 <button type="button" onClick={() => openEdit(e)} className="p-1.5 rounded-lg text-ink-muted hover:bg-surface-muted" title="Editar">

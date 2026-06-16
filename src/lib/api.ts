@@ -97,6 +97,7 @@ export interface BackendEntregador {
   telefone?: string | null;
   disponivel: boolean;
   ativo: boolean;
+  entregas_concluidas?: number;
   created_at: string;
 }
 
@@ -420,6 +421,8 @@ export const entregadorApi = {
     api.post<BackendPedido>(`/pizzarias/${pizzariaId}/entregador/pedidos/${pedidoId}/status`, { status }),
   setDisponibilidade: (pizzariaId: string, disponivel: boolean) =>
     api.patch<{ ok: boolean; disponivel: boolean }>(`/pizzarias/${pizzariaId}/entregador/disponibilidade`, { disponivel }),
+  resumo: (pizzariaId: string) =>
+    api.get<{ entregas_total: number; entregas_hoje: number }>(`/pizzarias/${pizzariaId}/entregador/resumo`),
 };
 
 // ============================================
