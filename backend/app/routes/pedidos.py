@@ -33,6 +33,13 @@ class ClienteMinOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EntregadorMinOut(BaseModel):
+    id: uuid.UUID
+    nome: str
+
+    model_config = {"from_attributes": True}
+
+
 class PedidoOut(BaseModel):
     id: uuid.UUID
     pizzaria_id: uuid.UUID
@@ -50,6 +57,9 @@ class PedidoOut(BaseModel):
     bot_ativo: bool
     nps_nota: int | None = None
     nps_comentario: str | None = None
+    entregador_id: uuid.UUID | None = None
+    atribuido_em: datetime | None = None
+    entregador: EntregadorMinOut | None = None
     created_at: datetime
     updated_at: datetime
     cliente: ClienteMinOut | None = None
@@ -60,6 +70,59 @@ class PedidoOut(BaseModel):
 class StatusUpdate(BaseModel):
     status: str
     motivo: str | None = None
+
+
+async def apply_status_change(
+    db: AsyncSession,
+    pizzaria_id: uuid.UUID,
+    p: Pedido,
+    novo_status: str,
+    motivo: str | None = None,
+) -> Pedido:
+    """Aplica a troca de status + efeitos (mensagem ao cliente, NPS, broadcast).
+    Reutilizado pelo painel do dono e pelo painel do entregador. `p` já deve
+    estar carregado e escopado à pizzaria."""
+    if novo_status not in VALID_STATUSES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Status inválido. Use: {VALID_STATUSES}")
+
+    if p.status == novo_status:
+        return p  # idempotente
+
+    old_status = p.status
+    p.status = novo_status
+    if novo_status == "cancelado":
+        p.cancelado_at = datetime.now(timezone.utc)
+        p.cancelamento_motivo = motivo
+
+    await db.flush()
+    await enviar_mensagem_status(db, p, novo_status)
+    await db.commit()
+    await db.refresh(p)
+
+    # Pós-venda: ao sair para entrega, agenda a pesquisa de satisfação (NPS).
+    if novo_status == "a_caminho":
+        try:
+            import os
+            from app.workers.tasks import enviar_nps
+            delay = int(os.getenv("NPS_DELAY_SECONDS", "3000"))  # ~50 min
+            enviar_nps.apply_async(args=[str(pizzaria_id), str(p.id)], countdown=delay)
+        except Exception:  # noqa: BLE001
+            pass
+
+    await broadcaster.publish(
+        pizzaria_id,
+        {
+            "tipo": "pedido.atualizado",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {
+                "pedido_id": str(p.id),
+                "numero_pedido": p.numero_pedido,
+                "status_anterior": old_status,
+                "status_novo": p.status,
+            },
+        },
+    )
+    return p
 
 
 # ============================================
@@ -124,8 +187,61 @@ async def update_status(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(membership),
 ) -> Pedido:
-    if body.status not in VALID_STATUSES:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Status inválido. Use: {VALID_STATUSES}")
+    p = (
+        await db.execute(
+            select(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+        )
+    ).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
+
+    return await apply_status_change(db, pizzaria_id, p, body.status, body.motivo)
+
+
+# ============================================
+# Atribuição de entregador (painel do dono)
+# ============================================
+class AtribuirIn(BaseModel):
+    entregador_id: uuid.UUID
+
+
+async def _broadcast_atribuicao(pizzaria_id: uuid.UUID, p: Pedido) -> None:
+    await broadcaster.publish(
+        pizzaria_id,
+        {
+            "tipo": "entregador.atribuicao",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {
+                "pedido_id": str(p.id),
+                "numero_pedido": p.numero_pedido,
+                "entregador_id": str(p.entregador_id) if p.entregador_id else None,
+            },
+        },
+    )
+
+
+@router.post("/{pedido_id}/atribuir", response_model=PedidoOut)
+async def atribuir_entregador(
+    pizzaria_id: uuid.UUID,
+    pedido_id: uuid.UUID,
+    body: AtribuirIn,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> Pedido:
+    """Dono atribui um pedido a um entregador ativo da pizzaria (não altera o status)."""
+    from app.models import Entregador
+
+    ent = (
+        await db.execute(
+            select(Entregador).where(
+                Entregador.id == body.entregador_id,
+                Entregador.pizzaria_id == pizzaria_id,
+                Entregador.ativo.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if not ent:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Entregador não encontrado")
 
     p = (
         await db.execute(
@@ -135,50 +251,35 @@ async def update_status(
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
 
-    if p.status == body.status:
-        return p  # idempotente
-
-    old_status = p.status
-    p.status = body.status
-
-    if body.status == "cancelado":
-        p.cancelado_at = datetime.now(timezone.utc)
-        p.cancelamento_motivo = body.motivo
-
-    await db.flush()
-
-    # Efeito colateral: mensagem automática pro cliente
-    if old_status != body.status:
-        await enviar_mensagem_status(db, p, body.status)
-
+    p.entregador_id = ent.id
+    p.atribuido_em = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(p)
+    await _broadcast_atribuicao(pizzaria_id, p)
+    return p
 
-    # Pós-venda: ao sair para entrega, agenda a pesquisa de satisfação (NPS).
-    if old_status != body.status and body.status == "a_caminho":
-        try:
-            import os
-            from app.workers.tasks import enviar_nps
-            delay = int(os.getenv("NPS_DELAY_SECONDS", "3000"))  # ~50 min
-            enviar_nps.apply_async(args=[str(pizzaria_id), str(p.id)], countdown=delay)
-        except Exception:  # noqa: BLE001
-            pass
 
-    # Broadcast pro painel
-    await broadcaster.publish(
-        pizzaria_id,
-        {
-            "tipo": "pedido.atualizado",
-            "pizzaria_id": str(pizzaria_id),
-            "payload": {
-                "pedido_id": str(p.id),
-                "numero_pedido": p.numero_pedido,
-                "status_anterior": old_status,
-                "status_novo": p.status,
-            },
-        },
-    )
+@router.post("/{pedido_id}/desatribuir", response_model=PedidoOut)
+async def desatribuir_entregador(
+    pizzaria_id: uuid.UUID,
+    pedido_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> Pedido:
+    """Remove o entregador atribuído a um pedido."""
+    p = (
+        await db.execute(
+            select(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+        )
+    ).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
 
+    p.entregador_id = None
+    p.atribuido_em = None
+    await db.commit()
+    await db.refresh(p)
+    await _broadcast_atribuicao(pizzaria_id, p)
     return p
 
 

@@ -123,6 +123,10 @@ export function CardapioPublico({ slug }: { slug: string }) {
     return p.taxa_entrega_fixa || 0;
   }, [data, checkoutForm.tipo, checkoutForm.bairro]);
 
+  // Validação do telefone: precisa de DDD (Brasil = 10-11 dígitos com DDD).
+  const telDigits = checkoutForm.telefone.replace(/\D/g, "");
+  const telValido = telDigits.length >= 10;
+
   function addToCart(produto: MenuProduto, tamanho: string | null, preco: number, qtd: number, obs: string, adicionais: string[]) {
     const key = `${produto.id}-${tamanho || "unico"}`;
     setCart(prev => {
@@ -360,9 +364,12 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     placeholder="(11) 99999-9999"
                     value={checkoutForm.telefone}
                     onChange={e => setCheckoutForm({ ...checkoutForm, telefone: e.target.value })}
-                    className="cdp-input"
+                    className={`cdp-input ${checkoutForm.telefone && !telValido ? "cdp-input-invalid" : ""}`}
                     type="tel"
                   />
+                  {checkoutForm.telefone && !telValido && (
+                    <p className="cdp-field-hint">📱 Inclua o DDD — ex: (11) 99999-9999</p>
+                  )}
                 </div>
               </div>
 
@@ -463,7 +470,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
               <button
                 className="cdp-btn-primary cdp-btn-lg cdp-btn-submit"
-                disabled={submitting || !checkoutForm.nome || !checkoutForm.telefone || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
+                disabled={submitting || !checkoutForm.nome || !telValido || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
                 onClick={submitPedido}
               >
                 {submitting ? (

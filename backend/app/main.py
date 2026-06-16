@@ -16,6 +16,7 @@ from app.routes import (
     cardapio,
     cardapio_publico,
     conversas,
+    entregadores,
     health,
     metricas,
     pedidos,
@@ -119,6 +120,8 @@ app.include_router(conversas.router)
 app.include_router(cardapio.router)
 app.include_router(agente.router)
 app.include_router(pedidos.router)
+app.include_router(entregadores.owner_router)
+app.include_router(entregadores.driver_router)
 app.include_router(metricas.router)
 app.include_router(webhook.router)
 app.include_router(webhook_pagamento.router)

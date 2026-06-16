@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import decode_token
 from app.db import get_db
-from app.models import EquipePizzaria, Usuario
+from app.models import Entregador, EquipePizzaria, Usuario
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
 
@@ -60,3 +60,20 @@ async def membership(
     if not link:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Sem acesso a esta pizzaria")
     return link
+
+
+async def current_entregador(
+    pizzaria_id: uuid.UUID,
+    user: Usuario = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Entregador:
+    """Garante que o usuário é um entregador ATIVO desta pizzaria."""
+    stmt = select(Entregador).where(
+        Entregador.pizzaria_id == pizzaria_id,
+        Entregador.usuario_id == user.id,
+        Entregador.ativo.is_(True),
+    )
+    ent = (await db.execute(stmt)).scalar_one_or_none()
+    if not ent:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Acesso restrito a entregadores")
+    return ent

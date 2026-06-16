@@ -20,7 +20,9 @@ import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
 import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
 import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { CardapioPublico } from "./components/v2/CardapioPublico";
+import { DriverApp } from "./components/driver/DriverApp";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
+import { EntregadoresView } from "./components/v2/EntregadoresView";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import { MetricasView } from "./components/v2/MetricasView";
 import { AjudaView } from "./components/v2/AjudaView";
@@ -342,6 +344,13 @@ function AdminApp() {
   }
 
   // ============================================
+  // Render: painel do entregador (conta de entregador)
+  // ============================================
+  if (user.entregador) {
+    return <DriverApp user={user} onLogout={handleLogout} />;
+  }
+
+  // ============================================
   // Render: painel da plataforma (admin sem pizzaria ativa)
   // ============================================
   if (user.is_platform_admin && !pizzaria) return (
@@ -464,6 +473,7 @@ function AdminApp() {
       {nav === "negocio"   && (
         <MeuNegocioViewV2 pizzaria={pizzaria} onUpdated={setPizzaria}/>
       )}
+      {nav === "entregadores" && <EntregadoresView pizzariaId={pizzaria.id}/>}
       {nav === "assinatura" && <AssinaturaView pizzariaId={pizzaria.id}/>}
       {nav === "ajuda"     && <AjudaView/>}
       {nav === "admin" && user.is_platform_admin && (

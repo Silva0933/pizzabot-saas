@@ -86,6 +86,18 @@ export interface UserMe {
   email: string;
   nome: string;
   is_platform_admin: boolean;
+  /** Presente quando a conta é de um entregador (define a shell do entregador). */
+  entregador?: { id: string; pizzaria_id: string; nome: string } | null;
+}
+
+export interface BackendEntregador {
+  id: string;
+  nome: string;
+  email: string;
+  telefone?: string | null;
+  disponivel: boolean;
+  ativo: boolean;
+  created_at: string;
 }
 
 export const authApi = {
@@ -184,6 +196,9 @@ export interface BackendPedido {
   bot_ativo: boolean;
   nps_nota?: number | null;
   nps_comentario?: string | null;
+  entregador_id?: string | null;
+  atribuido_em?: string | null;
+  entregador?: { id: string; nome: string } | null;
   created_at: string;
   updated_at: string;
   cliente?: {
@@ -364,6 +379,47 @@ export const pedidosApi = {
     api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/pagamento/confirmar`),
   rejeitarPagamento: (pizzariaId: string, pedidoId: string) =>
     api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/pagamento/rejeitar`),
+  atribuir: (pizzariaId: string, pedidoId: string, entregadorId: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/atribuir`, { entregador_id: entregadorId }),
+  desatribuir: (pizzariaId: string, pedidoId: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/desatribuir`),
+};
+
+// ============================================
+// Entregadores — gestão pelo dono
+// ============================================
+export interface EntregadoresResp {
+  entregadores: BackendEntregador[];
+  permitir_autoatribuicao: boolean;
+}
+
+export const entregadoresApi = {
+  list: (pizzariaId: string) =>
+    api.get<EntregadoresResp>(`/pizzarias/${pizzariaId}/entregadores`),
+  create: (pizzariaId: string, body: { nome: string; email: string; senha: string; telefone?: string }) =>
+    api.post<BackendEntregador>(`/pizzarias/${pizzariaId}/entregadores`, body),
+  update: (pizzariaId: string, entregadorId: string, body: { nome?: string; telefone?: string; ativo?: boolean; nova_senha?: string }) =>
+    api.patch<BackendEntregador>(`/pizzarias/${pizzariaId}/entregadores/${entregadorId}`, body),
+  remove: (pizzariaId: string, entregadorId: string) =>
+    api.delete<{ ok: boolean }>(`/pizzarias/${pizzariaId}/entregadores/${entregadorId}`),
+  setConfig: (pizzariaId: string, permitirAutoatribuicao: boolean) =>
+    api.put<EntregadoresResp>(`/pizzarias/${pizzariaId}/entregadores/config`, { permitir_autoatribuicao: permitirAutoatribuicao }),
+};
+
+// ============================================
+// Entregador — visão do próprio entregador
+// ============================================
+export const entregadorApi = {
+  minhasEntregas: (pizzariaId: string) =>
+    api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/entregador/minhas-entregas`),
+  disponiveis: (pizzariaId: string) =>
+    api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/entregador/disponiveis`),
+  pegar: (pizzariaId: string, pedidoId: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/entregador/pedidos/${pedidoId}/pegar`),
+  updateStatus: (pizzariaId: string, pedidoId: string, status: "a_caminho" | "entregue") =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/entregador/pedidos/${pedidoId}/status`, { status }),
+  setDisponibilidade: (pizzariaId: string, disponivel: boolean) =>
+    api.patch<{ ok: boolean; disponivel: boolean }>(`/pizzarias/${pizzariaId}/entregador/disponibilidade`, { disponivel }),
 };
 
 // ============================================

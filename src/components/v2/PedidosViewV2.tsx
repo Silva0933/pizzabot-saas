@@ -10,7 +10,7 @@ import {
   Loader2, AlertCircle, Package, ClipboardList, Hourglass,
   ChefHat, DollarSign, Filter, Gauge,
 } from "lucide-react";
-import { pedidosApi, pizzariasApi, BackendPedido, UsoPizzaria } from "../../lib/api";
+import { pedidosApi, pizzariasApi, entregadoresApi, BackendPedido, BackendEntregador, UsoPizzaria } from "../../lib/api";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
 import { StatCard } from "../ui";
 import { ORDER_STATUS_LIST, orderStatusLabel } from "../../lib/orderStatus";
@@ -39,9 +39,34 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   const [comprovanteIds, setComprovanteIds] = useState<Set<string>>(new Set());
   // Cota de atendimentos do plano (contador discreto + aviso).
   const [uso, setUso] = useState<UsoPizzaria | null>(null);
+  // Entregadores ativos (para o seletor de atribuição nos cards de delivery).
+  const [entregadores, setEntregadores] = useState<BackendEntregador[]>([]);
+  const [assigningIds, setAssigningIds] = useState<Set<string>>(new Set());
 
   function loadUso() {
     return pizzariasApi.uso(pizzariaId).then(setUso).catch(() => {});
+  }
+
+  function loadEntregadores() {
+    return entregadoresApi.list(pizzariaId)
+      .then((r) => setEntregadores(r.entregadores.filter((e) => e.ativo)))
+      .catch(() => {});
+  }
+
+  async function atribuir(pedidoId: string, entregadorId: string | null) {
+    if (assigningIds.has(pedidoId)) return;
+    setErr(null);
+    setAssigningIds((s) => new Set(s).add(pedidoId));
+    try {
+      const updated = entregadorId
+        ? await pedidosApi.atribuir(pizzariaId, pedidoId, entregadorId)
+        : await pedidosApi.desatribuir(pizzariaId, pedidoId);
+      setPedidos((ps) => ps.map((p) => (p.id === pedidoId ? updated : p)));
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setAssigningIds((s) => { const n = new Set(s); n.delete(pedidoId); return n; });
+    }
   }
 
   // Filtros
@@ -62,6 +87,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
     setLoading(true);
     load().finally(() => setLoading(false));
     loadUso();
+    loadEntregadores();
   }, [pizzariaId]);
 
   useEffect(() => {
@@ -186,6 +212,9 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       onStatus={(s) => moveStatus(p.id, s)}
       onDelete={() => removerPedido(p)}
       onConferir={(acao) => conferirPagamento(p.id, acao)}
+      entregadores={entregadores.map((e) => ({ id: e.id, nome: e.nome, disponivel: e.disponivel }))}
+      onAtribuir={(eid) => atribuir(p.id, eid)}
+      assigning={assigningIds.has(p.id)}
     />
   );
 

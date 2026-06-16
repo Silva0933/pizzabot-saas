@@ -81,6 +81,9 @@ class Pizzaria(Base):
     # vira fallback: basta voltar esta flag pra False numa pizzaria pra ela cair
     # de novo no worker (rollback por tenant, sem deploy).
     usar_dispatcher: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Permite que entregadores peguem pedidos livres (self-claim). Quando False,
+    # só o dono atribui as entregas.
+    permitir_autoatribuicao_entregador: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     endereco: Mapped[str | None] = mapped_column(Text)
     # Link do endereço no Google Maps (enviado ao cliente quando ele pergunta o
@@ -333,6 +336,11 @@ class Pedido(Base):
     cancelado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelamento_motivo: Mapped[str | None] = mapped_column(Text)
 
+    # Entregador atribuído (painel de entregador). Nulo = sem entregador.
+    entregador_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("entregadores.id", ondelete="SET NULL"))
+    atribuido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    entregador: Mapped[Entregador | None] = relationship("Entregador", lazy="joined")
+
     # Pós-venda (NPS): nota de 0-10 e comentário opcional do cliente.
     nps_nota: Mapped[int | None] = mapped_column(Integer)
     nps_comentario: Mapped[str | None] = mapped_column(Text)
@@ -340,6 +348,27 @@ class Pedido(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ============================================
+# Entregadores (painel de entregador)
+# ============================================
+class Entregador(Base):
+    __tablename__ = "entregadores"
+    __table_args__ = (UniqueConstraint("pizzaria_id", "usuario_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    # Conta de login do entregador (reusa a tabela usuarios / mesmo /auth/login).
+    usuario_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    nome: Mapped[str] = mapped_column(String, nullable=False)
+    telefone: Mapped[str | None] = mapped_column(String)
+    disponivel: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    usuario: Mapped[Usuario] = relationship("Usuario", lazy="joined")
 
 
 # ============================================

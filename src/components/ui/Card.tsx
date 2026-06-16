@@ -20,6 +20,8 @@ interface CardProps {
   /** Realça no hover (sombra + leve elevação). */
   interactive?: boolean;
   padded?: boolean;
+  /** React strip `key` antes de passar; declarado só p/ uso em listas (projeto sem @types/react). */
+  key?: string | number;
 }
 
 /** Superfície base — substitui os `div bg-white border rounded-2xl` espalhados. */

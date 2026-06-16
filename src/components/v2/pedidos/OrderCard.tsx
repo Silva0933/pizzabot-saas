@@ -1,7 +1,7 @@
 import React from "react";
 import {
   Phone, MapPin, Store, MessageCircle, Trash2, Clock, Check, X, Receipt,
-  Hash, User,
+  Hash, User, Bike, Loader2,
 } from "lucide-react";
 import { Button, Badge, OrderStatusBadge, buttonClasses } from "../../ui";
 import { cn } from "../../../lib/cn";
@@ -21,11 +21,15 @@ interface OrderCardProps {
   onStatus: (s: string) => void;
   onDelete: () => void;
   onConferir: (acao: "confirmar" | "rejeitar") => void;
+  /** Entregadores ativos da pizzaria (para o seletor de atribuição). */
+  entregadores?: { id: string; nome: string; disponivel: boolean }[];
+  onAtribuir?: (entregadorId: string | null) => void;
+  assigning?: boolean;
 }
 
 export function OrderCard({
   pedido: p, statusLabel, moving, deleting, paying, comprovante,
-  onStatus, onDelete, onConferir,
+  onStatus, onDelete, onConferir, entregadores, onAtribuir, assigning,
 }: OrderCardProps) {
   const delivery = isDelivery(p.tipo);
   const tel = p.cliente?.telefone;
@@ -162,6 +166,27 @@ export function OrderCard({
 
       {/* Footer: ações */}
       <div className="px-4 py-3 border-t border-line bg-surface-muted/60 space-y-2">
+        {/* Atribuição de entregador (delivery + há entregadores cadastrados) */}
+        {delivery && entregadores && entregadores.length > 0 && onAtribuir && (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-muted shrink-0">
+              <Bike className="w-3.5 h-3.5" /> Entregador
+            </span>
+            <select
+              value={p.entregador_id || ""}
+              disabled={assigning}
+              onChange={(e) => onAtribuir(e.target.value || null)}
+              className="flex-1 px-2.5 py-1.5 border border-line rounded-lg text-xs font-medium text-ink bg-surface outline-none focus:border-brand-400 disabled:opacity-50 cursor-pointer"
+            >
+              <option value="">— Sem entregador —</option>
+              {entregadores.map((en) => (
+                <option key={en.id} value={en.id}>{en.nome}{en.disponivel ? " • disponível" : ""}</option>
+              ))}
+            </select>
+            {assigning && <Loader2 className="w-4 h-4 animate-spin text-brand-500 shrink-0" />}
+          </div>
+        )}
+
         {/* Conferência do Pix manual */}
         {aguardandoConferencia && (
           <div className="flex items-center gap-2">

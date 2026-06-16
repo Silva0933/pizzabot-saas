@@ -15,10 +15,11 @@ import {
   TrendingUp,
   HelpCircle,
   CreditCard,
+  Bike,
   MoreHorizontal,
 } from "lucide-react";
 
-export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "assinatura" | "ajuda" | "admin";
+export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "entregadores" | "assinatura" | "ajuda" | "admin";
 
 export interface NavBadges {
   conversas?: number;
@@ -40,6 +41,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ class
   { key: "conversas", label: "Conversas",    icon: MessageSquare },
   { key: "cardapio",  label: "Cardápio",     icon: UtensilsCrossed },
   { key: "negocio",   label: "Meu Negócio",  icon: Store },
+  { key: "entregadores", label: "Entregadores", icon: Bike },
   { key: "assinatura", label: "Assinatura",  icon: CreditCard },
   { key: "ajuda",     label: "Ajuda",        icon: HelpCircle },
 ];

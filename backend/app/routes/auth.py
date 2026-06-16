@@ -59,6 +59,30 @@ class SignupIn(BaseModel):
 TRIAL_DIAS = 14
 
 
+async def _build_user_payload(db: AsyncSession, user: Usuario) -> dict:
+    """Payload do usuário para o front. Inclui `entregador` quando a conta é de
+    um entregador (define a shell do entregador no app)."""
+    from app.models import Entregador
+
+    ent = (
+        await db.execute(
+            select(Entregador).where(
+                Entregador.usuario_id == user.id, Entregador.ativo.is_(True)
+            )
+        )
+    ).scalar_one_or_none()
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "nome": user.nome,
+        "is_platform_admin": user.is_platform_admin,
+        "entregador": (
+            {"id": str(ent.id), "pizzaria_id": str(ent.pizzaria_id), "nome": ent.nome}
+            if ent else None
+        ),
+    }
+
+
 # ============================================
 # Endpoints
 # ============================================
@@ -86,12 +110,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     return TokenOut(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
-        user={
-            "id": str(user.id),
-            "email": user.email,
-            "nome": user.nome,
-            "is_platform_admin": user.is_platform_admin,
-        },
+        user=await _build_user_payload(db, user),
     )
 
 
@@ -111,23 +130,13 @@ async def refresh(body: RefreshIn, db: AsyncSession = Depends(get_db)) -> TokenO
     return TokenOut(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
-        user={
-            "id": str(user.id),
-            "email": user.email,
-            "nome": user.nome,
-            "is_platform_admin": user.is_platform_admin,
-        },
+        user=await _build_user_payload(db, user),
     )
 
 
 @router.get("/me")
-async def me(user: Usuario = Depends(current_user)) -> dict:
-    return {
-        "id": str(user.id),
-        "email": user.email,
-        "nome": user.nome,
-        "is_platform_admin": user.is_platform_admin,
-    }
+async def me(user: Usuario = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    return await _build_user_payload(db, user)
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -213,10 +222,5 @@ async def signup(body: SignupIn, request: Request, db: AsyncSession = Depends(ge
     return TokenOut(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
-        user={
-            "id": str(user.id),
-            "email": user.email,
-            "nome": user.nome,
-            "is_platform_admin": False,
-        },
+        user=await _build_user_payload(db, user),
     )
