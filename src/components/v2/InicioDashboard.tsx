@@ -59,7 +59,7 @@ export function InicioDashboard({
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6">
       {/* Hero — saudação em gradiente */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-orange-500 via-orange-500 to-rose-500 p-5 md:p-6 text-white shadow-lg shadow-orange-500/20">
+      <div className="relative overflow-hidden rounded-2xl bg-brand-gradient p-5 md:p-6 text-white shadow-brand">
         {/* Decoração */}
         <div className="absolute -right-6 -top-8 opacity-20 select-none pointer-events-none">
           <Pizza className="w-40 h-40" />

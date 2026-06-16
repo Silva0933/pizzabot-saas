@@ -313,7 +313,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
       {/* Header do Cardápio */}
       <div className="flex items-center justify-between flex-wrap gap-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-500 to-rose-500 text-white grid place-items-center shadow-lg shadow-orange-500/25">
+          <span className="w-12 h-12 rounded-2xl bg-brand-gradient text-white grid place-items-center shadow-brand">
             <UtensilsCrossed className="w-5 h-5" />
           </span>
           <div>
@@ -333,7 +333,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
           <ImportarCardapio pizzariaId={pizzariaId} onImported={load} />
           <button
             onClick={startCreate}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-95 text-white rounded-xl font-bold shadow-md shadow-orange-500/10 transition-all hover:-translate-y-0.5 active:translate-y-0"
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-brand-gradient hover:brightness-105 text-white rounded-xl font-bold shadow-brand transition-all hover:-translate-y-0.5 active:translate-y-0"
           >
             <Plus className="w-4 h-4"/> Novo produto
           </button>
@@ -960,7 +960,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                 type="button"
                 onClick={save} 
                 disabled={saving || !form.nome || (form.tamanhos === null && !form.preco)}
-                className="px-5 py-2 text-sm bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-95 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-orange-500/10 disabled:opacity-50 transition"
+                className="px-5 py-2 text-sm bg-brand-gradient hover:brightness-105 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-brand disabled:opacity-50 transition-all"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
                 Salvar Produto

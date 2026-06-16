@@ -253,7 +253,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-[340px_1fr] h-[calc(100vh-120px)] bg-white border-t border-slate-200">
         {/* Lista — no mobile esconde quando há conversa aberta */}
         <aside className={`border-r border-slate-200 overflow-y-auto bg-white ${active ? "hidden md:block" : "block"}`}>
-          <div className="sticky top-0 z-10 px-4 py-3 bg-gradient-to-r from-orange-500 to-rose-500 text-white">
+          <div className="sticky top-0 z-10 px-4 py-3 bg-brand-gradient text-white">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4" />
               <h2 className="text-sm font-bold">Conversas</h2>
@@ -450,7 +450,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
                   <button
                     type="submit"
                     disabled={sending || !draft.trim()}
-                    className="bg-gradient-to-br from-orange-500 to-rose-500 hover:opacity-90 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-sm disabled:opacity-50 shrink-0"
+                    className="bg-brand-gradient hover:brightness-105 text-white w-10 h-10 rounded-full flex items-center justify-center shadow-sm disabled:opacity-50 shrink-0 transition-all"
                   >
                     {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                   </button>

@@ -63,10 +63,12 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
         {/* Logo / nome pizzaria */}
         <div className="px-4 py-5 border-b border-slate-100 flex items-center gap-2.5">
           {pizzariaLogo ? (
-            <img src={pizzariaLogo} alt="" className="w-8 h-8 rounded-lg object-cover" />
+            <div className="p-0.5 rounded-xl bg-brand-gradient shrink-0">
+              <img src={pizzariaLogo} alt="" className="w-8 h-8 rounded-[10px] object-cover block border-2 border-white" />
+            </div>
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
-              <Pizza className="w-4 h-4 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-brand-gradient flex items-center justify-center shadow-brand shrink-0">
+              <Pizza className="w-5 h-5 text-white" />
             </div>
           )}
           <div className="min-w-0">
@@ -89,13 +91,14 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
                 key={key}
                 type="button"
                 onClick={() => onChange(key)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   isActive
-                    ? "bg-orange-50 text-orange-700"
+                    ? "bg-brand-50 text-brand-700 shadow-sm"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? "text-orange-600" : "text-slate-400"}`} />
+                {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-brand-gradient" />}
+                <Icon className={`w-4 h-4 ${isActive ? "text-brand-600" : "text-slate-400"}`} />
                 <span className="flex-1 text-left">{label}</span>
                 {badge !== undefined && badge > 0 && (
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${

@@ -156,7 +156,7 @@ export function AjudaView() {
 
   return (
     <div className="p-4 md:p-6 pb-24 md:pb-6 max-w-3xl mx-auto space-y-4">
-      <div className="bg-gradient-to-r from-orange-500 to-rose-500 text-white rounded-2xl p-5 shadow-sm">
+      <div className="bg-brand-gradient text-white rounded-2xl p-5 shadow-card">
         <div className="flex items-center gap-2.5">
           <HelpCircle className="w-6 h-6" />
           <h2 className="font-bold text-lg md:text-xl">Central de Ajuda</h2>
