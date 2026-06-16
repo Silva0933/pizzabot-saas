@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from app.auth import decode_token
 from app.db import AsyncSessionLocal
-from app.models import EquipePizzaria, Usuario
+from app.models import Entregador, EquipePizzaria, Usuario
 from app.services.broadcaster import broadcaster
 
 log = logging.getLogger(__name__)
@@ -48,7 +48,19 @@ async def _authorize(token: str, pizzaria_id: uuid.UUID) -> Usuario | None:
                 )
             )
         ).scalar_one_or_none()
-        return user if link else None
+        if link:
+            return user
+        # Entregador ativo da pizzaria também conecta (recebe updates das entregas).
+        ent = (
+            await db.execute(
+                select(Entregador).where(
+                    Entregador.pizzaria_id == pizzaria_id,
+                    Entregador.usuario_id == user.id,
+                    Entregador.ativo.is_(True),
+                )
+            )
+        ).scalar_one_or_none()
+        return user if ent else None
 
 
 @router.websocket("/ws/{pizzaria_id}")
