@@ -135,7 +135,7 @@ export function InicioDashboard({
           >
             <X className="w-4 h-4" />
           </button>
-          <OnboardingChecklist items={onboarding!} />
+          <OnboardingChecklist items={onboarding!} defaultExpanded />
         </div>
       )}
 

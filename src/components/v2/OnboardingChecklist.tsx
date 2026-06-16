@@ -1,15 +1,15 @@
 /**
  * Checklist de setup do painel.
  *
- * Aparece no topo enquanto faltar configurar algo. Cada passo pode ser
- * CONFIGURADO ou PULADO (ex.: quem não quer pagamento online). O dono pode
- * OCULTAR o card — mas fica um chip de alerta destacado lembrando que ainda há
- * configuração pendente (não some de vez). Some sozinho só quando tudo estiver
- * realmente concluído. Estado de pular/ocultar é por pizzaria (localStorage).
+ * DISCRETO por padrão: enquanto faltar configurar algo, mostra só uma faixa
+ * fininha com um ponto pulsante ("alerta") + quantos passos faltam. Ao clicar,
+ * EXPANDE a lista completa (cada passo pode ser CONFIGURADO ou PULADO) e pode
+ * RECOLHER de volta. Some sozinho só quando tudo estiver realmente concluído.
+ * O que foi pulado é por pizzaria (localStorage).
  */
 import React, { useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Circle, ChevronRight, EyeOff, AlertTriangle, RotateCcw } from "lucide-react";
+import { Circle, ChevronRight, ChevronUp, RotateCcw, Sparkles } from "lucide-react";
 
 export interface OnboardingItem {
   id: string;
@@ -23,8 +23,10 @@ export interface OnboardingItem {
 export interface OnboardingChecklistProps {
   items: OnboardingItem[];
   title?: string;
-  /** Chave de persistência (por pizzaria) do que foi pulado/ocultado. */
+  /** Chave de persistência (por pizzaria) do que foi pulado. */
   storageKey?: string;
+  /** Começa já expandido (ex.: quando aberto a partir de um botão de config). */
+  defaultExpanded?: boolean;
 }
 
 function lsGet<T>(key: string, fallback: T): T {
@@ -47,15 +49,14 @@ export function OnboardingChecklist({
   items,
   title = "Vamos terminar a configuração",
   storageKey = "default",
+  defaultExpanded = false,
 }: OnboardingChecklistProps) {
   const skipKey = `pizzabot:onb:skip:${storageKey}`;
-  const hideKey = `pizzabot:onb:hide:${storageKey}`;
 
   const [skipped, setSkipped] = useState<string[]>(() => lsGet<string[]>(skipKey, []));
-  const [hidden, setHidden] = useState<boolean>(() => lsGet<boolean>(hideKey, false));
+  const [expanded, setExpanded] = useState<boolean>(defaultExpanded);
 
   useEffect(() => lsSet(skipKey, skipped), [skipKey, skipped]);
-  useEffect(() => lsSet(hideKey, hidden), [hideKey, hidden]);
 
   const doneCount = items.filter((i) => i.done).length;
   const skippedItems = items.filter((i) => !i.done && skipped.includes(i.id));
@@ -68,29 +69,42 @@ export function OnboardingChecklist({
   const skip = (id: string) => setSkipped((s) => Array.from(new Set([...s, id])));
   const restoreAll = () => setSkipped([]);
 
-  // Estado COMPACTO (chip destacado): oculto pelo dono, ou só restam passos
-  // pulados (nenhum pendente ativo). Continua visível pra não esquecer.
-  if (hidden || pending.length === 0) {
+  // ============================================
+  // DISCRETO (padrão): faixa fininha com ponto pulsante.
+  // ============================================
+  if (!expanded) {
     return (
       <button
         type="button"
         onClick={() => {
-          setHidden(false);
+          setExpanded(true);
           if (pending.length === 0) restoreAll(); // reabre os pulados pra resolver
         }}
-        className="w-full flex items-center gap-2.5 bg-amber-50 border border-amber-300 rounded-xl px-3.5 py-2.5 text-left hover:bg-amber-100/70 transition-colors"
+        className="group w-full flex items-center gap-2.5 bg-surface border border-amber-200 rounded-xl px-3.5 py-2 text-left hover:border-amber-300 hover:bg-amber-50/50 transition-colors"
       >
-        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-        <span className="text-sm font-semibold text-amber-800 flex-1 min-w-0">
-          Configuração pendente — {incomplete} passo{incomplete > 1 ? "s" : ""} a fazer
+        <span className="relative flex h-2.5 w-2.5 shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60" />
+          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
         </span>
-        <span className="text-xs font-medium text-amber-700 flex items-center gap-1 shrink-0">
-          Ver <ChevronRight className="w-3 h-3" />
+        <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+        <span className="text-sm text-ink flex-1 min-w-0 truncate">
+          Configuração pendente —{" "}
+          <span className="font-semibold text-amber-700">
+            {incomplete} passo{incomplete > 1 ? "s" : ""}
+          </span>{" "}
+          a fazer
+        </span>
+        <span className="text-xs font-semibold text-amber-700 flex items-center gap-0.5 shrink-0">
+          Ver passos
+          <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
         </span>
       </button>
     );
   }
 
+  // ============================================
+  // EXPANDIDO (ao clicar): lista completa.
+  // ============================================
   const pct = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0;
 
   return (
@@ -110,11 +124,11 @@ export function OnboardingChecklist({
           <span className="text-xs font-semibold text-orange-700">{pct}%</span>
           <button
             type="button"
-            onClick={() => setHidden(true)}
-            title="Ocultar (continua avisando que há pendências)"
+            onClick={() => setExpanded(false)}
+            title="Recolher (continua avisando que há pendências)"
             className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-700 px-2 py-1 rounded-lg hover:bg-white/70"
           >
-            <EyeOff className="w-3.5 h-3.5" /> Ocultar
+            <ChevronUp className="w-3.5 h-3.5" /> Recolher
           </button>
         </div>
       </div>
