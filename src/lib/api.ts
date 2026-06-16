@@ -87,7 +87,7 @@ export interface UserMe {
   nome: string;
   is_platform_admin: boolean;
   /** Presente quando a conta é de um entregador (define a shell do entregador). */
-  entregador?: { id: string; pizzaria_id: string; nome: string } | null;
+  entregador?: { id: string; pizzaria_id: string; nome: string; disponivel: boolean } | null;
 }
 
 export interface BackendEntregador {

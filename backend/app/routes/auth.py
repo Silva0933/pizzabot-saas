@@ -77,7 +77,12 @@ async def _build_user_payload(db: AsyncSession, user: Usuario) -> dict:
         "nome": user.nome,
         "is_platform_admin": user.is_platform_admin,
         "entregador": (
-            {"id": str(ent.id), "pizzaria_id": str(ent.pizzaria_id), "nome": ent.nome}
+            {
+                "id": str(ent.id),
+                "pizzaria_id": str(ent.pizzaria_id),
+                "nome": ent.nome,
+                "disponivel": ent.disponivel,
+            }
             if ent else None
         ),
     }
