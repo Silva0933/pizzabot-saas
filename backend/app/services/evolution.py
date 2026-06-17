@@ -180,12 +180,12 @@ class EvolutionClient:
         r = await c.post(f"/message/sendMedia/{instancia}", json=body)
         return self._unwrap(r)
 
-    async def get_media_base64(self, *, instancia: str, key: dict[str, Any]) -> str | None:
+    async def get_media_base64(self, *, instancia: str, message: dict[str, Any]) -> str | None:
         """Baixa o conteúdo (base64) de uma mensagem de mídia (áudio/imagem)."""
         c = await self._http()
         r = await c.post(
             f"/chat/getBase64FromMediaMessage/{instancia}",
-            json={"message": {"key": key}, "convertToMp4": False},
+            json={"message": message, "convertToMp4": False},
         )
         if r.is_error:
             log.warning("getBase64 erro %s: %s", r.status_code, r.text[:200])

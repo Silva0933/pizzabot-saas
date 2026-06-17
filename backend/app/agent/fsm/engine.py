@@ -402,9 +402,8 @@ def _eh_grosseria(texto: str) -> bool:
     # Detecta ofensa explícita (não inclui pedido educado de atendente, que tem
     # intenção própria 'falar_humano' na NLU).
     t = (texto or "").lower()
-    palavroes = ("merda", "porra", "caralho", "vai se", "vsf", "fdp", "filho da",
-                 "idiota", "imbecil", "otario", "otária", "nojento")
-    return any(p in t for p in palavroes)
+    palavroes = r"\b(merda|porra|caralho|vai se|vsf|fdp|filho da|idiota|imbecil|otario|otária|nojento)\b"
+    return bool(_re.search(palavroes, t))
 
 
 _CARDAPIO_RE = _re.compile(

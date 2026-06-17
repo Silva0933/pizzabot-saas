@@ -358,7 +358,7 @@ async def evolution_webhook(
     if tipo == "audio" and pizz.instancia:
         try:
             from app.services.transcricao import transcrever_audio
-            b64 = await evolution.get_media_base64(instancia=pizz.instancia, key=key)
+            b64 = await evolution.get_media_base64(instancia=pizz.instancia, message=data)
             if b64:
                 mtype = (metadata.get("audio") or {}).get("mimetype") or "audio/ogg"
                 texto = await transcrever_audio(db, b64, mtype)
