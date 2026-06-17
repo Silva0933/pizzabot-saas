@@ -371,3 +371,71 @@ Implementação do web-app do cardápio público (`/m/:slug`), transformando o W
 *   **Layout e Carrinho do Cardápio**: [components/v2/CardapioPublico.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/CardapioPublico.tsx).
 *   **Client API Web**: [lib/api.ts](file:///e:/Tops%20Ferramentas/PizzaBot/src/lib/api.ts) (`menuApi`).
 *   **Painel do Link Público**: [components/v2/MeuNegocioViewV2.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/MeuNegocioViewV2.tsx) (`CardapioDigitalCard`).
+
+---
+
+## 11. Painel de Entregadores + status "Pronto para entrega" (sessão atual)
+
+Entrega gerenciada por entregadores e novo estágio do funil. Migrations:
+`018_entregadores.sql`, `019_endereco_coords.sql` (coordenadas do pino) e
+`020_pronto_entrega.sql` (novo status). Testes: `test_entregadores.py`.
+
+### 11.1. Painel do entregador
+*   Entregadores reusam a conta `usuarios` (mesmo `/auth/login`). Modelo `Entregador` (vínculo pizzaria + usuário). Migration 018 adiciona `pedidos.entregador_id`, `pedidos.atribuido_em` e `pizzarias.permitir_autoatribuicao_entregador` (toggle de self-claim).
+*   A conta de entregador cai no [components/driver/DriverApp.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/driver/DriverApp.tsx) (mobile-first), não no AppShell do dono: "Minhas entregas" + "Disponíveis" (se o self-claim estiver ligado), link pro mapa (coords `endereco_lat/lon`), avanço de status (saí/entreguei) e botão de disponibilidade.
+*   Rotas em [routes/entregadores.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/entregadores.py): `owner_router` (CRUD + toggle) e `driver_router` (`minhas-entregas`, `disponiveis`, `pegar`, `status`, `disponibilidade`). Atribuição manual pelo dono no card de Pedidos ([routes/pedidos.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/pedidos.py) `/atribuir`). Gestão do dono em [components/v2/EntregadoresView.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/EntregadoresView.tsx).
+
+### 11.2. Status "Pronto para entrega" (`pronto_entrega`)
+*   Nova etapa do funil ENTRE `no_forno` e `a_caminho`, **só para delivery**. Retirada continua `no_forno → entregue`. Migration `020` atualiza o CHECK de `pedidos.status` (agora inclui `pronto_entrega`).
+*   O entregador só vê/pega pedidos a partir de `pronto_entrega` (antes era `no_forno` — pizza ainda no forno não fica disponível). Em [routes/entregadores.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/entregadores.py): `DISPONIVEL_STATUS=("pronto_entrega",)` e `ENTREGA_ATIVA` inclui o novo status (segue em "minhas entregas" depois de pego).
+*   Kanban: nova coluna "Pronto p/ entrega" depois de "No forno"; CTA do funil vira "No forno → Pronto p/ entrega → Saiu p/ entrega". Fonte única em [lib/orderStatus.ts](file:///e:/Tops%20Ferramentas/PizzaBot/src/lib/orderStatus.ts) (tipo, META, FLOW, LIST, `advanceLabel`/`nextOrderStatus`).
+*   `pronto_entrega` conta como pedido real em métricas/histórico/contexto/detecção de pedido ativo: [routes/metricas.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/metricas.py), [agent/tools.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/tools.py), [agent/context.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/agent/context.py), [routes/webhook.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/webhook.py).
+
+### Onde mexer (seção 11)
+*   **Status/fluxo/labels/colunas do Kanban**: [lib/orderStatus.ts](file:///e:/Tops%20Ferramentas/PizzaBot/src/lib/orderStatus.ts).
+*   **Visibilidade/atribuição do entregador**: [routes/entregadores.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/entregadores.py) (`DISPONIVEL_STATUS`, `ENTREGA_ATIVA`), [components/driver/DriverApp.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/driver/DriverApp.tsx).
+*   **CHECK do status**: `backend/migrations/020_pronto_entrega.sql`.
+
+---
+
+## 12. Reformulação do Cardápio Digital — banner, WhatsApp e mapa (sessão atual)
+
+Redesign do cardápio público (`/m/:slug`), com foco no desktop. Migration
+`021_banner_cardapio.sql` (coluna `pizzarias.banner_url`).
+
+*   **Banner hero** no topo (campo `banner_url`, editável em *Meu Negócio → Identidade*). Sem banner → fundo do logo desfocado; sem logo → gradiente da marca.
+*   **Botão "Falar no WhatsApp"** (usa `telefone_contato`, com fallback `telefone_admin`) e **"Como chegar"** (usa `endereco_maps_url`, o link do Google Maps já cadastrado no painel). O endpoint público passou a expor `banner_url` + `endereco_maps_url` em [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py) (`PizzariaPublica`).
+*   **Desktop = cardápio completo**: produtos agrupados em SEÇÕES por categoria (não mais a grade mobile esticada), layout mais largo, faixa de Destaques mantida e sidebar de categorias fixa.
+*   Admin: campo "URL do banner" em [components/v2/MeuNegocioViewV2.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/MeuNegocioViewV2.tsx); `banner_url` em [routes/pizzarias.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/pizzarias.py) (`PizzariaPatch`/`PizzariaOut`) e no modelo [models.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/models.py).
+
+### Onde mexer (seção 12)
+*   **Layout/seções/banner/ações**: [components/v2/CardapioPublico.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/CardapioPublico.tsx), [styles/cardapio-publico.css](file:///e:/Tops%20Ferramentas/PizzaBot/src/styles/cardapio-publico.css).
+*   **Campos públicos (banner/maps/telefone)**: [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py) (`PizzariaPublica`).
+*   **Banner no admin**: [components/v2/MeuNegocioViewV2.tsx](file:///e:/Tops%20Ferramentas/PizzaBot/src/components/v2/MeuNegocioViewV2.tsx) + [routes/pizzarias.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/pizzarias.py).
+
+---
+
+## 13. Auditoria de Segurança Pré-Lançamento (sessão atual)
+
+Rodada de hardening antes do lançamento. Relatório completo em
+[docs/auditoria-pre-lancamento.md](file:///e:/Tops%20Ferramentas/PizzaBot/docs/auditoria-pre-lancamento.md).
+Testes novos: `test_cardapio_publico_preco.py`.
+
+### 13.1. Correções CRÍTICAS
+*   **Anti-adulteração de preço no checkout digital**: o servidor SEMPRE recalcula o preço pelo cadastro (Produto + tamanho + adicionais) e IGNORA o `preco_unit` enviado pelo cliente; o frontend passou a mandar `produto_id` como fonte de verdade. Helper puro `_recalcular_itens` em [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py). (Antes dava pra fechar pedido com `preco_unit: 0,01`.)
+*   **Anti-bypass de pagamento (webhook Asaas)**: `POST /webhook/asaas` agora reconsulta o status real na API do Asaas com a chave da própria pizzaria, em vez de confiar no `status` do corpo (que era forjável e sem auth). O do Mercado Pago já fazia isso. [routes/webhook_pagamento.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/webhook_pagamento.py).
+
+### 13.2. Melhorias
+*   **Rate limit do cardápio público** migrado de memória → Redis (`allow()` distribuído, vale entre réplicas). [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py).
+*   **Número do pedido unificado**: o fluxo digital deixou de fazer `MAX+1` em Python e passou a usar o trigger `assign_numero_pedido` (BEFORE INSERT, advisory lock por pizzaria) — TODOS os fluxos (WhatsApp + digital) usam o mesmo lock, sem colisão de número.
+*   **Signup com mensagem neutra** (reduz enumeração de e-mail), além do rate limit 3/h/IP já existente. [routes/auth.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/auth.py).
+
+### 13.3. Áreas auditadas e consideradas OK
+Autenticação/JWT (secret ≥32, bcrypt, login genérico), isolamento multi-tenant (todo endpoint com `pizzaria_id` exige `membership`/admin e escopa o sub-recurso — sem IDOR), WebSocket autenticado e escopado, CORS por env + `/docs` off em produção, sem SQL injection (f-strings só com constantes; valores via bind param), rate limit de login/signup, webhook MP e Pix manual.
+
+### Onde mexer (seção 13)
+*   **Recálculo de preço (anti-tampering)**: [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py) (`_recalcular_itens`).
+*   **Verificação de pagamento Asaas**: [routes/webhook_pagamento.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/webhook_pagamento.py) (`webhook_asaas`).
+*   **Rate limit público / número do pedido**: [routes/cardapio_publico.py](file:///e:/Tops%20Ferramentas/PizzaBot/backend/app/routes/cardapio_publico.py).
+
+> **Migrations** agora vão até `021_banner_cardapio.sql` (aplicadas no boot do backend).
