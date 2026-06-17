@@ -36,8 +36,8 @@ export function OrderCard({
   const aguardandoConferencia = p.payment_status === "em_analise";
   const pay = paymentMeta(p.forma_pagamento, p.payment_status);
   const urg = urgency(p);
-  const next = nextOrderStatus(p.status);
-  const nextLabel = advanceLabel(p.status);
+  const next = nextOrderStatus(p.status, delivery);
+  const nextLabel = advanceLabel(p.status, delivery);
   const totalItens = itemCount(p.itens);
 
   const ringCls = aguardandoConferencia

@@ -62,13 +62,21 @@ export function orderStatusLabel(status: string): string {
 }
 
 /** Próximo status no funil, ou null se for terminal/fora do funil. */
-export function nextOrderStatus(status: string): OrderStatus | null {
+export function nextOrderStatus(status: string, isDelivery: boolean = true): OrderStatus | null {
+  if (!isDelivery && status === "no_forno") {
+    // Retirada pula "a_caminho" e vai para "entregue" (Finalizado/Retirado)
+    return "entregue";
+  }
   const idx = ORDER_STATUS_FLOW.indexOf(status as OrderStatus);
   if (idx < 0 || idx >= ORDER_STATUS_FLOW.length - 1) return null;
   return ORDER_STATUS_FLOW[idx + 1];
 }
 
 /** Texto do CTA de avanço (ex.: "Confirmar", "Pôr no forno"). */
-export function advanceLabel(status: string): string | null {
+export function advanceLabel(status: string, isDelivery: boolean = true): string | null {
+  if (!isDelivery) {
+    if (status === "no_forno") return "Pronto p/ retirar (Finalizar)";
+    if (status === "a_caminho") return "Marcar como entregue";
+  }
   return ADVANCE_LABEL[status as OrderStatus] ?? null;
 }
