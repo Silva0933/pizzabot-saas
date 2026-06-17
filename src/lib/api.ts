@@ -137,6 +137,7 @@ export interface BackendPizzaria {
   telefone_admin: string | null;
   telefone_contato?: string | null;
   logo_url: string | null;
+  banner_url?: string | null;
   horario_funcionamento: Record<string, any> | null;
   formas_pagamento_aceitas?: string[] | null;
   mensagens_status: Record<string, string> | null;
@@ -911,7 +912,9 @@ export interface MenuPizzaria {
   nome: string;
   slug: string | null;
   logo_url: string | null;
+  banner_url: string | null;
   endereco: string | null;
+  endereco_maps_url: string | null;
   telefone_contato: string | null;
   instagram: string | null;
   horario_funcionamento: Record<string, any>;

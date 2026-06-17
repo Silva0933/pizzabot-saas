@@ -299,6 +299,43 @@ export function CardapioPublico({ slug }: { slug: string }) {
   );
 
   const pizz = data.pizzaria;
+  const waUrl = waLink(pizz.telefone_contato);
+
+  // Card de produto reutilizado pela grade plana e pelas seções por categoria.
+  function renderProduct(p: MenuProduto) {
+    const preco = p.tamanhos && p.tamanhos.length > 0
+      ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
+      : Number(p.preco);
+    const temVariacao = p.tamanhos && p.tamanhos.length > 0;
+    return (
+      <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
+        <div className="cdp-product-img-wrap">
+          {p.imagem_url ? (
+            <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
+          ) : (
+            <div className="cdp-product-img-ph">
+              <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
+            </div>
+          )}
+          {p.categoria && (
+            <span className="cdp-product-cat-tag">{CAT_EMOJI[p.categoria] || "🍽️"}</span>
+          )}
+        </div>
+        <div className="cdp-product-info">
+          <h3 className="cdp-product-name">{p.nome}</h3>
+          {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
+          <div className="cdp-product-footer">
+            <div className="cdp-product-price-wrap">
+              {temVariacao && <span className="cdp-price-from">a partir de</span>}
+              <span className="cdp-price">{fmt(preco)}</span>
+            </div>
+            <div className="cdp-product-add-btn" role="button" aria-label="Adicionar"
+              onClick={(e) => handleQuickAdd(e, p)}>+</div>
+          </div>
+        </div>
+      </button>
+    );
+  }
 
   return (
     <div className="cdp-root">
@@ -740,16 +777,19 @@ export function CardapioPublico({ slug }: { slug: string }) {
         ) : (
           /* ===== MENU PRINCIPAL ===== */
           <>
-            {/* Header da pizzaria */}
-            <header className="cdp-header">
-              {pizz.logo_url && (
-                <div className="cdp-header-cover" style={{ backgroundImage: `url(${pizz.logo_url})` }} />
+            {/* Banner hero da pizzaria */}
+            <header className="cdp-banner">
+              {pizz.banner_url ? (
+                <img src={pizz.banner_url} alt="" className="cdp-banner-img" />
+              ) : pizz.logo_url ? (
+                <div className="cdp-banner-img cdp-banner-img-blur" style={{ backgroundImage: `url(${pizz.logo_url})` }} />
+              ) : (
+                <div className="cdp-banner-img cdp-banner-fallback" />
               )}
-              <div className="cdp-header-bg" />
-              <div className="cdp-header-particles">
-                <span /><span /><span />
-              </div>
-              <div className="cdp-header-content">
+              <div className="cdp-banner-particles"><span /><span /><span /></div>
+              <div className="cdp-banner-scrim" />
+
+              <div className="cdp-banner-content">
                 {pizz.logo_url ? (
                   <div className="cdp-logo-ring">
                     <img src={pizz.logo_url} alt={pizz.nome} className="cdp-logo" />
@@ -757,19 +797,39 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 ) : (
                   <div className="cdp-logo-placeholder">🍕</div>
                 )}
-                <h1 className="cdp-name">{pizz.nome}</h1>
-                <div className="cdp-status-row">
-                  <span className={`cdp-status-pill ${pizz.aberto ? "open" : "closed"}`}>
-                    <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} />
-                    {pizz.aberto ? "Aberto agora" : "Fechado"}
-                  </span>
-                  {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
-                    <span className="cdp-tempo-pill">
-                      🕐 {pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min
+                <div className="cdp-banner-info">
+                  <h1 className="cdp-name">{pizz.nome}</h1>
+                  <div className="cdp-status-row">
+                    <span className={`cdp-status-pill ${pizz.aberto ? "open" : "closed"}`}>
+                      <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} />
+                      {pizz.aberto ? "Aberto agora" : "Fechado"}
                     </span>
+                    {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
+                      <span className="cdp-tempo-pill">
+                        🕐 {pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min
+                      </span>
+                    )}
+                  </div>
+                  {pizz.endereco && <p className="cdp-endereco">📍 {pizz.endereco}</p>}
+
+                  {/* Ações: WhatsApp + Como chegar */}
+                  {(waUrl || pizz.endereco_maps_url) && (
+                    <div className="cdp-banner-actions">
+                      {waUrl && (
+                        <a className="cdp-action-btn cdp-action-wpp" href={waUrl} target="_blank" rel="noopener noreferrer">
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+                          Falar no WhatsApp
+                        </a>
+                      )}
+                      {pizz.endereco_maps_url && (
+                        <a className="cdp-action-btn cdp-action-map" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                          Como chegar
+                        </a>
+                      )}
+                    </div>
                   )}
                 </div>
-                {pizz.endereco && <p className="cdp-endereco">📍 {pizz.endereco}</p>}
               </div>
             </header>
 
@@ -873,43 +933,30 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     <span>🔍</span>
                     <p>Nenhum produto encontrado</p>
                   </div>
-                ) : (
-                  <div className="cdp-products">
-                    {produtosFiltrados.map(p => {
-                      const preco = p.tamanhos && p.tamanhos.length > 0
-                        ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
-                        : Number(p.preco);
-                      const temVariacao = p.tamanhos && p.tamanhos.length > 0;
+                ) : selectedCat === "todos" && !searchQuery.trim() ? (
+                  /* Menu completo, organizado em seções por categoria */
+                  <div className="cdp-menu-sections">
+                    {categorias.filter(c => c !== "todos").map(cat => {
+                      const itens = data.produtos.filter(p => (p.categoria || "outro") === cat);
+                      if (itens.length === 0) return null;
                       return (
-                        <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
-                          <div className="cdp-product-img-wrap">
-                            {p.imagem_url ? (
-                              <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
-                            ) : (
-                              <div className="cdp-product-img-ph">
-                                <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
-                              </div>
-                            )}
-                            {p.categoria && (
-                              <span className="cdp-product-cat-tag">{CAT_EMOJI[p.categoria] || "🍽️"}</span>
-                            )}
+                        <section key={cat} id={`cat-${cat}`} className="cdp-cat-section">
+                          <div className="cdp-cat-section-head">
+                            <span className="cdp-cat-section-emoji" style={{ background: (CAT_COLOR[cat] || "#f97316") + "26" }}>
+                              {CAT_EMOJI[cat] || "🍽️"}
+                            </span>
+                            <h2 className="cdp-cat-section-title">
+                              {cat === "outro" ? "Outros" : cat.charAt(0).toUpperCase() + cat.slice(1)}
+                            </h2>
+                            <span className="cdp-cat-section-count">{itens.length}</span>
                           </div>
-                          <div className="cdp-product-info">
-                            <h3 className="cdp-product-name">{p.nome}</h3>
-                            {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
-                            <div className="cdp-product-footer">
-                              <div className="cdp-product-price-wrap">
-                                {temVariacao && <span className="cdp-price-from">a partir de</span>}
-                                <span className="cdp-price">{fmt(preco)}</span>
-                              </div>
-                              <div className="cdp-product-add-btn" role="button" aria-label="Adicionar"
-                                onClick={(e) => handleQuickAdd(e, p)}>+</div>
-                            </div>
-                          </div>
-                        </button>
+                          <div className="cdp-products">{itens.map(renderProduct)}</div>
+                        </section>
                       );
                     })}
                   </div>
+                ) : (
+                  <div className="cdp-products">{produtosFiltrados.map(renderProduct)}</div>
                 )}
               </main>
             </div>{/* fim cdp-menu-body */}
@@ -1032,6 +1079,14 @@ export function CardapioPublico({ slug }: { slug: string }) {
 // ============================================
 function fmt(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Monta o link wa.me a partir do telefone de contato (normaliza DDI 55). */
+function waLink(tel?: string | null): string {
+  const d = (tel || "").replace(/\D/g, "");
+  if (!d) return "";
+  const full = d.startsWith("55") ? d : (d.length === 10 || d.length === 11 ? "55" + d : d);
+  return `https://wa.me/${full}`;
 }
 
 // Indicador de etapas: Sacola → Dados → Pronto

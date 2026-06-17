@@ -107,6 +107,10 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           <Field label="URL do logo" full>
             <input value={form.logo_url ?? ""} onChange={(e) => setField("logo_url", e.target.value)} className={inputCls}/>
           </Field>
+          <Field label="URL do banner do cardápio digital (imagem larga do topo — ex: foto da pizzaria/promoção)" full>
+            <input value={form.banner_url ?? ""} onChange={(e) => setField("banner_url", e.target.value)}
+              placeholder="https://... (recomendado 1600×500px)" className={inputCls}/>
+          </Field>
         </div>
       </Card>
 

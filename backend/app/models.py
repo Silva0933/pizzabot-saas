@@ -58,6 +58,8 @@ class Pizzaria(Base):
     nome: Mapped[str] = mapped_column(String, nullable=False)
     slug: Mapped[str | None] = mapped_column(String, unique=True)
     logo_url: Mapped[str | None] = mapped_column(Text)
+    # Banner largo do topo do cardápio digital (URL). Migration 021.
+    banner_url: Mapped[str | None] = mapped_column(Text)
     plano: Mapped[str] = mapped_column(String, default="basico", nullable=False)
     bot_ativo_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Suspensão administrativa (ex.: inadimplência). Desliga TODO o atendimento

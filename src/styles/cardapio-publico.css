@@ -86,31 +86,66 @@
 .cdp-error h2 { font-size: 22px; font-weight: 800; }
 .cdp-error p { color: #9aa0bc; font-size: 14px; }
 
-/* ============ HEADER PIZZARIA ============ */
-.cdp-header {
-  position: relative; padding: 52px 24px 34px;
-  text-align: center; overflow: hidden;
+/* ============ BANNER HERO PIZZARIA ============ */
+.cdp-banner {
+  position: relative; min-height: 230px;
+  display: flex; align-items: flex-end; overflow: hidden;
 }
-.cdp-header-bg {
-  position: absolute; inset: 0;
+.cdp-banner-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; background-size: cover; background-position: center;
+}
+.cdp-banner-img-blur { filter: blur(26px) brightness(0.5) saturate(1.2); transform: scale(1.3); }
+.cdp-banner-fallback {
   background:
-    radial-gradient(ellipse 80% 100% at 50% 0%, rgba(249,115,22,0.26) 0%, rgba(244,63,94,0.08) 55%, transparent 100%);
+    radial-gradient(ellipse 90% 120% at 22% 0%, rgba(249,115,22,0.50) 0%, transparent 58%),
+    radial-gradient(ellipse 80% 110% at 100% 100%, rgba(244,63,94,0.40) 0%, transparent 55%),
+    linear-gradient(135deg, #1a1622, #0b0c12);
 }
-.cdp-header-particles { position: absolute; inset: 0; pointer-events: none; }
-.cdp-header-particles span {
+.cdp-banner-scrim {
+  position: absolute; inset: 0;
+  background: linear-gradient(to top, rgba(7,8,13,0.97) 0%, rgba(7,8,13,0.55) 45%, rgba(7,8,13,0.2) 100%);
+}
+.cdp-banner-particles { position: absolute; inset: 0; pointer-events: none; z-index: 0; }
+.cdp-banner-particles span {
   position: absolute; border-radius: 50%;
-  background: var(--accent); opacity: 0.12;
-  filter: blur(2px);
+  background: var(--accent); opacity: 0.14; filter: blur(2px);
   animation: cdp-float 6s ease-in-out infinite;
 }
-.cdp-header-particles span:nth-child(1) { width: 90px; height: 90px; top: -24px; left: 8%; animation-delay: 0s; }
-.cdp-header-particles span:nth-child(2) { width: 54px; height: 54px; top: 44px; right: 12%; animation-delay: 2s; }
-.cdp-header-particles span:nth-child(3) { width: 32px; height: 32px; bottom: 0; left: 42%; animation-delay: 4s; }
+.cdp-banner-particles span:nth-child(1) { width: 90px; height: 90px; top: 8%; left: 6%; }
+.cdp-banner-particles span:nth-child(2) { width: 54px; height: 54px; top: 30%; right: 10%; animation-delay: 2s; }
+.cdp-banner-particles span:nth-child(3) { width: 32px; height: 32px; bottom: 10%; left: 40%; animation-delay: 4s; }
 @keyframes cdp-float {
   0%, 100% { transform: translateY(0) scale(1); }
   50% { transform: translateY(-14px) scale(1.06); }
 }
-.cdp-header-content { position: relative; z-index: 1; }
+.cdp-banner-content {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 16px;
+  padding: 20px; width: 100%;
+}
+.cdp-banner-info { flex: 1; min-width: 0; }
+.cdp-banner-info .cdp-name { margin-top: 0; }
+.cdp-banner-info .cdp-status-row { justify-content: flex-start; margin-top: 10px; }
+.cdp-banner .cdp-logo-ring, .cdp-banner .cdp-logo-placeholder { margin-bottom: 0; flex-shrink: 0; }
+
+/* Ações do banner: WhatsApp + Como chegar */
+.cdp-banner-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.cdp-action-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 10px 16px; border-radius: 12px;
+  font-size: 13px; font-weight: 700; text-decoration: none;
+  cursor: pointer; border: 1px solid transparent;
+  transition: transform 0.18s, filter 0.18s, box-shadow 0.18s, background 0.18s;
+}
+.cdp-action-btn:hover { transform: translateY(-2px); }
+.cdp-action-wpp { background: #25d366; color: #04210f; box-shadow: 0 6px 18px rgba(37,211,102,0.35); }
+.cdp-action-wpp:hover { filter: brightness(1.05); box-shadow: 0 10px 26px rgba(37,211,102,0.45); }
+.cdp-action-map {
+  background: rgba(255,255,255,0.1); color: var(--text);
+  border-color: rgba(255,255,255,0.18); backdrop-filter: blur(6px);
+}
+.cdp-action-map:hover { background: rgba(255,255,255,0.2); }
 
 .cdp-logo-ring {
   display: inline-block;
@@ -165,13 +200,20 @@
 }
 .cdp-endereco { font-size: 12px; color: var(--text3); margin-top: 10px; line-height: 1.4; }
 
-/* Capa/banner: logo desfocado de fundo no cabeçalho */
-.cdp-header-cover {
-  position: absolute; inset: 0;
-  background-size: cover; background-position: center;
-  filter: blur(28px) brightness(0.45) saturate(1.15);
-  transform: scale(1.3);
-  opacity: 0.6;
+/* ============ SEÇÕES POR CATEGORIA (menu completo) ============ */
+.cdp-menu-sections { display: flex; flex-direction: column; gap: 28px; }
+.cdp-cat-section { scroll-margin-top: 16px; }
+.cdp-cat-section-head {
+  display: flex; align-items: center; gap: 10px; padding: 0 16px; margin-bottom: 12px;
+}
+.cdp-cat-section-emoji {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
+}
+.cdp-cat-section-title { font-size: 19px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
+.cdp-cat-section-count {
+  font-size: 12px; font-weight: 700; color: var(--text3);
+  background: var(--bg3); border-radius: 20px; padding: 2px 10px;
 }
 
 /* ============ SEARCH ============ */
@@ -844,17 +886,17 @@
     align-items: flex-start;
   }
   .cdp-wrapper {
-    max-width: 1180px; width: 95%; margin: 0 auto;
+    max-width: 1240px; width: 95%; margin: 0 auto;
     border-radius: 22px;
     box-shadow: 0 0 90px rgba(0,0,0,0.65), 0 0 0 1px var(--bg3);
     min-height: auto; padding-bottom: 40px; overflow: hidden;
   }
-  .cdp-header {
-    padding: 44px 32px 34px; text-align: center;
-    background: linear-gradient(180deg, rgba(249,115,22,0.16) 0%, transparent 100%);
-  }
-  .cdp-logo { width: 98px; height: 98px; border-radius: 26px; }
-  .cdp-name { font-size: 32px; }
+  .cdp-banner { min-height: 320px; }
+  .cdp-banner-content { padding: 32px 36px; gap: 26px; }
+  .cdp-logo { width: 116px; height: 116px; border-radius: 30px; }
+  .cdp-banner-info .cdp-name { font-size: 40px; }
+  .cdp-banner-info .cdp-endereco { font-size: 13px; }
+  .cdp-action-btn { font-size: 14px; padding: 11px 18px; }
   .cdp-menu-body {
     display: grid; grid-template-columns: 268px 1fr;
     align-items: start; gap: 0; padding: 0; border-top: 1px solid var(--bg3);
@@ -907,9 +949,14 @@
     border-radius: 9px; padding: 11px; font-size: 13px; font-weight: 700; transition: filter 0.2s;
   }
   .cdp-sidebar-cart-btn:hover { filter: brightness(1.06); }
-  .cdp-main-area { display: block; padding: 22px; min-height: 600px; }
-  .cdp-products { grid-template-columns: 1fr 1fr 1fr; gap: 16px; padding: 0; }
-  .cdp-product-img-wrap { height: 160px; }
+  .cdp-main-area { display: block; padding: 28px; min-height: 600px; }
+  .cdp-products { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 18px; padding: 0; }
+  .cdp-product-img-wrap { height: 168px; }
+  /* Seções por categoria alinham com o padding do main-area (sem 16px extra) */
+  .cdp-menu-sections { gap: 38px; }
+  .cdp-cat-section-head { padding: 0; margin-bottom: 16px; }
+  .cdp-cat-section-title { font-size: 23px; }
+  .cdp-cat-section-emoji { width: 38px; height: 38px; font-size: 20px; }
   .cdp-floating-cart { display: none; }
   .cdp-cart-page, .cdp-checkout, .cdp-produto-hero, .cdp-produto-body, .cdp-confirmacao {
     max-width: 700px; margin: 0 auto; width: 100%;

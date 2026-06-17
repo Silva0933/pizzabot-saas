@@ -67,7 +67,9 @@ class PizzariaPublica(BaseModel):
     nome: str
     slug: str | None
     logo_url: str | None
+    banner_url: str | None
     endereco: str | None
+    endereco_maps_url: str | None
     telefone_contato: str | None
     instagram: str | None
     horario_funcionamento: dict[str, Any]
@@ -195,7 +197,9 @@ async def get_menu(
         nome=pizz.nome,
         slug=pizz.slug,
         logo_url=pizz.logo_url,
+        banner_url=getattr(pizz, "banner_url", None),
         endereco=pizz.endereco,
+        endereco_maps_url=pizz.endereco_maps_url,
         telefone_contato=pizz.telefone_contato or pizz.telefone_admin,
         instagram=getattr(pizz, "instagram", None),
         horario_funcionamento=pizz.horario_funcionamento or {},

@@ -45,6 +45,7 @@ class PizzariaPatch(BaseModel):
     endereco: str | None = None
     endereco_maps_url: str | None = None
     logo_url: str | None = None
+    banner_url: str | None = None
     bot_ativo_global: bool | None = None
     horario_funcionamento: dict | None = None
     formas_pagamento_aceitas: list[str] | None = None
@@ -84,6 +85,7 @@ class PizzariaOut(BaseModel):
     telefone_admin: str | None
     telefone_contato: str | None
     logo_url: str | None = None
+    banner_url: str | None = None
     horario_funcionamento: dict | None = None
     formas_pagamento_aceitas: list[str] | None = None
     mensagens_status: dict | None = None
