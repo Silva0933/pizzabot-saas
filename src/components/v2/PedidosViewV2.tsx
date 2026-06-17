@@ -249,7 +249,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
           )}
         </div>
 
-        <div className="p-3 md:p-4 flex flex-col sm:flex-row gap-2.5 border-b border-line items-center">
+        <div className="p-3 md:p-4 flex flex-row gap-2.5 border-b border-line items-center">
           <div className="flex items-center gap-1.5 text-xs text-ink-muted bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 shrink-0">
             <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
             <span className="font-semibold text-emerald-700">Pedidos de hoje</span>
