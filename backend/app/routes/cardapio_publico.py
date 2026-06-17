@@ -15,36 +15,28 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from app.db import get_db
 from app.models import Cliente, Conversa, Mensagem, Pedido, Pizzaria, Produto
+from app.services.rate_limit import allow, client_ip
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/menu", tags=["cardapio_digital"])
 
-
-# ============================================
-# Rate limiting simples em memória (por IP)
-# ============================================
-_rate_store: dict[str, list[float]] = {}
-_RATE_WINDOW = 60  # segundos
+# Rate limiting por IP via Redis (distribuído, fail-open) — vale entre réplicas.
 _RATE_LIMIT_GET = 30   # req/min
 _RATE_LIMIT_POST = 5   # req/min
 
 
-def _check_rate(ip: str, limit: int) -> None:
-    import time
-    now = time.time()
-    key = f"{ip}:{limit}"
-    hits = _rate_store.get(key, [])
-    hits = [t for t in hits if now - t < _RATE_WINDOW]
-    if len(hits) >= limit:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Muitas requisições. Tente novamente em instantes.")
-    hits.append(now)
-    _rate_store[key] = hits
+async def _check_rate(request: Request, *, max_hits: int, scope: str) -> None:
+    if not await allow(f"menu:{scope}:{client_ip(request)}", max_hits=max_hits, window_seconds=60):
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Muitas requisições. Tente novamente em instantes.",
+        )
 
 
 # ============================================
@@ -94,10 +86,13 @@ class MenuResponse(BaseModel):
 # Schemas de entrada (pedido do cliente)
 # ============================================
 class ItemPedidoIn(BaseModel):
+    # produto_id é a fonte de verdade do preço — o backend recalcula a partir dele.
+    produto_id: str | None = None
     nome: str = Field(min_length=1, max_length=200)
     quantidade: int = Field(ge=1, le=50)
     tamanho: str | None = None
-    preco_unit: float = Field(ge=0)
+    # preco_unit é IGNORADO no servidor (recalculado); mantido só por compat. de payload.
+    preco_unit: float = Field(default=0, ge=0)
     observacao: str | None = Field(default=None, max_length=500)
     adicionais: list[str] = Field(default_factory=list)
 
@@ -118,6 +113,53 @@ class PedidoDigitalIn(BaseModel):
     itens: list[ItemPedidoIn] = Field(min_length=1, max_length=50)
     # Honeypot anti-bot (campo invisível no form — se preenchido, é bot)
     website: str | None = Field(default=None, max_length=0)
+
+
+# ============================================
+# Helper: recálculo de preços (anti-tampering)
+# ============================================
+def _recalcular_itens(
+    itens: list["ItemPedidoIn"],
+    produtos_map: dict[str, Any],
+    adicionais_precos: dict[str, Decimal],
+) -> tuple[list[dict[str, Any]], Decimal]:
+    """Recalcula itens/subtotal usando SEMPRE o preço do cadastro (Produto +
+    tamanho + adicionais). O preço enviado pelo cliente é ignorado — isso impede
+    adulteração de preço pelo checkout público. Levanta HTTP 400 em item inválido."""
+    itens_json: list[dict[str, Any]] = []
+    subtotal = Decimal("0")
+    for item in itens:
+        prod = produtos_map.get(item.produto_id or "")
+        if prod is None or not getattr(prod, "disponivel", False):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Item indisponível ou inválido: {item.nome}. Atualize a página e tente novamente.",
+            )
+        preco_unit = Decimal(str(prod.preco))
+        tamanho_final = None
+        tamanhos = prod.tamanhos or []
+        if tamanhos:
+            match = next((t for t in tamanhos if str(t.get("tamanho")) == str(item.tamanho)), None)
+            if not match:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Tamanho inválido para {prod.nome}.")
+            preco_unit = Decimal(str(match.get("preco") or 0))
+            tamanho_final = match.get("tamanho")
+        adicionais_validos: list[str] = []
+        for a in (item.adicionais or []):
+            preco_a = adicionais_precos.get((a or "").strip().lower())
+            if preco_a is not None:
+                adicionais_validos.append(a)
+                preco_unit += preco_a
+        subtotal += preco_unit * item.quantidade
+        itens_json.append({
+            "nome": prod.nome + (f" ({tamanho_final})" if tamanho_final else ""),
+            "quantidade": item.quantidade,
+            "preco_unit": float(preco_unit),
+            "tamanho": tamanho_final,
+            "observacao": item.observacao,
+            "adicionais": adicionais_validos,
+        })
+    return itens_json, subtotal
 
 
 # ============================================
@@ -157,7 +199,7 @@ async def get_menu(
     db: AsyncSession = Depends(get_db),
 ) -> MenuResponse:
     """Retorna dados públicos da pizzaria + produtos disponíveis."""
-    _check_rate(request.client.host if request.client else "unknown", _RATE_LIMIT_GET)
+    await _check_rate(request, max_hits=_RATE_LIMIT_GET, scope="get")
 
     pizz = (
         await db.execute(select(Pizzaria).where(Pizzaria.slug == slug))
@@ -229,7 +271,7 @@ async def criar_pedido_digital(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Cria um pedido vindo do cardápio digital."""
-    _check_rate(request.client.host if request.client else "unknown", _RATE_LIMIT_POST)
+    await _check_rate(request, max_hits=_RATE_LIMIT_POST, scope="post")
 
     # Honeypot: se o campo 'website' invisível foi preenchido, é bot
     if body.website:
@@ -290,22 +332,28 @@ async def criar_pedido_digital(
         endereco_parts.append(f"(Ref: {body.endereco_referencia})")
     endereco = ", ".join(filter(None, endereco_parts)) if body.tipo == "delivery" else None
 
-    # Calcula valor total
-    itens_json: list[dict[str, Any]] = []
-    subtotal = Decimal("0")
-    for item in body.itens:
-        preco = Decimal(str(item.preco_unit))
-        qtd = item.quantidade
-        total_item = preco * qtd
-        subtotal += total_item
-        itens_json.append({
-            "nome": item.nome,
-            "quantidade": qtd,
-            "preco_unit": float(preco),
-            "tamanho": item.tamanho,
-            "observacao": item.observacao,
-            "adicionais": item.adicionais,
-        })
+    # Calcula valor total — SEMPRE recalculado no servidor a partir do cadastro.
+    # NUNCA confia no preço enviado pelo cliente (anti-tampering de preço).
+    prod_ids: list[uuid.UUID] = []
+    for it in body.itens:
+        if it.produto_id:
+            try:
+                prod_ids.append(uuid.UUID(it.produto_id))
+            except ValueError:
+                pass
+    produtos_map: dict[str, Produto] = {}
+    if prod_ids:
+        rows = (await db.execute(
+            select(Produto).where(Produto.pizzaria_id == pizz.id, Produto.id.in_(prod_ids))
+        )).scalars().all()
+        produtos_map = {str(p.id): p for p in rows}
+
+    adicionais_precos = {
+        (a.get("nome") or "").strip().lower(): Decimal(str(a.get("preco") or 0))
+        for a in (pizz.adicionais or [])
+    }
+
+    itens_json, subtotal = _recalcular_itens(body.itens, produtos_map, adicionais_precos)
 
     # Taxa de entrega
     taxa_entrega = Decimal("0")
@@ -348,17 +396,14 @@ async def criar_pedido_digital(
         if endereco:
             cli.endereco_padrao = endereco
 
-    # Gera número do pedido (incremental por pizzaria)
-    max_num = (await db.execute(
-        text("SELECT COALESCE(MAX(numero_pedido), 0) FROM public.pedidos WHERE pizzaria_id = :pid"),
-        {"pid": str(pizz.id)},
-    )).scalar() or 0
-
-    # Cria o pedido
+    # Número do pedido: deixamos o trigger `assign_numero_pedido` (BEFERE INSERT)
+    # atribuir — ele já serializa por pizzaria com advisory lock. Antes o fluxo
+    # digital setava o número em Python (MAX+1) com chave de lock diferente, então
+    # podia colidir com um pedido do WhatsApp criado ao mesmo tempo. Não setando o
+    # número aqui, TODOS os fluxos passam pelo mesmo lock do trigger.
     pedido = Pedido(
         pizzaria_id=pizz.id,
         cliente_id=cli.id,
-        numero_pedido=max_num + 1,
         itens=itens_json,
         valor_total=valor_total,
         status="confirmado",
@@ -373,6 +418,9 @@ async def criar_pedido_digital(
     )
     db.add(pedido)
     await db.flush()
+    # Recarrega o numero_pedido atribuído pelo trigger (não vem por padrão no flush).
+    await db.refresh(pedido, ["numero_pedido"])
+    numero = pedido.numero_pedido
 
     # Cria/atualiza conversa (para a confirmação via WhatsApp)
     conv = (
@@ -401,8 +449,8 @@ async def criar_pedido_digital(
         pizzaria_id=pizz.id,
         origem="bot",
         tipo="texto",
-        conteudo=f"[Pedido #{max_num + 1} via Cardápio Digital]",
-        metadata_json={"trigger": "pedido_digital_quota", "pedido_num": max_num + 1},
+        conteudo=f"[Pedido #{numero} via Cardápio Digital]",
+        metadata_json={"trigger": "pedido_digital_quota", "pedido_num": numero},
     )
     db.add(atendimento_marker)
     # ─────────────────────────────────────────────────────────────────────────

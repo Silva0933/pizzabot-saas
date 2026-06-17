@@ -195,7 +195,12 @@ async def signup(body: SignupIn, request: Request, db: AsyncSession = Depends(ge
         )
     ).scalar_one_or_none()
     if existing:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Email já cadastrado. Faça login.")
+        # Mensagem neutra: não confirma de forma definitiva que o e-mail existe
+        # (reduz enumeração de contas), mas orienta o usuário a entrar.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Não foi possível concluir o cadastro com esses dados. Se você já tem conta, faça login.",
+        )
 
     user = Usuario(
         email=body.email.lower(),

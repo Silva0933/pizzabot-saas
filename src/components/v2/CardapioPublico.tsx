@@ -234,6 +234,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
       forma_pagamento: checkoutForm.pagamento,
       observacoes: checkoutForm.observacoes || undefined,
       itens: cart.map(i => ({
+        produto_id: i.produtoId,
         nome: i.nome + (i.tamanho ? ` (${i.tamanho})` : ""),
         quantidade: i.quantidade,
         tamanho: i.tamanho || undefined,

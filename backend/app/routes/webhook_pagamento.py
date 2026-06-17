@@ -170,8 +170,31 @@ async def webhook_asaas(request: Request, db: AsyncSession = Depends(get_db)) ->
     except ValueError:
         return {"ignored": "invalid_external_reference"}
 
-    novo_status = asaas_status_para_interno(pagamento.get("status", "PENDING"))
-    await _aplicar_pagamento(db, pedido_id, payment_id=payment_id, payment_status=novo_status)
+    # SEGURANÇA: o webhook do Asaas não é autenticado e o corpo é forjável. NUNCA
+    # confiamos no status do corpo — reconsultamos o pagamento na API do Asaas com
+    # a chave da própria pizzaria (fonte de verdade), igual ao fluxo do Mercado Pago.
+    pedido = (
+        await db.execute(select(Pedido).where(Pedido.id == pedido_id))
+    ).scalar_one_or_none()
+    if not pedido:
+        log.info("Asaas webhook: pedido inexistente (%s)", pedido_id)
+        return {"ignored": "pedido_nao_encontrado"}
+
+    pizzaria = (
+        await db.execute(select(Pizzaria).where(Pizzaria.id == pedido.pizzaria_id))
+    ).scalar_one()
+    asaas_key = decrypt_secret(pizzaria.asaas_api_key)
+    if not asaas_key:
+        return {"ignored": "no_asaas_key"}
+
+    try:
+        pago = await AsaasClient(asaas_key).consultar_pagamento(str(payment_id))
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha consultando Asaas: %s", e)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Asaas indisponível") from e
+
+    novo_status = asaas_status_para_interno(pago.get("status", "PENDING"))
+    await _aplicar_pagamento(db, pedido_id, payment_id=str(payment_id), payment_status=novo_status)
     return {"ok": True, "status": novo_status}
 
 

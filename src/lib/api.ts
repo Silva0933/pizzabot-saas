@@ -961,6 +961,7 @@ export interface PedidoDigitalPayload {
   forma_pagamento: string;
   observacoes?: string;
   itens: Array<{
+    produto_id?: string; // fonte de verdade do preço (recalculado no servidor)
     nome: string;
     quantidade: number;
     tamanho?: string;
