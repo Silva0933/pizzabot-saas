@@ -41,8 +41,8 @@ export function StatCard({ icon: Icon, accent = "orange", label, value, hint, on
         <Icon className="w-5 h-5" />
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold text-ink-subtle uppercase tracking-wide truncate">{label}</p>
-        <p className="text-xl font-bold text-ink leading-tight truncate">{value}</p>
+        <p className="text-[10px] sm:text-[11px] font-semibold text-ink-subtle uppercase truncate">{label}</p>
+        <p className="text-base sm:text-lg font-bold text-ink leading-tight truncate">{value}</p>
         {hint && <p className="text-[11px] text-ink-muted truncate">{hint}</p>}
       </div>
     </div>
