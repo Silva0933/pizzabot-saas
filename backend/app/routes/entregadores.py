@@ -25,9 +25,9 @@ from app.models import Entregador, EquipePizzaria, Pedido, Pizzaria, Usuario
 from app.routes.pedidos import PedidoOut, _broadcast_atribuicao, apply_status_change
 from app.services.broadcaster import broadcaster
 
-# O entregador só enxerga o pedido a partir do FORNO (no_forno) — não em
-# "confirmado". "Minhas entregas" = atribuídos a ele e em preparo/saída.
-ENTREGA_ATIVA = ("no_forno", "a_caminho")
+# O entregador enxerga o pedido desde que seja atribuído a ele (status confirmado em
+# diante). "Minhas entregas" = atribuídos a ele e em qualquer status ativo.
+ENTREGA_ATIVA = ("confirmado", "no_forno", "a_caminho")
 # "Disponíveis" para pegar = só os que já estão no forno (prontos para sair logo).
 DISPONIVEL_STATUS = ("no_forno",)
 DRIVER_STATUSES = ("a_caminho", "entregue")

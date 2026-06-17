@@ -36,17 +36,25 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<MetricasResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false); // overlay ao trocar período
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    // Se já há dados exibidos, usa overlay suave em vez de loading total.
+    if (data) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setErro(null);
     metricasApi
       .get(pizzariaId, days)
-      .then((d) => !cancelled && setData(d))
-      .catch((e) => !cancelled && setErro(e.message))
-      .finally(() => !cancelled && setLoading(false));
+      .then((d) => { if (!cancelled) { setData(d); } })
+      .catch((e) => { if (!cancelled) setErro(e.message); })
+      .finally(() => {
+        if (!cancelled) { setLoading(false); setRefreshing(false); }
+      });
     return () => {
       cancelled = true;
     };
@@ -80,7 +88,16 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
   }));
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6">
+    <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6 relative">
+      {/* Overlay suave de carregamento ao trocar período (mantém dados visíveis) */}
+      {refreshing && (
+        <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-start justify-center pt-20 rounded-xl">
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full px-4 py-2 shadow-sm">
+            <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+            <span className="text-xs font-medium text-slate-600">Atualizando dados...</span>
+          </div>
+        </div>
+      )}
       {/* Header + seletor de período */}
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
@@ -106,6 +123,15 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
           ))}
         </div>
       </div>
+
+      {/* Aviso de período sem dados */}
+      {resumo.pedidos === 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center">
+          <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+          <p className="text-sm font-semibold text-slate-600">Nenhum pedido nos últimos {days} dias</p>
+          <p className="text-xs text-slate-400 mt-1">Os dados aparecerão conforme os pedidos forem realizados.</p>
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

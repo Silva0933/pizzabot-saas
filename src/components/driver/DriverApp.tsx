@@ -51,6 +51,8 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     loadResumo();
   }, [pid]);
 
+  const [wsOnline, setWsOnline] = useState(false);
+
   useEffect(() => {
     const ws = connectWebSocket(pid, (ev) => {
       if (REFRESH_EVENTS.includes(ev.tipo)) {
@@ -58,7 +60,20 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
         loadResumo();
       }
     });
-    return () => ws.close();
+    // Indicador de conectividade: WS abriu
+    ws.addEventListener("open", () => setWsOnline(true));
+    ws.addEventListener("close", () => setWsOnline(false));
+    ws.addEventListener("error", () => setWsOnline(false));
+    return () => { ws.close(); setWsOnline(false); };
+  }, [pid]);
+
+  // Polling de fallback: garante atualização mesmo se WS perder eventos.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      load();
+      loadResumo();
+    }, 30_000); // a cada 30 segundos
+    return () => clearInterval(interval);
   }, [pid]);
 
   async function toggleDisponivel() {
@@ -134,6 +149,13 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
             <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-white/90 bg-white/10 rounded-lg px-2.5 py-1">
               <PackageCheck className="w-3.5 h-3.5" />
               <span><strong>{resumo.entregas_hoje}</strong> entregas hoje · {resumo.entregas_total} no total</span>
+              {/* Indicador de conexão ao vivo */}
+              <span
+                title={wsOnline ? "Recebendo atualizações ao vivo" : "Atualizando a cada 30 segundos"}
+                className="ml-1 flex items-center gap-1"
+              >
+                <span className={`w-2 h-2 rounded-full ${wsOnline ? "bg-emerald-400 animate-pulse" : "bg-white/40"}`} />
+              </span>
             </div>
           )}
 

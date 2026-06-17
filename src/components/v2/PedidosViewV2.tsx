@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Loader2, AlertCircle, Package, ClipboardList, Hourglass,
-  ChefHat, DollarSign, Filter, Gauge,
+  ChefHat, DollarSign, CalendarDays, Gauge,
 } from "lucide-react";
 import { pedidosApi, pizzariasApi, entregadoresApi, BackendPedido, BackendEntregador, UsoPizzaria } from "../../lib/api";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
@@ -71,14 +71,12 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
 
   // Filtros
   const [statusFiltro, setStatusFiltro] = useState<string>("");
-  const [dataDe, setDataDe] = useState<string>("");
-  const [dataAte, setDataAte] = useState<string>("");
 
   const statusLabel = (key: string) => columnNames?.[key] || orderStatusLabel(key);
 
   function load() {
     return pedidosApi
-      .list(pizzariaId, { limit: 200 })
+      .list(pizzariaId, { hoje: true, limit: 500 })
       .then(setPedidos)
       .catch((e) => setErr(e.message));
   }
@@ -110,18 +108,13 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
     }
   }, [liveEvent]);
 
-  // Lista filtrada (status + intervalo de datas), client-side.
+  // Lista filtrada por status apenas — data já é filtrada no backend (hoje).
   const filtrados = useMemo(() => {
     return pedidos.filter((p) => {
       if (statusFiltro && p.status !== statusFiltro) return false;
-      if (dataDe || dataAte) {
-        const d = new Date(p.created_at);
-        if (dataDe && d < new Date(`${dataDe}T00:00:00`)) return false;
-        if (dataAte && d > new Date(`${dataAte}T23:59:59`)) return false;
-      }
       return true;
     });
-  }, [pedidos, statusFiltro, dataDe, dataAte]);
+  }, [pedidos, statusFiltro]);
 
   // Métricas (sobre a lista filtrada).
   const stats = useMemo(() => {
@@ -256,7 +249,11 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
           )}
         </div>
 
-        <div className="p-3 md:p-4 flex flex-col sm:flex-row gap-2.5 border-b border-line">
+        <div className="p-3 md:p-4 flex flex-col sm:flex-row gap-2.5 border-b border-line items-center">
+          <div className="flex items-center gap-1.5 text-xs text-ink-muted bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 shrink-0">
+            <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="font-semibold text-emerald-700">Pedidos de hoje</span>
+          </div>
           <select
             value={statusFiltro}
             onChange={(e) => setStatusFiltro(e.target.value)}
@@ -267,25 +264,6 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
               <option key={s} value={s}>{statusLabel(s)}</option>
             ))}
           </select>
-          <input
-            type="date"
-            value={dataDe}
-            onChange={(e) => setDataDe(e.target.value)}
-            className="flex-1 px-3 py-2 border border-line rounded-lg text-sm text-ink outline-none focus:border-brand-400"
-          />
-          <input
-            type="date"
-            value={dataAte}
-            onChange={(e) => setDataAte(e.target.value)}
-            className="flex-1 px-3 py-2 border border-line rounded-lg text-sm text-ink outline-none focus:border-brand-400"
-          />
-          <button
-            type="button"
-            onClick={() => { setLoading(true); load().finally(() => setLoading(false)); }}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 bg-brand-gradient hover:brightness-105 text-white rounded-lg text-sm font-semibold transition-all shadow-brand shrink-0 cursor-pointer"
-          >
-            <Filter className="w-4 h-4" /> Filtrar
-          </button>
         </div>
 
         {/* Quadro de pedidos */}
@@ -293,7 +271,9 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
           {filtrados.length === 0 ? (
             <div className="text-sm text-ink-subtle text-center py-14">
               <Package className="w-7 h-7 mx-auto mb-2 opacity-40" />
-              Nenhum pedido encontrado para os filtros selecionados.
+              {statusFiltro
+                ? "Nenhum pedido com este status hoje."
+                : "Nenhum pedido hoje ainda. Eles aparecerão aqui conforme chegarem!"}
             </div>
           ) : (
             <OrderBoard pedidos={filtrados} statusLabel={statusLabel} renderCard={renderCard} />

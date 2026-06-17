@@ -5,6 +5,7 @@ Endpoints consumidos pelo frontend público (link do cardápio):
   GET  /menu/{slug}         → dados da pizzaria + produtos disponíveis
   POST /menu/{slug}/pedido   → cria pedido vindo do cardápio digital
 """
+import asyncio
 import logging
 import re
 import uuid
@@ -240,6 +241,27 @@ async def criar_pedido_digital(
     if getattr(pizz, "suspensa", False):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Esta pizzaria não está recebendo pedidos no momento.")
 
+    # ── Verificação de cota do plano ──────────────────────────────────────────
+    # O cardápio digital também consome a cota de atendimentos mensais.
+    try:
+        from app.services.app_config import conversas_atendidas_mes
+        from app.services.plans import plan_info
+        limites = plan_info(pizz.plano).get("limites") or {}
+        limite_conversas = int(limites.get("conversas_mes") or 0)
+        if limite_conversas > 0:
+            usados = await conversas_atendidas_mes(db, pizz.id)
+            if usados >= limite_conversas:
+                raise HTTPException(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    "Esta pizzaria atingiu o limite de atendimentos do plano este mês. "
+                    "Tente novamente no próximo mês ou entre em contato com a pizzaria.",
+                )
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao verificar cota do plano para cardápio digital: %s", e)
+    # ─────────────────────────────────────────────────────────────────────────
+
     # Validações
     telefone = _limpar_telefone(body.telefone)
     if len(telefone) < 12:
@@ -252,6 +274,7 @@ async def criar_pedido_digital(
     formas_aceitas = pizz.formas_pagamento_aceitas or []
     if formas_aceitas and body.forma_pagamento not in formas_aceitas:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Forma de pagamento '{body.forma_pagamento}' não aceita.")
+
 
     # Monta endereço
     endereco_parts = [body.endereco_rua]
@@ -365,33 +388,33 @@ async def criar_pedido_digital(
         db.add(conv)
         await db.flush()
 
+    # ── Registra o atendimento digital na cota do plano ──────────────────────
+    # A função `conversas_atendidas_mes` conta conversas distintas com ao menos
+    # uma mensagem de origem='bot'. Inserimos um marcador com esse origem para
+    # que pedidos do cardápio digital também sejam contabilizados na cota.
+    atendimento_marker = Mensagem(
+        conversa_id=conv.id,
+        pizzaria_id=pizz.id,
+        origem="bot",
+        tipo="texto",
+        conteudo=f"[Pedido #{max_num + 1} via Cardápio Digital]",
+        metadata_json={"trigger": "pedido_digital_quota", "pedido_num": max_num + 1},
+    )
+    db.add(atendimento_marker)
+    # ─────────────────────────────────────────────────────────────────────────
+
     await db.commit()
     await db.refresh(pedido)
 
-    # Broadcast do novo pedido para o painel (WebSocket)
-    try:
-        from app.services.broadcaster import broadcaster
-        await broadcaster.publish(
-            pizz.id,
-            {
-                "tipo": "pedido.novo",
-                "pizzaria_id": str(pizz.id),
-                "payload": {
-                    "pedido_id": str(pedido.id),
-                    "numero_pedido": pedido.numero_pedido,
-                    "status": pedido.status,
-                    "origem": "cardapio_digital",
-                },
-            },
-        )
-    except Exception as e:  # noqa: BLE001
-        log.warning("Falha ao broadcast novo pedido digital: %s", e)
+    # Broadcast do novo pedido para o painel (WebSocket) — fire-and-forget
+    asyncio.create_task(
+        _broadcast_novo_pedido(pizz.id, pedido)
+    )
 
-    # Envia confirmação no WhatsApp do cliente (best-effort, assíncrono)
-    try:
-        await _enviar_confirmacao_whatsapp(db, pizz, pedido, cli, taxa_entrega)
-    except Exception as e:  # noqa: BLE001
-        log.warning("Falha ao enviar confirmação WhatsApp: %s", e)
+    # Envia confirmação no WhatsApp do cliente (fire-and-forget: não bloqueia a resposta)
+    asyncio.create_task(
+        _enviar_confirmacao_whatsapp(db, pizz, pedido, cli, taxa_entrega)
+    )
 
     return {
         "ok": True,
@@ -402,6 +425,27 @@ async def criar_pedido_digital(
             if body.tipo == "delivery"
             else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min",
     }
+
+
+async def _broadcast_novo_pedido(pizzaria_id: Any, pedido: "Pedido") -> None:
+    """Broadcast do novo pedido digital para o painel (WebSocket). Best-effort."""
+    try:
+        from app.services.broadcaster import broadcaster
+        await broadcaster.publish(
+            pizzaria_id,
+            {
+                "tipo": "pedido.novo",
+                "pizzaria_id": str(pizzaria_id),
+                "payload": {
+                    "pedido_id": str(pedido.id),
+                    "numero_pedido": pedido.numero_pedido,
+                    "status": pedido.status,
+                    "origem": "cardapio_digital",
+                },
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao broadcast novo pedido digital: %s", e)
 
 
 # ============================================

@@ -1067,7 +1067,7 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
 // =========================================================
 // Componente Auxiliar: ImportarCardapio
 // =========================================================
-type ImportMode = "imagem" | "texto" | "json";
+// Apenas o modo JSON é suportado.
 
 const JSON_EXEMPLO = `[
   {
@@ -1092,41 +1092,17 @@ const JSON_EXEMPLO = `[
 
 function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onImported: () => void }) {
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<ImportMode>("imagem");
-  const [texto, setTexto] = useState("");
   const [jsonText, setJsonText] = useState("");
-  const [extraindo, setExtraindo] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [itens, setItens] = useState<ProdutoImport[] | null>(null);
-  const fileRef = React.useRef<HTMLInputElement>(null);
 
   function reset() {
-    setTexto(""); setJsonText(""); setItens(null); setErr(null);
-    setExtraindo(false); setSalvando(false);
-    if (fileRef.current) fileRef.current.value = "";
+    setJsonText(""); setItens(null); setErr(null);
+    setSalvando(false);
   }
   function close() { setOpen(false); reset(); }
 
-  async function extrairArquivo(file: File) {
-    setExtraindo(true); setErr(null);
-    try {
-      const r = await cardapioApi.importarExtrair(pizzariaId, { file });
-      setItens(r.produtos);
-      if (!r.produtos.length) setErr("A IA não encontrou produtos. Tente uma imagem mais nítida ou cole o texto.");
-    } catch (e: any) { setErr(e.message || "Falha ao extrair."); }
-    setExtraindo(false);
-  }
-  async function extrairTexto() {
-    if (!texto.trim()) return;
-    setExtraindo(true); setErr(null);
-    try {
-      const r = await cardapioApi.importarExtrair(pizzariaId, { texto });
-      setItens(r.produtos);
-      if (!r.produtos.length) setErr("A IA não encontrou produtos no texto.");
-    } catch (e: any) { setErr(e.message || "Falha ao extrair."); }
-    setExtraindo(false);
-  }
   function carregarJson() {
     setErr(null);
     try {
@@ -1180,107 +1156,40 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
         onClick={() => setOpen(true)}
         className="flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-100 rounded-xl font-bold transition"
       >
-        <Sparkles className="w-3.5 h-3.5 text-violet-500" /> Importar com IA
+        <Sparkles className="w-3.5 h-3.5 text-violet-500" /> Importar via JSON
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn" onClick={() => !extraindo && !salvando && close()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn" onClick={() => !salvando && close()}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-scaleIn" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white flex items-center justify-between shadow-md">
               <div className="flex items-center gap-2.5">
                 <Sparkles className="w-5 h-5 text-violet-200" />
-                <h3 className="font-extrabold tracking-tight">Importar Cardápio com Inteligência Artificial</h3>
+                <h3 className="font-extrabold tracking-tight">Importar Cardápio via JSON</h3>
               </div>
               <button onClick={close} className="p-1.5 rounded-xl hover:bg-white/20 transition"><X className="w-4.5 h-4.5" /></button>
             </div>
 
             <div className="p-5 overflow-y-auto space-y-4">
               {!itens ? (
-                <>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {([["imagem","Imagem / PDF"],["texto","Colar texto"],["json","Colar JSON"]] as [ImportMode,string][]).map(([m,l]) => (
-                      <button 
-                        key={m} 
-                        onClick={() => { setMode(m); setErr(null); }}
-                        className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all ${
-                          mode === m 
-                            ? "bg-violet-600 text-white border-violet-600 shadow-sm" 
-                            : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100"
-                        }`}
-                      >
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-
-                  {mode === "imagem" && (
-                    <div className="space-y-2">
-                      <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) extrairArquivo(f); }} />
-                      <button 
-                        onClick={() => fileRef.current?.click()} 
-                        disabled={extraindo}
-                        className="w-full border-2 border-dashed border-violet-200 hover:border-violet-400 rounded-2xl py-12 flex flex-col items-center justify-center text-violet-600 hover:bg-violet-50/50 disabled:opacity-50 transition duration-300"
-                      >
-                        {extraindo ? (
-                          <div className="flex flex-col items-center space-y-2">
-                            <Loader2 className="w-8 h-8 animate-spin text-violet-500" />
-                            <span className="text-xs font-bold text-slate-500">Lendo arquivo e buscando produtos...</span>
-                          </div>
-                        ) : (
-                          <>
-                            <Upload className="w-8 h-8 mb-2 text-violet-400" />
-                            <span className="text-sm font-bold">Enviar foto ou PDF do cardápio físico</span>
-                            <span className="text-[10px] text-slate-400 mt-1">PNG, JPG, WEBP ou PDF de até 12MB</span>
-                          </>
-                        )}
-                      </button>
-                      <p className="text-[10px] text-slate-400 leading-normal">
-                        Nossa IA analisará a foto e listará os produtos com nome, descrição, categoria e preços. Você revisará todos os dados antes de persistir no sistema.
-                      </p>
-                    </div>
-                  )}
-
-                  {mode === "texto" && (
-                    <div className="space-y-3">
-                      <textarea 
-                        value={texto} 
-                        onChange={(e) => setTexto(e.target.value)} 
-                        rows={8}
-                        placeholder="Cole aqui o texto cru do cardápio, incluindo nomes, descrições, preços e variações de tamanho..." 
-                        className={inputCls} 
-                      />
-                      <button 
-                        onClick={extrairTexto} 
-                        disabled={extraindo || !texto.trim()}
-                        className="px-5 py-2.5 text-xs bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold flex items-center gap-1.5 disabled:opacity-50 transition shadow-sm"
-                      >
-                        {extraindo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />} Extrair Produtos com IA
-                      </button>
-                    </div>
-                  )}
-
-                  {mode === "json" && (
-                    <div className="space-y-3">
-                      <p className="text-[10px] text-slate-500">Cole um JSON formatado na estrutura correta:</p>
-                      <pre className="text-[9px] bg-slate-50 border border-slate-100 rounded-xl p-3 overflow-x-auto text-slate-600 font-mono leading-normal">{JSON_EXEMPLO}</pre>
-                      <textarea 
-                        value={jsonText} 
-                        onChange={(e) => setJsonText(e.target.value)} 
-                        rows={6}
-                        placeholder='[{ "nome": "Calabresa", "categoria": "pizza", "preco": 48.00 }]' 
-                        className={`${inputCls} font-mono text-xs`} 
-                      />
-                      <button 
-                        onClick={carregarJson} 
-                        disabled={!jsonText.trim()}
-                        className="px-5 py-2.5 text-xs bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50 transition"
-                      >
-                        Carregar e Revisar
-                      </button>
-                    </div>
-                  )}
-                </>
+                <div className="space-y-3">
+                  <p className="text-[10px] text-slate-500">Cole um JSON formatado na estrutura correta:</p>
+                  <pre className="text-[9px] bg-slate-50 border border-slate-100 rounded-xl p-3 overflow-x-auto text-slate-600 font-mono leading-normal">{JSON_EXEMPLO}</pre>
+                  <textarea 
+                    value={jsonText} 
+                    onChange={(e) => setJsonText(e.target.value)} 
+                    rows={6}
+                    placeholder='[{ "nome": "Calabresa", "categoria": "pizza", "preco": 48.00 }]' 
+                    className={`${inputCls} font-mono text-xs`} 
+                  />
+                  <button 
+                    onClick={carregarJson} 
+                    disabled={!jsonText.trim()}
+                    className="px-5 py-2.5 text-xs bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50 transition"
+                  >
+                    Carregar e Revisar
+                  </button>
+                </div>
               ) : (
                 /* Tela de Revisão */
                 <div className="space-y-3">
