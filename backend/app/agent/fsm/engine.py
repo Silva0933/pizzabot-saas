@@ -1070,12 +1070,13 @@ async def processar(
                 estado["etapa"] = "COLETA_ITENS"
                 decisao["acao"] = "coletar_item"
                 decisao["fatos"].append(
-                    "O cliente quer adicionar algo, mas não disse o quê. Opções REAIS "
-                    "disponíveis (ofereça só estas, com os nomes exatos) — " + " | ".join(partes)
+                    "O cliente quer adicionar algo, mas não disse o quê. Base de conhecimento "
+                    "para você (NÃO liste a menos que ele peça): " + " | ".join(partes)
                 )
                 decisao["proxima_pergunta"] = (
-                    "Liste de forma curta as opções acima e pergunte QUAL ele quer. "
-                    "NÃO adicione nada ainda nem invente itens; espere ele escolher."
+                    "Pergunte de forma curta se o cliente gostaria de ver as opções que temos "
+                    "disponíveis ou se ele já tem alguma opção em mente. NÃO liste os itens "
+                    "ainda, a não ser que ele tenha pedido para ver as opções."
                 )
                 return {"decisao": decisao, "estado": estado}
         # Recusou, mudou de assunto, ou já escolheu um item → segue o funil normal.
@@ -1106,8 +1107,7 @@ async def processar(
             # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
             itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
             decisao["fatos"].append("Anotei: " + "; ".join(itens_nomes))
-            # Passa os nomes REAIS pra voz oferecer sem inventar marca/sabor (bug:
-            # ela oferecia "coca ou guaraná" mesmo sem guaraná no cardápio).
+            
             partes = []
             if opc["bebidas"]:
                 partes.append("bebidas (" + ", ".join(opc["bebidas"][:6]) + ")")
@@ -1116,13 +1116,19 @@ async def processar(
             if opc["adicionais"]:
                 partes.append("adicionais (" + ", ".join(opc["adicionais"][:6]) + ")")
             decisao["fatos"].append(
-                "Opções REAIS disponíveis (use SÓ estes nomes exatos, nada além): " + " · ".join(partes)
+                "Base de conhecimento para você (NÃO diga essas opções a não ser que ele peça): " + " · ".join(partes)
             )
+            
+            opcoes_txt = []
+            if opc["bebidas"]: opcoes_txt.append("uma bebida")
+            if opc["bordas"]: opcoes_txt.append("uma borda")
+            if opc["adicionais"]: opcoes_txt.append("algum adicional")
+            opcoes_juntas = " ou ".join(opcoes_txt)
+
             decisao["proxima_pergunta"] = (
-                "De forma SUTIL e curta, pergunte se ele quer adicionar algo pra acompanhar, "
-                "citando SOMENTE as opções reais que eu listei acima (pelos nomes exatos). "
-                "NUNCA invente bebidas, marcas, sabores, bordas ou adicionais fora dessa lista. "
-                "Uma vez só, sem insistir; se ele recusar, siga."
+                f"De forma SUTIL e curta, pergunte APENAS se ele gostaria de adicionar {opcoes_juntas} "
+                "para acompanhar. NÃO liste quais são os itens ou nomes agora, sob nenhuma hipótese! "
+                "Faça só a pergunta genérica (ex.: 'Gostaria de alguma bebida para acompanhar?')."
             )
             return {"decisao": decisao, "estado": estado}
         # Nada pra oferecer → não faz upsell; cai direto no funil (entrega/pagamento).
