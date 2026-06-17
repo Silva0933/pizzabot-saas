@@ -107,6 +107,9 @@ class PedidoDigitalIn(BaseModel):
     endereco_numero: str | None = Field(default=None, max_length=20)
     endereco_bairro: str | None = Field(default=None, max_length=100)
     endereco_referencia: str | None = Field(default=None, max_length=200)
+    # Coordenadas exatas via GPS do navegador (botão "usar minha localização").
+    endereco_lat: float | None = None
+    endereco_lon: float | None = None
     forma_pagamento: str = Field(min_length=1, max_length=30)
     observacoes: str | None = Field(default=None, max_length=500)
     itens: list[ItemPedidoIn] = Field(min_length=1, max_length=50)
@@ -334,6 +337,8 @@ async def criar_pedido_digital(
         status="novo",
         tipo=body.tipo,
         endereco_entrega=endereco,
+        endereco_lat=body.endereco_lat if body.tipo == "delivery" else None,
+        endereco_lon=body.endereco_lon if body.tipo == "delivery" else None,
         forma_pagamento=body.forma_pagamento,
         observacoes=body.observacoes,
         origem="cardapio_digital",

@@ -1027,6 +1027,33 @@ async def preparar_resumo_pedido(
     }
 
 
+async def _coords_localizacao_recente(db: AsyncSession, pizzaria_id: Any, telefone: str) -> tuple[float, float] | None:
+    """Coords da última localização compartilhada no WhatsApp (salvas em
+    Mensagem.metadata), p/ o pino exato do mapa. None se não houver/recente."""
+    from sqlalchemy import text
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT (m.metadata->'localizacao'->>'lat')::float8,
+                       (m.metadata->'localizacao'->>'lon')::float8
+                FROM public.mensagens m
+                JOIN public.conversas c ON c.id = m.conversa_id
+                WHERE c.pizzaria_id = :pid AND c.cliente_telefone = :tel
+                  AND (m.metadata->'localizacao'->>'lat') IS NOT NULL
+                  AND m.created_at > now() - interval '6 hours'
+                ORDER BY m.created_at DESC
+                LIMIT 1
+                """
+            ),
+            {"pid": str(pizzaria_id), "tel": telefone},
+        )
+    ).first()
+    if row and row[0] is not None and row[1] is not None:
+        return float(row[0]), float(row[1])
+    return None
+
+
 async def registrar_pedido(
     ctx: AgentContext,
     db: AsyncSession,
@@ -1169,6 +1196,16 @@ async def registrar_pedido(
             observacoes=observacoes,
         )
         db.add(ped)
+
+    # Coordenadas exatas (pino do mapa do entregador): reusa a localização
+    # compartilhada no WhatsApp, se houver uma recente.
+    if tipo == "delivery":
+        try:
+            coords = await _coords_localizacao_recente(db, ctx.pizzaria.id, ctx.telefone)
+            if coords:
+                ped.endereco_lat, ped.endereco_lon = coords
+        except Exception:  # noqa: BLE001
+            pass
 
     valor_total_decimal = Decimal(str(valor_total_real))
     if status_anterior == "confirmado":

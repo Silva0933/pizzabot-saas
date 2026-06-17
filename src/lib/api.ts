@@ -190,6 +190,8 @@ export interface BackendPedido {
   status: string;
   tipo: string;
   endereco_entrega: string | null;
+  endereco_lat?: number | null;
+  endereco_lon?: number | null;
   forma_pagamento: string | null;
   observacoes: string | null;
   payment_status: string;
@@ -951,6 +953,8 @@ export interface PedidoDigitalPayload {
   endereco_numero?: string;
   endereco_bairro?: string;
   endereco_referencia?: string;
+  endereco_lat?: number;
+  endereco_lon?: number;
   forma_pagamento: string;
   observacoes?: string;
   itens: Array<{

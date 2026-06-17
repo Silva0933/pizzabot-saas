@@ -50,6 +50,8 @@ class PedidoOut(BaseModel):
     status: str
     tipo: str
     endereco_entrega: str | None
+    endereco_lat: float | None = None
+    endereco_lon: float | None = None
     forma_pagamento: str | None
     observacoes: str | None
     payment_status: str

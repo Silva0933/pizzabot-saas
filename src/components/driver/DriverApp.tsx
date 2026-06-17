@@ -17,8 +17,10 @@ import { brl, itemCount } from "../v2/pedidos/pedidoUtils";
 
 const REFRESH_EVENTS = ["pedido.atualizado", "pedido.novo", "entregador.atribuicao", "pedidos.limpos"];
 
-const mapsUrl = (endereco: string) =>
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`;
+const mapsUrl = (endereco: string, lat?: number | null, lon?: number | null) =>
+  lat != null && lon != null
+    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`;
 
 export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => void }) {
   const ent = user.entregador!;
@@ -253,12 +255,13 @@ function DriverCard({
             <p className="text-sm text-ink leading-snug break-words flex-1">{endereco}</p>
           </div>
           <a
-            href={mapsUrl(endereco)}
+            href={mapsUrl(endereco, p.endereco_lat, p.endereco_lon)}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-brand-700 bg-white border border-brand-200 rounded-lg px-3 py-1.5"
           >
-            <MapPin className="w-3.5 h-3.5" /> Abrir no mapa
+            <MapPin className="w-3.5 h-3.5" />
+            {p.endereco_lat != null ? "Abrir no mapa (preciso)" : "Abrir no mapa"}
           </a>
         </div>
 

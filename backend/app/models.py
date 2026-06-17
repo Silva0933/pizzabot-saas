@@ -14,6 +14,7 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -324,6 +325,9 @@ class Pedido(Base):
     tipo: Mapped[str] = mapped_column(String, default="delivery", nullable=False)
 
     endereco_entrega: Mapped[str | None] = mapped_column(Text)
+    # Coordenadas exatas (pino do mapa do entregador) — nulo quando só há texto.
+    endereco_lat: Mapped[float | None] = mapped_column(Float)
+    endereco_lon: Mapped[float | None] = mapped_column(Float)
     forma_pagamento: Mapped[str | None] = mapped_column(String)
     observacoes: Mapped[str | None] = mapped_column(Text)
 

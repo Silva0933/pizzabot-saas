@@ -59,6 +59,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduto, setSelectedProduto] = useState<MenuProduto | null>(null);
   const [cartPulse, setCartPulse] = useState(false);
+  const [sacolaOpen, setSacolaOpen] = useState(false);
 
   // Carrinho
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -68,7 +69,23 @@ export function CardapioPublico({ slug }: { slug: string }) {
     nome: "", telefone: "", tipo: "delivery" as "delivery" | "retirada",
     rua: "", numero: "", bairro: "", referencia: "",
     pagamento: "", observacoes: "",
+    lat: null as number | null, lon: null as number | null,
   });
+  // GPS exato (pino preciso pro entregador): "idle" | "loading" | "ok" | "error".
+  const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+
+  function usarMinhaLocalizacao() {
+    if (!navigator.geolocation) { setGeoStatus("error"); return; }
+    setGeoStatus("loading");
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCheckoutForm(f => ({ ...f, lat: pos.coords.latitude, lon: pos.coords.longitude }));
+        setGeoStatus("ok");
+      },
+      () => setGeoStatus("error"),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<PedidoDigitalResponse | null>(null);
@@ -200,6 +217,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
       endereco_numero: checkoutForm.numero || undefined,
       endereco_bairro: checkoutForm.bairro || undefined,
       endereco_referencia: checkoutForm.referencia || undefined,
+      endereco_lat: checkoutForm.lat ?? undefined,
+      endereco_lon: checkoutForm.lon ?? undefined,
       forma_pagamento: checkoutForm.pagamento,
       observacoes: checkoutForm.observacoes || undefined,
       itens: cart.map(i => ({
@@ -310,7 +329,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
           /* ===== CHECKOUT ===== */
           <>
             <div className="cdp-topbar">
-              <button className="cdp-topbar-back" onClick={() => setStep("carrinho")}>
+              <button className="cdp-topbar-back" onClick={() => { setStep("menu"); setSacolaOpen(true); }}>
                 <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M19 12H5M5 12l7 7M5 12l7-7"/></svg>
               </button>
               <h2 className="cdp-topbar-title">Finalizar Pedido</h2>
@@ -421,6 +440,18 @@ export function CardapioPublico({ slug }: { slug: string }) {
                       <input placeholder="Ex: próximo ao mercado" value={checkoutForm.referencia}
                         onChange={e => setCheckoutForm({ ...checkoutForm, referencia: e.target.value })} className="cdp-input" />
                     </div>
+                    <button type="button" onClick={usarMinhaLocalizacao}
+                      className={`cdp-geo-btn ${geoStatus === "ok" ? "ok" : ""}`}>
+                      📍 {geoStatus === "loading" ? "Localizando…"
+                        : geoStatus === "ok" ? "Localização exata capturada ✓"
+                        : "Usar minha localização exata"}
+                    </button>
+                    {geoStatus === "ok" && (
+                      <p className="cdp-geo-hint ok">O entregador vai chegar no ponto certo. 📍</p>
+                    )}
+                    {geoStatus === "error" && (
+                      <p className="cdp-geo-hint">Não consegui pegar sua localização — confira a permissão do navegador.</p>
+                    )}
                     {checkoutForm.bairro && taxaEntrega > 0 && (
                       <p className="cdp-taxa-info">🚚 Taxa para {checkoutForm.bairro}: <strong>{fmt(taxaEntrega)}</strong></p>
                     )}
@@ -699,6 +730,9 @@ export function CardapioPublico({ slug }: { slug: string }) {
           <>
             {/* Header da pizzaria */}
             <header className="cdp-header">
+              {pizz.logo_url && (
+                <div className="cdp-header-cover" style={{ backgroundImage: `url(${pizz.logo_url})` }} />
+              )}
               <div className="cdp-header-bg" />
               <div className="cdp-header-particles">
                 <span /><span /><span />
@@ -768,7 +802,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
                 {/* Botão de carrinho (desktop sidebar) */}
                 {cartCount > 0 && (
-                  <div className="cdp-sidebar-cart" onClick={() => setStep("carrinho")}>
+                  <div className="cdp-sidebar-cart" onClick={() => setSacolaOpen(true)}>
                     <div className="cdp-sidebar-cart-header">
                       <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
                       <span>Seu pedido</span>
@@ -795,6 +829,33 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
               {/* Área principal de produtos */}
               <main className="cdp-main-area">
+                {/* Faixa de destaques (só em "Todos", sem busca) */}
+                {selectedCat === "todos" && !searchQuery.trim() && data.produtos.length > 3 && (
+                  <div className="cdp-destaques">
+                    <div className="cdp-destaques-head">🔥 Destaques</div>
+                    <div className="cdp-destaques-row">
+                      {data.produtos.slice(0, 8).map(p => {
+                        const preco = p.tamanhos && p.tamanhos.length > 0
+                          ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
+                          : Number(p.preco);
+                        return (
+                          <button key={p.id} className="cdp-destaque-card" onClick={() => openProduto(p)}>
+                            <div className="cdp-destaque-img">
+                              {p.imagem_url
+                                ? <img src={p.imagem_url} alt={p.nome} loading="lazy" />
+                                : <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>}
+                            </div>
+                            <div className="cdp-destaque-info">
+                              <span className="cdp-destaque-name">{p.nome}</span>
+                              <span className="cdp-destaque-price">{fmt(preco)}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {produtosFiltrados.length === 0 ? (
                   <div className="cdp-empty">
                     <span>🔍</span>
@@ -842,7 +903,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
             {/* Carrinho flutuante (mobile only) */}
             {cartCount > 0 && (
-              <div className={`cdp-floating-cart ${cartPulse ? "pulse" : ""}`} onClick={() => setStep("carrinho")}>
+              <div className={`cdp-floating-cart ${cartPulse ? "pulse" : ""}`} onClick={() => setSacolaOpen(true)}>
                 <div className="cdp-floating-cart-left">
                   <div className="cdp-floating-cart-badge">
                     <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
@@ -854,6 +915,70 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   <span className="cdp-floating-cart-total">{fmt(cartTotal)}</span>
                   <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
                 </div>
+              </div>
+            )}
+
+            {/* ===== SACOLA DESLIZANTE ===== */}
+            {sacolaOpen && (
+              <div className="cdp-sacola-overlay" onClick={() => setSacolaOpen(false)}>
+                <aside className="cdp-sacola" onClick={e => e.stopPropagation()}>
+                  <div className="cdp-sacola-head">
+                    <h2>🛍️ Minha sacola</h2>
+                    <button className="cdp-sacola-close" onClick={() => setSacolaOpen(false)}>✕</button>
+                  </div>
+
+                  {cart.length === 0 ? (
+                    <div className="cdp-sacola-empty">
+                      <span>🛒</span>
+                      <p>Sua sacola está vazia</p>
+                      <button className="cdp-btn-secondary" onClick={() => setSacolaOpen(false)}>Ver cardápio</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="cdp-sacola-items">
+                        {cart.map(item => (
+                          <div key={item.id} className="cdp-sacola-item">
+                            {item.imgUrl
+                              ? <img src={item.imgUrl} alt={item.nome} className="cdp-sacola-item-img" />
+                              : <div className="cdp-sacola-item-ph">{CAT_EMOJI[selectedProduto?.categoria || "outro"] || "🍽️"}</div>}
+                            <div className="cdp-sacola-item-body">
+                              <div className="cdp-sacola-item-name">
+                                {item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}
+                              </div>
+                              {item.adicionais.length > 0 && (
+                                <div className="cdp-sacola-item-extras">+ {item.adicionais.join(", ")}</div>
+                              )}
+                              <div className="cdp-qty-controls cdp-sacola-qty">
+                                <button onClick={() => updateCartQty(item.id, -1)}>−</button>
+                                <span>{item.quantidade}</span>
+                                <button onClick={() => updateCartQty(item.id, 1)}>+</button>
+                              </div>
+                            </div>
+                            <div className="cdp-sacola-item-right">
+                              <span className="cdp-sacola-item-price">{fmt(item.preco * item.quantidade)}</span>
+                              <button className="cdp-sacola-item-remove" onClick={() => removeFromCart(item.id)} aria-label="Remover">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="cdp-sacola-footer">
+                        <div className="cdp-sacola-subtotal">
+                          <span>Subtotal</span>
+                          <span className="cdp-sacola-subtotal-val">{fmt(cartTotal)}</span>
+                        </div>
+                        <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setSacolaOpen(false); setStep("checkout"); }}>
+                          Continuar • {fmt(cartTotal)}
+                        </button>
+                        <button className="cdp-sacola-add-more" onClick={() => setSacolaOpen(false)}>
+                          + Adicionar mais itens
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </aside>
               </div>
             )}
           </>
