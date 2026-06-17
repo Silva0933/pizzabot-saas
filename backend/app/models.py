@@ -321,6 +321,8 @@ class Pedido(Base):
 
     itens: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     valor_total: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    # status: novo, confirmado, no_forno, pronto_entrega (só delivery, pronto p/ sair),
+    # a_caminho, entregue, cancelado. Constraint em migration 020.
     status: Mapped[str] = mapped_column(String, default="novo", nullable=False)
     tipo: Mapped[str] = mapped_column(String, default="delivery", nullable=False)
 

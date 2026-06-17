@@ -70,7 +70,7 @@ export interface OrderItem {
   observation?: string;
 }
 
-export type OrderStatus = 'novo' | 'confirmado' | 'no_forno' | 'a_caminho' | 'entregue' | 'cancelado';
+export type OrderStatus = 'novo' | 'confirmado' | 'no_forno' | 'pronto_entrega' | 'a_caminho' | 'entregue' | 'cancelado';
 
 export interface Order {
   id: string;

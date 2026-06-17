@@ -1902,7 +1902,7 @@ async def obter_historico_pedidos(ctx: AgentContext, db: AsyncSession, *, limit:
         return {"total_pedidos": 0, "pedidos": [], "item_favorito": None}
 
     lim = max(1, min(int(limit or 3), 5))
-    reais = ["confirmado", "no_forno", "a_caminho", "entregue"]
+    reais = ["confirmado", "no_forno", "pronto_entrega", "a_caminho", "entregue"]
     # Pega um histórico maior pra calcular o favorito, mas só devolve `lim` recentes.
     rows = (await db.execute(
         select(Pedido).where(

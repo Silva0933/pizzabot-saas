@@ -417,7 +417,7 @@ async def evolution_webhook(
     stmt_ped = select(Pedido).where(
         Pedido.pizzaria_id == pizz.id,
         Pedido.cliente_id == cli.id,
-        Pedido.status.in_(["novo", "confirmado", "no_forno", "a_caminho"]),
+        Pedido.status.in_(["novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho"]),
     )
     ped_ativo = (await db.execute(stmt_ped)).scalars().first()
 

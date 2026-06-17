@@ -23,7 +23,7 @@ from app.services.status_messages import enviar_mensagem_status
 
 router = APIRouter(prefix="/pizzarias/{pizzaria_id}/pedidos", tags=["pedidos"])
 
-VALID_STATUSES = ("novo", "confirmado", "no_forno", "a_caminho", "entregue", "cancelado")
+VALID_STATUSES = ("novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho", "entregue", "cancelado")
 
 
 class ClienteMinOut(BaseModel):

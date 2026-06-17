@@ -1,5 +1,5 @@
 import {
-  Sparkles, CheckCircle2, Flame, Bike, PackageCheck, XCircle,
+  Sparkles, CheckCircle2, Flame, PackageOpen, Bike, PackageCheck, XCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -9,7 +9,7 @@ import {
  * InicioDashboard (statusColor/statusLabel) e MeuNegocioViewV2 (STATUS_LABEL).
  */
 export type OrderStatus =
-  | "novo" | "confirmado" | "no_forno" | "a_caminho" | "entregue" | "cancelado";
+  | "novo" | "confirmado" | "no_forno" | "pronto_entrega" | "a_caminho" | "entregue" | "cancelado";
 
 export interface OrderStatusMeta {
   label: string;
@@ -26,6 +26,7 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
   novo:       { label: "Novo",       badge: "bg-blue-50 text-blue-700 border-blue-200",       dot: "bg-blue-500",    text: "text-blue-600",    icon: Sparkles },
   confirmado: { label: "Confirmado", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-600", icon: CheckCircle2 },
   no_forno:   { label: "No forno",   badge: "bg-amber-50 text-amber-700 border-amber-200",     dot: "bg-amber-500",   text: "text-amber-600",   icon: Flame },
+  pronto_entrega: { label: "Pronto p/ entrega", badge: "bg-teal-50 text-teal-700 border-teal-200", dot: "bg-teal-500", text: "text-teal-600", icon: PackageOpen },
   a_caminho:  { label: "A caminho",  badge: "bg-violet-50 text-violet-700 border-violet-200",  dot: "bg-violet-500",  text: "text-violet-600",  icon: Bike },
   entregue:   { label: "Entregue",   badge: "bg-green-50 text-green-700 border-green-200",     dot: "bg-green-500",   text: "text-green-600",   icon: PackageCheck },
   cancelado:  { label: "Cancelado",  badge: "bg-rose-50 text-rose-700 border-rose-200",        dot: "bg-rose-500",    text: "text-rose-600",    icon: XCircle },
@@ -33,19 +34,20 @@ export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
 
 /** Todos os status (inclui cancelado), na ordem do seletor. */
 export const ORDER_STATUS_LIST: OrderStatus[] = [
-  "novo", "confirmado", "no_forno", "a_caminho", "entregue", "cancelado",
+  "novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho", "entregue", "cancelado",
 ];
 
 /** Etapas do funil operacional (cancelado fica de fora). */
 export const ORDER_STATUS_FLOW: OrderStatus[] = [
-  "novo", "confirmado", "no_forno", "a_caminho", "entregue",
+  "novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho", "entregue",
 ];
 
 /** CTA do botão "avançar" a partir do status atual (null = sem próximo passo). */
 const ADVANCE_LABEL: Partial<Record<OrderStatus, string>> = {
   novo: "Confirmar",
   confirmado: "Pôr no forno",
-  no_forno: "Saiu p/ entrega",
+  no_forno: "Pronto p/ entrega",
+  pronto_entrega: "Saiu p/ entrega",
   a_caminho: "Marcar entregue",
 };
 

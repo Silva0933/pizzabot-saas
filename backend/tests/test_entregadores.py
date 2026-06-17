@@ -55,6 +55,23 @@ class TestStatusRestrito:
 
 
 # ============================================================
+# Pedido só fica DISPONÍVEL pro entregador quando 'pronto_entrega'
+# (pizza ainda no forno não aparece); e segue visível em "minhas" depois de pego.
+# ============================================================
+class TestDisponivelStatus:
+    def test_disponivel_exige_pronto_entrega(self):
+        from app.routes.entregadores import DISPONIVEL_STATUS
+        assert DISPONIVEL_STATUS == ("pronto_entrega",)
+        assert "no_forno" not in DISPONIVEL_STATUS
+
+    def test_pronto_entrega_segue_em_minhas_entregas(self):
+        from app.routes.entregadores import ENTREGA_ATIVA
+        # Pego pelo entregador, o pedido continua 'pronto_entrega' até ele sair —
+        # precisa aparecer em "minhas entregas".
+        assert "pronto_entrega" in ENTREGA_ATIVA
+
+
+# ============================================================
 # Self-claim barrado quando o toggle está desligado
 # ============================================================
 class TestSelfClaimGate:

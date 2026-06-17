@@ -41,11 +41,11 @@ async def metricas_periodo(
     # --- Resumo do período ---
     resumo_q = await db.execute(text("""
         SELECT
-            COUNT(*) FILTER (WHERE status IN ('confirmado','no_forno','a_caminho','entregue')) AS pedidos,
-            COALESCE(SUM(valor_total) FILTER (WHERE status IN ('confirmado','no_forno','a_caminho','entregue')), 0) AS vendido,
+            COUNT(*) FILTER (WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')) AS pedidos,
+            COALESCE(SUM(valor_total) FILTER (WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')), 0) AS vendido,
             COUNT(*) FILTER (WHERE status = 'cancelado') AS cancelados,
             COUNT(*) FILTER (
-                WHERE status IN ('confirmado','no_forno','a_caminho','entregue','cancelado')
+                WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue','cancelado')
                   AND (valor_total > 0 OR jsonb_array_length(itens) > 0)
             ) AS total
         FROM public.pedidos
@@ -59,8 +59,8 @@ async def metricas_periodo(
     # --- Período anterior (pra comparativo) ---
     ant_q = await db.execute(text("""
         SELECT
-            COUNT(*) FILTER (WHERE status IN ('confirmado','no_forno','a_caminho','entregue')) AS pedidos,
-            COALESCE(SUM(valor_total) FILTER (WHERE status IN ('confirmado','no_forno','a_caminho','entregue')), 0) AS vendido
+            COUNT(*) FILTER (WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')) AS pedidos,
+            COALESCE(SUM(valor_total) FILTER (WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')), 0) AS vendido
         FROM public.pedidos
         WHERE pizzaria_id = :pid AND created_at >= :desde_ant AND created_at < :desde
     """), params)
@@ -76,8 +76,8 @@ async def metricas_periodo(
     serie_q = await db.execute(text("""
         SELECT
             DATE(created_at AT TIME ZONE 'America/Sao_Paulo') AS dia,
-            COUNT(*) FILTER (WHERE status IN ('confirmado','no_forno','a_caminho','entregue')) AS pedidos,
-            COALESCE(SUM(valor_total) FILTER (WHERE status IN ('confirmado','no_forno','a_caminho','entregue')), 0) AS vendido
+            COUNT(*) FILTER (WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')) AS pedidos,
+            COALESCE(SUM(valor_total) FILTER (WHERE status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')), 0) AS vendido
         FROM public.pedidos
         WHERE pizzaria_id = :pid AND created_at >= :desde
         GROUP BY dia
@@ -97,7 +97,7 @@ async def metricas_periodo(
              jsonb_array_elements(itens) AS item
         WHERE pizzaria_id = :pid
           AND created_at >= :desde
-          AND status IN ('confirmado','no_forno','a_caminho','entregue')
+          AND status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')
           AND (item->>'nome') IS NOT NULL
         GROUP BY item->>'nome'
         ORDER BY qtd DESC
@@ -111,7 +111,7 @@ async def metricas_periodo(
             EXTRACT(HOUR FROM created_at AT TIME ZONE 'America/Sao_Paulo')::int AS hora,
             COUNT(*) AS pedidos
         FROM public.pedidos
-        WHERE pizzaria_id = :pid AND created_at >= :desde AND status IN ('confirmado','no_forno','a_caminho','entregue')
+        WHERE pizzaria_id = :pid AND created_at >= :desde AND status IN ('confirmado','no_forno','pronto_entrega','a_caminho','entregue')
         GROUP BY hora
         ORDER BY hora
     """), params)

@@ -120,7 +120,7 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   const stats = useMemo(() => {
     const total = filtrados.length;
     const pendentes = filtrados.filter((p) => p.status === "novo" || p.status === "confirmado").length;
-    const preparando = filtrados.filter((p) => p.status === "no_forno" || p.status === "a_caminho").length;
+    const preparando = filtrados.filter((p) => p.status === "no_forno" || p.status === "pronto_entrega" || p.status === "a_caminho").length;
     const faturamento = filtrados
       .filter((p) => p.status !== "cancelado")
       .reduce((acc, p) => acc + Number(p.valor_total || 0), 0);

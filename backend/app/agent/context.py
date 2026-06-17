@@ -53,7 +53,7 @@ async def _pedido_de_sempre(db: AsyncSession, pizzaria_id: uuid.UUID, cliente: C
         select(Pedido).where(
             Pedido.pizzaria_id == pizzaria_id,
             Pedido.cliente_id == cliente.id,
-            Pedido.status.in_(["confirmado", "no_forno", "a_caminho", "entregue"]),
+            Pedido.status.in_(["confirmado", "no_forno", "pronto_entrega", "a_caminho", "entregue"]),
         ).order_by(Pedido.created_at.desc()).limit(n)
     )).scalars().all()
 

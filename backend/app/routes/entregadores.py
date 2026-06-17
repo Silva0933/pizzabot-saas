@@ -26,10 +26,12 @@ from app.routes.pedidos import PedidoOut, _broadcast_atribuicao, apply_status_ch
 from app.services.broadcaster import broadcaster
 
 # O entregador enxerga o pedido desde que seja atribuído a ele (status confirmado em
-# diante). "Minhas entregas" = atribuídos a ele e em qualquer status ativo.
-ENTREGA_ATIVA = ("confirmado", "no_forno", "a_caminho")
-# "Disponíveis" para pegar = só os que já estão no forno (prontos para sair logo).
-DISPONIVEL_STATUS = ("no_forno",)
+# diante). "Minhas entregas" = atribuídos a ele e em qualquer status ativo (inclui
+# 'pronto_entrega', que ele acabou de pegar e ainda não saiu).
+ENTREGA_ATIVA = ("confirmado", "no_forno", "pronto_entrega", "a_caminho")
+# "Disponíveis" para pegar = só os que já estão PRONTOS PARA ENTREGA (saíram do
+# forno e estão prontos para sair). Pizza ainda no forno não fica disponível.
+DISPONIVEL_STATUS = ("pronto_entrega",)
 DRIVER_STATUSES = ("a_caminho", "entregue")
 
 owner_router = APIRouter(prefix="/pizzarias/{pizzaria_id}/entregadores", tags=["entregadores"])
