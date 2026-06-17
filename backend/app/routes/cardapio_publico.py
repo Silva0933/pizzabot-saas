@@ -357,7 +357,7 @@ async def criar_pedido_digital(
         numero_pedido=max_num + 1,
         itens=itens_json,
         valor_total=valor_total,
-        status="novo",
+        status="confirmado",
         tipo=body.tipo,
         endereco_entrega=endereco,
         endereco_lat=body.endereco_lat if body.tipo == "delivery" else None,
