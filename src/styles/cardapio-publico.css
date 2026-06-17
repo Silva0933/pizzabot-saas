@@ -785,6 +785,51 @@
 }
 .cdp-sacola-add-more:hover { color: var(--accent); }
 
+/* ============ SELETOR RÁPIDO DE TAMANHO ============ */
+.cdp-quickpick-overlay {
+  position: fixed; inset: 0; z-index: 320;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(3px);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: cdp-fade 0.2s ease;
+}
+.cdp-quickpick {
+  width: 100%; max-width: 480px;
+  background: var(--bg2); border-top: 1px solid var(--bg3);
+  border-radius: 22px 22px 0 0; padding: 18px 18px 22px;
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.55);
+  animation: cdp-sacola-up 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cdp-sacola-up { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.cdp-quickpick-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px;
+}
+.cdp-quickpick-head span { font-size: 15px; font-weight: 800; color: var(--text); }
+.cdp-quickpick-close {
+  width: 30px; height: 30px; border-radius: 9px; background: var(--bg3); border: none;
+  color: var(--text); font-size: 14px; cursor: pointer;
+}
+.cdp-quickpick-prod { font-size: 13px; color: var(--text2); margin-bottom: 14px; }
+.cdp-quickpick-list { display: flex; flex-direction: column; gap: 9px; }
+.cdp-quickpick-opt {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; background: var(--bg); border: 1.5px solid var(--bg3);
+  border-radius: var(--radius-sm); cursor: pointer; font-family: inherit; transition: all 0.18s;
+}
+.cdp-quickpick-opt:hover { border-color: var(--accent); background: var(--accent-glow); }
+.cdp-quickpick-opt-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.cdp-quickpick-opt-price { font-size: 15px; font-weight: 800; color: var(--accent); }
+.cdp-quickpick-more {
+  width: 100%; margin-top: 14px; padding: 11px; background: none; border: none;
+  color: var(--text2); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: color 0.2s;
+}
+.cdp-quickpick-more:hover { color: var(--accent); }
+
+/* No desktop, centraliza em vez de colar embaixo */
+@media (min-width: 860px) {
+  .cdp-quickpick-overlay { align-items: center; }
+  .cdp-quickpick { border-radius: 22px; border: 1px solid var(--bg3); }
+}
+
 /* ============ MOBILE — layout padrão (sidebar inline) ============ */
 .cdp-menu-body { display: flex; flex-direction: column; }
 .cdp-sidebar { display: contents; }

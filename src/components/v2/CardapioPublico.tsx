@@ -60,6 +60,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [selectedProduto, setSelectedProduto] = useState<MenuProduto | null>(null);
   const [cartPulse, setCartPulse] = useState(false);
   const [sacolaOpen, setSacolaOpen] = useState(false);
+  // Seletor rápido de tamanho ao clicar no "+" (sem entrar no produto).
+  const [quickPick, setQuickPick] = useState<MenuProduto | null>(null);
 
   // Carrinho
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -172,6 +174,16 @@ export function CardapioPublico({ slug }: { slug: string }) {
       const newQty = Math.max(0, i.quantidade + delta);
       return newQty === 0 ? null! : { ...i, quantidade: newQty };
     }).filter(Boolean));
+  }
+
+  // ---- Botão "+" do card: adiciona direto ou abre o seletor de tamanho ----
+  function handleQuickAdd(e: React.MouseEvent, p: MenuProduto) {
+    e.stopPropagation();
+    if (p.tamanhos && p.tamanhos.length > 0) {
+      setQuickPick(p); // tem variação → escolhe o tamanho ali mesmo
+    } else {
+      addToCart(p, null, Number(p.preco), 1, "", []); // simples → direto pra sacola
+    }
   }
 
   // ---- Abrir modal de produto ----
@@ -890,7 +902,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
                                 {temVariacao && <span className="cdp-price-from">a partir de</span>}
                                 <span className="cdp-price">{fmt(preco)}</span>
                               </div>
-                              <div className="cdp-product-add-btn">+</div>
+                              <div className="cdp-product-add-btn" role="button" aria-label="Adicionar"
+                                onClick={(e) => handleQuickAdd(e, p)}>+</div>
                             </div>
                           </div>
                         </button>
@@ -979,6 +992,32 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     </>
                   )}
                 </aside>
+              </div>
+            )}
+
+            {/* ===== SELETOR RÁPIDO DE TAMANHO (clique no "+") ===== */}
+            {quickPick && (
+              <div className="cdp-quickpick-overlay" onClick={() => setQuickPick(null)}>
+                <div className="cdp-quickpick" onClick={e => e.stopPropagation()}>
+                  <div className="cdp-quickpick-head">
+                    <span>Escolha o tamanho</span>
+                    <button className="cdp-quickpick-close" onClick={() => setQuickPick(null)}>✕</button>
+                  </div>
+                  <p className="cdp-quickpick-prod">{quickPick.nome}</p>
+                  <div className="cdp-quickpick-list">
+                    {(quickPick.tamanhos || []).map(t => (
+                      <button key={t.tamanho} className="cdp-quickpick-opt"
+                        onClick={() => { addToCart(quickPick, t.tamanho, Number(t.preco), 1, "", []); setQuickPick(null); }}>
+                        <span className="cdp-quickpick-opt-name">{t.tamanho}</span>
+                        <span className="cdp-quickpick-opt-price">{fmt(Number(t.preco))}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button className="cdp-quickpick-more"
+                    onClick={() => { const p = quickPick; setQuickPick(null); openProduto(p); }}>
+                    Mais opções (adicionais, observação) →
+                  </button>
+                </div>
               </div>
             )}
           </>
