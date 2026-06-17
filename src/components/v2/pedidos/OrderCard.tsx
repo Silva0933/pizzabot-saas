@@ -166,22 +166,28 @@ export function OrderCard({
 
       {/* Footer: ações */}
       <div className="px-4 py-3 border-t border-line bg-surface-muted/60 space-y-2">
-        {/* Atribuição de entregador (delivery + há entregadores cadastrados) */}
-        {delivery && entregadores && entregadores.length > 0 && onAtribuir && (
+        {/* Atribuição de entregador (apenas delivery) */}
+        {delivery && onAtribuir && (
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-muted shrink-0">
               <Bike className="w-3.5 h-3.5" /> Entregador
             </span>
             <select
               value={p.entregador_id || ""}
-              disabled={assigning}
+              disabled={assigning || !entregadores || entregadores.length === 0}
               onChange={(e) => onAtribuir(e.target.value || null)}
               className="flex-1 px-2.5 py-1.5 border border-line rounded-lg text-xs font-medium text-ink bg-surface outline-none focus:border-brand-400 disabled:opacity-50 cursor-pointer"
             >
-              <option value="">— Sem entregador —</option>
-              {entregadores.map((en) => (
-                <option key={en.id} value={en.id}>{en.nome}{en.disponivel ? " • disponível" : ""}</option>
-              ))}
+              {(!entregadores || entregadores.length === 0) ? (
+                <option value="">— Sem entregadores ativos —</option>
+              ) : (
+                <>
+                  <option value="">— Sem entregador —</option>
+                  {entregadores.map((en) => (
+                    <option key={en.id} value={en.id}>{en.nome}{en.disponivel ? " • disponível" : ""}</option>
+                  ))}
+                </>
+              )}
             </select>
             {assigning && <Loader2 className="w-4 h-4 animate-spin text-brand-500 shrink-0" />}
           </div>

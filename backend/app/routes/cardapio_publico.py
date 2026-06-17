@@ -413,7 +413,7 @@ async def criar_pedido_digital(
 
     # Envia confirmação no WhatsApp do cliente (fire-and-forget: não bloqueia a resposta)
     asyncio.create_task(
-        _enviar_confirmacao_whatsapp(db, pizz, pedido, cli, taxa_entrega)
+        _enviar_confirmacao_whatsapp(pizz.id, pedido.id, cli.telefone, cli.nome, float(taxa_entrega))
     )
 
     return {
@@ -452,18 +452,25 @@ async def _broadcast_novo_pedido(pizzaria_id: Any, pedido: "Pedido") -> None:
 # Enviar confirmação no WhatsApp
 # ============================================
 async def _enviar_confirmacao_whatsapp(
-    db: AsyncSession,
-    pizz: Pizzaria,
-    pedido: Pedido,
-    cliente: Cliente,
-    taxa_entrega: Decimal,
+    pizzaria_id: uuid.UUID,
+    pedido_id: uuid.UUID,
+    cliente_telefone: str,
+    cliente_nome: str | None,
+    taxa_entrega: float,
 ) -> None:
-    """Envia mensagem de confirmação do pedido digital no WhatsApp do cliente."""
+    """Envia mensagem de confirmação do pedido digital no WhatsApp do cliente. Segura para background."""
     from app.services.evolution import evolution
-
-    if not pizz.instancia:
-        log.info("Pizzaria %s sem instância WhatsApp — skip confirmação", pizz.id)
-        return
+    from app.db import AsyncSessionLocal
+    
+    async with AsyncSessionLocal() as db:
+        pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+        if not pizz or not pizz.instancia:
+            log.info("Pizzaria %s sem instância WhatsApp — skip confirmação", pizzaria_id)
+            return
+            
+        pedido = (await db.execute(select(Pedido).where(Pedido.id == pedido_id))).scalar_one_or_none()
+        if not pedido:
+            return
 
     # Monta resumo dos itens
     linhas_itens = []
@@ -488,7 +495,7 @@ async def _enviar_confirmacao_whatsapp(
     itens_texto = "\n".join(linhas_itens)
 
     # Monta mensagem
-    primeiro_nome = (cliente.nome or "").split(" ")[0].strip() or "cliente"
+    primeiro_nome = (cliente_nome or "").split(" ")[0].strip() or "cliente"
     tempo = (
         f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
         if pedido.tipo == "delivery"
@@ -530,12 +537,12 @@ async def _enviar_confirmacao_whatsapp(
         # "Digitando…" + delay humanizado
         delay_ms = int(min(max(len(texto) * 55, 2000), 8000))
         try:
-            await evolution.send_presence(instancia=pizz.instancia, numero=cliente.telefone, tipo="composing")
+            await evolution.send_presence(instancia=pizz.instancia, numero=cliente_telefone, tipo="composing")
         except Exception:  # noqa: BLE001
             pass
         await evolution.send_text(
             instancia=pizz.instancia,
-            numero=cliente.telefone,
+            numero=cliente_telefone,
             texto=texto,
             delay_ms=delay_ms,
         )
@@ -548,7 +555,7 @@ async def _enviar_confirmacao_whatsapp(
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizz.id,
-                Conversa.cliente_telefone == cliente.telefone,
+                Conversa.cliente_telefone == cliente_telefone,
             )
         )
     ).scalar_one_or_none()
@@ -578,7 +585,7 @@ async def _enviar_confirmacao_whatsapp(
                     "payload": {
                         "conversa_id": str(conv.id),
                         "mensagem_id": str(msg.id),
-                        "telefone": cliente.telefone,
+                        "telefone": cliente_telefone,
                         "conteudo": texto,
                         "origem": "sistema",
                     },
@@ -587,4 +594,4 @@ async def _enviar_confirmacao_whatsapp(
         except Exception:  # noqa: BLE001
             pass
 
-    log.info("Confirmação WhatsApp enviada: pedido #%s para %s", pedido.numero_pedido, cliente.telefone)
+    log.info("Confirmação WhatsApp enviada: pedido #%s para %s", pedido.numero_pedido, cliente_telefone)

@@ -88,12 +88,7 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
-      {/* Conexão do WhatsApp */}
-      <WhatsAppCard pizzaria={pizzaria} />
-
-      {/* Cardápio Digital */}
-      <CardapioDigitalCard pizzaria={pizzaria} onUpdated={onUpdated} />
-
+      {/* 1. Identidade e Horários */}
       <Card icon={<Store className="w-4 h-4" />} title="Identidade" accent="orange">
         <div className="grid md:grid-cols-2 gap-3">
           <Field label="Nome da pizzaria" required>
@@ -115,121 +110,6 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
         </div>
       </Card>
 
-      <Card icon={<Smartphone className="w-4 h-4" />} title="WhatsApp / Bot" accent="emerald">
-        <div className="grid md:grid-cols-2 gap-3">
-          <Field label="Instância Evolution">
-            <input value={form.instancia ?? ""} onChange={(e) => setField("instancia", e.target.value)} className={inputCls}/>
-          </Field>
-          <label className="flex items-center gap-2.5 text-sm text-slate-700 mt-6 cursor-pointer">
-            <input type="checkbox" checked={form.bot_ativo_global ?? false}
-              onChange={(e) => setField("bot_ativo_global", e.target.checked)}
-              className="w-4 h-4 accent-orange-500"/>
-            Bot ativo globalmente
-          </label>
-        </div>
-      </Card>
-
-      <Card icon={<CreditCard className="w-4 h-4" />} title="Pagamentos" accent="violet">
-        <div className="space-y-3">
-          <Field label="Pagamento na conversa — como a atendente recebe do cliente">
-            <select value={form.modo_pagamento_online ?? "automatico"}
-              onChange={(e) => setField("modo_pagamento_online", e.target.value)} className={inputCls}>
-              <option value="automatico">Automático — cobrança pelo provedor (Mercado Pago / Asaas)</option>
-              <option value="manual">Manual — Pix próprio (você confere o comprovante)</option>
-              <option value="desativado">Desativado — só na entrega/retirada</option>
-            </select>
-          </Field>
-
-          {(form.modo_pagamento_online ?? "automatico") === "automatico" && (
-            <div className="grid md:grid-cols-2 gap-3">
-              <Field label="Gateway">
-                <select value={form.gateway_pagamento ?? "mercadopago"}
-                  onChange={(e) => setField("gateway_pagamento", e.target.value)} className={inputCls}>
-                  <option value="mercadopago">Mercado Pago</option>
-                  <option value="asaas">Asaas</option>
-                </select>
-              </Field>
-              <Field label="MP access token">
-                <input type="password" value={form.mp_access_token ?? ""} onChange={(e) => setField("mp_access_token", e.target.value)} className={inputCls}/>
-              </Field>
-              <Field label="Asaas API key" full>
-                <input type="password" value={form.asaas_api_key ?? ""} onChange={(e) => setField("asaas_api_key", e.target.value)} className={inputCls}/>
-              </Field>
-            </div>
-          )}
-
-          {(form.modo_pagamento_online ?? "automatico") === "manual" && (
-            <div className="space-y-3">
-              <Field label="Pix copia-e-cola (a atendente envia este código pro cliente pagar)" full>
-                <textarea value={form.pix_manual_copia_cola ?? ""}
-                  onChange={(e) => setField("pix_manual_copia_cola", e.target.value)}
-                  placeholder="Cole aqui o seu código Pix copia-e-cola (gerado no app do seu banco)"
-                  rows={3} className={inputCls}/>
-              </Field>
-              <Field label="Nome do recebedor (opcional — aparece como 'em nome de …')">
-                <input value={form.pix_manual_titular ?? ""} onChange={(e) => setField("pix_manual_titular", e.target.value)} className={inputCls}/>
-              </Field>
-              <p className="text-xs text-slate-500">
-                A atendente envia o código automaticamente e pede o comprovante. Você confere e
-                confirma o pagamento no card do pedido (Pedidos → Confirmar/Rejeitar).
-              </p>
-            </div>
-          )}
-
-          {(form.modo_pagamento_online ?? "automatico") === "desativado" && (
-            <p className="text-xs text-slate-500">
-              A atendente <strong>não oferece pagamento online</strong>: o cliente paga só na
-              entrega ou retirada (dinheiro/cartão).
-            </p>
-          )}
-        </div>
-      </Card>
-
-      <Card icon={<Clock className="w-4 h-4" />} title="Tempos de entrega e retirada (minutos)" accent="sky">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Field label="Delivery mín">
-            <input type="number" value={form.tempo_entrega_min ?? 30}
-              onChange={(e) => setField("tempo_entrega_min", Number(e.target.value))} className={inputCls}/>
-          </Field>
-          <Field label="Delivery máx">
-            <input type="number" value={form.tempo_entrega_max ?? 60}
-              onChange={(e) => setField("tempo_entrega_max", Number(e.target.value))} className={inputCls}/>
-          </Field>
-          <Field label="Retirada mín">
-            <input type="number" value={form.tempo_retirada_min ?? 15}
-              onChange={(e) => setField("tempo_retirada_min", Number(e.target.value))} className={inputCls}/>
-          </Field>
-          <Field label="Retirada máx">
-            <input type="number" value={form.tempo_retirada_max ?? 25}
-              onChange={(e) => setField("tempo_retirada_max", Number(e.target.value))} className={inputCls}/>
-          </Field>
-        </div>
-      </Card>
-
-      <Card icon={<CreditCard className="w-4 h-4" />} title="Taxa de entrega" accent="amber">
-        <div className="space-y-3">
-          <Field label="Taxa fixa padrão (R$) — usada quando o bairro não está na tabela">
-            <input type="number" step="0.01" min="0"
-              value={form.taxa_entrega_fixa ?? ""}
-              placeholder="ex: 7.00"
-              onChange={(e) => setField("taxa_entrega_fixa", e.target.value === "" ? null : Number(e.target.value))}
-              className={inputCls}/>
-          </Field>
-          <TaxasBairroEditor
-            taxas={(form.taxas_bairro as any) || []}
-            onChange={(t) => setField("taxas_bairro", t as any)}
-          />
-        </div>
-      </Card>
-
-      <Card icon={<Package className="w-4 h-4" />} title="Adicionais & Bordas" accent="violet">
-        <p className="text-xs text-slate-500 mb-2">Bordas recheadas e extras que a atendente pode oferecer (com preço real). Aplicam-se a qualquer pizza.</p>
-        <AdicionaisEditor
-          adicionais={(form.adicionais as any) || []}
-          onChange={(a) => setField("adicionais", a as any)}
-        />
-      </Card>
-
       <Card icon={<Clock className="w-4 h-4" />} title="Horário de funcionamento" accent="emerald">
         <HorarioFuncionamento
           horarios={(form.horario_funcionamento as any) || {}}
@@ -238,6 +118,138 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           onMsgFora={(t) => setField("mensagens_status", { ...(form.mensagens_status as any || {}), fora_horario: t } as any)}
         />
       </Card>
+
+      {/* 2. WhatsApp & Bot de Atendimento */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-slate-800 ml-1">Atendimento (WhatsApp / IA)</h3>
+        <WhatsAppCard pizzaria={pizzaria} />
+        
+        <Card icon={<Smartphone className="w-4 h-4" />} title="Instância / Bot Global" accent="emerald">
+          <div className="grid md:grid-cols-2 gap-3">
+            <Field label="Instância Evolution">
+              <input value={form.instancia ?? ""} onChange={(e) => setField("instancia", e.target.value)} className={inputCls}/>
+            </Field>
+            <label className="flex items-center gap-2.5 text-sm text-slate-700 mt-6 cursor-pointer">
+              <input type="checkbox" checked={form.bot_ativo_global ?? false}
+                onChange={(e) => setField("bot_ativo_global", e.target.checked)}
+                className="w-4 h-4 accent-orange-500"/>
+              Bot ativo globalmente
+            </label>
+          </div>
+        </Card>
+      </div>
+
+      {/* 3. Cardápio Digital & Pagamentos */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-slate-800 ml-1">Cardápio & Pagamentos</h3>
+        <CardapioDigitalCard pizzaria={pizzaria} onUpdated={onUpdated} />
+        
+        <Card icon={<Package className="w-4 h-4" />} title="Adicionais & Bordas" accent="violet">
+          <p className="text-xs text-slate-500 mb-2">Bordas recheadas e extras que a atendente pode oferecer. Aplicam-se a qualquer pizza.</p>
+          <AdicionaisEditor
+            adicionais={(form.adicionais as any) || []}
+            onChange={(a) => setField("adicionais", a as any)}
+          />
+        </Card>
+
+        <Card icon={<CreditCard className="w-4 h-4" />} title="Meios de Recebimento" accent="violet">
+          <div className="space-y-3">
+            <Field label="Pagamento na conversa (Como receber no WhatsApp e Cardápio)">
+              <select value={form.modo_pagamento_online ?? "automatico"}
+                onChange={(e) => setField("modo_pagamento_online", e.target.value)} className={inputCls}>
+                <option value="automatico">Automático — cobrança pelo provedor (Mercado Pago / Asaas)</option>
+                <option value="manual">Manual — Pix próprio (você confere o comprovante)</option>
+                <option value="desativado">Desativado — só na entrega/retirada</option>
+              </select>
+            </Field>
+
+            {(form.modo_pagamento_online ?? "automatico") === "automatico" && (
+              <div className="grid md:grid-cols-2 gap-3">
+                <Field label="Gateway">
+                  <select value={form.gateway_pagamento ?? "mercadopago"}
+                    onChange={(e) => setField("gateway_pagamento", e.target.value)} className={inputCls}>
+                    <option value="mercadopago">Mercado Pago</option>
+                    <option value="asaas">Asaas</option>
+                  </select>
+                </Field>
+                <Field label="MP access token">
+                  <input type="password" value={form.mp_access_token ?? ""} onChange={(e) => setField("mp_access_token", e.target.value)} className={inputCls}/>
+                </Field>
+                <Field label="Asaas API key" full>
+                  <input type="password" value={form.asaas_api_key ?? ""} onChange={(e) => setField("asaas_api_key", e.target.value)} className={inputCls}/>
+                </Field>
+              </div>
+            )}
+
+            {(form.modo_pagamento_online ?? "automatico") === "manual" && (
+              <div className="space-y-3">
+                <Field label="Pix copia-e-cola (a atendente envia este código pro cliente pagar)" full>
+                  <textarea value={form.pix_manual_copia_cola ?? ""}
+                    onChange={(e) => setField("pix_manual_copia_cola", e.target.value)}
+                    placeholder="Cole aqui o seu código Pix copia-e-cola (gerado no app do seu banco)"
+                    rows={3} className={inputCls}/>
+                </Field>
+                <Field label="Nome do recebedor (opcional — aparece como 'em nome de …')">
+                  <input value={form.pix_manual_titular ?? ""} onChange={(e) => setField("pix_manual_titular", e.target.value)} className={inputCls}/>
+                </Field>
+                <p className="text-xs text-slate-500">
+                  A atendente envia o código automaticamente e pede o comprovante. Você confere e
+                  confirma o pagamento no card do pedido.
+                </p>
+              </div>
+            )}
+
+            {(form.modo_pagamento_online ?? "automatico") === "desativado" && (
+              <p className="text-xs text-slate-500">
+                A atendente <strong>não oferece pagamento online</strong>: o cliente paga só na
+                entrega ou retirada (dinheiro/cartão).
+              </p>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {/* 4. Logística (Delivery/Retirada) */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-bold text-slate-800 ml-1">Logística & Entregas</h3>
+        
+        <Card icon={<Clock className="w-4 h-4" />} title="Tempos de preparo e rota (minutos)" accent="sky">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Field label="Delivery mín">
+              <input type="number" value={form.tempo_entrega_min ?? 30}
+                onChange={(e) => setField("tempo_entrega_min", Number(e.target.value))} className={inputCls}/>
+            </Field>
+            <Field label="Delivery máx">
+              <input type="number" value={form.tempo_entrega_max ?? 60}
+                onChange={(e) => setField("tempo_entrega_max", Number(e.target.value))} className={inputCls}/>
+            </Field>
+            <Field label="Retirada mín">
+              <input type="number" value={form.tempo_retirada_min ?? 15}
+                onChange={(e) => setField("tempo_retirada_min", Number(e.target.value))} className={inputCls}/>
+            </Field>
+            <Field label="Retirada máx">
+              <input type="number" value={form.tempo_retirada_max ?? 25}
+                onChange={(e) => setField("tempo_retirada_max", Number(e.target.value))} className={inputCls}/>
+            </Field>
+          </div>
+        </Card>
+
+        <Card icon={<CreditCard className="w-4 h-4" />} title="Taxas de entrega" accent="amber">
+          <div className="space-y-3">
+            <Field label="Taxa fixa padrão (R$) — usada quando o bairro não está na tabela abaixo">
+              <input type="number" step="0.01" min="0"
+                value={form.taxa_entrega_fixa ?? ""}
+                placeholder="ex: 7.00"
+                onChange={(e) => setField("taxa_entrega_fixa", e.target.value === "" ? null : Number(e.target.value))}
+                className={inputCls}/>
+            </Field>
+            <TaxasBairroEditor
+              taxas={(form.taxas_bairro as any) || []}
+              onChange={(t) => setField("taxas_bairro", t as any)}
+            />
+          </div>
+        </Card>
+      </div>
 
       {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{err}</div>}
 
