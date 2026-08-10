@@ -56,3 +56,18 @@ jobs:
         run: npm ci
       - name: Type-check
         run: npm run lint
+
+  deploy:
+    name: Deploy no Coolify
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Publicar os cinco serviços do PizzaBot
+        env:
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+        run: |
+          test -n "$COOLIFY_TOKEN"
+          curl --fail --show-error --silent --retry 3             --request POST             "https://coolify.secretariaai.eu.cc/api/v1/deploy"             --header "Authorization: Bearer $COOLIFY_TOKEN"             --header "Content-Type: application/json"             --data '{"uuid":"zeynn4npbe1k7n2rfk76wr66,i9yo82ez6qq8rrbuktwogzdz,w8llgwyn2i24do6hic4xhdsk,y6vkezy1f1iku9u5y2sy8i4a,w2h2loq5o8fmnvkfzazwrfrk","force":false}'
