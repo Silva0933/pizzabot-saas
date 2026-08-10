@@ -132,6 +132,8 @@ export interface BackendPizzaria {
   whatsapp_estado?: string | null; // 'open' | 'connecting' | 'close'
   plano: string;
   bot_ativo_global: boolean;
+  aberto_manual?: boolean | null;
+  aberto_agora?: boolean;
   endereco: string | null;
   endereco_maps_url?: string | null;
   telefone_admin: string | null;
@@ -139,6 +141,7 @@ export interface BackendPizzaria {
   logo_url: string | null;
   banner_url?: string | null;
   horario_funcionamento: Record<string, any> | null;
+  tema_cardapio?: TemaCardapioConfig | null;
   formas_pagamento_aceitas?: string[] | null;
   mensagens_status: Record<string, string> | null;
   nomes_colunas: Record<string, string> | null;
@@ -243,6 +246,8 @@ export const pizzariasApi = {
   assinatura: (id: string) => api.get<AssinaturaInfo>(`/pizzarias/${id}/assinatura`),
   contratarAssinatura: (id: string, body: { plano: string; cobranca_email: string; cobranca_cpf_cnpj: string }) =>
     api.post<{ ok: boolean; subscription_id?: string; primeira_fatura?: FaturaInfo | null }>(`/pizzarias/${id}/assinatura`, body),
+  cancelarAssinatura: (id: string) =>
+    api.delete<{ ok: boolean; cancelada: boolean; renovacao_automatica: boolean; acesso_ate: string | null }>(`/pizzarias/${id}/assinatura`),
   faturaPix: (id: string, faturaId: string) =>
     api.get<PixCheckout>(`/pizzarias/${id}/assinatura/fatura/${faturaId}/pix`),
   create: (body: {
@@ -594,6 +599,8 @@ export interface AssinaturaItem {
   dias_restantes: number | null;
   alerta: "sem_plano" | "em_dia" | "vence_amanha" | "vencida";
   suspensa: boolean;
+  renovacao_automatica?: boolean;
+  cobranca_email?: string | null;
   ia_mensagens: number;   // atendimentos do mês (cota do plano)
   ia_limite: number;      // cota de atendimentos do plano
   ia_rodadas?: number;    // rodadas de IA (referência)
@@ -606,6 +613,7 @@ export interface AssinaturasResp {
   assinaturas: AssinaturaItem[];
   alertas: { vence_amanha: number; vencida: number; suspensas: number; limite_ia: number };
   ciclo_dias: number;
+  billing_disponivel?: boolean;
   custo?: {
     tokens_total: number;
     custo_total_estimado: number;
@@ -918,6 +926,7 @@ export interface MenuPizzaria {
   telefone_contato: string | null;
   instagram: string | null;
   horario_funcionamento: Record<string, any>;
+  tema_cardapio: TemaCardapioConfig;
   formas_pagamento_aceitas: string[];
   taxa_entrega_info: string | null;
   taxa_entrega_fixa: number | null;
@@ -928,6 +937,50 @@ export interface MenuPizzaria {
   tempo_retirada_min: number | null;
   tempo_retirada_max: number | null;
   aberto: boolean;
+}
+
+export type TemaCardapioModelo = "brasa" | "trattoria" | "metropole";
+export type TemaFonteTitulo = "anton" | "bebas" | "playfair" | "outfit";
+export type TemaFonteTexto = "inter" | "montserrat" | "nunito" | "outfit";
+export type TemaBordas = "retas" | "suaves" | "arredondadas";
+
+export interface CampanhaCardapio {
+  id: string;
+  titulo: string;
+  subtitulo?: string;
+  imagem_url?: string;
+  etiqueta?: string;
+  cta_label?: string;
+  cupom_codigo?: string;
+  ativa: boolean;
+  ordem: number;
+}
+
+export interface CupomCardapio {
+  id: string;
+  codigo: string;
+  descricao?: string;
+  tipo: "percentual" | "fixo";
+  valor: number;
+  pedido_minimo?: number;
+  validade?: string | null;
+  ativo: boolean;
+}
+
+export interface TemaCardapioConfig {
+  modelo?: TemaCardapioModelo;
+  fonte_titulo?: TemaFonteTitulo;
+  fonte_texto?: TemaFonteTexto;
+  cor_primaria?: string;
+  cor_secundaria?: string;
+  cor_fundo?: string;
+  bordas?: TemaBordas;
+  chamada?: string;
+  titulo?: string;
+  campanhas?: CampanhaCardapio[];
+  cupons?: CupomCardapio[];
+  mostrar_acompanhamento?: boolean;
+  descricao?: string;
 }
 
 export interface MenuProduto {
@@ -959,6 +1012,7 @@ export interface PedidoDigitalPayload {
   endereco_lat?: number;
   endereco_lon?: number;
   forma_pagamento: string;
+  cupom?: string;
   observacoes?: string;
   itens: Array<{
     produto_id?: string; // fonte de verdade do preço (recalculado no servidor)
@@ -977,6 +1031,18 @@ export interface PedidoDigitalResponse {
   numero_pedido: number;
   valor_total: number;
   taxa_entrega: number;
+  desconto: number;
+  tempo_estimado: string;
+  cupom_codigo?: string | null;
+}
+
+export interface PedidoAcompanhamento {
+  numero_pedido: number;
+  status: string;
+  tipo: "delivery" | "retirada";
+  criado_em: string;
+  atualizado_em: string;
+  entregador_nome?: string | null;
   tempo_estimado: string;
 }
 
@@ -1002,6 +1068,15 @@ export const menuApi = {
     if (!res.ok) {
       const b = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Erro ao enviar pedido', b);
+    }
+    return res.json();
+  },
+  trackOrder: async (slug: string, numero: number, telefone: string): Promise<PedidoAcompanhamento> => {
+    const query = new URLSearchParams({ telefone });
+    const res = await fetch(`${API_BASE}/menu/${slug}/pedido/${numero}/acompanhar?${query}`, { method: 'GET' });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Pedido nao encontrado', b);
     }
     return res.json();
   },

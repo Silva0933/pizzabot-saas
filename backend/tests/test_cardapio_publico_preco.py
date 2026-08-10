@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
-from app.routes.cardapio_publico import ItemPedidoIn, _recalcular_itens
+from app.routes.cardapio_publico import ItemPedidoIn, _calcular_desconto, _recalcular_itens
 
 
 @dataclass
@@ -81,3 +81,45 @@ class TestPrecoNaoConfiaNoCliente:
         with pytest.raises(HTTPException) as exc:
             _recalcular_itens(itens, _map(prod), {})
         assert exc.value.status_code == 400
+
+
+class TestCupomSeguro:
+    def test_percentual_e_normalizacao_do_codigo(self):
+        tema = {"cupons": [{
+            "codigo": "BRASA15", "tipo": "percentual", "valor": 15,
+            "pedido_minimo": 30, "ativo": True,
+        }]}
+        desconto, codigo = _calcular_desconto(tema, " brasa15 ", Decimal("100"))
+        assert desconto == Decimal("15.00")
+        assert codigo == "BRASA15"
+
+    def test_valor_fixo_nunca_ultrapassa_subtotal(self):
+        tema = {"cupons": [{
+            "codigo": "MENOS50", "tipo": "fixo", "valor": 50,
+            "pedido_minimo": 0, "ativo": True,
+        }]}
+        desconto, _ = _calcular_desconto(tema, "MENOS50", Decimal("32"))
+        assert desconto == Decimal("32.00")
+
+    def test_rejeita_pedido_abaixo_do_minimo(self):
+        tema = {"cupons": [{
+            "codigo": "MINIMO", "tipo": "percentual", "valor": 10,
+            "pedido_minimo": 80, "ativo": True,
+        }]}
+        with pytest.raises(HTTPException) as exc:
+            _calcular_desconto(tema, "MINIMO", Decimal("79.99"))
+        assert exc.value.status_code == 400
+
+    def test_rejeita_expirado_e_inativo(self):
+        expirado = {"cupons": [{
+            "codigo": "VELHO", "tipo": "percentual", "valor": 10,
+            "validade": "2000-01-01", "ativo": True,
+        }]}
+        with pytest.raises(HTTPException):
+            _calcular_desconto(expirado, "VELHO", Decimal("100"))
+
+        inativo = {"cupons": [{
+            "codigo": "OFF", "tipo": "percentual", "valor": 10, "ativo": False,
+        }]}
+        with pytest.raises(HTTPException):
+            _calcular_desconto(inativo, "OFF", Decimal("100"))

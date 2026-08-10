@@ -47,7 +47,9 @@ class PizzariaPatch(BaseModel):
     logo_url: str | None = None
     banner_url: str | None = None
     bot_ativo_global: bool | None = None
+    aberto_manual: bool | None = None
     horario_funcionamento: dict | None = None
+    tema_cardapio: dict | None = None
     formas_pagamento_aceitas: list[str] | None = None
     mensagens_status: dict | None = None
     nomes_colunas: dict | None = None
@@ -75,6 +77,8 @@ class PizzariaOut(BaseModel):
     whatsapp_estado: str | None = None
     plano: str
     bot_ativo_global: bool
+    aberto_manual: bool | None = None
+    aberto_agora: bool = True
     suspensa: bool = False
     suspensa_motivo: str | None = None
     plano_vence_em: datetime | None = None
@@ -87,6 +91,7 @@ class PizzariaOut(BaseModel):
     logo_url: str | None = None
     banner_url: str | None = None
     horario_funcionamento: dict | None = None
+    tema_cardapio: dict | None = None
     formas_pagamento_aceitas: list[str] | None = None
     mensagens_status: dict | None = None
     nomes_colunas: dict | None = None
@@ -374,6 +379,29 @@ async def contratar_assinatura(
     log.info("Assinatura criada: pizzaria=%s plano=%s sub=%s",
              pizzaria_id, body.plano, resultado.get("subscription_id"))
     return {"ok": True, **resultado}
+
+
+@router.delete("/{pizzaria_id}/assinatura")
+async def cancelar_assinatura_pizzaria(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """
+    Cancela a renovação no Asaas e mantém o acesso até o fim do período já pago.
+    Cobranças pendentes/vencidas da recorrência são canceladas pelo Asaas.
+    """
+    from app.services.billing_plataforma import BillingError, cancelar_assinatura
+
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+
+    try:
+        return {"ok": True, **(await cancelar_assinatura(db, pizz))}
+    except BillingError as e:
+        await db.rollback()
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
 
 
 @router.patch("/{pizzaria_id}", response_model=PizzariaOut)

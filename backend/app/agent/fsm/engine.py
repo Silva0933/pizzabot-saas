@@ -1127,7 +1127,7 @@ async def processar(
 
             decisao["proxima_pergunta"] = (
                 f"De forma SUTIL e curta, pergunte APENAS se ele gostaria de adicionar {opcoes_juntas} "
-                "para acompanhar. NÃO liste quais são os itens ou nomes agora, sob nenhuma hipótese! "
+                "para acompanhar. NÃO invente marcas ou sabores e não liste quais são os itens ou nomes agora, sob nenhuma hipótese! "
                 "Faça só a pergunta genérica (ex.: 'Gostaria de alguma bebida para acompanhar?')."
             )
             return {"decisao": decisao, "estado": estado}

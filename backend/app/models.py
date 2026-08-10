@@ -62,6 +62,8 @@ class Pizzaria(Base):
     banner_url: Mapped[str | None] = mapped_column(Text)
     plano: Mapped[str] = mapped_column(String, default="basico", nullable=False)
     bot_ativo_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # NULL segue o horário; True/False força abertura/fechamento temporário.
+    aberto_manual: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Suspensão administrativa (ex.: inadimplência). Desliga TODO o atendimento
     # sem excluir os dados. Controlada só pelo admin da plataforma.
     suspensa: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -97,6 +99,8 @@ class Pizzaria(Base):
     instagram: Mapped[str | None] = mapped_column(String)
 
     horario_funcionamento: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    # Identidade visual do cardápio público (preset, fontes, cores e acabamento).
+    tema_cardapio: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     formas_pagamento_aceitas: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     taxa_entrega_info: Mapped[str | None] = mapped_column(Text)
     taxa_entrega_fixa: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
@@ -131,6 +135,16 @@ class Pizzaria(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def aberto_agora(self) -> bool:
+        """Estado efetivo: override manual primeiro, agenda em seguida."""
+        from app.services.business_hours import esta_aberto
+
+        return esta_aberto(
+            self.horario_funcionamento or {},
+            override=self.aberto_manual,
+        )
 
 
 # ============================================

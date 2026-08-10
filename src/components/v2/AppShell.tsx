@@ -23,6 +23,9 @@ export interface AppShellProps {
   pageSubtitle?: string;
   botAtivo: boolean;
   onToggleBot: () => void;
+  lojaAberta: boolean;
+  lojaStatusManual?: boolean | null;
+  onSetLojaStatus: (status: boolean | null) => void;
   /** Estado da conexão WhatsApp ('open' | 'connecting' | 'close' | null). */
   whatsappEstado?: string | null;
   onWhatsAppClick?: () => void;
@@ -41,6 +44,8 @@ export interface AppShellProps {
   onLogout?: () => void;
   notifPermission?: NotificationPermission;
   onEnableNotifications?: () => void;
+  orderAlertCount?: number;
+  onOrderAlertClick?: () => void;
 
   // Conteúdo
   children: React.ReactNode;
@@ -54,6 +59,9 @@ export function AppShell({
   pageSubtitle,
   botAtivo,
   onToggleBot,
+  lojaAberta,
+  lojaStatusManual,
+  onSetLojaStatus,
   whatsappEstado,
   onWhatsAppClick,
   isTrial,
@@ -66,10 +74,12 @@ export function AppShell({
   onLogout,
   notifPermission,
   onEnableNotifications,
+  orderAlertCount,
+  onOrderAlertClick,
   children,
 }: AppShellProps) {
   return (
-    <div className="min-h-screen bg-[#fafbfc] flex">
+    <div className="pzb-admin-shell min-h-screen bg-[#0b0a09] text-[#f7f1eb] flex">
       <Sidebar
         active={activeNav}
         onChange={onNavChange}
@@ -79,7 +89,7 @@ export function AppShell({
         badges={badges}
       />
 
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="pzb-admin-content flex-1 min-w-0 flex flex-col">
         <Topbar
           pageTitle={pageTitle}
           pageSubtitle={pageSubtitle}
@@ -87,6 +97,9 @@ export function AppShell({
           userEmail={userEmail}
           botAtivo={botAtivo}
           onToggleBot={onToggleBot}
+          lojaAberta={lojaAberta}
+          lojaStatusManual={lojaStatusManual}
+          onSetLojaStatus={onSetLojaStatus}
           whatsappEstado={whatsappEstado}
           onWhatsAppClick={onWhatsAppClick}
           isTrial={isTrial}
@@ -94,6 +107,8 @@ export function AppShell({
           onLogout={onLogout}
           notifPermission={notifPermission}
           onEnableNotifications={onEnableNotifications}
+          orderAlertCount={orderAlertCount}
+          onOrderAlertClick={onOrderAlertClick}
         />
 
         {whatsappEstado === "close" && (
@@ -113,7 +128,7 @@ export function AppShell({
           </div>
         )}
 
-        <main className="flex-1 min-w-0">
+        <main className="flex-1 min-w-0 bg-[#100e0c]">
           {children}
         </main>
       </div>
@@ -128,6 +143,7 @@ export const NAV_PAGE_META: Record<NavKey, { title: string; subtitle?: string }>
   conversas: { title: "Conversas", subtitle: "Mensagens dos clientes no WhatsApp" },
   pedidos:   { title: "Pedidos",   subtitle: "Acompanhe o fluxo dos pedidos" },
   cardapio:  { title: "Cardápio",  subtitle: "Produtos, categorias e preços" },
+  temas:     { title: "Temas", subtitle: "Personalize a identidade do cardápio" },
   negocio:   { title: "Meu Negócio", subtitle: "Tudo sobre sua pizzaria" },
   entregadores: { title: "Entregadores", subtitle: "Cadastre e gerencie sua equipe de entrega" },
   assinatura: { title: "Assinatura", subtitle: "Plano, faturas e renovação" },

@@ -476,7 +476,10 @@ async def evolution_webhook(
     if pizz.bot_ativo_global and conv.bot_ativo:
         from app.services.business_hours import esta_aberto
 
-        if not esta_aberto(pizz.horario_funcionamento or {}) and not _pode_responder_fora_horario_com_ia(conteudo):
+        if not esta_aberto(
+            pizz.horario_funcionamento or {},
+            override=getattr(pizz, "aberto_manual", None),
+        ) and not _pode_responder_fora_horario_com_ia(conteudo):
             # Fora do horário: responde UMA mensagem e NÃO aciona a IA.
             await _responder_fora_horario(db, pizz, conv, telefone)
         else:

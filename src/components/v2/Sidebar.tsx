@@ -17,9 +17,10 @@ import {
   CreditCard,
   Bike,
   MoreHorizontal,
+  Palette,
 } from "lucide-react";
 
-export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "negocio" | "entregadores" | "assinatura" | "ajuda" | "admin";
+export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "temas" | "negocio" | "entregadores" | "assinatura" | "ajuda" | "admin";
 
 export interface NavBadges {
   conversas?: number;
@@ -40,6 +41,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ class
   { key: "analise",   label: "Análise",      icon: TrendingUp },
   { key: "conversas", label: "Conversas",    icon: MessageSquare },
   { key: "cardapio",  label: "Cardápio",     icon: UtensilsCrossed },
+  { key: "temas",     label: "Temas",        icon: Palette },
   { key: "negocio",   label: "Meu Negócio",  icon: Store },
   { key: "entregadores", label: "Entregadores", icon: Bike },
   { key: "assinatura", label: "Assinatura",  icon: CreditCard },
@@ -61,7 +63,7 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
   return (
     <>
       {/* Desktop sidebar (vertical, fixa à esquerda) */}
-      <aside className="hidden md:flex flex-col w-60 bg-white border-r border-slate-200 h-screen sticky top-0">
+      <aside className="pzb-admin-sidebar hidden md:flex flex-col w-60 bg-white border-r border-slate-200 h-screen sticky top-0">
         {/* Logo / nome pizzaria */}
         <div className="px-4 py-5 border-b border-slate-100 flex items-center gap-2.5">
           {pizzariaLogo ? (
@@ -142,7 +144,7 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
         <div className="md:hidden fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
           <div className="absolute inset-0 bg-black/30" />
           <div
-            className="absolute bottom-14 left-0 right-0 bg-white border-t border-slate-200 rounded-t-2xl p-2 shadow-lg safe-area-inset-bottom"
+            className="pzb-admin-mobile-more absolute bottom-14 left-0 right-0 bg-white border-t border-slate-200 rounded-t-2xl p-2 shadow-lg safe-area-inset-bottom"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="grid grid-cols-3 gap-1">
@@ -180,7 +182,7 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
       )}
 
       {/* Mobile bottom-nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-white border-t border-slate-200 flex items-center justify-around py-1 safe-area-inset-bottom">
+      <nav className="pzb-admin-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-white border-t border-slate-200 flex items-center justify-around py-1 safe-area-inset-bottom">
         {MOBILE_PRIMARY_ITEMS.map(({ key, label, icon: Icon }) => {
           const isActive = active === key;
           const badge =

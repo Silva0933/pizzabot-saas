@@ -23,9 +23,11 @@ interface Props {
   pizzariaId: string;
   /** Se WS já estiver conectado no App.tsx, App propaga eventos por aqui */
   liveEvent?: { tipo: string; payload: any } | null;
+  /** Abrir uma conversa confirma que o operador viu o alerta de novo pedido. */
+  onConversationOpen?: (conversationId: string) => void;
 }
 
-export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
+export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: Props) {
   const [conversas, setConversas] = useState<BackendConversa[]>([]);
   const [active, setActive] = useState<BackendConversa | null>(null);
   const [mensagens, setMensagens] = useState<BackendMensagem[]>([]);
@@ -272,7 +274,10 @@ export function ConversasViewV2({ pizzariaId, liveEvent }: Props) {
             return (
               <button
                 key={c.id}
-                onClick={() => setActive(c)}
+                onClick={() => {
+                  setActive(c);
+                  onConversationOpen?.(c.id);
+                }}
                 className={`w-full text-left px-3 py-3 border-b border-slate-50 flex gap-3 transition-colors ${
                   isActive ? "bg-orange-50" : isHumanNeeded ? "bg-red-50/50 hover:bg-red-50" : "hover:bg-slate-50"
                 }`}

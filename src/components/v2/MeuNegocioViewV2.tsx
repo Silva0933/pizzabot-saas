@@ -11,6 +11,7 @@ import {
   Bot, Settings as SettingsIcon, Sparkles, Save, Loader2,
   Store, Smartphone, CreditCard, Clock, X, QrCode, CheckCircle2,
   RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
+  Bike, Copy, ExternalLink,
 } from "lucide-react";
 import { AttendantPage } from "../AttendantPage";
 import {
@@ -216,7 +217,9 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
       {/* 4. Logística (Delivery/Retirada) */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-slate-800 ml-1">Logística & Entregas</h3>
-        
+
+        <EntregadorAccessCard />
+
         <Card icon={<Clock className="w-4 h-4" />} title="Tempos de preparo e rota (minutos)" accent="sky">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Field label="Delivery mín">
@@ -267,6 +270,71 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           {savedAt && Date.now() - savedAt < 2500 && <span className="text-xs opacity-80">✓ salvo</span>}
         </button>
       </div>
+    </div>
+  );
+}
+
+// ============================================
+// Card: acesso da equipe de entregadores
+// ============================================
+function EntregadorAccessCard() {
+  const [copied, setCopied] = useState(false);
+  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+  const link = `${baseUrl}/entregador`;
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copie o link da área do entregador:", link);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-cyan-50/80 p-4 shadow-sm space-y-3">
+      <div className="flex items-center gap-4">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-sky-500 to-cyan-500 text-white">
+          <Bike className="h-6 w-6" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-slate-800">Área do entregador</p>
+          <p className="text-xs text-sky-700/80">
+            Envie este link para cada entregador acessar com o próprio e-mail e senha.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-sky-200/70 bg-white p-3 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1 select-all truncate font-mono text-sm text-slate-700">
+          {link}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={copyLink}
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-100 px-3 py-1.5 text-xs font-semibold text-sky-700 transition-colors hover:bg-sky-200 sm:flex-none"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {copied ? "Copiado!" : "Copiar"}
+          </button>
+          <a
+            href="/entregador"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-700 sm:flex-none"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Abrir
+          </a>
+        </div>
+      </div>
+
+      <p className="text-[11px] leading-snug text-slate-500">
+        O acesso é individual e usa as credenciais criadas na aba <strong>Entregadores</strong>.
+        Para testar sem sair do painel do dono, abra o link em uma janela anônima ou em outro dispositivo.
+      </p>
     </div>
   );
 }

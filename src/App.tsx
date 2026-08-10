@@ -20,6 +20,7 @@ import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
 import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
 import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { CardapioPublico } from "./components/v2/CardapioPublico";
+import { TemasView } from "./components/v2/TemasView";
 import { DriverApp } from "./components/driver/DriverApp";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
 import { EntregadoresView } from "./components/v2/EntregadoresView";
@@ -37,12 +38,26 @@ import {
 // ============================================
 // Sinal sonoro de pedidos (Web Audio API)
 // ============================================
+let notificationAudioContext: AudioContext | null = null;
+
+function getNotificationAudioContext() {
+  if (typeof window === "undefined") return null;
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return null;
+  notificationAudioContext ??= new AudioContextClass();
+  return notificationAudioContext;
+}
+
+function unlockNotificationSound() {
+  const ctx = getNotificationAudioContext();
+  if (ctx?.state === "suspended") ctx.resume().catch(() => {});
+}
+
 function playNotificationSound(type: "novo" | "confirmado") {
   try {
-    // @ts-ignore
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-    const ctx = new AudioContextClass();
+    const ctx = getNotificationAudioContext();
+    if (!ctx) return;
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const now = ctx.currentTime;
 
     if (type === "novo") {
@@ -118,7 +133,109 @@ function AdminApp() {
   const [atendenteOk, setAtendenteOk] = useState(false);
   const [nav, setNav] = useState<NavKey>("pedidos");
   const [liveEvent, setLiveEvent] = useState<WsEvent | null>(null);
+  const [pendingOrderAlerts, setPendingOrderAlerts] = useState(0);
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "denied",
+  );
   const wsRef = useRef<WebSocket | null>(null);
+  const pendingOrderKeysRef = useRef<Set<string>>(new Set());
+  const desktopNotificationsRef = useRef<Notification[]>([]);
+
+  const orderAlertStorageKey = pizzaria
+    ? `pizzabot:pending-order-alert:${pizzaria.id}`
+    : null;
+
+  function acknowledgeOrderAlerts() {
+    setPendingOrderAlerts(0);
+    pendingOrderKeysRef.current.clear();
+    if (orderAlertStorageKey) localStorage.removeItem(orderAlertStorageKey);
+    desktopNotificationsRef.current.forEach((notification) => notification.close());
+    desktopNotificationsRef.current = [];
+  }
+
+  function registerNewOrderAlert(ev: WsEvent) {
+    if (!pizzaria) return;
+    const payload = ev.payload ?? {};
+    const stableId = payload.pedido_id || payload.numero_pedido;
+    const eventId = stableId || `${payload.telefone || "pedido"}-${Date.now()}`;
+    const key = `${pizzaria.id}:${eventId}`;
+    if (pendingOrderKeysRef.current.has(key)) return;
+    pendingOrderKeysRef.current.add(key);
+    setPendingOrderAlerts((current) => {
+      const next = current + 1;
+      if (orderAlertStorageKey) {
+        localStorage.setItem(orderAlertStorageKey, JSON.stringify({
+          count: next,
+          keys: [...pendingOrderKeysRef.current],
+          updatedAt: Date.now(),
+        }));
+      }
+      return next;
+    });
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const notification = new Notification("Novo pedido recebido", {
+        body: payload.numero_pedido
+          ? `Pedido #${payload.numero_pedido} aguardando atendimento.`
+          : "Há um novo pedido aguardando atendimento.",
+        tag: `novo-pedido-${eventId}`,
+        requireInteraction: true,
+      });
+      notification.onclick = () => {
+        window.focus();
+        acknowledgeOrderAlerts();
+        setNav("pedidos");
+        notification.close();
+      };
+      desktopNotificationsRef.current.push(notification);
+    }
+  }
+
+  async function handleEnableNotifications() {
+    unlockNotificationSound();
+    if (typeof Notification === "undefined") return;
+    const permission = await Notification.requestPermission();
+    setNotifPermission(permission);
+  }
+
+  // O navegador só libera áudio depois de uma interação do usuário.
+  useEffect(() => {
+    const unlock = () => unlockNotificationSound();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  // Recupera um alerta não atendido caso o painel seja recarregado.
+  useEffect(() => {
+    pendingOrderKeysRef.current.clear();
+    setPendingOrderAlerts(0);
+    desktopNotificationsRef.current.forEach((notification) => notification.close());
+    desktopNotificationsRef.current = [];
+    if (!orderAlertStorageKey) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(orderAlertStorageKey) || "null");
+      const isRecent = saved?.updatedAt && Date.now() - saved.updatedAt < 86_400_000;
+      if (isRecent && saved.count > 0) {
+        pendingOrderKeysRef.current = new Set(saved.keys || []);
+        setPendingOrderAlerts(saved.count);
+      } else {
+        localStorage.removeItem(orderAlertStorageKey);
+      }
+    } catch {
+      localStorage.removeItem(orderAlertStorageKey);
+    }
+  }, [orderAlertStorageKey]);
+
+  // Repete o toque até o operador atender o alerta ou abrir uma conversa.
+  useEffect(() => {
+    if (pendingOrderAlerts <= 0) return;
+    playNotificationSound("novo");
+    const alarm = window.setInterval(() => playNotificationSound("novo"), 3000);
+    return () => window.clearInterval(alarm);
+  }, [pendingOrderAlerts]);
 
   // ============================================
   // Bootstrap (verifica token + busca user)
@@ -201,17 +318,13 @@ function AdminApp() {
     if (!pizzaria) return;
     const ws = connectWebSocket(pizzaria.id, (ev) => {
       setLiveEvent(ev);
-      // Eventos de pedido → som e refresh
+      // Novo pedido → inicia alerta persistente e atualiza a fila.
       if (ev.tipo === "pedido.novo") {
-        playNotificationSound("novo");
+        registerNewOrderAlert(ev);
         pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
       } else if (ev.tipo === "pedido.atualizado") {
         const statusNovo = ev.payload?.status_novo;
-        if (statusNovo === "confirmado") {
-          playNotificationSound("confirmado");
-        } else if (statusNovo === "novo") {
-          playNotificationSound("novo");
-        }
+        if (statusNovo === "novo") registerNewOrderAlert(ev);
         pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
       } else if (ev.tipo === "pedidos.limpos") {
         setOrders([]);
@@ -302,6 +415,12 @@ function AdminApp() {
   async function handleToggleBot() {
     if (!pizzaria) return;
     const updated = await pizzariasApi.update(pizzaria.id, { bot_ativo_global: !pizzaria.bot_ativo_global });
+    setPizzaria(updated);
+  }
+
+  async function handleSetLojaStatus(status: boolean | null) {
+    if (!pizzaria) return;
+    const updated = await pizzariasApi.update(pizzaria.id, { aberto_manual: status });
     setPizzaria(updated);
   }
 
@@ -410,14 +529,22 @@ function AdminApp() {
       userEmail={user.email}
       botAtivo={pizzaria.bot_ativo_global}
       onToggleBot={handleToggleBot}
+      lojaAberta={pizzaria.aberto_agora ?? true}
+      lojaStatusManual={pizzaria.aberto_manual ?? null}
+      onSetLojaStatus={handleSetLojaStatus}
       whatsappEstado={pizzaria.instancia ? pizzaria.whatsapp_estado ?? null : null}
       onWhatsAppClick={() => setNav("negocio")}
       isTrial={pizzaria.plano === "trial" && !(pizzaria.suspensa ?? false)}
       onTrialClick={() => setNav("assinatura")}
       isPlatformAdmin={user.is_platform_admin}
       onLogout={handleLogout}
-      notifPermission={"default" as NotificationPermission}
-      onEnableNotifications={() => {}}
+      notifPermission={notifPermission}
+      onEnableNotifications={handleEnableNotifications}
+      orderAlertCount={pendingOrderAlerts}
+      onOrderAlertClick={() => {
+        acknowledgeOrderAlerts();
+        setNav("pedidos");
+      }}
     >
       <AssinaturaAviso
         venceEm={pizzaria.plano_vence_em ?? null}
@@ -432,7 +559,13 @@ function AdminApp() {
         onAssinar={() => setNav("assinatura")}
       />
 
-      {nav === "conversas" && <ConversasViewV2 pizzariaId={pizzaria.id} liveEvent={liveEvent}/>}
+      {nav === "conversas" && (
+        <ConversasViewV2
+          pizzariaId={pizzaria.id}
+          liveEvent={liveEvent}
+          onConversationOpen={acknowledgeOrderAlerts}
+        />
+      )}
       {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
       {nav === "pedidos"   && (
         <PedidosViewV2
@@ -470,6 +603,7 @@ function AdminApp() {
         />
       )}
       {nav === "cardapio"  && <CardapioViewV2 pizzariaId={pizzaria.id}/>}
+      {nav === "temas"     && <TemasView pizzaria={pizzaria} onUpdated={setPizzaria}/>}
       {nav === "negocio"   && (
         <MeuNegocioViewV2 pizzaria={pizzaria} onUpdated={setPizzaria}/>
       )}

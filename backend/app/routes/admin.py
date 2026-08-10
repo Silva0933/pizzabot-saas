@@ -19,6 +19,7 @@ from app.db import get_db
 from app.deps import require_platform_admin
 from app.models import Usuario
 from app.services.app_config import LLM_KEY, get_config, get_llm_config, set_config
+from app.services.billing_plataforma import billing_configurado
 from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
 from app.services.secrets import decrypt_secret, encrypt_secret, mask_secret
 
@@ -229,7 +230,7 @@ async def listar_assinaturas(
     """
     rows = (await db.execute(text(
         "SELECT id, nome, COALESCE(plano,'basico') AS plano, plano_ativado_em, "
-        "plano_vence_em, suspensa FROM public.pizzarias ORDER BY plano_vence_em NULLS LAST"
+        "plano_vence_em, suspensa, asaas_subscription_id, cobranca_email FROM public.pizzarias ORDER BY plano_vence_em NULLS LAST"
     ))).fetchall()
 
     from app.services.app_config import conversas_atendidas_mes_todas, uso_mes_todas
@@ -283,6 +284,8 @@ async def listar_assinaturas(
             "dias_restantes": dias,
             "alerta": alerta,
             "suspensa": bool(r[5]),
+            "renovacao_automatica": bool(r[6]),
+            "cobranca_email": r[7],
             # ia_mensagens/ia_limite passam a refletir a COTA (atendimentos do mês).
             "ia_mensagens": atendimentos,
             "ia_limite": limite_ia,
@@ -300,6 +303,7 @@ async def listar_assinaturas(
         "assinaturas": itens,
         "alertas": contagem,
         "ciclo_dias": CICLO_DIAS,
+        "billing_disponivel": billing_configurado(),
         "custo": {
             "tokens_total": tokens_total,
             "custo_total_estimado": custo_total,

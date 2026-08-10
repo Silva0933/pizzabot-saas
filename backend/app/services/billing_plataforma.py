@@ -185,6 +185,39 @@ async def ativar_assinatura(db: AsyncSession, pizz: Pizzaria, plano: str) -> dic
     return {"subscription_id": pizz.asaas_subscription_id, "primeira_fatura": primeira}
 
 
+async def cancelar_assinatura(db: AsyncSession, pizz: Pizzaria) -> dict[str, Any]:
+    """
+    Encerra a recorrência no Asaas sem retirar o acesso ao período já pago.
+    O Asaas remove também as cobranças pendentes/vencidas da assinatura; espelhamos
+    esse estado localmente e preservamos as faturas já pagas para auditoria.
+    """
+    subscription_id = (pizz.asaas_subscription_id or "").strip()
+    if not subscription_id:
+        return {
+            "cancelada": False,
+            "renovacao_automatica": False,
+            "acesso_ate": pizz.plano_vence_em.isoformat() if pizz.plano_vence_em else None,
+        }
+
+    await PlatformAsaasClient().cancelar_assinatura(subscription_id)
+    await db.execute(
+        text(
+            "UPDATE public.faturas SET status = 'cancelada', updated_at = now() "
+            "WHERE pizzaria_id = :pid AND asaas_subscription_id = :sid "
+            "AND status IN ('pendente', 'vencida')"
+        ),
+        {"pid": pizz.id, "sid": subscription_id},
+    )
+    pizz.asaas_subscription_id = None
+    await db.commit()
+    log.info("Renovação cancelada: pizzaria=%s subscription=%s", pizz.id, subscription_id)
+    return {
+        "cancelada": True,
+        "renovacao_automatica": False,
+        "acesso_ate": pizz.plano_vence_em.isoformat() if pizz.plano_vence_em else None,
+    }
+
+
 def _status_fatura(asaas_status: str) -> str:
     s = (asaas_status or "").upper()
     if s in ("RECEIVED", "CONFIRMED", "RECEIVED_IN_CASH"):

@@ -10,6 +10,7 @@ import {
   Check, Eye, EyeOff, LayoutGrid, Tag, SlidersHorizontal, Settings
 } from "lucide-react";
 import { cardapioApi, BackendProduto, CardapioArquivoInfo, ProdutoImport } from "../../lib/api";
+import { PromocoesCardapioPanel } from "./PromocoesCardapioPanel";
 
 interface Props { pizzariaId: string; }
 
@@ -126,6 +127,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
   const [novaCategoria, setNovaCategoria] = useState(false);
   const [activeTab, setActiveTab] = useState<"geral" | "tamanhos" | "adicionais" | "seo">("geral");
 
+  const [section, setSection] = useState<"produtos" | "promocoes">("produtos");
   // Filtros e Busca na listagem
   const [selectedCategory, setSelectedCategory] = useState<string>("todos");
   const [searchQuery, setSearchQuery] = useState("");
@@ -301,6 +303,10 @@ export function CardapioViewV2({ pizzariaId }: Props) {
 
   const isFormPanelOpen = creating || editing !== null;
 
+  if (section === "promocoes") {
+    return <PromocoesCardapioPanel pizzariaId={pizzariaId} onBack={() => setSection("produtos")} />;
+  }
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-3">
       <Loader2 className="w-8 h-8 animate-spin text-orange-500"/>
@@ -329,6 +335,13 @@ export function CardapioViewV2({ pizzariaId }: Props) {
           >
             {reindexing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
             Reindexar busca
+          </button>
+          <button
+            onClick={() => setSection("promocoes")}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs bg-brand-500/10 hover:bg-brand-500/20 text-brand-500 border border-brand-500/25 rounded-xl font-bold transition"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Banners e cupons
           </button>
           <ImportarCardapio pizzariaId={pizzariaId} onImported={load} />
           <button

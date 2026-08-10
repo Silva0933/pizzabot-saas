@@ -11,14 +11,14 @@
  */
 import React, { useEffect, useState } from "react";
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
 } from "recharts";
 import {
   Pizza, LogOut, Plus, Pencil, Trash2, Save, X, Loader2, AlertCircle, LogIn,
   Store, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
   Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
-  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins,
+  QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins, Search, Activity,
 } from "lucide-react";
 import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, AdminFaturaItem, LLMConfig, LLMUsage, WhatsAppConnect } from "../../lib/api";
 
@@ -59,6 +59,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showPwd, setShowPwd] = useState(false);
+  const [pizzaSearch, setPizzaSearch] = useState("");
 
   const modalOpen = creating || !!editingId;
 
@@ -191,6 +192,10 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 
   const r = ov?.resumo;
   const assinaturaById = (id: string) => ov?.assinaturas.find((a) => a.id === id);
+  const pizzariasFiltradas = pizzarias.filter((p) => {
+    const termo = pizzaSearch.trim().toLocaleLowerCase("pt-BR");
+    return !termo || (p.nome + " " + p.plano + " " + (p.instancia || "")).toLocaleLowerCase("pt-BR").includes(termo);
+  });
 
   async function changePlan(p: BackendPizzaria, plano: string) {
     setBusyId(p.id);
@@ -213,15 +218,15 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="pzb-platform-admin min-h-screen bg-[#070b12] text-slate-100 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-10">
+      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#090e16]/95 px-4 py-3 backdrop-blur-xl md:px-6">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center">
             <Pizza className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-slate-800 leading-tight">PizzaBot — Administração</h1>
+            <h1 className="text-sm font-black text-white leading-tight">PizzaBot — Administração</h1>
             <p className="text-xs text-slate-500">Painel da plataforma</p>
           </div>
         </div>
@@ -233,18 +238,18 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6 max-w-6xl w-full mx-auto space-y-5">
+      <main className="flex-1 p-4 md:p-6 max-w-[1500px] w-full mx-auto space-y-5">
         {/* Título + seletor de período */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-xl font-bold text-slate-800">Visão geral</h2>
+            <h2 className="text-2xl font-black tracking-tight text-white">Visão geral</h2>
             <p className="text-sm text-slate-500">Desempenho consolidado de todas as pizzarias.</p>
           </div>
-          <div className="flex bg-white border border-slate-200 rounded-lg p-0.5">
+          <div className="flex rounded-xl border border-white/10 bg-white/[0.035] p-1">
             {PERIODOS.map((p) => (
               <button key={p.value} onClick={() => setDays(p.value)}
                 className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  days === p.value ? "bg-orange-500 text-white" : "text-slate-600 hover:bg-slate-50"
+                  days === p.value ? "bg-orange-500 text-white shadow-lg shadow-orange-950/30" : "text-slate-500 hover:text-white"
                 }`}>{p.label}</button>
             ))}
           </div>
@@ -256,9 +261,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </div>
         )}
 
-        <AssinaturasCard catalogo={ov?.catalogo ?? []} />
-        <FaturasCard />
-        <AlertasCard />
 
         {loadingOv && !ov ? (
           <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
@@ -302,43 +304,38 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                 );
               })}
             </div>
-
-            {/* Novas assinaturas por dia */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">Novas assinaturas por dia</h3>
-              {ov.serie_novas.length === 0 ? (
-                <Empty msg="Sem novas assinaturas no período." />
-              ) : (
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={ov.serie_novas} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                    <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#94a3b8" }}
-                      tickFormatter={(d) => String(d).slice(5)} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#94a3b8" }} />
-                    <RTooltip labelFormatter={(l) => `Dia ${l}`} formatter={(v: any) => [v, "Novas"]}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
-                    <Line type="monotone" dataKey="qtd" stroke="#f97316" strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )}
+            <AdminInsights overview={ov} pizzarias={pizzarias} />
+            <div className="grid gap-4 xl:grid-cols-2">
+              <AssinaturasCard catalogo={ov?.catalogo ?? []} />
+              <div className="space-y-4">
+                <FaturasCard />
+                <AlertasCard />
+              </div>
             </div>
-          </>
+</>
         ) : null}
 
         {/* ====== Inteligência Artificial (provider/modelo/chaves) ====== */}
         <LLMConfigCard />
 
         {/* ====== Gestão de pizzarias ====== */}
-        <div className="flex items-center justify-between flex-wrap gap-2 pt-2">
+        <div className="flex flex-col gap-3 pt-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">Pizzarias</h2>
-            <p className="text-sm text-slate-500">Empresas cadastradas na plataforma.</p>
+            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-400">Gestão da base</span>
+            <h2 className="mt-1 text-lg font-black text-white">Pizzarias</h2>
+            <p className="text-sm text-slate-500">Empresas cadastradas, integrações e acessos.</p>
           </div>
-          <button onClick={startCreate}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-md font-medium">
-            <Plus className="w-4 h-4" /> Nova pizzaria
-          </button>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <label className="relative sm:w-72">
+              <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-slate-500" />
+              <input value={pizzaSearch} onChange={(e) => setPizzaSearch(e.target.value)} placeholder="Buscar por nome, plano ou instância" className="w-full rounded-xl border border-white/10 bg-white/[0.035] py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-orange-400/50" />
+            </label>
+            <button onClick={startCreate} className="flex items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-950/30 hover:bg-orange-400">
+              <Plus className="w-4 h-4" /> Nova pizzaria
+            </button>
+          </div>
         </div>
+
 
         {/* ====== Modal criar/editar pizzaria ====== */}
         {modalOpen && (
@@ -557,12 +554,12 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         )}
 
         <div className="space-y-2">
-          {pizzarias.length === 0 && !creating && (
+          {pizzariasFiltradas.length === 0 && !creating && (
             <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
               Nenhuma pizzaria cadastrada ainda. Clique em <strong>Nova pizzaria</strong> para começar.
             </div>
           )}
-          {pizzarias.map((p) => (
+          {pizzariasFiltradas.map((p) => (
             <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 hover:shadow-sm transition-shadow">
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                 {p.logo_url ? <img src={p.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-5 h-5 text-slate-400" />}
@@ -629,6 +626,61 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 }
 
 // ============================================
+
+function AdminInsights({ overview, pizzarias }: { overview: AdminOverview; pizzarias: BackendPizzaria[] }) {
+  const planos = overview.planos.map((pl) => ({ nome: pl.nome, receita: pl.subtotal, assinantes: pl.qtd }));
+  const whatsapp = pizzarias.filter((p) => p.whatsapp_estado === "open").length;
+  const bots = pizzarias.filter((p) => p.bot_ativo_global).length;
+  const fsm = pizzarias.filter((p) => p.pipeline_fsm).length;
+  const total = Math.max(pizzarias.length, 1);
+
+  return (
+    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,.9fr)]">
+      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-400">Crescimento</p><h3 className="mt-1 text-sm font-bold text-white">Novas assinaturas</h3></div>
+          <span className="rounded-full bg-orange-400/10 px-2.5 py-1 text-[10px] font-bold text-orange-300">{overview.periodo_dias} dias</span>
+        </div>
+        {overview.serie_novas.length === 0 ? <Empty msg="Sem novas assinaturas no período." /> : (
+          <ResponsiveContainer width="100%" height={230}>
+            <AreaChart data={overview.serie_novas} margin={{ top: 8, right: 4, left: -26, bottom: 0 }}>
+              <defs><linearGradient id="adminGrowth" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={0.42} /><stop offset="100%" stopColor="#fb923c" stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid strokeDasharray="4 4" stroke="rgba(148,163,184,.10)" vertical={false} />
+              <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(d) => String(d).slice(5)} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+              <RTooltip labelFormatter={(label) => "Dia " + label} formatter={(value: any) => [value, "Novas"]} contentStyle={{ fontSize: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,.10)", background: "#111722", color: "#fff" }} />
+              <Area type="monotone" dataKey="qtd" stroke="#fb923c" strokeWidth={2.5} fill="url(#adminGrowth)" activeDot={{ r: 4, fill: "#fb923c" }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400">Receita recorrente</p><h3 className="mt-1 text-sm font-bold text-white">Distribuição por plano</h3>
+          {planos.length === 0 ? <Empty msg="Sem planos ativos." /> : (
+            <ResponsiveContainer width="100%" height={145}>
+              <BarChart data={planos} margin={{ top: 18, right: 0, left: -28, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="4 4" stroke="rgba(148,163,184,.08)" vertical={false} />
+                <XAxis dataKey="nome" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => "R$" + Number(v) / 1000 + "k"} />
+                <RTooltip formatter={(value: any) => [brl(Number(value)), "MRR"]} contentStyle={{ fontSize: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,.10)", background: "#111722", color: "#fff" }} />
+                <Bar dataKey="receita" fill="#8b5cf6" radius={[7, 7, 2, 2]} maxBarSize={42} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-4">
+          <div className="flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">Saúde operacional</p><h3 className="mt-1 text-sm font-bold text-white">Serviços conectados</h3></div><Activity className="w-5 h-5 text-emerald-400" /></div>
+          <div className="mt-4 space-y-3"><OperationBar label="WhatsApp conectado" value={whatsapp} total={total} color="bg-emerald-400" /><OperationBar label="Bots ativos" value={bots} total={total} color="bg-orange-400" /><OperationBar label="Pipeline FSM" value={fsm} total={total} color="bg-violet-400" /></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+function OperationBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
+  const pct = Math.min(100, Math.round((value / total) * 100));
+  return <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-slate-500">{label}</span><strong className="text-slate-200">{value}/{total}</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><span className={"block h-full rounded-full " + color} style={{ width: pct + "%" }} /></div></div>;
+}
 // Faturas da plataforma (assinaturas via Asaas)
 // ============================================
 const FATURA_BADGE: Record<string, string> = {
@@ -1139,161 +1191,189 @@ function AlertasCard() {
 // ============================================
 // Assinaturas & Vencimentos (ciclo de 30 dias, suspensão manual)
 // ============================================
+
 function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanCatalogo[] }) {
   const [data, setData] = useState<import("../../lib/api").AssinaturasResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [busca, setBusca] = useState("");
+  const [filtro, setFiltro] = useState<"todas" | "recorrentes" | "atencao" | "sem_recorrencia">("todas");
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   async function load() {
-    try { setData(await adminApi.assinaturas()); } catch { /* silencioso */ }
-    setLoading(false);
+    try {
+      setData(await adminApi.assinaturas());
+    } catch {
+      setFeedback("Não foi possível atualizar as assinaturas.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
   async function ativarPlano(id: string, plano: string) {
-    setBusy(id);
-    try { await adminApi.alterarPlano(id, plano); await load(); } finally { setBusy(null); }
+    setBusy(id); setFeedback(null);
+    try {
+      await adminApi.alterarPlano(id, plano);
+      setFeedback("Plano alterado manualmente. Esta ação não recria a recorrência no Asaas.");
+      await load();
+    } finally { setBusy(null); }
   }
   async function renovar(id: string) {
-    setBusy(id);
-    try { await adminApi.renovar(id); await load(); } finally { setBusy(null); }
+    if (!window.confirm("Conceder 30 dias de acesso manual? Use apenas para pagamento confirmado fora do fluxo automático.")) return;
+    setBusy(id); setFeedback(null);
+    try {
+      await adminApi.renovar(id);
+      setFeedback("Crédito manual de 30 dias aplicado.");
+      await load();
+    } finally { setBusy(null); }
   }
   async function toggleSuspensao(id: string, suspender: boolean) {
-    if (suspender && !window.confirm("Suspender esta pizzaria? O atendimento será totalmente desligado (sem excluir dados).")) return;
-    setBusy(id);
-    try { await adminApi.suspender(id, suspender, suspender ? "Inadimplência" : undefined); await load(); } finally { setBusy(null); }
+    if (suspender && !window.confirm("Suspender esta pizzaria? O atendimento será desligado sem excluir os dados.")) return;
+    setBusy(id); setFeedback(null);
+    try {
+      await adminApi.suspender(id, suspender, suspender ? "Inadimplência" : undefined);
+      await load();
+    } finally { setBusy(null); }
+  }
+  async function cancelarRecorrencia(item: import("../../lib/api").AssinaturaItem) {
+    if (!window.confirm(`Cancelar a renovação automática de "${item.nome}"? O acesso atual permanece até ${fmtAdminDate(item.vence_em)}.`)) return;
+    setBusy(item.pizzaria_id); setFeedback(null);
+    try {
+      await pizzariasApi.cancelarAssinatura(item.pizzaria_id);
+      setFeedback(`Renovação automática de ${item.nome} cancelada no Asaas.`);
+      await load();
+    } catch (e: any) {
+      setFeedback(e.message || "Não foi possível cancelar a recorrência.");
+    } finally { setBusy(null); }
   }
 
-  const fmt = (s: string | null) => s ? new Date(s).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—";
-
-  if (loading) return null;
+  if (loading) return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-8 text-center"><Loader2 className="mx-auto w-5 h-5 animate-spin text-orange-400" /></div>;
   if (!data) return null;
 
-  const { assinaturas, alertas } = data;
-  const temAlerta = alertas.vence_amanha > 0 || alertas.vencida > 0 || (alertas.limite_ia ?? 0) > 0;
+  const { assinaturas, alertas, custo } = data;
+  const termo = busca.trim().toLocaleLowerCase("pt-BR");
+  const filtradas = assinaturas.filter((item) => {
+    const texto = `${item.nome} ${item.plano_nome} ${item.cobranca_email || ""}`.toLocaleLowerCase("pt-BR");
+    const matchBusca = !termo || texto.includes(termo);
+    const matchFiltro = filtro === "todas"
+      || (filtro === "recorrentes" && item.renovacao_automatica)
+      || (filtro === "atencao" && (item.alerta === "vencida" || item.alerta === "vence_amanha" || item.suspensa))
+      || (filtro === "sem_recorrencia" && !item.renovacao_automatica);
+    return matchBusca && matchFiltro;
+  });
+  const recorrentes = assinaturas.filter((item) => item.renovacao_automatica).length;
+  const semRecorrencia = assinaturas.length - recorrentes;
 
   return (
-    <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <h3 className="text-sm font-bold text-slate-800">Assinaturas & Vencimentos</h3>
-        <span className="text-xs text-slate-400">Ciclo de {data.ciclo_dias} dias · suspensão manual</span>
+    <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
+      <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.16),transparent_38%)] p-5 md:p-6">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-300"><Coins className="w-3.5 h-3.5" />{data.billing_disponivel ? "Asaas conectado" : "Asaas não configurado"}</div>
+            <h3 className="mt-4 text-xl font-black text-white">Central de assinaturas</h3>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">Acompanhe recorrências, vencimentos, consumo e intervenções manuais sem misturar pagamento automático com concessão administrativa.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 lg:w-[390px]">
+            <AdminMiniMetric label="Recorrentes" value={recorrentes} tone="emerald" />
+            <AdminMiniMetric label="Sem recorrência" value={semRecorrencia} tone="amber" />
+            <AdminMiniMetric label="Atenção" value={alertas.vencida + alertas.vence_amanha} tone="rose" />
+          </div>
+        </div>
+
+        {!data.billing_disponivel && <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-400/[0.07] p-3 text-xs text-amber-300"><AlertCircle className="mr-2 inline w-4 h-4" />Configure <strong>ASAAS_PLATFORM_API_KEY</strong>, o ambiente da API e o token do webhook para ativar cobranças reais.</div>}
+
+        <div className="mt-5 grid gap-2 md:grid-cols-3">
+          <BillingStep icon={Receipt} title="1. Fatura emitida" text="O Asaas oferece Pix, boleto ou cartão ao assinante." />
+          <BillingStep icon={Zap} title="2. Webhook recebido" text="Pagamento confirmado atualiza a fatura automaticamente." />
+          <BillingStep icon={CheckCircle2} title="3. Ciclo renovado" text="O plano ganha mais 30 dias e uma suspensão é removida." />
+        </div>
       </div>
 
-      {data.custo && (
-        <div className="mb-3 grid grid-cols-3 gap-2">
-          <div className="rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
-            <p className="text-[10px] text-emerald-700 font-medium">Receita (planos ativos)</p>
-            <p className="text-sm font-bold text-emerald-700">{brl(data.custo.receita_total)}</p>
-          </div>
-          <div className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2">
-            <p className="text-[10px] text-amber-700 font-medium">Custo IA estimado (mês)</p>
-            <p className="text-sm font-bold text-amber-700">{brl(data.custo.custo_total_estimado)}</p>
-          </div>
-          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-            <p className="text-[10px] text-slate-500 font-medium">Margem estimada</p>
-            <p className={`text-sm font-bold ${data.custo.margem_estimada >= 0 ? "text-slate-700" : "text-red-600"}`}>{brl(data.custo.margem_estimada)}</p>
-          </div>
+      {custo && (
+        <div className="grid grid-cols-1 gap-3 border-b border-white/10 p-4 sm:grid-cols-3 md:p-5">
+          <FinancialMetric label="Receita mensal ativa" value={brl(custo.receita_total)} detail={`${recorrentes} recorrência${recorrentes === 1 ? "" : "s"} automática${recorrentes === 1 ? "" : "s"}`} tone="emerald" />
+          <FinancialMetric label="Custo de IA estimado" value={brl(custo.custo_total_estimado)} detail={`${custo.tokens_total.toLocaleString("pt-BR")} tokens no mês`} tone="amber" />
+          <FinancialMetric label="Margem estimada" value={brl(custo.margem_estimada)} detail="Receita de planos menos custo de IA" tone={custo.margem_estimada >= 0 ? "violet" : "rose"} />
         </div>
       )}
 
-      {temAlerta && (
-        <div className="mb-3 flex flex-wrap gap-2">
-          {alertas.vencida > 0 && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-100 text-red-700">
-              {alertas.vencida} vencida(s)
-            </span>
-          )}
-          {alertas.vence_amanha > 0 && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700">
-              {alertas.vence_amanha} vence(m) em ≤1 dia
-            </span>
-          )}
-          {alertas.suspensas > 0 && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-200 text-slate-600">
-              {alertas.suspensas} suspensa(s)
-            </span>
-          )}
-          {(alertas.limite_ia ?? 0) > 0 && (
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-orange-100 text-orange-700">
-              {alertas.limite_ia} no limite de IA
-            </span>
-          )}
-        </div>
-      )}
+      {feedback && <div className="mx-4 mt-4 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-xs text-sky-300 md:mx-5">{feedback}</div>}
 
-      {assinaturas.length === 0 ? (
-        <p className="text-xs text-slate-400">Nenhuma assinatura ainda.</p>
-      ) : (
-        <div className="divide-y divide-slate-100">
-          {assinaturas.map((a) => {
-            const cor = a.suspensa ? "bg-slate-100 text-slate-500"
-              : a.alerta === "vencida" ? "bg-red-100 text-red-700"
-              : a.alerta === "vence_amanha" ? "bg-amber-100 text-amber-700"
-              : a.alerta === "sem_plano" ? "bg-slate-100 text-slate-500"
-              : "bg-emerald-100 text-emerald-700";
-            const label = a.suspensa ? "Suspensa"
-              : a.alerta === "vencida" ? `Vencida há ${Math.abs(a.dias_restantes ?? 0)}d`
-              : a.alerta === "sem_plano" ? "Sem plano"
-              : a.dias_restantes != null ? `Vence em ${a.dias_restantes}d` : "—";
+      <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:p-5 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-1">
+          {([
+            ["todas", "Todas"],
+            ["recorrentes", "Recorrentes"],
+            ["atencao", "Exigem atenção"],
+            ["sem_recorrencia", "Sem recorrência"],
+          ] as const).map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setFiltro(value)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold ${filtro === value ? "bg-white/10 text-white" : "text-slate-600 hover:text-slate-300"}`}>{label}</button>
+          ))}
+        </div>
+        <label className="relative lg:w-80"><Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-slate-600" /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa, plano ou e-mail" className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-700 focus:border-orange-400/50" /></label>
+      </div>
+
+      {filtradas.length === 0 ? <div className="p-12 text-center text-sm text-slate-600">Nenhuma assinatura corresponde aos filtros.</div> : (
+        <div className="divide-y divide-white/[0.07]">
+          {filtradas.map((item) => {
+            const emAtencao = item.alerta === "vencida" || item.alerta === "vence_amanha" || item.suspensa;
+            const usagePct = item.ia_limite ? Math.min(100, Math.round(item.ia_mensagens / item.ia_limite * 100)) : 0;
+            const status = item.suspensa ? "Suspensa" : item.alerta === "vencida" ? "Vencida" : item.alerta === "vence_amanha" ? "Vence em breve" : item.alerta === "sem_plano" ? "Sem ciclo" : "Em dia";
             return (
-              <div key={a.pizzaria_id} className="py-2.5 flex items-center gap-3 flex-wrap">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{a.nome}</p>
-                  <p className="text-[11px] text-slate-400">
-                    {a.plano_nome} · vence {fmt(a.vence_em)}
-                    {a.ia_limite > 0 && (
-                      <>
-                        {" · "}
-                        <span className={a.ia_mensagens >= a.ia_limite ? "text-orange-600 font-semibold" : ""}>
-                          Atend. {a.ia_mensagens}/{a.ia_limite}
-                        </span>
-                      </>
-                    )}
-                    {a.custo_por_atendimento != null && (
-                      <> {" · "}custo/atend. {brl(a.custo_por_atendimento)}</>
-                    )}
-                    {a.margem != null && (
-                      <>
-                        {" · "}
-                        <span className={a.margem < 0 ? "text-red-600 font-semibold" : "text-emerald-600"}>
-                          margem {brl(a.margem)}
-                        </span>
-                      </>
-                    )}
-                  </p>
+              <article key={item.pizzaria_id} className="p-4 transition-colors hover:bg-white/[0.02] md:p-5">
+                <div className="grid gap-4 xl:grid-cols-[minmax(260px,1fr)_minmax(240px,.8fr)_auto] xl:items-center">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="truncate text-sm font-black text-white">{item.nome}</h4>
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${item.renovacao_automatica ? "bg-emerald-400/10 text-emerald-300" : "bg-amber-400/10 text-amber-300"}`}>{item.renovacao_automatica ? "Asaas recorrente" : "Sem renovação"}</span>
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${emAtencao ? "bg-rose-400/10 text-rose-300" : "bg-white/5 text-slate-500"}`}>{status}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{item.plano_nome} • {brl(item.preco_mensal)}/mês • vence {fmtAdminDate(item.vence_em)}</p>
+                    <p className="mt-1 text-[10px] text-slate-700">{item.cobranca_email || "E-mail de cobrança ainda não informado"}</p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between text-[10px]"><span className="font-bold uppercase tracking-wider text-slate-600">Atendimentos do mês</span><strong className={usagePct >= 90 ? "text-rose-300" : usagePct >= 75 ? "text-amber-300" : "text-slate-300"}>{item.ia_mensagens}/{item.ia_limite}</strong></div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><span className={`block h-full rounded-full ${usagePct >= 90 ? "bg-rose-400" : usagePct >= 75 ? "bg-amber-400" : "bg-violet-400"}`} style={{ width: `${usagePct}%` }} /></div>
+                    <p className="mt-2 text-[10px] text-slate-700">Custo IA {brl(item.ia_custo || 0)} • margem {brl(item.margem || 0)}</p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                    <select
+                      value={item.plano}
+                      disabled={busy === item.pizzaria_id || !!item.renovacao_automatica}
+                      onChange={(e) => ativarPlano(item.pizzaria_id, e.target.value)}
+                      title={item.renovacao_automatica ? "Troque o plano pela aba Assinatura da pizzaria para sincronizar com o Asaas." : "Alteração manual de plano"}
+                      className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-bold text-slate-300 disabled:opacity-40"
+                    >
+                      {catalogo.map((plano) => <option key={plano.id} value={plano.id}>{plano.nome}</option>)}
+                    </select>
+                    <button type="button" onClick={() => renovar(item.pizzaria_id)} disabled={busy === item.pizzaria_id} title="Crédito manual para pagamento confirmado fora do Asaas" className="rounded-lg border border-sky-400/15 bg-sky-400/[0.07] px-2.5 py-1.5 text-xs font-bold text-sky-300 disabled:opacity-40">+30d manual</button>
+                    <button type="button" onClick={() => toggleSuspensao(item.pizzaria_id, !item.suspensa)} disabled={busy === item.pizzaria_id} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-40 ${item.suspensa ? "bg-emerald-400/10 text-emerald-300" : "bg-rose-400/[0.07] text-rose-300"}`}>{item.suspensa ? "Reativar" : "Suspender"}</button>
+                    {item.renovacao_automatica && <button type="button" onClick={() => cancelarRecorrencia(item)} disabled={busy === item.pizzaria_id} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:border-rose-400/20 hover:text-rose-300 disabled:opacity-40">{busy === item.pizzaria_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancelar Asaas"}</button>}
+                  </div>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${cor}`}>{label}</span>
-                <select
-                  value={a.alerta === "sem_plano" ? "" : a.plano}
-                  disabled={busy === a.pizzaria_id}
-                  onChange={(e) => { if (e.target.value) ativarPlano(a.pizzaria_id, e.target.value); }}
-                  title={a.alerta === "sem_plano" ? "Ativar plano (inicia ciclo de 30 dias)" : "Trocar plano (reinicia o ciclo)"}
-                  className={`text-xs px-2 py-1 rounded-lg border outline-none cursor-pointer disabled:opacity-50 font-medium ${
-                    a.alerta === "sem_plano"
-                      ? "bg-violet-600 text-white border-violet-600"
-                      : "bg-violet-50 text-violet-700 border-violet-200"
-                  }`}
-                >
-                  {a.alerta === "sem_plano" && <option value="" disabled>Ativar plano…</option>}
-                  {(catalogo.length ? catalogo : [{ id: a.plano, nome: a.plano_nome }]).map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-                </select>
-                <button onClick={() => renovar(a.pizzaria_id)} disabled={busy === a.pizzaria_id}
-                  className="text-xs px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-medium disabled:opacity-50">
-                  Renovar +30d
-                </button>
-                <button onClick={() => toggleSuspensao(a.pizzaria_id, !a.suspensa)} disabled={busy === a.pizzaria_id}
-                  className={`text-xs px-2.5 py-1 rounded-lg font-medium disabled:opacity-50 ${
-                    a.suspensa ? "bg-sky-50 text-sky-700 hover:bg-sky-100" : "bg-red-50 text-red-700 hover:bg-red-100"
-                  }`}>
-                  {a.suspensa ? "Reativar" : "Suspender"}
-                </button>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
     </section>
   );
+}
+
+function fmtAdminDate(value: string | null) {
+  return value ? new Date(value).toLocaleDateString("pt-BR") : "—";
+}
+function AdminMiniMetric({ label, value, tone }: { label: string; value: number; tone: "emerald" | "amber" | "rose" }) {
+  const color = { emerald: "text-emerald-300", amber: "text-amber-300", rose: "text-rose-300" }[tone];
+  return <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-center"><p className={`text-xl font-black ${color}`}>{value}</p><p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-600">{label}</p></div>;
+}
+function BillingStep({ icon: Icon, title, text }: { icon: any; title: string; text: string }) {
+  return <div className="flex items-start gap-3 rounded-2xl border border-white/[0.07] bg-black/20 p-3.5"><span className="grid w-8 h-8 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300"><Icon className="w-4 h-4" /></span><div><p className="text-xs font-black text-white">{title}</p><p className="mt-1 text-[10px] leading-relaxed text-slate-600">{text}</p></div></div>;
+}
+function FinancialMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "emerald" | "amber" | "violet" | "rose" }) {
+  const color = { emerald: "text-emerald-300", amber: "text-amber-300", violet: "text-violet-300", rose: "text-rose-300" }[tone];
+  return <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{label}</p><p className={`mt-2 text-xl font-black ${color}`}>{value}</p><p className="mt-1 text-[10px] text-slate-700">{detail}</p></div>;
 }

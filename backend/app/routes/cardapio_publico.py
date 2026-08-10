@@ -65,6 +65,7 @@ class PizzariaPublica(BaseModel):
     telefone_contato: str | None
     instagram: str | None
     horario_funcionamento: dict[str, Any]
+    tema_cardapio: dict[str, Any]
     formas_pagamento_aceitas: list[str]
     taxa_entrega_info: str | None
     taxa_entrega_fixa: float | None
@@ -109,6 +110,7 @@ class PedidoDigitalIn(BaseModel):
     endereco_lat: float | None = None
     endereco_lon: float | None = None
     forma_pagamento: str = Field(min_length=1, max_length=30)
+    cupom: str | None = Field(default=None, max_length=40)
     observacoes: str | None = Field(default=None, max_length=500)
     itens: list[ItemPedidoIn] = Field(min_length=1, max_length=50)
     # Honeypot anti-bot (campo invisível no form — se preenchido, é bot)
@@ -165,11 +167,14 @@ def _recalcular_itens(
 # ============================================
 # Helper: verificar horário
 # ============================================
-def _esta_aberto(horario: dict[str, Any]) -> bool:
-    """Verifica se a pizzaria está aberta agora (simplificado)."""
+def _esta_aberto(pizzaria: Pizzaria) -> bool:
+    """Verifica o override manual antes do horário programado."""
     try:
         from app.services.business_hours import esta_aberto
-        return esta_aberto(horario)
+        return esta_aberto(
+            pizzaria.horario_funcionamento or {},
+            override=getattr(pizzaria, "aberto_manual", None),
+        )
     except Exception:
         return True  # na dúvida, permite o pedido
 
@@ -187,6 +192,55 @@ def _limpar_telefone(tel: str) -> str:
     elif not digits.startswith("55") and len(digits) >= 12:
         pass  # já tem DDI
     return digits
+
+def _calcular_desconto(
+    tema_cardapio: dict[str, Any] | None,
+    codigo: str | None,
+    subtotal: Decimal,
+) -> tuple[Decimal, str | None]:
+    """Valida o cupom configurado pela loja e calcula o desconto no servidor."""
+    codigo_normalizado = (codigo or "").strip().upper()
+    if not codigo_normalizado:
+        return Decimal("0"), None
+
+    cupons = (tema_cardapio or {}).get("cupons") or []
+    cupom = next(
+        (
+            item for item in cupons
+            if isinstance(item, dict)
+            and str(item.get("codigo") or "").strip().upper() == codigo_normalizado
+        ),
+        None,
+    )
+    if not cupom or not bool(cupom.get("ativo", True)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cupom inválido ou indisponível.")
+
+    validade = cupom.get("validade")
+    if validade:
+        try:
+            data_validade = datetime.fromisoformat(str(validade).replace("Z", "+00:00")).date()
+            if data_validade < datetime.now(timezone.utc).date():
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este cupom expirou.")
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cupom com validade inválida.") from exc
+
+    pedido_minimo = Decimal(str(cupom.get("pedido_minimo") or 0))
+    if subtotal < pedido_minimo:
+        minimo_fmt = f"{float(pedido_minimo):.2f}".replace(".", ",")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Este cupom exige pedido mínimo de R$ {minimo_fmt}.",
+        )
+
+    valor = max(Decimal("0"), Decimal(str(cupom.get("valor") or 0)))
+    if cupom.get("tipo") == "percentual":
+        valor = min(valor, Decimal("100"))
+        desconto = subtotal * valor / Decimal("100")
+    else:
+        desconto = valor
+    desconto = min(subtotal, desconto).quantize(Decimal("0.01"))
+    return desconto, codigo_normalizado
+
 
 
 # ============================================
@@ -245,6 +299,7 @@ async def get_menu(
         telefone_contato=pizz.telefone_contato or pizz.telefone_admin,
         instagram=getattr(pizz, "instagram", None),
         horario_funcionamento=pizz.horario_funcionamento or {},
+        tema_cardapio=getattr(pizz, "tema_cardapio", None) or {},
         formas_pagamento_aceitas=pizz.formas_pagamento_aceitas or [],
         taxa_entrega_info=pizz.taxa_entrega_info,
         taxa_entrega_fixa=float(pizz.taxa_entrega_fixa) if pizz.taxa_entrega_fixa else None,
@@ -254,7 +309,7 @@ async def get_menu(
         tempo_entrega_max=pizz.tempo_entrega_max,
         tempo_retirada_min=pizz.tempo_retirada_min,
         tempo_retirada_max=pizz.tempo_retirada_max,
-        aberto=_esta_aberto(pizz.horario_funcionamento or {}),
+        aberto=_esta_aberto(pizz),
     )
 
     return MenuResponse(pizzaria=pizzaria_pub, produtos=produtos)
@@ -263,6 +318,56 @@ async def get_menu(
 # ============================================
 # POST /menu/{slug}/pedido — Finalizar pedido
 # ============================================
+@router.get("/{slug}/pedido/{numero}/acompanhar")
+async def acompanhar_pedido(
+    slug: str,
+    numero: int,
+    telefone: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Consulta pública mínima do andamento, protegida por número + telefone."""
+    await _check_rate(request, max_hits=20, scope="track")
+    telefone_limpo = _limpar_telefone(telefone)
+    if numero < 1 or len(telefone_limpo) < 12:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe um pedido e telefone válidos.")
+
+    pizz = (
+        await db.execute(select(Pizzaria).where(Pizzaria.slug == slug))
+    ).scalar_one_or_none()
+    if not pizz or getattr(pizz, "suspensa", False):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado.")
+
+    pedido = (
+        await db.execute(
+            select(Pedido)
+            .join(Cliente, Pedido.cliente_id == Cliente.id)
+            .where(
+                Pedido.pizzaria_id == pizz.id,
+                Pedido.numero_pedido == numero,
+                Cliente.telefone == telefone_limpo,
+            )
+        )
+    ).scalar_one_or_none()
+    if not pedido:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado. Confira os dados.")
+
+    tempo = (
+        f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
+        if pedido.tipo == "delivery"
+        else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min"
+    )
+    return {
+        "numero_pedido": pedido.numero_pedido,
+        "status": pedido.status,
+        "tipo": pedido.tipo,
+        "criado_em": pedido.created_at.isoformat(),
+        "atualizado_em": pedido.updated_at.isoformat(),
+        "tempo_estimado": tempo,
+        "entregador_nome": pedido.entregador.nome if pedido.entregador else None,
+    }
+
+
 @router.post("/{slug}/pedido", status_code=status.HTTP_201_CREATED)
 async def criar_pedido_digital(
     slug: str,
@@ -286,6 +391,11 @@ async def criar_pedido_digital(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
     if getattr(pizz, "suspensa", False):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Esta pizzaria não está recebendo pedidos no momento.")
+    if not _esta_aberto(pizz):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A pizzaria está fechada no momento e não está recebendo novos pedidos.",
+        )
 
     # ── Verificação de cota do plano ──────────────────────────────────────────
     # O cardápio digital também consome a cota de atendimentos mensais.
@@ -354,6 +464,7 @@ async def criar_pedido_digital(
     }
 
     itens_json, subtotal = _recalcular_itens(body.itens, produtos_map, adicionais_precos)
+    desconto, cupom_codigo = _calcular_desconto(getattr(pizz, "tema_cardapio", None), body.cupom, subtotal)
 
     # Taxa de entrega
     taxa_entrega = Decimal("0")
@@ -369,7 +480,7 @@ async def criar_pedido_digital(
         if taxa_entrega == 0 and pizz.taxa_entrega_fixa:
             taxa_entrega = Decimal(str(pizz.taxa_entrega_fixa))
 
-    valor_total = subtotal + taxa_entrega
+    valor_total = subtotal - desconto + taxa_entrega
 
     # Cria ou busca cliente
     cli = (
@@ -401,6 +512,12 @@ async def criar_pedido_digital(
     # digital setava o número em Python (MAX+1) com chave de lock diferente, então
     # podia colidir com um pedido do WhatsApp criado ao mesmo tempo. Não setando o
     # número aqui, TODOS os fluxos passam pelo mesmo lock do trigger.
+    observacoes_pedido = body.observacoes
+    if desconto > 0 and cupom_codigo:
+        desconto_fmt = f"{float(desconto):.2f}".replace(".", ",")
+        nota_cupom = f"Cupom {cupom_codigo}: desconto de R$ {desconto_fmt}"
+        observacoes_pedido = f"{observacoes_pedido}\n{nota_cupom}".strip() if observacoes_pedido else nota_cupom
+
     pedido = Pedido(
         pizzaria_id=pizz.id,
         cliente_id=cli.id,
@@ -412,7 +529,7 @@ async def criar_pedido_digital(
         endereco_lat=body.endereco_lat if body.tipo == "delivery" else None,
         endereco_lon=body.endereco_lon if body.tipo == "delivery" else None,
         forma_pagamento=body.forma_pagamento,
-        observacoes=body.observacoes,
+        observacoes=observacoes_pedido,
         origem="cardapio_digital",
         bot_ativo=False,  # Pedidos digitais não passam pelo bot
     )
@@ -473,9 +590,13 @@ async def criar_pedido_digital(
         "numero_pedido": pedido.numero_pedido,
         "valor_total": float(pedido.valor_total),
         "taxa_entrega": float(taxa_entrega),
-        "tempo_estimado": f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
+        "desconto": float(desconto),
+        "cupom_codigo": cupom_codigo,
+        "tempo_estimado": (
+            f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
             if body.tipo == "delivery"
-            else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min",
+            else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min"
+        ),
     }
 
 

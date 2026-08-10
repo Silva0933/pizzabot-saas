@@ -180,6 +180,50 @@ class TestAplicarPagamento:
 # ============================================
 # upsert_fatura (idempotência)
 # ============================================
+class TestCancelarAssinatura:
+    def test_cancela_no_asaas_e_sincroniza_faturas(self, monkeypatch):
+        from app.services import billing_plataforma as bp
+
+        pizz = MagicMock()
+        pizz.id = uuid.uuid4()
+        pizz.asaas_subscription_id = "sub_ativa"
+        pizz.plano_vence_em = None
+        db = MagicMock()
+        db.execute = AsyncMock()
+        db.commit = AsyncMock()
+        client = MagicMock()
+        client.cancelar_assinatura = AsyncMock()
+        monkeypatch.setattr(bp, "PlatformAsaasClient", lambda: client)
+
+        out = asyncio.run(bp.cancelar_assinatura(db, pizz))
+
+        client.cancelar_assinatura.assert_awaited_once_with("sub_ativa")
+        assert pizz.asaas_subscription_id is None
+        assert out["cancelada"] is True
+        assert out["renovacao_automatica"] is False
+        sql = str(db.execute.await_args.args[0])
+        assert "status = 'cancelada'" in sql
+        assert "pendente" in sql and "vencida" in sql
+        db.commit.assert_awaited_once()
+
+    def test_sem_recorrencia_e_idempotente(self):
+        from app.services import billing_plataforma as bp
+
+        pizz = MagicMock()
+        pizz.id = uuid.uuid4()
+        pizz.asaas_subscription_id = None
+        pizz.plano_vence_em = None
+        db = MagicMock()
+        db.execute = AsyncMock()
+        db.commit = AsyncMock()
+
+        out = asyncio.run(bp.cancelar_assinatura(db, pizz))
+
+        assert out["cancelada"] is False
+        db.execute.assert_not_awaited()
+        db.commit.assert_not_awaited()
+
+
 class TestUpsertFatura:
     def test_cria_quando_nao_existe(self):
         from app.services.billing_plataforma import upsert_fatura

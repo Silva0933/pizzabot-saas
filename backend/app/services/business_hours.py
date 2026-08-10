@@ -40,11 +40,18 @@ def _to_minutes(hhmm: str | None) -> int | None:
         return None
 
 
-def esta_aberto(horarios: dict[str, Any] | None, now: datetime | None = None) -> bool:
+def esta_aberto(
+    horarios: dict[str, Any] | None,
+    now: datetime | None = None,
+    *,
+    override: bool | None = None,
+) -> bool:
     """
-    True se a pizzaria está aberta agora. Em caso de config ausente/legada,
-    retorna True (não bloqueia o atendimento).
+    True se a pizzaria está aberta agora. O override manual tem prioridade
+    sobre a agenda. Em caso de config ausente/legada, retorna True.
     """
+    if override is not None:
+        return override
     if not horarios:
         return True
     now = now or (datetime.now(TZ) if TZ else datetime.now())

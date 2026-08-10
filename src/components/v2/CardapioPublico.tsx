@@ -14,6 +14,10 @@ import {
   PedidoDigitalPayload,
   PedidoDigitalResponse,
   ApiError,
+  TemaCardapioConfig,
+  CampanhaCardapio,
+  CupomCardapio,
+  PedidoAcompanhamento,
 } from "../../lib/api";
 import "../../styles/cardapio-publico.css";
 
@@ -44,6 +48,33 @@ const CAT_EMOJI: Record<string, string> = {
 const CAT_COLOR: Record<string, string> = {
   pizza: "#f97316", lanche: "#eab308", bebida: "#3b82f6", sobremesa: "#ec4899", outro: "#8b5cf6", todos: "#f97316",
 };
+
+const THEME_DEFAULTS: Record<string, TemaCardapioConfig> = {
+  brasa: { modelo: "brasa", fonte_titulo: "anton", fonte_texto: "inter", cor_primaria: "#f26b21", cor_secundaria: "#ff4d22", cor_fundo: "#090907", bordas: "suaves" },
+  trattoria: { modelo: "trattoria", fonte_titulo: "playfair", fonte_texto: "nunito", cor_primaria: "#a52a2a", cor_secundaria: "#d39b45", cor_fundo: "#f5ecdf", bordas: "suaves" },
+  metropole: { modelo: "metropole", fonte_titulo: "outfit", fonte_texto: "montserrat", cor_primaria: "#b7f34a", cor_secundaria: "#7c5cff", cor_fundo: "#0b1020", bordas: "arredondadas" },
+};
+const THEME_TITLE_FONTS: Record<string, string> = {
+  anton: '"Anton SC", Impact, sans-serif', bebas: '"Bebas Neue", Impact, sans-serif',
+  playfair: '"Playfair Display", Georgia, serif', outfit: '"Outfit", Inter, sans-serif',
+};
+const THEME_BODY_FONTS: Record<string, string> = {
+  inter: 'Inter, Arial, sans-serif', montserrat: 'Montserrat, Arial, sans-serif',
+  nunito: 'Nunito, Arial, sans-serif', outfit: 'Outfit, Arial, sans-serif',
+};
+const THEME_RADII: Record<string, string> = { retas: "4px", suaves: "14px", arredondadas: "28px" };
+
+function resolveTheme(raw?: TemaCardapioConfig | null): TemaCardapioConfig {
+  const modelo = raw?.modelo && THEME_DEFAULTS[raw.modelo] ? raw.modelo : "brasa";
+  return {
+    ...THEME_DEFAULTS[modelo],
+    chamada: "FEITO NA HORA. DO SEU JEITO.",
+    titulo: "O SABOR QUE|ACENDE A FOME.",
+    descricao: "Escolha seus favoritos, personalize o pedido e receba tudo quentinho onde estiver.",
+    ...(raw || {}),
+    modelo,
+  };
+}
 
 // ============================================
 // Componente Principal
@@ -91,6 +122,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<PedidoDigitalResponse | null>(null);
+  const [cupomInput, setCupomInput] = useState("");
+  const [cupomAplicado, setCupomAplicado] = useState<string | null>(null);
+  const [cupomFeedback, setCupomFeedback] = useState<string | null>(null);
+  const [trackingOpen, setTrackingOpen] = useState(false);
+  const [trackingForm, setTrackingForm] = useState({ numero: "", telefone: "" });
+  const [tracking, setTracking] = useState<PedidoAcompanhamento | null>(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+
 
   // Modal de produto
   const [modalTamanho, setModalTamanho] = useState<string | null>(null);
@@ -100,11 +140,24 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
   // ---- Load ----
   useEffect(() => {
+    let active = true;
     setLoading(true);
     menuApi.getBySlug(slug)
-      .then(setData)
-      .catch((e: ApiError) => setError(e.message || "Cardápio não encontrado"))
-      .finally(() => setLoading(false));
+      .then((menu) => { if (active) { setData(menu); setError(null); } })
+      .catch((e: ApiError) => { if (active) setError(e.message || "Cardápio não encontrado"); })
+      .finally(() => { if (active) setLoading(false); });
+
+    // Atualiza o aviso quando o proprietário abre/fecha a loja no painel.
+    const refreshTimer = window.setInterval(() => {
+      menuApi.getBySlug(slug)
+        .then((menu) => { if (active) setData(menu); })
+        .catch(() => { /* mantém a última versão válida em falhas transitórias */ });
+    }, 30_000);
+
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+    };
   }, [slug]);
 
   // ---- Categorias ----
@@ -113,6 +166,19 @@ export function CardapioPublico({ slug }: { slug: string }) {
     const set = new Set(data.produtos.map(p => p.categoria || "outro"));
     return ["todos", ...Array.from(set)];
   }, [data]);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`pizzabot:last-order:${slug}`);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      if (parsed?.numero && parsed?.telefone) {
+        setTrackingForm({ numero: String(parsed.numero), telefone: String(parsed.telefone) });
+      }
+    } catch {
+      // Armazenamento indisponível ou dado antigo inválido.
+    }
+  }, [slug]);
+
 
   // ---- Produtos filtrados ----
   const produtosFiltrados = useMemo(() => {
@@ -145,8 +211,45 @@ export function CardapioPublico({ slug }: { slug: string }) {
   // Validação do telefone: precisa de DDD (Brasil = 10-11 dígitos com DDD).
   const telDigits = checkoutForm.telefone.replace(/\D/g, "");
   const telValido = telDigits.length >= 10;
+  const campanhasAtivas = useMemo(
+    () => ((data?.pizzaria.tema_cardapio?.campanhas || []) as CampanhaCardapio[])
+      .filter((item) => item.ativa)
+      .sort((a, b) => a.ordem - b.ordem),
+    [data],
+  );
+  const cuponsAtivos = useMemo(
+    () => ((data?.pizzaria.tema_cardapio?.cupons || []) as CupomCardapio[]).filter((item) => item.ativo),
+    [data],
+  );
+  const cupomSelecionado = useMemo(
+    () => cuponsAtivos.find((item) => item.codigo.trim().toUpperCase() === cupomAplicado),
+    [cuponsAtivos, cupomAplicado],
+  );
+  const descontoEstimado = useMemo(() => {
+    if (!cupomSelecionado) return 0;
+    const validade = cupomSelecionado.validade ? new Date(`${cupomSelecionado.validade}T23:59:59`) : null;
+    if (validade && validade.getTime() < Date.now()) return 0;
+    if (cartTotal < Number(cupomSelecionado.pedido_minimo || 0)) return 0;
+    const bruto = cupomSelecionado.tipo === "percentual"
+      ? cartTotal * Math.min(100, Number(cupomSelecionado.valor)) / 100
+      : Number(cupomSelecionado.valor);
+    return Math.min(cartTotal, Math.max(0, bruto));
+  }, [cartTotal, cupomSelecionado]);
+  const totalEstimado = Math.max(0, cartTotal - descontoEstimado) + taxaEntrega;
+
+  useEffect(() => {
+    if (!trackingOpen || !tracking || !trackingForm.numero || !trackingForm.telefone) return;
+    const timer = window.setInterval(() => {
+      menuApi.trackOrder(slug, Number(trackingForm.numero), trackingForm.telefone)
+        .then(setTracking)
+        .catch(() => undefined);
+    }, 20_000);
+    return () => window.clearInterval(timer);
+  }, [trackingOpen, tracking, trackingForm.numero, trackingForm.telefone, slug]);
+
 
   function addToCart(produto: MenuProduto, tamanho: string | null, preco: number, qtd: number, obs: string, adicionais: string[]) {
+    if (!data?.pizzaria.aberto) return;
     const key = `${produto.id}-${tamanho || "unico"}`;
     setCart(prev => {
       const existing = prev.find(i => i.id === key && i.observacao === obs);
@@ -175,10 +278,52 @@ export function CardapioPublico({ slug }: { slug: string }) {
       return newQty === 0 ? null! : { ...i, quantidade: newQty };
     }).filter(Boolean));
   }
+  function aplicarCupom(codigo = cupomInput) {
+    const normalizado = codigo.trim().toUpperCase();
+    const cupom = cuponsAtivos.find((item) => item.codigo.trim().toUpperCase() === normalizado);
+    if (!cupom) {
+      setCupomAplicado(null);
+      setCupomFeedback("Cupom inválido ou indisponível.");
+      return;
+    }
+    if (cupom.validade && new Date(`${cupom.validade}T23:59:59`).getTime() < Date.now()) {
+      setCupomAplicado(null);
+      setCupomFeedback("Este cupom expirou.");
+      return;
+    }
+    if (cartTotal < Number(cupom.pedido_minimo || 0)) {
+      setCupomAplicado(null);
+      setCupomFeedback(`Pedido mínimo de ${fmt(Number(cupom.pedido_minimo))} para usar este cupom.`);
+      return;
+    }
+    setCupomInput(normalizado);
+    setCupomAplicado(normalizado);
+    setCupomFeedback("Cupom aplicado com sucesso.");
+  }
+
+  async function consultarPedido() {
+    if (!trackingForm.numero || trackingForm.telefone.replace(/\D/g, "").length < 10) {
+      setTrackingError("Informe o número do pedido e o telefone com DDD.");
+      return;
+    }
+    setTrackingLoading(true);
+    setTrackingError(null);
+    try {
+      const andamento = await menuApi.trackOrder(slug, Number(trackingForm.numero), trackingForm.telefone);
+      setTracking(andamento);
+    } catch (e: any) {
+      setTracking(null);
+      setTrackingError(e.message || "Pedido não encontrado.");
+    } finally {
+      setTrackingLoading(false);
+    }
+  }
+
 
   // ---- Botão "+" do card: adiciona direto ou abre o seletor de tamanho ----
   function handleQuickAdd(e: React.MouseEvent, p: MenuProduto) {
     e.stopPropagation();
+    if (!data?.pizzaria.aberto) return;
     if (p.tamanhos && p.tamanhos.length > 0) {
       setQuickPick(p); // tem variação → escolhe o tamanho ali mesmo
     } else {
@@ -198,7 +343,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }
 
   function confirmAddToCart() {
-    if (!selectedProduto) return;
+    if (!selectedProduto || !data?.pizzaria.aberto) return;
     const p = selectedProduto;
     let preco = Number(p.preco);
     if (p.tamanhos && modalTamanho) {
@@ -219,6 +364,10 @@ export function CardapioPublico({ slug }: { slug: string }) {
   // ---- Submit pedido ----
   async function submitPedido() {
     if (!data) return;
+    if (!data.pizzaria.aberto) {
+      setSubmitError("A pizzaria está fechada no momento e não está recebendo novos pedidos.");
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     const payload: PedidoDigitalPayload = {
@@ -234,6 +383,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
       forma_pagamento: checkoutForm.pagamento,
       observacoes: checkoutForm.observacoes || undefined,
       itens: cart.map(i => ({
+      cupom: cupomAplicado || undefined,
         produto_id: i.produtoId,
         nome: i.nome + (i.tamanho ? ` (${i.tamanho})` : ""),
         quantidade: i.quantidade,
@@ -248,6 +398,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
       const res = await menuApi.submitOrder(slug, payload);
       setResultado(res);
       setStep("confirmacao");
+      setCupomAplicado(null);
+      setCupomInput("");
+      setTrackingForm({ numero: String(res.numero_pedido), telefone: checkoutForm.telefone });
+      try {
+        localStorage.setItem(
+          `pizzabot:last-order:${slug}`,
+          JSON.stringify({ numero: res.numero_pedido, telefone: checkoutForm.telefone }),
+        );
+      } catch { /* modo privado */ }
       setCart([]);
     } catch (e: any) {
       setSubmitError(e.message || "Erro ao enviar pedido");
@@ -301,6 +460,34 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
   const pizz = data.pizzaria;
   const waUrl = waLink(pizz.telefone_contato);
+  const tema = resolveTheme(pizz.tema_cardapio);
+  const tituloTema = String(tema.titulo || "O SABOR QUE|ACENDE A FOME.").split("|");
+  const themeStyle = {
+    "--accent": tema.cor_primaria,
+    "--accent2": tema.cor_secundaria,
+    "--bg": tema.cor_fundo,
+    "--theme-display": THEME_TITLE_FONTS[tema.fonte_titulo || "anton"],
+    "--theme-body": THEME_BODY_FONTS[tema.fonte_texto || "inter"],
+    "--theme-radius": THEME_RADII[tema.bordas || "suaves"],
+  } as React.CSSProperties;
+  const trackingSteps = tracking ? (
+    tracking.tipo === "delivery"
+      ? [
+          { key: "confirmado", label: "Confirmado", detail: "O pedido entrou na operação." },
+          { key: "no_forno", label: "Em preparo", detail: "A cozinha está preparando tudo." },
+          { key: "pronto_entrega", label: "Pronto", detail: "O pedido está pronto para sair." },
+          { key: "a_caminho", label: "A caminho", detail: tracking.entregador_nome ? `${tracking.entregador_nome} está levando seu pedido.` : "O pedido saiu para entrega." },
+          { key: "entregue", label: "Entregue", detail: "Pedido finalizado. Bom apetite!" },
+        ]
+      : [
+          { key: "confirmado", label: "Confirmado", detail: "O pedido entrou na operação." },
+          { key: "no_forno", label: "Em preparo", detail: "A cozinha está preparando tudo." },
+          { key: "pronto_entrega", label: "Pronto para retirada", detail: "Já pode vir buscar seu pedido." },
+          { key: "entregue", label: "Retirado", detail: "Pedido finalizado. Bom apetite!" },
+        ]
+  ) : [];
+  const trackingIndex = tracking ? Math.max(0, trackingSteps.findIndex((item) => item.key === tracking.status)) : 0;
+
 
   // Card de produto reutilizado pela grade plana e pelas seções por categoria.
   function renderProduct(p: MenuProduto) {
@@ -330,8 +517,13 @@ export function CardapioPublico({ slug }: { slug: string }) {
               {temVariacao && <span className="cdp-price-from">a partir de</span>}
               <span className="cdp-price">{fmt(preco)}</span>
             </div>
-            <div className="cdp-product-add-btn" role="button" aria-label="Adicionar"
-              onClick={(e) => handleQuickAdd(e, p)}>+</div>
+            <div
+              className={`cdp-product-add-btn ${!pizz.aberto ? "disabled" : ""}`}
+              role="button"
+              aria-label={pizz.aberto ? "Adicionar" : "Loja fechada"}
+              aria-disabled={!pizz.aberto}
+              onClick={(e) => handleQuickAdd(e, p)}
+            >{pizz.aberto ? "+" : "—"}</div>
           </div>
         </div>
       </button>
@@ -339,7 +531,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="cdp-root">
+    <div className={`cdp-root cdp-theme-${tema.modelo || "brasa"} cdp-radius-${tema.bordas || "suaves"}`} style={themeStyle}>
       <div className="cdp-wrapper">
 
         {/* ===== CONFIRMAÇÃO ===== */}
@@ -364,12 +556,21 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   <span>{fmt(resultado.taxa_entrega)}</span>
                 </div>
               )}
+              {resultado.desconto > 0 && (
+                <div className="cdp-confirmacao-row cdp-confirmacao-row-sm cdp-discount-row">
+                  <span>Cupom {resultado.cupom_codigo}</span>
+                  <span>- {fmt(resultado.desconto)}</span>
+                </div>
+              )}
               <div className="cdp-confirmacao-divider" />
               <div className="cdp-confirmacao-row">
                 <span>⏱️ Previsão</span>
                 <span className="cdp-confirmacao-eta">{resultado.tempo_estimado}</span>
               </div>
             </div>
+            <button className="cdp-btn-secondary cdp-btn-lg cdp-track-confirmed" onClick={() => { setStep("menu"); setResultado(null); setTrackingOpen(true); }}>
+              Acompanhar este pedido
+            </button>
             <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setStep("menu"); setResultado(null); }}>
               🛍️ Fazer outro pedido
             </button>
@@ -409,13 +610,39 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     <span className="cdp-checkout-item-price">{fmt(taxaEntrega)}</span>
                   </div>
                 )}
-                <div className="cdp-checkout-total-row">
+                {descontoEstimado > 0 && (
+                  <div className="cdp-checkout-item cdp-checkout-item-discount">
+                    <div className="cdp-checkout-item-qty">%</div>
+                    <div className="cdp-checkout-item-name">Cupom {cupomAplicado}</div>
+                    <span className="cdp-checkout-item-price">- {fmt(descontoEstimado)}</span>
+                  </div>
+                )}
                   <span>Total</span>
-                  <span className="cdp-checkout-total-price">{fmt(cartTotal + taxaEntrega)}</span>
+                <div className="cdp-checkout-total-row">
+                  <span className="cdp-checkout-total-price">{fmt(totalEstimado)}</span>
                 </div>
               </div>
 
               {/* Dados pessoais */}
+              {cuponsAtivos.length > 0 && (
+                <div className="cdp-coupon-box">
+                  <div className="cdp-coupon-copy"><strong>Tem um cupom?</strong><small>Insira o código para conferir seu desconto.</small></div>
+                  <div className="cdp-coupon-form">
+                    <input value={cupomInput} onChange={(e) => { setCupomInput(e.target.value.toUpperCase()); setCupomFeedback(null); }} onKeyDown={(e) => e.key === "Enter" && aplicarCupom()} placeholder="CÓDIGO" />
+                    <button type="button" onClick={() => aplicarCupom()}>Aplicar</button>
+                  </div>
+                  {cupomFeedback && <p className={cupomAplicado ? "success" : "error"}>{cupomFeedback}</p>}
+                  {cuponsAtivos.length > 0 && (
+                    <div className="cdp-coupon-suggestions">
+                      {cuponsAtivos.slice(0, 3).map((cupom) => (
+                        <button key={cupom.id} type="button" onClick={() => { setCupomInput(cupom.codigo); aplicarCupom(cupom.codigo); }}>
+                          <b>{cupom.codigo}</b><span>{cupom.descricao || (cupom.tipo === "percentual" ? `${cupom.valor}% OFF` : `${fmt(cupom.valor)} OFF`)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="cdp-section-label">👤 Seus dados</div>
               <div className="cdp-checkout-card cdp-checkout-card-inputs">
                 <div className="cdp-input-group">
@@ -551,14 +778,14 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
               <button
                 className="cdp-btn-primary cdp-btn-lg cdp-btn-submit"
-                disabled={submitting || !checkoutForm.nome || !telValido || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
+                disabled={!pizz.aberto || submitting || !checkoutForm.nome || !telValido || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
                 onClick={submitPedido}
               >
                 {submitting ? (
                   <span className="cdp-btn-loading">
                     <span className="cdp-mini-spinner" /> Enviando...
                   </span>
-                ) : `✅ Confirmar Pedido • ${fmt(cartTotal + taxaEntrega)}`}
+                ) : `✅ Confirmar Pedido • ${fmt(totalEstimado)}`}
               </button>
             </div>
           </>
@@ -642,8 +869,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   </div>
 
                   <div className="cdp-cart-cta">
-                    <button className="cdp-btn-primary cdp-btn-lg" onClick={() => setStep("checkout")}>
-                      Continuar • {fmt(cartTotal)}
+                    <button className="cdp-btn-primary cdp-btn-lg" disabled={!pizz.aberto} onClick={() => setStep("checkout")}>
+                      {pizz.aberto ? `Continuar • ${fmt(cartTotal)}` : "Loja fechada"}
                     </button>
                     <button className="cdp-cart-add-more" onClick={() => setStep("menu")}>
                       + Adicionar mais itens
@@ -769,8 +996,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 <span>{modalQtd}</span>
                 <button onClick={() => setModalQtd(modalQtd + 1)}>+</button>
               </div>
-              <button className="cdp-btn-primary cdp-btn-add" onClick={confirmAddToCart}>
-                Adicionar • {fmt(precoTotal)}
+              <button className="cdp-btn-primary cdp-btn-add" disabled={!pizz.aberto} onClick={confirmAddToCart}>
+                {pizz.aberto ? `Adicionar • ${fmt(precoTotal)}` : "Loja fechada"}
               </button>
             </div>
           </>
@@ -779,6 +1006,57 @@ export function CardapioPublico({ slug }: { slug: string }) {
           /* ===== MENU PRINCIPAL ===== */
           <>
             {/* Banner hero da pizzaria */}
+            <div className="cdp-offerbar">
+              <span>Pedido direto, atendimento mais rápido</span>
+              <strong>
+                {pizz.aberto && <span className="cdp-kitchen-live-dot" aria-hidden="true"><i /></span>}
+                {pizz.aberto ? "Cozinha aberta agora" : "Confira nosso cardápio"}
+              </strong>
+            </div>
+
+            <nav className="cdp-site-header" aria-label="Navegação do cardápio">
+              <button className="cdp-site-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+                {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
+                <span><strong>{pizz.nome}</strong><small>Cardápio digital</small></span>
+              </button>
+              <div className="cdp-site-links">
+                <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Início</button>
+                <button onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>Cardápio</button>
+                {campanhasAtivas.length > 0 && <button onClick={() => document.getElementById("promocoes")?.scrollIntoView({ behavior: "smooth" })}>Promoções</button>}
+                {pizz.endereco_maps_url && <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">Nossa localização</a>}
+                <button onClick={() => document.getElementById("como-pedir")?.scrollIntoView({ behavior: "smooth" })}>Como pedir</button>
+              </div>
+              <div className="cdp-site-actions">
+                {pizz.endereco_maps_url && (
+                  <a className="cdp-header-location" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer" aria-label="Abrir nossa localização">
+                    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                    <span>Localização</span>
+                  </a>
+                )}
+                {tema.mostrar_acompanhamento !== false && (
+                  <button className="cdp-header-track" onClick={() => setTrackingOpen(true)}>
+                    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    <span>Acompanhar pedido</span>
+                  </button>
+                )}
+                {waUrl && <a href={waUrl} target="_blank" rel="noopener noreferrer" className="cdp-header-contact">Atendimento</a>}
+                <button className="cdp-header-cart" onClick={() => setSacolaOpen(true)}>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
+                  <span>Sacola</span><b>{cartCount}</b>
+                </button>
+              </div>
+            </nav>
+
+            {!pizz.aberto && (
+              <div className="cdp-closed-notice" role="status">
+                <span>🔒</span>
+                <div>
+                  <strong>Pedidos pausados no momento</strong>
+                  <small>Você pode consultar o cardápio, mas novos pedidos estão temporariamente bloqueados.</small>
+                </div>
+              </div>
+            )}
+
             <header className="cdp-banner">
               {pizz.banner_url ? (
                 <img src={pizz.banner_url} alt="" className="cdp-banner-img" />
@@ -787,7 +1065,6 @@ export function CardapioPublico({ slug }: { slug: string }) {
               ) : (
                 <div className="cdp-banner-img cdp-banner-fallback" />
               )}
-              <div className="cdp-banner-particles"><span /><span /><span /></div>
               <div className="cdp-banner-scrim" />
 
               <div className="cdp-banner-content">
@@ -799,7 +1076,28 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   <div className="cdp-logo-placeholder">🍕</div>
                 )}
                 <div className="cdp-banner-info">
-                  <h1 className="cdp-name">{pizz.nome}</h1>
+                  <p className="cdp-hero-eyebrow">{tema.chamada}</p>
+                  <h1 className="cdp-name">{tituloTema[0]}{tituloTema.length > 1 && <><br/><em>{tituloTema.slice(1).join(" ")}</em></>}</h1>
+                  <p className="cdp-hero-description">
+                    {tema.descricao}
+                  </p>
+                  <div className="cdp-hero-ctas">
+                    <button className="cdp-hero-primary" onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>
+                      Ver cardápio <span>→</span>
+                    </button>
+                    {pizz.endereco_maps_url && (
+                      <a className="cdp-hero-secondary" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">
+                        Como chegar
+                      </a>
+                    )}
+                  </div>
+                  {cuponsAtivos[0] && (
+                    <button className="cdp-hero-coupon" onClick={() => { setCupomInput(cuponsAtivos[0].codigo); setCupomAplicado(cuponsAtivos[0].codigo.toUpperCase()); document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" }); }}>
+                      <small>USE O CUPOM</small>
+                      <b>{cuponsAtivos[0].codigo}</b>
+                      <span>{cuponsAtivos[0].descricao || (cuponsAtivos[0].tipo === "percentual" ? `${cuponsAtivos[0].valor}% OFF` : `${fmt(cuponsAtivos[0].valor)} OFF`)}</span>
+                    </button>
+                  )}
                   <div className="cdp-status-row">
                     <span className={`cdp-status-pill ${pizz.aberto ? "open" : "closed"}`}>
                       <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} />
@@ -834,8 +1132,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
             </header>
 
+            <section className="cdp-trust-strip" aria-label="Diferenciais">
+              <div><span>◷</span><strong>{pizz.tempo_entrega_min && pizz.tempo_entrega_max ? `${pizz.tempo_entrega_min}–${pizz.tempo_entrega_max} min` : "Entrega rápida"}</strong><small>Tempo estimado</small></div>
+              <div><span>🔥</span><strong>Feito na hora</strong><small>Mais sabor no seu pedido</small></div>
+              <div><span>✦</span><strong>Personalizável</strong><small>Escolha tamanhos e adicionais</small></div>
+              <div><span>⌖</span><strong>{pizz.endereco ? "Retirada disponível" : "Pedido online"}</strong><small>Prático do início ao fim</small></div>
+            </section>
+
             {/* ===== LAYOUT BODY (sidebar + main) ===== */}
-            <div className="cdp-menu-body">
+            <div className="cdp-menu-body" id="cardapio">
 
               {/* Sidebar esquerda (desktop) / inline (mobile) */}
               <aside className="cdp-sidebar">
@@ -962,8 +1267,143 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </main>
             </div>{/* fim cdp-menu-body */}
 
+            {campanhasAtivas.length > 0 && (
+              <section className="cdp-campaigns" id="promocoes">
+                <header><p>OFERTAS DA CASA</p><h2>APROVEITE ANTES QUE ACABE</h2><span>Campanhas preparadas especialmente para você.</span></header>
+                <div className="cdp-campaign-grid">
+                  {campanhasAtivas.map((campanha, index) => (
+                    <article key={campanha.id} className={index === 0 ? "featured" : ""}>
+                      {campanha.imagem_url && <img src={campanha.imagem_url} alt="" loading="lazy" />}
+                      <div className="cdp-campaign-scrim" />
+                      <div className="cdp-campaign-content">
+                        <small>{campanha.etiqueta || "OFERTA"}</small>
+                        <h3>{campanha.titulo}</h3>
+                        {campanha.subtitulo && <p>{campanha.subtitulo}</p>}
+                        <button onClick={() => {
+                          if (campanha.cupom_codigo) {
+                            setCupomInput(campanha.cupom_codigo);
+                            setCupomAplicado(campanha.cupom_codigo.toUpperCase());
+                          }
+                          document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" });
+                        }}>{campanha.cta_label || "Escolher agora"} <span>→</span></button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {campanhasAtivas.length === 0 && (
+              <section className="cdp-promo-band">
+                <div>
+                  <p>PEÇA DO SEU JEITO</p>
+                  <h2>SABOR DE VERDADE.<br/><em>SEM COMPLICAÇÃO.</em></h2>
+                  <span>Monte seu pedido, escolha entrega ou retirada e acompanhe tudo pelo cardápio.</span>
+                  <button className="cdp-hero-primary" onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>Escolher agora →</button>
+                </div>
+                <strong><small>PEDIDO</small><br/>DIRETO</strong>
+              </section>
+            )}
+
+            <section className="cdp-order-steps" id="como-pedir">
+              <header><p>SIMPLES COMO DEVE SER</p><h2>SEU PEDIDO EM 3 PASSOS</h2></header>
+              <div>
+                <article><small>01</small><i>☰</i><h3>ESCOLHA</h3><p>Navegue pelas categorias e encontre seus favoritos.</p></article>
+                <article><small>02</small><i>＋</i><h3>PERSONALIZE</h3><p>Defina tamanho, adicionais e observações.</p></article>
+                <article><small>03</small><i>⌖</i><h3>RECEBA</h3><p>Informe o endereço ou escolha retirada no local.</p></article>
+              </div>
+            </section>
+
+
+            {pizz.endereco_maps_url && (
+              <section className="cdp-location-section" id="localizacao">
+                <div className="cdp-location-copy">
+                  <p>VENHA NOS VISITAR</p>
+                  <h2>NOSSA<br/><em>LOCALIZAÇÃO</em></h2>
+                  <span>Abra a rota no Google Maps ou no aplicativo de navegação disponível no seu aparelho.</span>
+                  <div className="cdp-location-address">
+                    <svg width="21" height="21" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
+                    <div><small>ENDEREÇO</small><strong>{pizz.endereco || "Veja o endereço completo no mapa"}</strong></div>
+                  </div>
+                  <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer" className="cdp-location-cta">
+                    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18 3 21l3-6 8-8a2.8 2.8 0 0 1 4 4l-9 7Z"/><path d="m14 7 4 4"/></svg>
+                    Abrir rota <span>→</span>
+                  </a>
+                </div>
+                <div className="cdp-location-visual" aria-hidden="true">
+                  <div className="cdp-map-grid" />
+                  <div className="cdp-map-route" />
+                  <div className="cdp-map-pin"><span>●</span><b>{pizz.nome}</b></div>
+                  <small>TOQUE EM “ABRIR ROTA” PARA NAVEGAR</small>
+                </div>
+              </section>
+            )}
+            <section className="cdp-business-info">
+              <div className="cdp-business-brand">
+                {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
+                <div><strong>{pizz.nome}</strong><small>Feito com carinho, entregue com sabor.</small></div>
+              </div>
+              <div><small>ONDE ESTAMOS</small><strong>{pizz.endereco || "Consulte nossa área de atendimento"}</strong></div>
+              <div><small>FALE COM A GENTE</small><strong>{pizz.telefone_contato || "Atendimento pelo pedido online"}</strong></div>
+            </section>
+
+            <footer className="cdp-site-footer">
+              <span>© {new Date().getFullYear()} {pizz.nome}</span>
+              <span>Cardápio digital • PizzaBot</span>
+            </footer>
+
+            {waUrl && (
+              <a className="cdp-whatsapp-float" href={waUrl} target="_blank" rel="noopener noreferrer" aria-label="Falar no WhatsApp">
+                <svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+              </a>
+            )}
+
+            {trackingOpen && (
+              <div className="cdp-tracking-overlay" onClick={() => setTrackingOpen(false)}>
+                <section className="cdp-tracking-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Acompanhar pedido">
+                  <header className="cdp-tracking-head">
+                    <div><small>ATUALIZAÇÃO EM TEMPO REAL</small><h2>Acompanhar pedido</h2><p>Use o número do pedido e o mesmo telefone informado na compra.</p></div>
+                    <button onClick={() => setTrackingOpen(false)} aria-label="Fechar">×</button>
+                  </header>
+                  <div className="cdp-tracking-form">
+                    <label><span>Número do pedido</span><input type="number" min="1" value={trackingForm.numero} onChange={(e) => setTrackingForm((f) => ({ ...f, numero: e.target.value }))} placeholder="Ex: 154" /></label>
+                    <label><span>Telefone com DDD</span><input type="tel" value={trackingForm.telefone} onChange={(e) => setTrackingForm((f) => ({ ...f, telefone: e.target.value }))} placeholder="(11) 99999-9999" /></label>
+                    <button onClick={consultarPedido} disabled={trackingLoading}>{trackingLoading ? "Consultando..." : "Ver andamento"}</button>
+                  </div>
+                  {trackingError && <div className="cdp-tracking-error">{trackingError}</div>}
+                  {tracking && (
+                    <div className="cdp-tracking-result">
+                      <div className="cdp-tracking-summary">
+                        <div><small>PEDIDO</small><strong>#{tracking.numero_pedido}</strong></div>
+                        <div><small>PREVISÃO</small><strong>{tracking.tempo_estimado}</strong></div>
+                        <span className={tracking.status === "cancelado" ? "cancelled" : "live"}>{tracking.status === "cancelado" ? "Cancelado" : "Em andamento"}</span>
+                      </div>
+                      {tracking.status === "cancelado" ? (
+                        <div className="cdp-tracking-cancelled"><strong>Este pedido foi cancelado</strong><p>Entre em contato com a loja se precisar de ajuda.</p></div>
+                      ) : (
+                        <div className="cdp-tracking-timeline">
+                          {trackingSteps.map((item, index) => {
+                            const done = index <= trackingIndex;
+                            const current = index === trackingIndex && tracking.status !== "entregue";
+                            return (
+                              <div key={item.key} className={`cdp-tracking-step ${done ? "done" : ""} ${current ? "current" : ""}`}>
+                                <span className="cdp-tracking-dot">{done ? "✓" : index + 1}</span>
+                                <div><strong>{item.label}</strong><small>{item.detail}</small></div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <p className="cdp-tracking-refresh">Atualizamos automaticamente a cada 20 segundos.</p>
+                    </div>
+                  )}
+                  {!tracking && !trackingError && <div className="cdp-tracking-empty"><span>⌖</span><strong>Seu pedido, etapa por etapa</strong><p>Consulte para saber quando está em preparo, pronto ou a caminho.</p></div>}
+                </section>
+              </div>
+            )}
             {/* Carrinho flutuante (mobile only) */}
             {cartCount > 0 && (
+
               <div className={`cdp-floating-cart ${cartPulse ? "pulse" : ""}`} onClick={() => setSacolaOpen(true)}>
                 <div className="cdp-floating-cart-left">
                   <div className="cdp-floating-cart-badge">
@@ -1030,8 +1470,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
                           <span>Subtotal</span>
                           <span className="cdp-sacola-subtotal-val">{fmt(cartTotal)}</span>
                         </div>
-                        <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setSacolaOpen(false); setStep("checkout"); }}>
-                          Continuar • {fmt(cartTotal)}
+                        <button className="cdp-btn-primary cdp-btn-lg" disabled={!pizz.aberto} onClick={() => { setSacolaOpen(false); setStep("checkout"); }}>
+                          {pizz.aberto ? `Continuar • ${fmt(cartTotal)}` : "Loja fechada"}
                         </button>
                         <button className="cdp-sacola-add-more" onClick={() => setSacolaOpen(false)}>
                           + Adicionar mais itens

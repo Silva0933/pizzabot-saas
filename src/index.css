@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton+SC&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Montserrat:wght@400;500;600;700;800;900&family=Nunito:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,600;1,700&display=swap');
 @import "tailwindcss";
 
 /* ============================================================
@@ -109,3 +109,264 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background-color: #94a3b8;
 }
+/* ============================================================
+   Painel carvão + brasa — tema administrativo alinhado à vitrine.
+   As regras são escopadas ao AppShell para não afetar login,
+   entregadores nem o cardápio público.
+   ============================================================ */
+.pzb-admin-shell {
+  color-scheme: dark;
+  background: #0b0a09;
+  --pzb-admin-bg: #100e0c;
+  --pzb-admin-surface: #171411;
+  --pzb-admin-surface-2: #211b17;
+  --pzb-admin-line: #342920;
+  --pzb-admin-text: #f8f1ea;
+  --pzb-admin-muted: #a99d94;
+  --pzb-admin-accent: #f26b21;
+  /* Tokens semânticos usados pelas telas v2 (bg-surface, text-ink etc.). */
+  --color-canvas: #100e0c;
+  --color-surface: #171411;
+  --color-surface-muted: #211b17;
+  --color-line: #3a2d24;
+  --color-ink: #f8f1ea;
+  --color-ink-muted: #b3a69d;
+  --color-ink-subtle: #80736a;
+  --shadow-card: 0 1px 0 rgba(255,255,255,.035), 0 12px 30px rgba(0,0,0,.2);
+  --shadow-card-hover: 0 18px 42px rgba(0,0,0,.32);
+}
+.pzb-admin-content {
+  background:
+    radial-gradient(circle at 74% -10%, rgba(242, 107, 33, .08), transparent 35%),
+    var(--pzb-admin-bg);
+}
+.pzb-admin-sidebar {
+  background: #0d0b0a !important;
+  border-color: var(--pzb-admin-line) !important;
+  box-shadow: 18px 0 55px rgba(0, 0, 0, .18);
+}
+.pzb-admin-sidebar > div,
+.pzb-admin-sidebar nav,
+.pzb-admin-sidebar nav + div { border-color: var(--pzb-admin-line) !important; }
+.pzb-admin-sidebar nav button {
+  min-height: 42px;
+  border-radius: 9px;
+}
+.pzb-admin-sidebar nav button:hover { background: var(--pzb-admin-surface-2) !important; color: var(--pzb-admin-text) !important; }
+.pzb-admin-sidebar .bg-brand-50 {
+  background: rgba(242, 107, 33, .14) !important;
+  color: #ff985f !important;
+  box-shadow: inset 0 0 0 1px rgba(242, 107, 33, .16);
+}
+.pzb-admin-sidebar .bg-brand-gradient { background-image: linear-gradient(135deg, #f26b21, #ff4d22); }
+.pzb-admin-topbar {
+  min-height: 68px;
+  background: rgba(14, 12, 10, .92) !important;
+  border-color: var(--pzb-admin-line) !important;
+  backdrop-filter: blur(18px);
+}
+.pzb-admin-topbar h1 {
+  color: var(--pzb-admin-text) !important;
+  font-family: "Anton SC", Impact, sans-serif;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.pzb-admin-topbar > div:first-child p { color: var(--pzb-admin-muted) !important; }
+.pzb-admin-user-menu,
+.pzb-admin-mobile-more,
+.pzb-admin-bottom-nav {
+  background: #171411 !important;
+  border-color: var(--pzb-admin-line) !important;
+}
+.pzb-admin-content > main {
+  min-height: calc(100vh - 68px);
+  background:
+    radial-gradient(circle at 82% 0%, rgba(242, 107, 33, .055), transparent 27%),
+    #100e0c !important;
+}
+.pzb-admin-shell .bg-white,
+.pzb-admin-shell .bg-slate-50,
+.pzb-admin-shell .bg-slate-50\/20,
+.pzb-admin-shell .bg-slate-50\/30,
+.pzb-admin-shell .bg-slate-50\/50,
+.pzb-admin-shell .bg-slate-50\/70 {
+  background-color: var(--pzb-admin-surface) !important;
+}
+.pzb-admin-shell .bg-slate-100,
+.pzb-admin-shell .bg-slate-200,
+.pzb-admin-shell .bg-gray-50 {
+  background-color: var(--pzb-admin-surface-2) !important;
+}
+.pzb-admin-shell .bg-white\/60,
+.pzb-admin-shell .bg-white\/70,
+.pzb-admin-shell .bg-white\/80,
+.pzb-admin-shell .bg-surface,
+.pzb-admin-shell .bg-surface-elevated {
+  background-color: var(--pzb-admin-surface) !important;
+}
+.pzb-admin-shell .bg-surface-muted,
+.pzb-admin-shell .bg-\[\#f7f3ee\] {
+  background-color: var(--pzb-admin-surface-2) !important;
+}
+.pzb-admin-shell .text-ink { color: var(--pzb-admin-text) !important; }
+.pzb-admin-shell .text-ink-muted { color: var(--pzb-admin-muted) !important; }
+.pzb-admin-shell .text-ink-subtle { color: #80736a !important; }
+.pzb-admin-shell .border-line { border-color: var(--pzb-admin-line) !important; }
+.pzb-admin-shell .ring-line { --tw-ring-color: var(--pzb-admin-line) !important; }
+.pzb-admin-shell .border-slate-50,
+.pzb-admin-shell .border-slate-100,
+.pzb-admin-shell .border-slate-150,
+.pzb-admin-shell .border-slate-200,
+.pzb-admin-shell .border-gray-100,
+.pzb-admin-shell .border-gray-200 {
+  border-color: var(--pzb-admin-line) !important;
+}
+.pzb-admin-shell .divide-slate-100 > :not(:last-child),
+.pzb-admin-shell .divide-slate-200 > :not(:last-child) {
+  border-color: var(--pzb-admin-line) !important;
+}
+.pzb-admin-shell .text-slate-900,
+.pzb-admin-shell .text-slate-800,
+.pzb-admin-shell .text-slate-700,
+.pzb-admin-shell .text-gray-900,
+.pzb-admin-shell .text-gray-800 {
+  color: var(--pzb-admin-text) !important;
+}
+.pzb-admin-shell .text-slate-600,
+.pzb-admin-shell .text-slate-500,
+.pzb-admin-shell .text-gray-600,
+.pzb-admin-shell .text-gray-500 {
+  color: var(--pzb-admin-muted) !important;
+}
+.pzb-admin-shell .text-slate-400,
+.pzb-admin-shell .text-slate-300,
+.pzb-admin-shell .text-gray-400 {
+  color: #7e7269 !important;
+}
+.pzb-admin-shell .text-brand-600,
+.pzb-admin-shell .text-brand-700,
+.pzb-admin-shell .text-orange-500,
+.pzb-admin-shell .text-orange-600,
+.pzb-admin-shell .text-orange-700 {
+  color: #ff8746 !important;
+}
+.pzb-admin-shell .bg-brand-50,
+.pzb-admin-shell .bg-orange-50,
+.pzb-admin-shell .bg-orange-100 {
+  background-color: rgba(242, 107, 33, .13) !important;
+}
+.pzb-admin-shell .border-orange-100,
+.pzb-admin-shell .border-orange-200,
+.pzb-admin-shell .border-brand-100,
+.pzb-admin-shell .border-brand-200 {
+  border-color: rgba(242, 107, 33, .3) !important;
+}
+.pzb-admin-shell .shadow-sm,
+.pzb-admin-shell .shadow-md,
+.pzb-admin-shell .shadow-lg {
+  --tw-shadow-color: rgba(0, 0, 0, .42);
+}
+.pzb-admin-shell input:not([type="checkbox"]):not([type="radio"]),
+.pzb-admin-shell textarea,
+.pzb-admin-shell select {
+  background-color: #0f0d0b !important;
+  border-color: var(--pzb-admin-line) !important;
+  color: var(--pzb-admin-text) !important;
+}
+.pzb-admin-shell input::placeholder,
+.pzb-admin-shell textarea::placeholder { color: #6f635a !important; }
+.pzb-admin-shell select option { background: #171411; color: var(--pzb-admin-text); }
+.pzb-admin-shell input:focus,
+.pzb-admin-shell textarea:focus,
+.pzb-admin-shell select:focus {
+  border-color: var(--pzb-admin-accent) !important;
+  box-shadow: 0 0 0 3px rgba(242, 107, 33, .11) !important;
+}
+.pzb-admin-shell table { color: var(--pzb-admin-text); }
+.pzb-admin-shell thead { background: #211b17 !important; }
+.pzb-admin-shell tr { border-color: var(--pzb-admin-line) !important; }
+.pzb-admin-shell [class*="hover:bg-slate-"]:hover,
+.pzb-admin-shell [class*="hover:bg-gray-"]:hover {
+  background-color: var(--pzb-admin-surface-2) !important;
+}
+.pzb-admin-shell ::-webkit-scrollbar-thumb { background-color: #49372b; }
+.pzb-admin-shell ::-webkit-scrollbar-thumb:hover { background-color: #624632; }
+@media (max-width: 767px) {
+  .pzb-admin-content > main { padding-bottom: 58px; }
+  .pzb-admin-topbar { min-height: 60px; }
+  .pzb-admin-bottom-nav { box-shadow: 0 -12px 35px rgba(0, 0, 0, .32); }
+}
+.pzb-admin-shell .pzb-admin-sidebar.bg-white { background: #0d0b0a !important; }
+.pzb-admin-shell .pzb-admin-topbar.bg-white { background: rgba(14, 12, 10, .94) !important; }
+
+
+/* Platform admin: executive dark workspace */
+.pzb-platform-admin {
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at 75% -10%, rgba(249, 115, 22, .10), transparent 30%),
+    #070b12;
+}
+.pzb-platform-admin .bg-white { background-color: #111722 !important; }
+.pzb-platform-admin .bg-slate-50,
+.pzb-platform-admin .bg-gray-50 { background-color: #0c121b !important; }
+.pzb-platform-admin .bg-slate-100,
+.pzb-platform-admin .bg-gray-100 { background-color: #18202c !important; }
+.pzb-platform-admin .border-slate-100,
+.pzb-platform-admin .border-slate-200,
+.pzb-platform-admin .border-gray-100,
+.pzb-platform-admin .border-gray-200 { border-color: rgba(255, 255, 255, .09) !important; }
+.pzb-platform-admin .divide-slate-100 > :not(:last-child),
+.pzb-platform-admin .divide-slate-200 > :not(:last-child) { border-color: rgba(255, 255, 255, .075) !important; }
+.pzb-platform-admin .text-slate-900,
+.pzb-platform-admin .text-slate-800,
+.pzb-platform-admin .text-slate-700 { color: #eef2f7 !important; }
+.pzb-platform-admin .text-slate-600,
+.pzb-platform-admin .text-slate-500 { color: #94a3b8 !important; }
+.pzb-platform-admin .text-slate-400 { color: #64748b !important; }
+.pzb-platform-admin .bg-orange-50,
+.pzb-platform-admin .bg-orange-100 { background-color: rgba(249, 115, 22, .12) !important; }
+.pzb-platform-admin .bg-emerald-50,
+.pzb-platform-admin .bg-emerald-100 { background-color: rgba(52, 211, 153, .11) !important; }
+.pzb-platform-admin .bg-violet-50,
+.pzb-platform-admin .bg-violet-100 { background-color: rgba(139, 92, 246, .12) !important; }
+.pzb-platform-admin .bg-red-50,
+.pzb-platform-admin .bg-red-100 { background-color: rgba(244, 63, 94, .11) !important; }
+.pzb-platform-admin .bg-amber-50,
+.pzb-platform-admin .bg-amber-100 { background-color: rgba(251, 191, 36, .10) !important; }
+.pzb-platform-admin .border-orange-100,
+.pzb-platform-admin .border-orange-200 { border-color: rgba(249, 115, 22, .24) !important; }
+.pzb-platform-admin .border-emerald-100,
+.pzb-platform-admin .border-emerald-200 { border-color: rgba(52, 211, 153, .22) !important; }
+.pzb-platform-admin .border-violet-100,
+.pzb-platform-admin .border-violet-200 { border-color: rgba(139, 92, 246, .22) !important; }
+.pzb-platform-admin .border-red-100,
+.pzb-platform-admin .border-red-200 { border-color: rgba(244, 63, 94, .22) !important; }
+.pzb-platform-admin .border-amber-100,
+.pzb-platform-admin .border-amber-200 { border-color: rgba(251, 191, 36, .22) !important; }
+.pzb-platform-admin input:not([type="checkbox"]):not([type="radio"]),
+.pzb-platform-admin textarea,
+.pzb-platform-admin select {
+  background-color: #0b111a !important;
+  border-color: rgba(255, 255, 255, .11) !important;
+  color: #eef2f7 !important;
+}
+.pzb-platform-admin input::placeholder,
+.pzb-platform-admin textarea::placeholder { color: #526074 !important; }
+.pzb-platform-admin select option { background: #111722; color: #eef2f7; }
+.pzb-platform-admin input:focus,
+.pzb-platform-admin textarea:focus,
+.pzb-platform-admin select:focus {
+  border-color: rgba(249, 115, 22, .65) !important;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, .10) !important;
+}
+.pzb-platform-admin [class*="hover:bg-slate-"]:hover,
+.pzb-platform-admin [class*="hover:bg-gray-"]:hover { background-color: rgba(255, 255, 255, .06) !important; }
+.pzb-platform-admin .shadow-sm,
+.pzb-platform-admin .shadow-md,
+.pzb-platform-admin .shadow-lg,
+.pzb-platform-admin .shadow-2xl { --tw-shadow-color: rgba(0, 0, 0, .5); }
+.pzb-platform-admin ::-webkit-scrollbar-thumb { background-color: #263244; }
+.pzb-platform-admin ::-webkit-scrollbar-thumb:hover { background-color: #34445b; }
