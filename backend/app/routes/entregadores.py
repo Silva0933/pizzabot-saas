@@ -373,7 +373,10 @@ async def atualizar_status_entregador(
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado ou não é seu")
 
-    return await apply_status_change(db, pizzaria_id, p, body.status)
+    return await apply_status_change(
+        db, pizzaria_id, p, body.status,
+        ator_id=ent.usuario_id, ator_nome=ent.nome, ator_tipo="entregador",
+    )
 
 
 @driver_router.patch("/disponibilidade")

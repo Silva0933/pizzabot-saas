@@ -116,6 +116,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   // Seletor rápido de tamanho ao clicar no "+" (sem entrar no produto).
   const [quickPick, setQuickPick] = useState<MenuProduto | null>(null);
   const cartTargetRef = useRef<HTMLButtonElement>(null);
+  const checkoutRequestKeyRef = useRef<string | null>(null);
 
   // Carrinho
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -453,7 +454,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
       website: "",
     };
     try {
-      const res = await menuApi.submitOrder(slug, payload);
+      if (!checkoutRequestKeyRef.current) {
+        checkoutRequestKeyRef.current = crypto.randomUUID?.() ||
+          `pedido-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
+      const res = await menuApi.submitOrder(slug, payload, checkoutRequestKeyRef.current);
       setResultado(res);
       setStep("confirmacao");
       setCupomAplicado(null);
@@ -466,6 +471,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
         );
       } catch { /* modo privado */ }
       setCart([]);
+      checkoutRequestKeyRef.current = null;
     } catch (e: any) {
       setSubmitError(e.message || "Erro ao enviar pedido");
     }

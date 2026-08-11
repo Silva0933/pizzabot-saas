@@ -9,10 +9,11 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Loader2, AlertCircle, Package, ClipboardList, Hourglass,
   ChefHat, DollarSign, CalendarDays, Gauge,
+  History, TriangleAlert, Wrench, CircleCheck,
 } from "lucide-react";
-import { pedidosApi, pizzariasApi, entregadoresApi, BackendPedido, BackendEntregador, UsoPizzaria } from "../../lib/api";
+import { pedidosApi, pizzariasApi, entregadoresApi, BackendPedido, BackendEntregador, PedidoEvento, UsoPizzaria } from "../../lib/api";
 import { OnboardingChecklist, OnboardingItem } from "./OnboardingChecklist";
-import { StatCard } from "../ui";
+import { Button, Modal, StatCard } from "../ui";
 import { ORDER_STATUS_LIST, orderStatusLabel } from "../../lib/orderStatus";
 import { OrderCard } from "./pedidos/OrderCard";
 import { OrderBoard } from "./pedidos/OrderBoard";
@@ -33,7 +34,6 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [movingIds, setMovingIds] = useState<Set<string>>(new Set());
-  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [payingIds, setPayingIds] = useState<Set<string>>(new Set());
   // Pedidos cujo comprovante já chegou nesta sessão (destaque mais forte no card).
   const [comprovanteIds, setComprovanteIds] = useState<Set<string>>(new Set());
@@ -42,6 +42,13 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
   // Entregadores ativos (para o seletor de atribuição nos cards de delivery).
   const [entregadores, setEntregadores] = useState<BackendEntregador[]>([]);
   const [assigningIds, setAssigningIds] = useState<Set<string>>(new Set());
+  const [modoProblemas, setModoProblemas] = useState(false);
+  const [pedidosProblema, setPedidosProblema] = useState<BackendPedido[]>([]);
+  const [historico, setHistorico] = useState<{ pedido: BackendPedido; eventos: PedidoEvento[] } | null>(null);
+  const [acao, setAcao] = useState<{ tipo: "corrigir" | "problema" | "resolver"; pedido: BackendPedido } | null>(null);
+  const [statusCorrecao, setStatusCorrecao] = useState("confirmado");
+  const [justificativa, setJustificativa] = useState("");
+  const [salvandoAcao, setSalvandoAcao] = useState(false);
 
   function loadUso() {
     return pizzariasApi.uso(pizzariaId).then(setUso).catch(() => {});
@@ -81,6 +88,11 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       .catch((e) => setErr(e.message));
   }
 
+  function loadProblemas() {
+    return pedidosApi.problemas(pizzariaId).then(setPedidosProblema).catch((e) => setErr(e.message));
+  }
+
+
   useEffect(() => {
     setLoading(true);
     load().finally(() => setLoading(false));
@@ -104,17 +116,19 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       liveEvent.tipo === "pagamento.manual_pendente"
     ) {
       load();
+      if (modoProblemas) loadProblemas();
       loadUso();  // novos pedidos podem refletir um novo atendimento contabilizado
     }
-  }, [liveEvent]);
+  }, [liveEvent, modoProblemas]);
 
   // Lista filtrada por status apenas — data já é filtrada no backend (hoje).
   const filtrados = useMemo(() => {
-    return pedidos.filter((p) => {
+    const origem = modoProblemas ? pedidosProblema : pedidos;
+    return origem.filter((p) => {
       if (statusFiltro && p.status !== statusFiltro) return false;
       return true;
     });
-  }, [pedidos, statusFiltro]);
+  }, [pedidos, pedidosProblema, modoProblemas, statusFiltro]);
 
   // Métricas (sobre a lista filtrada).
   const stats = useMemo(() => {
@@ -147,23 +161,54 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
     }
   }
 
-  async function removerPedido(p: BackendPedido) {
-    if (deletingIds.has(p.id)) return;
-    const ok = window.confirm(`Excluir o Pedido #${p.numero_pedido ?? "—"}? Esta ação é irreversível.`);
-    if (!ok) return;
-
+  async function abrirHistorico(pedido: BackendPedido) {
     setErr(null);
-    setDeletingIds((s) => new Set(s).add(p.id));
-    const snapshot = pedidos;
-    // Otimista: remove já
-    setPedidos((ps) => ps.filter((x) => x.id !== p.id));
     try {
-      await pedidosApi.remover(pizzariaId, p.id);
+      const eventos = await pedidosApi.historico(pizzariaId, pedido.id);
+      setHistorico({ pedido, eventos });
     } catch (e: any) {
       setErr(e.message);
-      setPedidos(snapshot); // reverte
+    }
+  }
+
+  function abrirAcao(tipo: "corrigir" | "problema" | "resolver", pedido: BackendPedido) {
+    setAcao({ tipo, pedido });
+    setStatusCorrecao(pedido.status);
+    setJustificativa("");
+  }
+
+  function atualizarPedidoLocal(updated: BackendPedido) {
+    setPedidos((ps) => ps.map((p) => p.id === updated.id ? updated : p));
+    setPedidosProblema((ps) => {
+      const semAtual = ps.filter((p) => p.id !== updated.id);
+      return updated.em_problema ? [updated, ...semAtual] : semAtual;
+    });
+  }
+
+  async function confirmarAcao() {
+    if (!acao) return;
+    const motivo = justificativa.trim();
+    if (acao.tipo !== "resolver" && motivo.length < 5) {
+      setErr("Explique o motivo com pelo menos 5 caracteres para registrar esta acao.");
+      return;
+    }
+    setSalvandoAcao(true);
+    setErr(null);
+    try {
+      let updated: BackendPedido;
+      if (acao.tipo === "corrigir") {
+        updated = await pedidosApi.corrigir(pizzariaId, acao.pedido.id, statusCorrecao, motivo);
+      } else if (acao.tipo === "problema") {
+        updated = await pedidosApi.sinalizarProblema(pizzariaId, acao.pedido.id, motivo);
+      } else {
+        updated = await pedidosApi.resolverProblema(pizzariaId, acao.pedido.id, motivo || undefined);
+      }
+      atualizarPedidoLocal(updated);
+      setAcao(null);
+    } catch (e: any) {
+      setErr(e.message);
     } finally {
-      setDeletingIds((s) => { const n = new Set(s); n.delete(p.id); return n; });
+      setSalvandoAcao(false);
     }
   }
 
@@ -199,11 +244,13 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       pedido={p}
       statusLabel={statusLabel}
       moving={movingIds.has(p.id)}
-      deleting={deletingIds.has(p.id)}
       paying={payingIds.has(p.id)}
       comprovante={comprovanteIds.has(p.id)}
       onStatus={(s) => moveStatus(p.id, s)}
-      onDelete={() => removerPedido(p)}
+      onHistory={() => abrirHistorico(p)}
+      onCorrect={() => abrirAcao("corrigir", p)}
+      onProblem={() => abrirAcao("problema", p)}
+      onResolveProblem={() => abrirAcao("resolver", p)}
       onConferir={(acao) => conferirPagamento(p.id, acao)}
       entregadores={entregadores.map((e) => ({ id: e.id, nome: e.nome, disponivel: e.disponivel }))}
       onAtribuir={(eid) => atribuir(p.id, eid)}
@@ -248,6 +295,12 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
             </span>
           )}
         </div>
+        <div className="px-4 md:px-5 py-2.5 border-b border-line bg-surface-muted/50 flex items-center justify-between gap-3">
+          <p className="text-xs text-ink-muted">{modoProblemas ? "Pedidos que precisam de revisao manual." : "Avance os pedidos etapa por etapa; correcoes ficam registradas."}</p>
+          <button onClick={() => { const proximo = !modoProblemas; setModoProblemas(proximo); if (proximo) loadProblemas(); }} className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${modoProblemas ? "bg-rose-600 border-rose-600 text-white" : "bg-surface border-line text-ink hover:border-rose-200 hover:text-rose-700"}`}>
+            <TriangleAlert className="w-3.5 h-3.5" /> {modoProblemas ? "Voltar aos pedidos" : "Pedidos com problema"}
+          </button>
+        </div>
 
         <div className="p-3 md:p-4 flex flex-row gap-2.5 border-b border-line items-center">
           <div className="flex items-center gap-1.5 text-xs text-ink-muted bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 shrink-0">
@@ -272,14 +325,72 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
             <div className="text-sm text-ink-subtle text-center py-14">
               <Package className="w-7 h-7 mx-auto mb-2 opacity-40" />
               {statusFiltro
-                ? "Nenhum pedido com este status hoje."
-                : "Nenhum pedido hoje ainda. Eles aparecerão aqui conforme chegarem!"}
+                ? "Nenhum pedido com este status hoje." : modoProblemas ? "Nenhum pedido com problema aberto." : "Nenhum pedido hoje ainda. Eles aparecerao aqui conforme chegarem!"}
             </div>
           ) : (
             <OrderBoard pedidos={filtrados} statusLabel={statusLabel} renderCard={renderCard} />
           )}
         </div>
       </div>
+
+      <Modal
+        open={!!historico}
+        onClose={() => setHistorico(null)}
+        title={historico ? `Historico do pedido #${historico.pedido.numero_pedido ?? "-"}` : ""}
+        subtitle="Todas as mudancas ficam registradas"
+        icon={History}
+        gradient={false}
+      >
+        {!historico || historico.eventos.length === 0 ? (
+          <p className="text-sm text-ink-muted">Este pedido ainda nao possui eventos registrados.</p>
+        ) : (
+          <ol className="space-y-3">
+            {historico.eventos.map((evento) => (
+              <li key={evento.id} className="border border-line rounded-xl p-3">
+                <div className="flex justify-between gap-2 text-sm font-bold text-ink">
+                  <span>{evento.tipo.replaceAll("_", " ")}</span>
+                  <time className="text-[11px] font-medium text-ink-muted shrink-0">{new Date(evento.created_at).toLocaleString("pt-BR")}</time>
+                </div>
+                {(evento.status_anterior || evento.status_novo) && (
+                  <p className="text-xs text-ink-muted mt-1">{statusLabel(evento.status_anterior || "novo")} {" -> "} {statusLabel(evento.status_novo || "novo")}</p>
+                )}
+                {evento.motivo && <p className="text-xs text-ink mt-1.5"><span className="font-semibold">Motivo:</span> {evento.motivo}</p>}
+                <p className="text-[11px] text-ink-subtle mt-1">Por {evento.ator_nome || "Sistema"} - {evento.ator_tipo}</p>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!acao}
+        onClose={() => !salvandoAcao && setAcao(null)}
+        title={acao?.tipo === "corrigir" ? "Corrigir pedido" : acao?.tipo === "resolver" ? "Resolver problema" : "Sinalizar problema"}
+        subtitle={acao ? `Pedido #${acao.pedido.numero_pedido ?? "-"}` : ""}
+        icon={acao?.tipo === "corrigir" ? Wrench : acao?.tipo === "resolver" ? CircleCheck : TriangleAlert}
+        gradient={acao?.tipo === "problema"}
+        footer={<>
+          <Button variant="outline" size="sm" disabled={salvandoAcao} onClick={() => setAcao(null)}>Cancelar</Button>
+          <Button variant={acao?.tipo === "problema" ? "danger" : "primary"} size="sm" isLoading={salvandoAcao} onClick={confirmarAcao}>
+            {acao?.tipo === "corrigir" ? "Registrar correcao" : acao?.tipo === "resolver" ? "Resolver pedido" : "Enviar para problemas"}
+          </Button>
+        </>}
+      >
+        {acao?.tipo === "corrigir" && (
+          <label className="block text-sm font-semibold text-ink mb-4">
+            Novo status
+            <select value={statusCorrecao} onChange={(e) => setStatusCorrecao(e.target.value)} className="mt-1.5 w-full px-3 py-2 border border-line rounded-lg bg-surface font-normal">
+              {ORDER_STATUS_LIST.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+            </select>
+          </label>
+        )}
+        <label className="block text-sm font-semibold text-ink">
+          {acao?.tipo === "resolver" ? "Como o problema foi resolvido? (opcional)" : "Justificativa obrigatoria"}
+          <textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={4} maxLength={800}
+            placeholder={acao?.tipo === "corrigir" ? "Ex.: pedido foi marcado como entregue por engano" : "Descreva o que aconteceu"}
+            className="mt-1.5 w-full px-3 py-2 border border-line rounded-lg bg-surface font-normal resize-y outline-none focus:border-brand-400" />
+        </label>
+      </Modal>
     </div>
   );
 }

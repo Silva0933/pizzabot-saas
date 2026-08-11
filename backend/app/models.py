@@ -354,6 +354,14 @@ class Pedido(Base):
     link_pagamento: Mapped[str | None] = mapped_column(Text)
 
     origem: Mapped[str] = mapped_column(String(30), default="whatsapp", nullable=False)
+    chave_idempotencia: Mapped[str | None] = mapped_column(String(120))
+    valor_subtotal: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    valor_desconto: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    taxa_entrega: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
+    cupom_codigo: Mapped[str | None] = mapped_column(String(40))
+    em_problema: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    problema_motivo: Mapped[str | None] = mapped_column(Text)
+    problema_aberto_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     bot_ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     cancelado_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelamento_motivo: Mapped[str | None] = mapped_column(Text)
@@ -370,6 +378,24 @@ class Pedido(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PedidoEvento(Base):
+    """Append-only audit trail for operational order events."""
+    __tablename__ = "pedido_eventos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    pedido_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False)
+    tipo: Mapped[str] = mapped_column(String(40), nullable=False)
+    status_anterior: Mapped[str | None] = mapped_column(String(30))
+    status_novo: Mapped[str | None] = mapped_column(String(30))
+    motivo: Mapped[str | None] = mapped_column(Text)
+    ator_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    ator_nome: Mapped[str | None] = mapped_column(String(160))
+    ator_tipo: Mapped[str] = mapped_column(String(30), default="sistema", nullable=False)
+    detalhes: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 # ============================================

@@ -23,8 +23,8 @@ export interface OrderStatusMeta {
 }
 
 export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
-  novo:       { label: "Novo",       badge: "bg-blue-50 text-blue-700 border-blue-200",       dot: "bg-blue-500",    text: "text-blue-600",    icon: Sparkles },
-  confirmado: { label: "Confirmado", badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-600", icon: CheckCircle2 },
+  novo:       { label: "Recebido",   badge: "bg-blue-50 text-blue-700 border-blue-200",       dot: "bg-blue-500",    text: "text-blue-600",    icon: Sparkles },
+  confirmado: { label: "Aceito",     badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-600", icon: CheckCircle2 },
   no_forno:   { label: "No forno",   badge: "bg-amber-50 text-amber-700 border-amber-200",     dot: "bg-amber-500",   text: "text-amber-600",   icon: Flame },
   pronto_entrega: { label: "Pronto p/ entrega", badge: "bg-teal-50 text-teal-700 border-teal-200", dot: "bg-teal-500", text: "text-teal-600", icon: PackageOpen },
   a_caminho:  { label: "A caminho",  badge: "bg-violet-50 text-violet-700 border-violet-200",  dot: "bg-violet-500",  text: "text-violet-600",  icon: Bike },

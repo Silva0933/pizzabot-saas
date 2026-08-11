@@ -206,12 +206,27 @@ export interface BackendPedido {
   entregador_id?: string | null;
   atribuido_em?: string | null;
   entregador?: { id: string; nome: string } | null;
+  em_problema?: boolean;
+  problema_motivo?: string | null;
+  problema_aberto_em?: string | null;
   created_at: string;
   updated_at: string;
   cliente?: {
     nome: string | null;
     telefone: string;
   } | null;
+}
+
+export interface PedidoEvento {
+  id: string;
+  tipo: string;
+  status_anterior?: string | null;
+  status_novo?: string | null;
+  motivo?: string | null;
+  ator_nome?: string | null;
+  ator_tipo: string;
+  detalhes: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface BackendConversa {
@@ -377,6 +392,16 @@ export const pedidosApi = {
     api.get<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}`),
   updateStatus: (pizzariaId: string, pedidoId: string, status: string, motivo?: string) =>
     api.patch<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/status`, { status, motivo }),
+  historico: (pizzariaId: string, pedidoId: string) =>
+    api.get<PedidoEvento[]>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/historico`),
+  problemas: (pizzariaId: string) =>
+    api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/pedidos/problemas`),
+  corrigir: (pizzariaId: string, pedidoId: string, status: string, justificativa: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/corrigir`, { status, justificativa }),
+  sinalizarProblema: (pizzariaId: string, pedidoId: string, motivo: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/problema`, { motivo }),
+  resolverProblema: (pizzariaId: string, pedidoId: string, motivo?: string) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/pedidos/${pedidoId}/problema/resolver`, { motivo }),
   apagarTodos: (pizzariaId: string) =>
     request<{ ok: boolean; pedidos_deletados: number }>(
       `/pizzarias/${pizzariaId}/pedidos/todos`,
@@ -1067,10 +1092,13 @@ export const menuApi = {
     }
     return res.json();
   },
-  submitOrder: async (slug: string, data: PedidoDigitalPayload): Promise<PedidoDigitalResponse> => {
+  submitOrder: async (slug: string, data: PedidoDigitalPayload, idempotencyKey: string): Promise<PedidoDigitalResponse> => {
     const res = await fetch(`${API_BASE}/menu/${slug}/pedido`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      },
       body: JSON.stringify(data),
     });
     if (!res.ok) {

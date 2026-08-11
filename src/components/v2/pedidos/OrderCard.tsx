@@ -1,11 +1,11 @@
 import React from "react";
 import {
-  Phone, MapPin, Store, MessageCircle, Trash2, Clock, Check, X, Receipt,
-  Hash, User, Bike, Loader2,
+  Phone, MapPin, Store, MessageCircle, Clock, Check, X, Receipt,
+  Hash, User, Bike, Loader2, History, Wrench, TriangleAlert, CircleCheck,
 } from "lucide-react";
 import { Button, Badge, OrderStatusBadge, buttonClasses } from "../../ui";
 import { cn } from "../../../lib/cn";
-import { nextOrderStatus, advanceLabel, ORDER_STATUS_LIST, orderStatusLabel } from "../../../lib/orderStatus";
+import { nextOrderStatus, advanceLabel, orderStatusLabel } from "../../../lib/orderStatus";
 import type { BackendPedido } from "../../../lib/api";
 import {
   brl, isDelivery, itemCount, paymentMeta, urgency, URGENCY_STYLE,
@@ -15,12 +15,14 @@ interface OrderCardProps {
   pedido: BackendPedido;
   statusLabel: (k: string) => string;
   moving: boolean;
-  deleting: boolean;
   paying: boolean;
   comprovante: boolean;
   onStatus: (s: string) => void;
-  onDelete: () => void;
   onConferir: (acao: "confirmar" | "rejeitar") => void;
+  onHistory: () => void;
+  onCorrect: () => void;
+  onProblem: () => void;
+  onResolveProblem: () => void;
   /** Entregadores ativos da pizzaria (para o seletor de atribuição). */
   entregadores?: { id: string; nome: string; disponivel: boolean }[];
   onAtribuir?: (entregadorId: string | null) => void;
@@ -28,8 +30,8 @@ interface OrderCardProps {
 }
 
 export function OrderCard({
-  pedido: p, statusLabel, moving, deleting, paying, comprovante,
-  onStatus, onDelete, onConferir, entregadores, onAtribuir, assigning,
+  pedido: p, statusLabel, moving, paying, comprovante, onStatus, onConferir,
+  onHistory, onCorrect, onProblem, onResolveProblem, entregadores, onAtribuir, assigning,
 }: OrderCardProps) {
   const delivery = isDelivery(p.tipo);
   const tel = p.cliente?.telefone;
@@ -67,6 +69,13 @@ export function OrderCard({
         <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
           <Receipt className="w-3.5 h-3.5" />
           {comprovante ? "Comprovante recebido — confira o pagamento" : "Pix manual — aguardando comprovante"}
+        </div>
+      )}
+
+      {p.em_problema && (
+        <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-1.5 text-[11px] font-semibold text-rose-700">
+          <TriangleAlert className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Problema: {p.problema_motivo || "precisa de revisao"}</span>
         </div>
       )}
 
@@ -205,7 +214,7 @@ export function OrderCard({
           </div>
         )}
 
-        {/* Avançar status + override */}
+        {/* Avanco sequencial: nao permite pular fases por acidente. */}
         <div className="flex items-center gap-2">
           {next ? (
             <Button variant="primary" size="sm" fullWidth isLoading={moving} onClick={() => onStatus(next)}>
@@ -214,20 +223,12 @@ export function OrderCard({
           ) : (
             <span className="flex-1 text-xs text-ink-subtle italic">Pedido finalizado</span>
           )}
-          <select
-            value={p.status}
-            disabled={moving}
-            onChange={(e) => onStatus(e.target.value)}
-            title="Alterar status manualmente"
-            className="px-2.5 py-1.5 border border-line rounded-lg text-xs font-medium text-ink-muted bg-surface outline-none focus:border-brand-400 disabled:opacity-50 cursor-pointer shrink-0"
-          >
-            {ORDER_STATUS_LIST.map((s) => (
-              <option key={s} value={s}>{statusLabel(s)}</option>
-            ))}
-          </select>
+          <Button variant="outline" size="sm" icon={Wrench} disabled={moving} onClick={onCorrect}>
+            Corrigir
+          </Button>
         </div>
 
-        {/* WhatsApp + excluir */}
+        {/* Whatsapp e acoes auditaveis. Pedidos nao podem mais ser excluidos. */}
         <div className="flex items-center gap-2">
           {tel && (
             <a
@@ -239,9 +240,18 @@ export function OrderCard({
               <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
             </a>
           )}
-          <Button variant="ghost" size="sm" icon={Trash2} isLoading={deleting} onClick={onDelete} className="text-rose-500 hover:bg-rose-50 hover:text-rose-600">
-            Excluir
+          <Button variant="ghost" size="sm" icon={History} onClick={onHistory} title="Ver historico do pedido">
+            Historico
           </Button>
+          {p.em_problema ? (
+            <Button variant="ghost" size="sm" icon={CircleCheck} onClick={onResolveProblem} className="text-emerald-700 hover:bg-emerald-50">
+              Resolver
+            </Button>
+          ) : (
+            <Button variant="ghost" size="sm" icon={TriangleAlert} onClick={onProblem} className="text-rose-600 hover:bg-rose-50">
+              Problema
+            </Button>
+          )}
         </div>
 
         <p className="text-[10px] text-ink-subtle flex items-center gap-1 pt-0.5">

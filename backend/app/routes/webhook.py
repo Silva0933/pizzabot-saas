@@ -432,6 +432,8 @@ async def evolution_webhook(
         )
         db.add(ped_rascunho)
         await db.flush()
+        from app.services.order_audit import registrar_evento_pedido
+        registrar_evento_pedido(db, ped_rascunho, tipo="criado", status_novo="novo", ator_nome="WhatsApp", ator_tipo="cliente")
 
         # Dispara o broadcast de novo pedido rascunho para atualizar o painel
         await broadcaster.publish(

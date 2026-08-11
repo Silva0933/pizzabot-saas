@@ -1218,6 +1218,12 @@ async def registrar_pedido(
     await db.flush()
     await db.refresh(ped)
 
+    from app.services.order_audit import registrar_evento_pedido
+    if status_anterior is None:
+        registrar_evento_pedido(db, ped, tipo="criado", status_novo=ped.status, ator_nome="Assistente IA", ator_tipo="ia")
+    elif status_anterior != ped.status:
+        registrar_evento_pedido(db, ped, tipo="status_alterado", status_anterior=status_anterior, status_novo=ped.status, ator_nome="Assistente IA", ator_tipo="ia")
+
     # Dispara o broadcast WebSocket de atualização do pedido
     from app.services.broadcaster import broadcaster
     await broadcaster.publish(

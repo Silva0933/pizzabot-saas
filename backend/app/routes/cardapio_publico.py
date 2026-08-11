@@ -13,14 +13,15 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from app.db import get_db
 from app.models import Cliente, Conversa, Mensagem, Pedido, Pizzaria, Produto
+from app.services.order_audit import registrar_evento_pedido
 from app.services.rate_limit import allow, client_ip
 
 log = logging.getLogger(__name__)
@@ -368,11 +369,28 @@ async def acompanhar_pedido(
     }
 
 
+def _resposta_pedido_digital(pedido: Pedido, pizz: Pizzaria, *, repetido: bool = False) -> dict[str, Any]:
+    return {
+        "ok": True, "numero_pedido": pedido.numero_pedido,
+        "valor_total": float(pedido.valor_total),
+        "taxa_entrega": float(pedido.taxa_entrega or 0),
+        "desconto": float(pedido.valor_desconto or 0),
+        "cupom_codigo": pedido.cupom_codigo,
+        "tempo_estimado": (
+            f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
+            if pedido.tipo == "delivery"
+            else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min"
+        ),
+        "repetido": repetido,
+    }
+
+
 @router.post("/{slug}/pedido", status_code=status.HTTP_201_CREATED)
 async def criar_pedido_digital(
     slug: str,
     body: PedidoDigitalIn,
     request: Request,
+    x_idempotency_key: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Cria um pedido vindo do cardápio digital."""
@@ -389,6 +407,20 @@ async def criar_pedido_digital(
     ).scalar_one_or_none()
     if not pizz:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    chave_idempotencia = (x_idempotency_key or "").strip()[:120] or None
+    if chave_idempotencia:
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": f"pedido:idempotencia:{pizz.id}:{chave_idempotencia}"},
+        )
+        existente = (await db.execute(
+            select(Pedido).where(
+                Pedido.pizzaria_id == pizz.id,
+                Pedido.chave_idempotencia == chave_idempotencia,
+            )
+        )).scalar_one_or_none()
+        if existente:
+            return _resposta_pedido_digital(existente, pizz, repetido=True)
     if getattr(pizz, "suspensa", False):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Esta pizzaria não está recebendo pedidos no momento.")
     if not _esta_aberto(pizz):
@@ -531,6 +563,11 @@ async def criar_pedido_digital(
         forma_pagamento=body.forma_pagamento,
         observacoes=observacoes_pedido,
         origem="cardapio_digital",
+        chave_idempotencia=chave_idempotencia,
+        valor_subtotal=subtotal,
+        valor_desconto=desconto,
+        taxa_entrega=taxa_entrega,
+        cupom_codigo=cupom_codigo,
         bot_ativo=False,  # Pedidos digitais não passam pelo bot
     )
     db.add(pedido)
@@ -538,6 +575,11 @@ async def criar_pedido_digital(
     # Recarrega o numero_pedido atribuído pelo trigger (não vem por padrão no flush).
     await db.refresh(pedido, ["numero_pedido"])
     numero = pedido.numero_pedido
+
+    registrar_evento_pedido(
+        db, pedido, tipo="criado", status_novo=pedido.status,
+        ator_nome="Cardapio digital", ator_tipo="cliente",
+    )
 
     # Cria/atualiza conversa (para a confirmação via WhatsApp)
     conv = (
@@ -585,19 +627,7 @@ async def criar_pedido_digital(
         _enviar_confirmacao_whatsapp(pizz.id, pedido.id, cli.telefone, cli.nome, float(taxa_entrega))
     )
 
-    return {
-        "ok": True,
-        "numero_pedido": pedido.numero_pedido,
-        "valor_total": float(pedido.valor_total),
-        "taxa_entrega": float(taxa_entrega),
-        "desconto": float(desconto),
-        "cupom_codigo": cupom_codigo,
-        "tempo_estimado": (
-            f"{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min"
-            if body.tipo == "delivery"
-            else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min"
-        ),
-    }
+    return _resposta_pedido_digital(pedido, pizz)
 
 
 async def _broadcast_novo_pedido(pizzaria_id: Any, pedido: "Pedido") -> None:
