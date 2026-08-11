@@ -370,3 +370,14 @@ body {
 .pzb-platform-admin .shadow-2xl { --tw-shadow-color: rgba(0, 0, 0, .5); }
 .pzb-platform-admin ::-webkit-scrollbar-thumb { background-color: #263244; }
 .pzb-platform-admin ::-webkit-scrollbar-thumb:hover { background-color: #34445b; }
+.pzb-platform-pizzeria-card {
+  contain: paint;
+  isolation: isolate;
+}
+@media (max-width: 767px) {
+  .pzb-platform-admin { overflow-x: hidden; }
+  .pzb-platform-admin-header {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

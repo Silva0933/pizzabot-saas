@@ -220,7 +220,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   return (
     <div className="pzb-platform-admin min-h-screen bg-[#070b12] text-slate-100 flex flex-col">
       {/* Header */}
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#090e16]/95 px-4 py-3 backdrop-blur-xl md:px-6">
+      <header className="pzb-platform-admin-header sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#090e16] px-4 py-3 md:bg-[#090e16]/95 md:px-6 md:backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center">
             <Pizza className="w-5 h-5 text-white" />
@@ -560,11 +560,11 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
             </div>
           )}
           {pizzariasFiltradas.map((p) => (
-            <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 hover:shadow-sm transition-shadow">
+            <div key={p.id} className="pzb-platform-pizzeria-card bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap items-start gap-3 hover:shadow-sm transition-shadow sm:flex-nowrap sm:items-center">
               <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                 {p.logo_url ? <img src={p.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-5 h-5 text-slate-400" />}
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-[calc(100%-3.25rem)] sm:basis-auto">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-slate-800 text-sm truncate">{p.nome}</span>
                   <select
@@ -599,7 +599,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                   {(() => { const a = assinaturaById(p.id); return a ? `${brl(a.preco_mensal)}/mês · ${a.uso.produtos} produtos · ${a.uso.conversas} conversas` : (p.instancia ? `Instância: ${p.instancia}` : "Sem instância Evolution"); })()}
                 </p>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex w-full items-center justify-end gap-1 border-t border-white/10 pt-3 shrink-0 sm:w-auto sm:border-0 sm:pt-0">
                 <button onClick={() => openWhatsApp(p)}
                   className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md font-medium"
                   title="Conectar WhatsApp">
