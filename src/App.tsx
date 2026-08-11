@@ -61,19 +61,35 @@ function playNotificationSound(type: "novo" | "confirmado") {
     const now = ctx.currentTime;
 
     if (type === "novo") {
-      // Som de novo pedido: tom duplo alegre (D5 seguido de A5)
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = "sine";
-      osc1.frequency.setValueAtTime(587.33, now); // D5
-      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
-      gain1.gain.setValueAtTime(0.12, now);
-      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      // Alerta de pedido: três bipes curtos, altos e bem diferentes do som de confirmação.
+      // O volume final ainda respeita o volume definido pelo usuário no dispositivo.
+      const master = ctx.createGain();
+      const compressor = ctx.createDynamicsCompressor();
+      master.gain.setValueAtTime(0.27, now);
+      compressor.threshold.setValueAtTime(-18, now);
+      compressor.knee.setValueAtTime(12, now);
+      compressor.ratio.setValueAtTime(8, now);
+      master.connect(compressor);
+      compressor.connect(ctx.destination);
 
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start(now);
-      osc1.stop(now + 0.5);
+      [
+        { at: 0, freq: 1046.5, duration: 0.12 },
+        { at: 0.2, freq: 1046.5, duration: 0.12 },
+        { at: 0.4, freq: 1318.51, duration: 0.24 },
+      ].forEach(({ at, freq, duration }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const startsAt = now + at;
+        osc.type = "square";
+        osc.frequency.setValueAtTime(freq, startsAt);
+        gain.gain.setValueAtTime(0.0001, startsAt);
+        gain.gain.exponentialRampToValueAtTime(0.9, startsAt + 0.012);
+        gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + duration);
+        osc.connect(gain);
+        gain.connect(master);
+        osc.start(startsAt);
+        osc.stop(startsAt + duration + 0.02);
+      });
     } else {
       // Som de pedido confirmado: tom de sino ascendente premium (E5 seguido de B5)
       const osc1 = ctx.createOscillator();
