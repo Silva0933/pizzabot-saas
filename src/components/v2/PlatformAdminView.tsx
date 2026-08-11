@@ -218,7 +218,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   }
 
   return (
-    <div className="pzb-platform-admin min-h-screen bg-[#070b12] text-slate-100 flex flex-col">
+    <div className="pzb-platform-admin min-h-screen w-full min-w-0 max-w-full overflow-x-hidden bg-[#070b12] text-slate-100 flex flex-col">
       {/* Header */}
       <header className="pzb-platform-admin-header sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#090e16] px-4 py-3 md:bg-[#090e16]/95 md:px-6 md:backdrop-blur-xl">
         <div className="flex items-center gap-2.5">
@@ -238,7 +238,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         </div>
       </header>
 
-      <main className="flex-1 p-4 md:p-6 max-w-[1500px] w-full mx-auto space-y-5">
+      <main className="min-w-0 flex-1 p-4 md:p-6 max-w-[1500px] w-full mx-auto space-y-5">
         {/* Título + seletor de período */}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
@@ -837,28 +837,31 @@ function LLMConfigCard() {
   const fmt = (n: number) => n.toLocaleString("pt-BR");
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+    <section className="pzb-ai-console relative min-w-0 overflow-hidden rounded-3xl border border-violet-400/15 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.16),transparent_38%),#111722] shadow-[0_22px_70px_rgba(0,0,0,.18)]">
       {/* Cabeçalho clicável (ícone de configuração de IA) */}
       <button type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 p-4 hover:bg-slate-50 transition-colors text-left">
-        <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white grid place-items-center shrink-0">
+        className="group flex w-full min-w-0 items-center gap-3 p-5 text-left transition-colors hover:bg-white/[0.025] md:p-6">
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-950/40">
           <Cpu className="w-5 h-5" />
         </span>
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-bold text-slate-800">Configuração de IA</h2>
-          <p className="text-xs text-slate-500 truncate">
+          <span className="text-[9px] font-black uppercase tracking-[0.18em] text-violet-300">IA operacional</span>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
             {cfg ? `${cfg.providers[cfg.provider]?.nome || cfg.provider} · ${cfg.model}` : "Provedor, modelo e chaves que atendem as pizzarias."}
           </p>
         </div>
         <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+        <span className="hidden rounded-full border border-violet-400/15 bg-violet-400/[0.08] px-3 py-1 text-[10px] font-bold text-violet-300 sm:inline">{open ? "Fechar" : "Gerenciar"}</span>
       </button>
 
       {open && (
         loading && !cfg ? (
           <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-violet-500" /></div>
         ) : cfg ? (
-          <div className="px-4 pb-4 md:px-5 md:pb-5 space-y-4 border-t border-slate-100 pt-4">
-            <div className="grid md:grid-cols-2 gap-3">
+          <div className="space-y-4 border-t border-white/10 bg-black/10 px-4 pb-5 pt-5 md:px-6 md:pb-6">
+            <div className="flex items-start gap-3 rounded-2xl border border-violet-400/15 bg-violet-400/[0.06] p-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300"><Sparkles className="h-4 w-4" /></span><div className="min-w-0"><p className="text-sm font-black text-white">Modelo principal de atendimento</p><p className="mt-1 text-[11px] leading-relaxed text-slate-500">Defina o c&eacute;rebro padr&atilde;o do PizzaBot. As op&ccedil;&otilde;es de economia e conting&ecirc;ncia abaixo complementam esta escolha.</p></div></div>
+            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 md:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-medium text-slate-600">Provedor</span>
                 <select value={provider} onChange={(e) => onProviderChange(e.target.value)}
@@ -890,7 +893,7 @@ function LLMConfigCard() {
 
             {/* Modelo por plano (custo/escala) — opcional */}
             {(cfg.planos?.length ?? 0) > 0 && (
-              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
                 <p className="text-xs font-semibold text-slate-700 mb-1">Modelo por plano (opcional)</p>
                 <p className="text-[11px] text-slate-400 mb-2">Deixe vazio pra usar o modelo padrão acima. Ex.: Básico num modelo mais barato, Premium num melhor.</p>
                 <div className="grid sm:grid-cols-3 gap-2">
@@ -908,8 +911,9 @@ function LLMConfigCard() {
               </div>
             )}
 
+            <div className="grid gap-3 lg:grid-cols-2">
             {/* Modelo barato para a NLU (economia) */}
-            <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <label className="block rounded-2xl bg-slate-50 border border-slate-200 p-4">
               <span className="text-xs font-semibold text-slate-700">Modelo p/ NLU (economia)</span>
               <p className="text-[11px] text-slate-400 mb-1.5">A NLU só extrai JSON — um modelo barato (ex.: gemini-2.0-flash-lite) corta o custo sem perder qualidade. Vazio = mesmo modelo principal.</p>
               <input value={nluModel} onChange={(e) => setNluModel(e.target.value)}
@@ -918,16 +922,17 @@ function LLMConfigCard() {
             </label>
 
             {/* Modelo de transcrição de áudio (separado) */}
-            <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <label className="block rounded-2xl bg-slate-50 border border-slate-200 p-4">
               <span className="text-xs font-semibold text-slate-700">Modelo p/ transcrever áudio</span>
               <p className="text-[11px] text-slate-400 mb-1.5">Use um modelo que "ouça" áudio quando o modelo de resposta não ouve (ex.: Gemma). Vazio = mesmo modelo de resposta.</p>
               <input value={transcriptionModel} onChange={(e) => setTranscriptionModel(e.target.value)}
                 placeholder="ex.: google/gemini-2.5-flash-lite"
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
             </label>
+            </div>
 
             {/* Provedor reserva (failover) */}
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
               <p className="text-xs font-semibold text-slate-700 mb-1">Provedor reserva (failover)</p>
               <p className="text-[11px] text-slate-400 mb-2">Se o provedor principal falhar (instabilidade, chave inválida), a atendente tenta este automaticamente. Precisa da chave de API configurada abaixo. Vazio = sem reserva.</p>
               <div className="grid md:grid-cols-2 gap-2">
@@ -952,7 +957,8 @@ function LLMConfigCard() {
               </div>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
+              <div className="flex items-start gap-3 border-b border-white/10 pb-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-400/10 text-emerald-300"><KeyRound className="h-4 w-4" /></span><div><p className="text-sm font-black text-white">Chaves e provedores</p><p className="mt-1 text-[11px] leading-relaxed text-slate-500">Credenciais protegidas para os provedores dispon&iacute;veis. Campos vazios preservam as chaves atuais.</p></div></div>
               {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
                 <label key={id} className="block">
                   <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
@@ -978,21 +984,21 @@ function LLMConfigCard() {
               </div>
             )}
 
-            <div className="flex gap-2 justify-end">
+            <div className="flex flex-col-reverse gap-2 border-t border-white/10 pt-4 sm:flex-row sm:justify-end">
               <button onClick={test} disabled={testing || saving}
-                className="px-3.5 py-2 text-sm font-medium rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 inline-flex items-center gap-1.5 disabled:opacity-50">
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50 sm:w-auto">
                 {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Testar
               </button>
               <button onClick={save} disabled={saving || !model.trim()}
-                className="px-4 py-2 text-sm font-medium rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:opacity-90 text-white inline-flex items-center gap-1.5 disabled:opacity-50">
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-violet-950/30 hover:opacity-90 disabled:opacity-50 sm:w-auto">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Salvar
               </button>
             </div>
 
             {/* Consumo de tokens */}
             {usage && (
-              <div className="pt-4 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-3">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
                     <Coins className="w-4 h-4 text-amber-500" /> Consumo de tokens (30 dias)
                   </h3>
@@ -1003,7 +1009,7 @@ function LLMConfigCard() {
                       try { await adminApi.zerarLlmUsage(); adminApi.llmUsage(30).then(setUsage).catch(() => {}); }
                       catch (e: any) { setMsg({ ok: false, text: e.message }); }
                     }}
-                    className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 inline-flex items-center gap-1"
+                    className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-slate-100 px-2.5 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-200 sm:w-auto"
                   >
                     <RefreshCw className="w-3 h-3" /> Zerar contagem
                   </button>
@@ -1032,13 +1038,13 @@ function LLMConfigCard() {
           </div>
         ) : null
       )}
-    </div>
+    </section>
   );
 }
 
 function UsageStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+    <div className="rounded-xl border border-white/10 bg-slate-50 p-3 text-center">
       <div className="text-base font-bold text-slate-800 leading-none">{value}</div>
       <div className="text-[11px] text-slate-500 mt-1">{label}</div>
     </div>
@@ -1266,15 +1272,19 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
   const semRecorrencia = assinaturas.length - recorrentes;
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
+    <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
       <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.16),transparent_38%)] p-5 md:p-6">
-        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-          <div>
+        <div className="flex min-w-0 flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div className="min-w-0">
+            <div className="pzb-billing-status min-w-0">
             <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-300"><Coins className="w-3.5 h-3.5" />{data.billing_disponivel ? "Asaas conectado" : "Asaas não configurado"}</div>
+            </div>
+            <div className="pzb-billing-title min-w-0">
             <h3 className="mt-4 text-xl font-black text-white">Central de assinaturas</h3>
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">Acompanhe recorrências, vencimentos, consumo e intervenções manuais sem misturar pagamento automático com concessão administrativa.</p>
+            </div>
           </div>
-          <div className="grid grid-cols-3 gap-2 lg:w-[390px]">
+          <div className="grid min-w-0 grid-cols-3 gap-2 lg:w-[390px]">
             <AdminMiniMetric label="Recorrentes" value={recorrentes} tone="emerald" />
             <AdminMiniMetric label="Sem recorrência" value={semRecorrencia} tone="amber" />
             <AdminMiniMetric label="Atenção" value={alertas.vencida + alertas.vence_amanha} tone="rose" />
@@ -1368,12 +1378,12 @@ function fmtAdminDate(value: string | null) {
 }
 function AdminMiniMetric({ label, value, tone }: { label: string; value: number; tone: "emerald" | "amber" | "rose" }) {
   const color = { emerald: "text-emerald-300", amber: "text-amber-300", rose: "text-rose-300" }[tone];
-  return <div className="rounded-xl border border-white/10 bg-black/20 p-3 text-center"><p className={`text-xl font-black ${color}`}>{value}</p><p className="mt-1 text-[9px] font-bold uppercase tracking-wider text-slate-600">{label}</p></div>;
+  return <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 px-2 py-3 text-center"><p className={`text-xl font-black ${color}`}>{value}</p><p className="mt-1 break-words text-[8px] font-bold uppercase leading-tight tracking-[0.08em] text-slate-600">{label}</p></div>;
 }
 function BillingStep({ icon: Icon, title, text }: { icon: any; title: string; text: string }) {
-  return <div className="flex items-start gap-3 rounded-2xl border border-white/[0.07] bg-black/20 p-3.5"><span className="grid w-8 h-8 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300"><Icon className="w-4 h-4" /></span><div><p className="text-xs font-black text-white">{title}</p><p className="mt-1 text-[10px] leading-relaxed text-slate-600">{text}</p></div></div>;
+  return <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-white/[0.07] bg-black/20 p-3.5"><span className="grid w-8 h-8 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300"><Icon className="w-4 h-4" /></span><div className="min-w-0"><p className="break-words text-xs font-black leading-snug text-white">{title}</p><p className="mt-1 break-words text-[10px] leading-relaxed text-slate-600">{text}</p></div></div>;
 }
 function FinancialMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "emerald" | "amber" | "violet" | "rose" }) {
   const color = { emerald: "text-emerald-300", amber: "text-amber-300", violet: "text-violet-300", rose: "text-rose-300" }[tone];
-  return <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-4"><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{label}</p><p className={`mt-2 text-xl font-black ${color}`}>{value}</p><p className="mt-1 text-[10px] text-slate-700">{detail}</p></div>;
+  return <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-black/20 p-4"><p className="break-words text-[9px] font-bold uppercase leading-tight tracking-[0.08em] text-slate-600">{label}</p><p className={`mt-2 break-words text-xl font-black ${color}`}>{value}</p><p className="mt-1 break-words text-[10px] leading-relaxed text-slate-700">{detail}</p></div>;
 }

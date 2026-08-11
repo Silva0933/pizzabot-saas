@@ -43,6 +43,13 @@
   --shadow-brand:      0 8px 24px rgba(249, 115, 22, 0.28);
 }
 
+html {
+  background-color: #070b12;
+  overscroll-behavior-x: none;
+}
+html, body, #root {
+  width: 100%; max-width: 100%; min-width: 0; overflow-x: hidden;
+}
 body {
   font-family: var(--font-sans);
   background-color: var(--color-canvas);
@@ -374,6 +381,34 @@ body {
   contain: paint;
   isolation: isolate;
 }
+.pzb-platform-admin main,
+.pzb-platform-admin section { min-width: 0; max-width: 100%; }
+.pzb-billing-status > div {
+  max-width: 100%;
+  line-height: 1.2;
+  letter-spacing: .1em;
+}
+.pzb-billing-title > h3 {
+  margin-top: .75rem;
+  overflow-wrap: anywhere;
+  font-size: clamp(1.25rem, 6vw, 1.75rem);
+  line-height: 1.1;
+}
+
+.pzb-ai-console > button > div { display: flex; flex-direction: column; }
+.pzb-ai-console > button > div > h2 { order: 2; }
+.pzb-ai-console > button > div > h2 + span { order: 1; }
+.pzb-ai-console > button > div > p { order: 3; }
+.pzb-ai-console > button > svg { order: 4; }
+.pzb-ai-console > button > span:last-of-type { order: 3; }
+
+.pzb-ai-console h2 {
+  color: #fff !important;
+  font-size: 1.125rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
 @media (max-width: 767px) {
   .pzb-platform-admin { overflow-x: hidden; }
   .pzb-platform-admin-header {
