@@ -5,7 +5,7 @@
  * Mobile-first, sem autenticação, tema escuro premium nível iFood/Rappi.
  * Fluxo: Navegar → Adicionar ao carrinho → Checkout → Confirmação WhatsApp
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   menuApi,
   MenuResponse,
@@ -79,6 +79,28 @@ function resolveTheme(raw?: TemaCardapioConfig | null): TemaCardapioConfig {
 // ============================================
 // Componente Principal
 // ============================================
+function mapEmbedUrl(pizzaria: MenuPizzaria) {
+  const rawUrl = pizzaria.endereco_maps_url || "";
+  const coords = rawUrl.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/)
+    || rawUrl.match(/[?&](?:q|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  let query = coords ? `${coords[1]},${coords[2]}` : "";
+
+  if (!query && rawUrl) {
+    try {
+      const parsed = new URL(rawUrl);
+      const urlQuery = parsed.searchParams.get("query") || parsed.searchParams.get("q");
+      const placePath = parsed.pathname.match(/\/place\/([^/]+)/);
+      query = urlQuery
+        || (placePath ? decodeURIComponent(placePath[1].replace(/\+/g, " ")) : "");
+    } catch {
+      // Links curtos ou incompletos usam o endereco cadastrado como alternativa.
+    }
+  }
+
+  query ||= pizzaria.endereco || pizzaria.nome;
+  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&z=16&output=embed`;
+}
+
 export function CardapioPublico({ slug }: { slug: string }) {
   const [data, setData] = useState<MenuResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,6 +115,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [sacolaOpen, setSacolaOpen] = useState(false);
   // Seletor rápido de tamanho ao clicar no "+" (sem entrar no produto).
   const [quickPick, setQuickPick] = useState<MenuProduto | null>(null);
+  const cartTargetRef = useRef<HTMLButtonElement>(null);
 
   // Carrinho
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -270,6 +293,40 @@ export function CardapioPublico({ slug }: { slug: string }) {
   function removeFromCart(id: string) {
     setCart(prev => prev.filter(i => i.id !== id));
   }
+  function animateProductToCart(origin: HTMLElement, produto: MenuProduto) {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const target = cartTargetRef.current;
+    if (!target) return;
+    const card = origin.closest(".cdp-product-card");
+    const visual = card?.querySelector(".cdp-product-img, .cdp-product-img-ph") as HTMLElement | null;
+    const sourceRect = (visual || origin).getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const flyer = document.createElement("div");
+    flyer.className = "cdp-cart-flyer";
+    flyer.setAttribute("aria-hidden", "true");
+    if (produto.imagem_url) {
+      flyer.style.backgroundImage = `url("${produto.imagem_url.replace(/"/g, "%22")}")`;
+    } else {
+      flyer.textContent = CAT_EMOJI[produto.categoria || "outro"] || "\uD83C\uDF7D\uFE0F";
+    }
+    const startX = sourceRect.left + sourceRect.width / 2;
+    const startY = sourceRect.top + sourceRect.height / 2;
+    const endX = targetRect.left + targetRect.width / 2;
+    const endY = targetRect.top + targetRect.height / 2;
+    flyer.style.left = `${startX}px`;
+    flyer.style.top = `${startY}px`;
+    flyer.style.setProperty("--cdp-fly-x", `${endX - startX}px`);
+    flyer.style.setProperty("--cdp-fly-y", `${endY - startY}px`);
+    const arcHeight = Math.min(150, Math.max(72, Math.abs(endY - startY) * 0.18));
+    flyer.style.setProperty("--cdp-fly-mid-x", `${(endX - startX) * 0.58}px`);
+    flyer.style.setProperty("--cdp-fly-mid-y", `${(endY - startY) * 0.44 - arcHeight}px`);
+
+    document.body.appendChild(flyer);
+    requestAnimationFrame(() => flyer.classList.add("is-flying"));
+    flyer.addEventListener("animationend", () => flyer.remove(), { once: true });
+    window.setTimeout(() => flyer.remove(), 1_000);
+  }
+
 
   function updateCartQty(id: string, delta: number) {
     setCart(prev => prev.map(i => {
@@ -321,12 +378,13 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
 
   // ---- Botão "+" do card: adiciona direto ou abre o seletor de tamanho ----
-  function handleQuickAdd(e: React.MouseEvent, p: MenuProduto) {
+  function handleQuickAdd(e: React.MouseEvent<HTMLElement>, p: MenuProduto) {
     e.stopPropagation();
     if (!data?.pizzaria.aberto) return;
     if (p.tamanhos && p.tamanhos.length > 0) {
       setQuickPick(p); // tem variação → escolhe o tamanho ali mesmo
     } else {
+      animateProductToCart(e.currentTarget, p);
       addToCart(p, null, Number(p.preco), 1, "", []); // simples → direto pra sacola
     }
   }
@@ -470,6 +528,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
     "--theme-body": THEME_BODY_FONTS[tema.fonte_texto || "inter"],
     "--theme-radius": THEME_RADII[tema.bordas || "suaves"],
   } as React.CSSProperties;
+  const embedMapUrl = mapEmbedUrl(pizz);
   const trackingSteps = tracking ? (
     tracking.tipo === "delivery"
       ? [
@@ -1330,7 +1389,21 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     Abrir rota <span>→</span>
                   </a>
                 </div>
-                <div className="cdp-location-visual" aria-hidden="true">
+                <div className="cdp-location-visual">
+                  <iframe
+                    className="cdp-map-embed"
+                    src={embedMapUrl}
+                    title={`Mapa de ${pizz.nome}`}
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                  />
+                  <div className="cdp-map-place-card">
+                    <span><svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
+                    <div><small>LOCAL NO MAPA</small><b>{pizz.nome}</b></div>
+                  </div>
+                  <a className="cdp-map-open" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer" aria-label={`Abrir ${pizz.nome} no mapa`}>
+                    <span>Abrir no mapa</span><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg>
+                  </a>
                   <div className="cdp-map-grid" />
                   <div className="cdp-map-route" />
                   <div className="cdp-map-pin"><span>●</span><b>{pizz.nome}</b></div>
@@ -1351,6 +1424,19 @@ export function CardapioPublico({ slug }: { slug: string }) {
               <span>© {new Date().getFullYear()} {pizz.nome}</span>
               <span>Cardápio digital • PizzaBot</span>
             </footer>
+
+            <button
+              ref={cartTargetRef}
+              type="button"
+              className={`cdp-cart-float ${cartPulse ? "pulse" : ""} ${cartCount > 0 ? "has-items" : ""}`}
+              onClick={() => setSacolaOpen(true)}
+              aria-label={`Abrir sacola, ${cartCount} ${cartCount === 1 ? "item" : "itens"}`}
+              title="Abrir sacola"
+            >
+              <svg width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
+              {cartCount > 0 && <b>{cartCount}</b>}
+              <small>Sacola</small>
+            </button>
 
             {waUrl && (
               <a className="cdp-whatsapp-float" href={waUrl} target="_blank" rel="noopener noreferrer" aria-label="Falar no WhatsApp">
@@ -1495,7 +1581,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   <div className="cdp-quickpick-list">
                     {(quickPick.tamanhos || []).map(t => (
                       <button key={t.tamanho} className="cdp-quickpick-opt"
-                        onClick={() => { addToCart(quickPick, t.tamanho, Number(t.preco), 1, "", []); setQuickPick(null); }}>
+                        onClick={(e) => { animateProductToCart(e.currentTarget, quickPick); addToCart(quickPick, t.tamanho, Number(t.preco), 1, "", []); setQuickPick(null); }}>
                         <span className="cdp-quickpick-opt-name">{t.tamanho}</span>
                         <span className="cdp-quickpick-opt-price">{fmt(Number(t.preco))}</span>
                       </button>
