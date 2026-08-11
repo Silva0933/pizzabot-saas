@@ -943,6 +943,8 @@ export type TemaCardapioModelo = "brasa" | "trattoria" | "metropole";
 export type TemaFonteTitulo = "anton" | "bebas" | "playfair" | "outfit";
 export type TemaFonteTexto = "inter" | "montserrat" | "nunito" | "outfit";
 export type TemaBordas = "retas" | "suaves" | "arredondadas";
+export type TemaEstiloCartoes = "elevado" | "minimal" | "contornado";
+export type TemaEstiloBotao = "gradiente" | "solido";
 
 export interface CampanhaCardapio {
   id: string;
@@ -974,7 +976,13 @@ export interface TemaCardapioConfig {
   cor_primaria?: string;
   cor_secundaria?: string;
   cor_fundo?: string;
+  cor_superficie?: string;
+  cor_texto?: string;
+  cor_botao?: string;
+  cor_botao_texto?: string;
   bordas?: TemaBordas;
+  estilo_cartoes?: TemaEstiloCartoes;
+  estilo_botao?: TemaEstiloBotao;
   chamada?: string;
   titulo?: string;
   campanhas?: CampanhaCardapio[];

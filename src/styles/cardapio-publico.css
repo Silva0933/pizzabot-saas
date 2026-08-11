@@ -2396,3 +2396,18 @@
   .cdp-cart-flyer { display: none; }
   .cdp-cart-float.pulse { animation: none; }
 }
+
+/* Preferências avançadas escolhidas na área Temas. */
+.cdp-cards-elevado .cdp-product-card { box-shadow: var(--shadow); }
+.cdp-cards-minimal .cdp-product-card { box-shadow: none; border-width: 1px; }
+.cdp-cards-minimal .cdp-product-card:hover { box-shadow: none; transform: translateY(-2px); }
+.cdp-cards-contornado .cdp-product-card { background: transparent; border-color: color-mix(in srgb, var(--accent) 48%, var(--bg3)); }
+.cdp-cards-contornado .cdp-product-card:hover { background: var(--bg2); box-shadow: 0 0 0 1px var(--accent); }
+.cdp-root .cdp-hero-primary,
+.cdp-root .cdp-btn-primary,
+.cdp-root .cdp-floating-cart,
+.cdp-root .cdp-product-add-btn,
+.cdp-root .cdp-cart-float { background: var(--button, var(--accent)); color: var(--button-text, #fff); }
+.cdp-btn-gradiente .cdp-hero-primary,
+.cdp-btn-gradiente .cdp-btn-primary,
+.cdp-btn-gradiente .cdp-floating-cart { background: linear-gradient(135deg, var(--button, var(--accent)), var(--accent2)); }

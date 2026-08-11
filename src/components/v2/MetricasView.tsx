@@ -19,8 +19,9 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { TrendingUp, TrendingDown, Loader2, AlertCircle, Trophy, Clock, ShoppingBag, DollarSign, Ban } from "lucide-react";
+import { TrendingUp, TrendingDown, Loader2, AlertCircle, Trophy, Clock, ShoppingBag, DollarSign, Ban, History } from "lucide-react";
 import { metricasApi, MetricasResponse } from "../../lib/api";
+import { HistoricoPedidos } from "./MeuNegocioViewV2";
 
 export interface MetricasViewProps {
   pizzariaId: string;
@@ -34,6 +35,7 @@ const PERIODOS = [
 
 export function MetricasView({ pizzariaId }: MetricasViewProps) {
   const [days, setDays] = useState(30);
+  const [area, setArea] = useState<"analise" | "historico">("analise");
   const [data, setData] = useState<MetricasResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false); // overlay ao trocar período
@@ -89,6 +91,12 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6 relative">
+      <nav className="inline-flex w-full sm:w-auto gap-1 rounded-xl border border-slate-200 bg-white p-1" aria-label="Seções de análise">
+        <button type="button" onClick={() => setArea("analise")} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold transition ${area === "analise" ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}>Visão geral</button>
+        <button type="button" onClick={() => setArea("historico")} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${area === "historico" ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}><History className="w-4 h-4" /> Histórico</button>
+      </nav>
+
+      {area === "analise" ? <>
       {/* Overlay suave de carregamento ao trocar período (mantém dados visíveis) */}
       {refreshing && (
         <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-start justify-center pt-20 rounded-xl">
@@ -240,6 +248,7 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
           )}
         </Card>
       </div>
+      </> : <HistoricoPedidos pizzariaId={pizzariaId} />}
     </div>
   );
 }

@@ -21,11 +21,13 @@ import {
   CupomCardapio,
   pizzariasApi,
   TemaCardapioConfig,
+  BackendPizzaria,
 } from "../../lib/api";
 
 interface Props {
   pizzariaId: string;
-  onBack: () => void;
+  onBack?: () => void;
+  onUpdated?: (pizzaria: BackendPizzaria) => void;
 }
 
 type Tab = "campanhas" | "cupons";
@@ -56,7 +58,7 @@ const novoCupom = (): CupomCardapio => ({
   ativo: true,
 });
 
-export function PromocoesCardapioPanel({ pizzariaId, onBack }: Props) {
+export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props) {
   const [tab, setTab] = useState<Tab>("campanhas");
   const [tema, setTema] = useState<TemaCardapioConfig>({});
   const [campanhas, setCampanhas] = useState<CampanhaCardapio[]>([]);
@@ -139,7 +141,8 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack }: Props) {
         cupons: cuponsNormalizados,
         mostrar_acompanhamento: mostrarAcompanhamento,
       };
-      await pizzariasApi.update(pizzariaId, { tema_cardapio: atualizado });
+      const pizzariaAtualizada = await pizzariasApi.update(pizzariaId, { tema_cardapio: atualizado });
+      onUpdated?.(pizzariaAtualizada);
       setTema(atualizado);
       setCampanhas(campanhasNormalizadas);
       setCupons(cuponsNormalizados);
@@ -164,9 +167,9 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack }: Props) {
       <section className="rounded-2xl border border-line bg-surface p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <button type="button" onClick={onBack} className="mt-0.5 w-10 h-10 grid place-items-center rounded-xl border border-line bg-surface-muted text-ink hover:border-brand-500" aria-label="Voltar aos produtos">
+            {onBack && <button type="button" onClick={onBack} className="mt-0.5 w-10 h-10 grid place-items-center rounded-xl border border-line bg-surface-muted text-ink hover:border-brand-500" aria-label="Voltar aos temas">
               <ArrowLeft className="w-4 h-4" />
-            </button>
+            </button>}
             <div>
               <div className="flex items-center gap-2 text-brand-500 mb-1">
                 <Megaphone className="w-4 h-4" />

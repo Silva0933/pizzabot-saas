@@ -524,6 +524,10 @@ export function CardapioPublico({ slug }: { slug: string }) {
     "--accent": tema.cor_primaria,
     "--accent2": tema.cor_secundaria,
     "--bg": tema.cor_fundo,
+    "--bg2": tema.cor_superficie,
+    "--text": tema.cor_texto,
+    "--button": tema.cor_botao || tema.cor_primaria,
+    "--button-text": tema.cor_botao_texto,
     "--theme-display": THEME_TITLE_FONTS[tema.fonte_titulo || "anton"],
     "--theme-body": THEME_BODY_FONTS[tema.fonte_texto || "inter"],
     "--theme-radius": THEME_RADII[tema.bordas || "suaves"],
@@ -590,7 +594,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }
 
   return (
-    <div className={`cdp-root cdp-theme-${tema.modelo || "brasa"} cdp-radius-${tema.bordas || "suaves"}`} style={themeStyle}>
+    <div className={`cdp-root cdp-theme-${tema.modelo || "brasa"} cdp-radius-${tema.bordas || "suaves"} cdp-cards-${tema.estilo_cartoes || "elevado"} cdp-btn-${tema.estilo_botao || "gradiente"}`} style={themeStyle}>
       <div className="cdp-wrapper">
 
         {/* ===== CONFIRMAÇÃO ===== */}

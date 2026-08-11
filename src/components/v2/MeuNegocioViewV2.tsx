@@ -11,14 +11,14 @@ import {
   Bot, Settings as SettingsIcon, Sparkles, Save, Loader2,
   Store, Smartphone, CreditCard, Clock, X, QrCode, CheckCircle2,
   RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
-  Bike, Copy, ExternalLink,
+  Bike, ChevronDown, Copy, ExternalLink,
 } from "lucide-react";
 import { AttendantPage } from "../AttendantPage";
 import {
   BackendPizzaria, BackendPedido, pizzariasApi, pedidosApi, conversasApi, WhatsAppConnect,
 } from "../../lib/api";
 
-export type NegocioTab = "atendente" | "geral" | "historico";
+export type NegocioTab = "atendente" | "geral";
 
 interface Props {
   pizzaria: BackendPizzaria;
@@ -36,15 +36,12 @@ export function MeuNegocioViewV2({ pizzaria, onUpdated, initialTab = "atendente"
           <TabButton active={tab === "atendente"} onClick={() => setTab("atendente")}
             icon={<Bot className="w-4 h-4"/>} label="Atendente"
             badge={<Sparkles className="w-3 h-3 text-orange-500"/>}/>
-          <TabButton active={tab === "historico"} onClick={() => setTab("historico")}
-            icon={<History className="w-4 h-4"/>} label="Histórico"/>
           <TabButton active={tab === "geral"} onClick={() => setTab("geral")}
             icon={<SettingsIcon className="w-4 h-4"/>} label="Geral"/>
         </div>
       </div>
 
       {tab === "atendente" && <AttendantPage pizzariaId={pizzaria.id} />}
-      {tab === "historico" && <HistoricoPedidos pizzaria={pizzaria} />}
       {tab === "geral"     && <ConfigGeral pizzaria={pizzaria} onUpdated={onUpdated} />}
     </div>
   );
@@ -64,6 +61,26 @@ function TabButton({ active, onClick, icon, label, badge }: any) {
 }
 
 // ============================================
+function ConfigAccordion({ icon, title, description, defaultOpen = false, children }: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
+        className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-slate-50">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-50 text-orange-600">{icon}</span>
+        <span className="min-w-0 flex-1"><strong className="block text-sm text-slate-800">{title}</strong><small className="mt-0.5 block text-xs leading-relaxed text-slate-500">{description}</small></span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="border-t border-slate-100 p-4">{children}</div>}
+    </section>
+  );
+}
 // Aba: Geral — config da pizzaria
 // ============================================
 function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpdated: (p: BackendPizzaria) => void; }) {
@@ -89,7 +106,8 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
 
   return (
     <div className="p-4 md:p-6 max-w-3xl mx-auto space-y-5">
-      {/* 1. Identidade e Horários */}
+      <ConfigAccordion icon={<Store className="w-4 h-4" />} title="Identidade e horário" description="Dados da pizzaria, endereço, imagem e funcionamento." defaultOpen>
+        {/* 1. Identidade e Horários */}
       <Card icon={<Store className="w-4 h-4" />} title="Identidade" accent="orange">
         <div className="grid md:grid-cols-2 gap-3">
           <Field label="Nome da pizzaria" required>
@@ -123,8 +141,10 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           onMsgFora={(t) => setField("mensagens_status", { ...(form.mensagens_status as any || {}), fora_horario: t } as any)}
         />
       </Card>
+      </ConfigAccordion>
 
-      {/* 2. WhatsApp & Bot de Atendimento */}
+      <ConfigAccordion icon={<Smartphone className="w-4 h-4" />} title="Atendimento e automação" description="WhatsApp, conexão da instância e ativação do bot.">
+        {/* 2. WhatsApp & Bot de Atendimento */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-slate-800 ml-1">Atendimento (WhatsApp / IA)</h3>
         <WhatsAppCard pizzaria={pizzaria} />
@@ -143,8 +163,10 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           </div>
         </Card>
       </div>
+      </ConfigAccordion>
 
-      {/* 3. Cardápio Digital & Pagamentos */}
+      <ConfigAccordion icon={<CreditCard className="w-4 h-4" />} title="Cardápio e pagamentos" description="Link público, adicionais, Pix e gateway de cobrança.">
+        {/* 3. Cardápio Digital & Pagamentos */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-slate-800 ml-1">Cardápio & Pagamentos</h3>
         <CardapioDigitalCard pizzaria={pizzaria} onUpdated={onUpdated} />
@@ -213,8 +235,10 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           </div>
         </Card>
       </div>
+      </ConfigAccordion>
 
-      {/* 4. Logística (Delivery/Retirada) */}
+      <ConfigAccordion icon={<Bike className="w-4 h-4" />} title="Logística e entregas" description="Configure acesso da equipe, prazos e taxas de delivery.">
+        {/* 4. Logística (Delivery/Retirada) */}
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-slate-800 ml-1">Logística & Entregas</h3>
 
@@ -257,10 +281,13 @@ function ConfigGeral({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpd
           </div>
         </Card>
       </div>
+      </ConfigAccordion>
 
       {err && <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">{err}</div>}
 
-      <ZonaPerigo pizzariaId={pizzaria.id} />
+      <ConfigAccordion icon={<AlertTriangle className="w-4 h-4" />} title="Área sensível" description="Ações administrativas que exigem atenção.">
+        <ZonaPerigo pizzariaId={pizzaria.id} />
+      </ConfigAccordion>
 
       <div className="sticky bottom-2 flex justify-end">
         <button onClick={save} disabled={saving}
@@ -604,7 +631,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
 };
 const brl = (n: number) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-function HistoricoPedidos({ pizzaria }: { pizzaria: BackendPizzaria }) {
+export function HistoricoPedidos({ pizzariaId }: { pizzariaId: string }) {
   const [pedidos, setPedidos] = useState<BackendPedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -612,12 +639,12 @@ function HistoricoPedidos({ pizzaria }: { pizzaria: BackendPizzaria }) {
 
   function load() {
     setLoading(true);
-    pedidosApi.list(pizzaria.id, { limit: 500 })
+    pedidosApi.list(pizzariaId, { limit: 500 })
       .then(setPedidos)
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }
-  useEffect(load, [pizzaria.id]);
+  useEffect(load, [pizzariaId]);
 
   const filtrados = useMemo(
     () => (filtro === "todos" ? pedidos : pedidos.filter((p) => p.status === filtro)),

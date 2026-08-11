@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ExternalLink, Loader2, Palette, RotateCcw, Save, Type } from "lucide-react";
+import { Check, ExternalLink, LayoutTemplate, Loader2, Megaphone, Palette, RotateCcw, Save, Type } from "lucide-react";
+import { PromocoesCardapioPanel } from "./PromocoesCardapioPanel";
 import {
   BackendPizzaria,
   pizzariasApi,
   TemaBordas,
   TemaCardapioConfig,
   TemaCardapioModelo,
+  TemaEstiloBotao,
+  TemaEstiloCartoes,
   TemaFonteTexto,
   TemaFonteTitulo,
 } from "../../lib/api";
@@ -87,6 +90,7 @@ const RADII: Record<TemaBordas, string> = { retas: "4px", suaves: "14px", arredo
 
 export function TemasView({ pizzaria, onUpdated }: Props) {
   const [config, setConfig] = useState<TemaCardapioConfig>(() => normalizarTema(pizzaria.tema_cardapio));
+  const [area, setArea] = useState<"identidade" | "promocoes">("identidade");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +156,12 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
 
   return (
     <div className="p-4 md:p-6 pb-24 md:pb-8 max-w-[1500px] mx-auto space-y-5">
+      <nav className="inline-flex w-full sm:w-auto gap-1 rounded-xl border border-line bg-surface p-1" aria-label="Seções de temas">
+        <button type="button" onClick={() => setArea("identidade")} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${area === "identidade" ? "bg-brand-500 text-white" : "text-ink-muted hover:bg-surface-muted"}`}><LayoutTemplate className="w-4 h-4" /> Identidade visual</button>
+        <button type="button" onClick={() => setArea("promocoes")} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${area === "promocoes" ? "bg-brand-500 text-white" : "text-ink-muted hover:bg-surface-muted"}`}><Megaphone className="w-4 h-4" /> Banners e cupons</button>
+      </nav>
+
+      {area === "identidade" ? <>
       <section className="rounded-2xl border border-line bg-surface p-4 md:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
@@ -217,6 +227,12 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
               <SelectField label="Formato dos cantos" value={config.bordas || "suaves"} onChange={(v) => update("bordas", v as TemaBordas)} options={[
                 { value: "retas", label: "Retos — editorial" }, { value: "suaves", label: "Suaves — equilibrado" }, { value: "arredondadas", label: "Arredondados — amigável" },
               ]} />
+              <SelectField label="Estilo dos cartões" value={config.estilo_cartoes || "elevado"} onChange={(v) => update("estilo_cartoes", v as TemaEstiloCartoes)} options={[
+                { value: "elevado", label: "Elevado — com profundidade" }, { value: "minimal", label: "Minimalista — discreto" }, { value: "contornado", label: "Contornado — marcante" },
+              ]} />
+              <SelectField label="Estilo dos botões" value={config.estilo_botao || "gradiente"} onChange={(v) => update("estilo_botao", v as TemaEstiloBotao)} options={[
+                { value: "gradiente", label: "Gradiente — mais vibrante" }, { value: "solido", label: "Sólido — cor única" },
+              ]} />
             </div>
           </section>
 
@@ -228,6 +244,17 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
               <ColorField label="Cor de fundo" value={config.cor_fundo || selected.config.cor_fundo} onChange={(v) => update("cor_fundo", v)} />
             </div>
           </section>
+          <section className="rounded-2xl border border-line bg-surface p-4 md:p-5">
+            <h3 className="font-bold text-ink mb-1">Cores avançadas</h3>
+            <p className="text-xs text-ink-muted mb-4">Ajuste a superfície dos cartões, leitura dos textos e os botões de ação.</p>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <ColorField label="Superfície dos cartões" value={config.cor_superficie || "#15161f"} onChange={(v) => update("cor_superficie", v)} />
+              <ColorField label="Cor principal do texto" value={config.cor_texto || (isLight ? "#2c1d17" : "#f3f4f9")} onChange={(v) => update("cor_texto", v)} />
+              <ColorField label="Fundo dos botões" value={config.cor_botao || config.cor_primaria || selected.config.cor_primaria} onChange={(v) => update("cor_botao", v)} />
+              <ColorField label="Texto dos botões" value={config.cor_botao_texto || "#ffffff"} onChange={(v) => update("cor_botao_texto", v)} />
+            </div>
+          </section>
+
 
           <section className="rounded-2xl border border-line bg-surface p-4 md:p-5">
             <h3 className="font-bold text-ink mb-4">Textos de apresentação</h3>
@@ -293,6 +320,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
           {saving ? "Salvando..." : saved ? "Tema salvo" : "Salvar tema"}
         </button>
       </div>
+      </> : <PromocoesCardapioPanel pizzariaId={pizzaria.id} onUpdated={onUpdated} />}
     </div>
   );
 }
