@@ -2243,6 +2243,222 @@
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--accent) 75%, white 25%);
+
+/* Conta do consumidor — login, histórico, acompanhamento e recompra. */
+.cdp-header-account {
+  position: relative;
+  min-height: 42px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--bg3);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color .2s, background .2s, transform .2s;
+}
+.cdp-header-account:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); transform: translateY(-1px); }
+.cdp-header-account.connected { border-color: color-mix(in srgb, #22c55e 42%, var(--bg3)); }
+.cdp-header-account i {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  background: #22c55e;
+  box-sizing: content-box;
+}
+
+.cdp-account-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .78);
+  backdrop-filter: blur(10px);
+  animation: cdp-account-fade .2s ease-out;
+}
+@keyframes cdp-account-fade { from { opacity: 0; } to { opacity: 1; } }
+.cdp-account-modal {
+  position: relative;
+  width: min(920px, 100%);
+  max-height: min(860px, calc(100dvh - 40px));
+  overflow: auto;
+  padding: 34px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--bg3));
+  border-radius: max(18px, var(--radius));
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 34%),
+    var(--bg2);
+  color: var(--text);
+  box-shadow: 0 32px 100px rgba(0, 0, 0, .56);
+  animation: cdp-account-in .28s cubic-bezier(.16,1,.3,1);
+}
+@keyframes cdp-account-in { from { opacity: 0; transform: translateY(20px) scale(.975); } to { opacity: 1; transform: none; } }
+.cdp-account-close {
+  position: absolute;
+  z-index: 2;
+  top: 22px;
+  right: 22px;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg3);
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cdp-account-head { padding-right: 58px; }
+.cdp-account-head > small,
+.cdp-account-orders header small { color: var(--accent); font-size: 11px; font-weight: 900; letter-spacing: .18em; }
+.cdp-account-head h2 {
+  margin: 7px 0 8px;
+  font-family: var(--theme-display);
+  font-size: clamp(38px, 6vw, 66px);
+  line-height: .98;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+.cdp-account-head p { max-width: 620px; margin: 0; color: var(--text2); font-size: 13px; line-height: 1.65; }
+.cdp-account-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 26px;
+  padding: 4px;
+  border: 1px solid var(--bg3);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.cdp-account-tabs button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text3);
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+.cdp-account-tabs button.active { background: var(--accent); color: var(--button-text, #160b06); }
+.cdp-account-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 22px;
+  border: 1px solid var(--bg3);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+}
+.cdp-account-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cdp-account-form label { display: grid; gap: 7px; }
+.cdp-account-form label > span { color: var(--text2); font-size: 11px; font-weight: 800; }
+.cdp-account-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--bg3);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.cdp-account-form input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.cdp-account-submit {
+  min-height: 52px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--button, var(--accent));
+  color: var(--button-text, #fff);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.cdp-account-submit:disabled { opacity: .6; cursor: wait; }
+.cdp-account-privacy { margin: 0; color: var(--text3); text-align: center; font-size: 10px; }
+.cdp-account-error { margin-top: 12px; padding: 11px 13px; border: 1px solid #ef444455; border-radius: 9px; background: #ef444412; color: #fca5a5; font-size: 12px; }
+
+.cdp-account-dashboard { display: grid; gap: 16px; margin-top: 24px; }
+.cdp-account-profile {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--bg3);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.cdp-account-profile > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--accent); color: var(--button-text, #fff); font-size: 20px; font-weight: 900; }
+.cdp-account-profile div { display: grid; min-width: 0; gap: 3px; }
+.cdp-account-profile strong { font-size: 14px; }
+.cdp-account-profile small { overflow: hidden; color: var(--text3); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.cdp-account-profile button { border: 0; background: transparent; color: var(--text2); font: inherit; font-size: 11px; font-weight: 800; cursor: pointer; }
+.cdp-account-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.cdp-account-stats div { display: grid; gap: 4px; min-height: 82px; padding: 14px; border: 1px solid var(--bg3); border-radius: 12px; background: var(--bg); }
+.cdp-account-stats strong { color: var(--accent); font-size: 20px; }
+.cdp-account-stats small { color: var(--text3); font-size: 10px; }
+.cdp-account-orders { display: grid; gap: 10px; }
+.cdp-account-orders header { margin: 6px 0 2px; }
+.cdp-account-orders header h3 { margin: 4px 0 0; font-size: 18px; }
+.cdp-account-orders article { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--bg3); border-radius: 13px; background: var(--bg); }
+.cdp-account-orders article.active { border-color: color-mix(in srgb, #22c55e 42%, var(--bg3)); box-shadow: inset 3px 0 #22c55e; }
+.cdp-account-order-top,
+.cdp-account-order-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cdp-account-order-top > div { display: grid; gap: 3px; }
+.cdp-account-order-top strong { font-size: 14px; }
+.cdp-account-order-top small,
+.cdp-account-orders article > p { margin: 0; color: var(--text3); font-size: 10px; line-height: 1.5; }
+.cdp-account-order-top > span { padding: 6px 9px; border-radius: 999px; background: var(--bg3); color: var(--text2); font-size: 9px; font-weight: 900; text-transform: uppercase; }
+.cdp-account-order-top > span.live { background: #22c55e1c; color: #4ade80; }
+.cdp-account-order-top > span.cancelled { background: #ef44441c; color: #f87171; }
+.cdp-account-order-bottom > strong { color: var(--accent); font-size: 16px; }
+.cdp-account-order-bottom > div { display: flex; gap: 7px; }
+.cdp-account-order-bottom button { min-height: 36px; padding: 0 12px; border: 1px solid var(--bg3); border-radius: 8px; background: transparent; color: var(--text); font: inherit; font-size: 10px; font-weight: 900; cursor: pointer; }
+.cdp-account-order-bottom button.primary { border-color: var(--accent); background: var(--accent); color: var(--button-text, #fff); }
+.cdp-account-order-bottom button:disabled { opacity: .45; cursor: not-allowed; }
+.cdp-account-empty { display: grid; place-items: center; gap: 7px; min-height: 150px; padding: 20px; border: 1px dashed var(--bg3); border-radius: 13px; color: var(--text3); text-align: center; font-size: 12px; }
+.cdp-account-empty > span { color: var(--accent); font-size: 32px; }
+.cdp-account-empty strong { color: var(--text); font-size: 14px; }
+.cdp-account-empty p { max-width: 420px; margin: 0; font-size: 10px; line-height: 1.5; }
+
+.cdp-theme-trattoria .cdp-header-account { border-color: #a52a2a42; }
+.cdp-theme-metropole .cdp-header-account { border-radius: 999px; }
+
+@media (max-width: 1180px) {
+  .cdp-header-account span { display: none; }
+  .cdp-header-account { width: 42px; padding: 0; }
+}
+@media (max-width: 720px) {
+  .cdp-account-overlay { align-items: end; padding: 0; }
+  .cdp-account-modal { width: 100%; max-height: 92dvh; padding: 24px 16px max(24px, env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; }
+  .cdp-account-close { top: 16px; right: 16px; width: 42px; height: 42px; }
+  .cdp-account-head h2 { font-size: 42px; }
+  .cdp-account-form { padding: 15px; }
+  .cdp-account-form-row { grid-template-columns: 1fr; }
+  .cdp-account-stats { grid-template-columns: 1fr 1fr; }
+  .cdp-account-stats div:last-child { grid-column: 1 / -1; min-height: 68px; }
+  .cdp-account-order-bottom { align-items: flex-end; }
+  .cdp-account-order-bottom > div { flex-direction: column; }
+  .cdp-account-order-bottom button { min-height: 38px; }
+  .cdp-header-account { min-height: 40px; width: 40px; }
+}
   border-radius: 50%;
   background: var(--grad);
   color: #fff;

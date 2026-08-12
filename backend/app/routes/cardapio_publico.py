@@ -14,8 +14,9 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException, Request, status
+from app.auth import create_access_token, decode_token, hash_password, verify_password
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
@@ -118,6 +119,18 @@ class PedidoDigitalIn(BaseModel):
     website: str | None = Field(default=None, max_length=0)
 
 
+class ClienteContaCadastroIn(BaseModel):
+    nome: str = Field(min_length=2, max_length=120)
+    telefone: str = Field(min_length=10, max_length=20)
+    email: str = Field(min_length=5, max_length=254)
+    senha: str = Field(min_length=10, max_length=128)
+
+
+class ClienteContaLoginIn(BaseModel):
+    email: str = Field(min_length=5, max_length=254)
+    senha: str = Field(min_length=10, max_length=128)
+
+
 # ============================================
 # Helper: recálculo de preços (anti-tampering)
 # ============================================
@@ -155,6 +168,7 @@ def _recalcular_itens(
                 preco_unit += preco_a
         subtotal += preco_unit * item.quantidade
         itens_json.append({
+            "produto_id": str(prod.id),
             "nome": prod.nome + (f" ({tamanho_final})" if tamanho_final else ""),
             "quantidade": item.quantidade,
             "preco_unit": float(preco_unit),
@@ -178,6 +192,17 @@ def _esta_aberto(pizzaria: Pizzaria) -> bool:
         )
     except Exception:
         return True  # na dúvida, permite o pedido
+
+
+def _normalizar_email(email: str) -> str:
+    normalizado = email.strip().lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", normalizado):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe um e-mail válido.")
+    return normalizado
+
+
+def _token_conta(cliente: Cliente, pizzaria: Pizzaria) -> str:
+    return create_access_token(str(cliente.id), extra={"typ": "cliente", "pizzaria_id": str(pizzaria.id), "slug": pizzaria.slug}, expires_minutes=43_200)
 
 
 # ============================================
@@ -515,7 +540,15 @@ async def criar_pedido_digital(
     valor_total = subtotal - desconto + taxa_entrega
 
     # Cria ou busca cliente
-    cli = (
+    cli = None
+    authorization = request.headers.get("authorization")
+    if authorization:
+        cli, token_pizzaria = await _cliente_autenticado(slug, authorization, db)
+        if token_pizzaria.id != pizz.id:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão inválida. Entre novamente.")
+        telefone = cli.telefone
+    if cli is None:
+        cli = (
         await db.execute(
             select(Cliente).where(
                 Cliente.pizzaria_id == pizz.id,
@@ -523,7 +556,7 @@ async def criar_pedido_digital(
             )
         )
     ).scalar_one_or_none()
-    if not cli:
+    if cli is None:
         cli = Cliente(
             pizzaria_id=pizz.id,
             telefone=telefone,
@@ -654,6 +687,231 @@ async def _broadcast_novo_pedido(pizzaria_id: Any, pedido: "Pedido") -> None:
 # ============================================
 # Enviar confirmação no WhatsApp
 # ============================================
+
+# ============================================
+# Conta do consumidor: cadastro, login, histórico e recompra
+# ============================================
+def _cliente_publico(cliente: Cliente) -> dict[str, Any]:
+    return {
+        "id": str(cliente.id),
+        "nome": cliente.nome or "",
+        "telefone": cliente.telefone,
+        "email": cliente.email or "",
+        "endereco_padrao": cliente.endereco_padrao,
+        "total_pedidos": cliente.total_pedidos,
+        "total_gasto": float(cliente.total_gasto or 0),
+    }
+
+
+async def _cliente_autenticado(
+    slug: str,
+    authorization: str | None,
+    db: AsyncSession,
+) -> tuple[Cliente, Pizzaria]:
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Entre na sua conta para continuar.")
+    try:
+        payload = decode_token(authorization.split(" ", 1)[1].strip())
+        if payload.get("typ") != "cliente" or payload.get("slug") != slug:
+            raise ValueError("tipo ou loja incorretos")
+        cliente_id = uuid.UUID(str(payload.get("sub")))
+        pizzaria_id = uuid.UUID(str(payload.get("pizzaria_id")))
+    except Exception as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sua sessão expirou. Entre novamente.") from exc
+
+    pizzaria = (await db.execute(
+        select(Pizzaria).where(Pizzaria.id == pizzaria_id, Pizzaria.slug == slug)
+    )).scalar_one_or_none()
+    cliente = (await db.execute(
+        select(Cliente).where(
+            Cliente.id == cliente_id,
+            Cliente.pizzaria_id == pizzaria_id,
+            Cliente.conta_ativa == True,  # noqa: E712
+        )
+    )).scalar_one_or_none()
+    if not pizzaria or not cliente or getattr(pizzaria, "suspensa", False):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sua sessão não é mais válida.")
+    return cliente, pizzaria
+
+
+@router.post("/{slug}/conta/cadastro", status_code=status.HTTP_201_CREATED)
+async def cadastrar_conta_cliente(
+    slug: str,
+    body: ClienteContaCadastroIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await _check_rate(request, max_hits=5, scope="account-register")
+    pizzaria = (await db.execute(select(Pizzaria).where(Pizzaria.slug == slug))).scalar_one_or_none()
+    if not pizzaria or getattr(pizzaria, "suspensa", False):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Cardápio não encontrado.")
+    email = _normalizar_email(body.email)
+    telefone = _limpar_telefone(body.telefone)
+    if len(telefone) < 12:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe um WhatsApp válido com DDD.")
+
+    por_email = (await db.execute(
+        select(Cliente).where(Cliente.pizzaria_id == pizzaria.id, func.lower(Cliente.email) == email)
+    )).scalar_one_or_none()
+    if por_email and por_email.conta_ativa:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma conta com este e-mail.")
+    por_telefone = (await db.execute(
+        select(Cliente).where(Cliente.pizzaria_id == pizzaria.id, Cliente.telefone == telefone)
+    )).scalar_one_or_none()
+    if por_telefone and por_telefone.conta_ativa and por_telefone.email != email:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este WhatsApp já está vinculado a outra conta.")
+    if por_email and por_telefone and por_email.id != por_telefone.id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "E-mail e WhatsApp já pertencem a cadastros diferentes.")
+
+    cliente = por_telefone or por_email
+    if not cliente:
+        cliente = Cliente(pizzaria_id=pizzaria.id, telefone=telefone)
+        db.add(cliente)
+        await db.flush()
+    cliente.nome = body.nome.strip()
+    cliente.telefone = telefone
+    cliente.email = email
+    cliente.senha_hash = hash_password(body.senha)
+    cliente.conta_ativa = True
+    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(cliente)
+    return {"access_token": _token_conta(cliente, pizzaria), "token_type": "bearer", "cliente": _cliente_publico(cliente)}
+
+
+@router.post("/{slug}/conta/entrar")
+async def entrar_conta_cliente(
+    slug: str,
+    body: ClienteContaLoginIn,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await _check_rate(request, max_hits=8, scope="account-login")
+    email = _normalizar_email(body.email)
+    pizzaria = (await db.execute(select(Pizzaria).where(Pizzaria.slug == slug))).scalar_one_or_none()
+    cliente = None
+    if pizzaria and not getattr(pizzaria, "suspensa", False):
+        cliente = (await db.execute(
+            select(Cliente).where(
+                Cliente.pizzaria_id == pizzaria.id,
+                func.lower(Cliente.email) == email,
+                Cliente.conta_ativa == True,  # noqa: E712
+            )
+        )).scalar_one_or_none()
+    if not cliente or not cliente.senha_hash or not verify_password(body.senha, cliente.senha_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "E-mail ou senha incorretos.")
+    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    await db.commit()
+    return {"access_token": _token_conta(cliente, pizzaria), "token_type": "bearer", "cliente": _cliente_publico(cliente)}
+
+
+@router.get("/{slug}/conta")
+async def minha_conta_cliente(
+    slug: str,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    cliente, _ = await _cliente_autenticado(slug, authorization, db)
+    return {"cliente": _cliente_publico(cliente)}
+
+
+def _pedido_conta(pedido: Pedido) -> dict[str, Any]:
+    labels = {
+        "novo": "Recebido", "confirmado": "Confirmado", "no_forno": "Em preparo",
+        "pronto_entrega": "Pronto", "a_caminho": "Saiu para entrega",
+        "entregue": "Entregue", "cancelado": "Cancelado",
+    }
+    return {
+        "id": str(pedido.id),
+        "numero_pedido": pedido.numero_pedido,
+        "status": pedido.status,
+        "status_label": labels.get(pedido.status, pedido.status.replace("_", " ").title()),
+        "tipo": pedido.tipo,
+        "itens": pedido.itens or [],
+        "valor_total": float(pedido.valor_total),
+        "criado_em": pedido.created_at.isoformat(),
+        "atualizado_em": pedido.updated_at.isoformat(),
+        "em_andamento": pedido.status not in {"entregue", "cancelado"},
+    }
+
+
+@router.get("/{slug}/conta/pedidos")
+async def pedidos_conta_cliente(
+    slug: str,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    cliente, pizzaria = await _cliente_autenticado(slug, authorization, db)
+    pedidos = list((await db.execute(
+        select(Pedido)
+        .where(Pedido.pizzaria_id == pizzaria.id, Pedido.cliente_id == cliente.id)
+        .order_by(Pedido.created_at.desc())
+        .limit(30)
+    )).scalars().all())
+    return {"pedidos": [_pedido_conta(pedido) for pedido in pedidos]}
+
+
+@router.get("/{slug}/conta/pedidos/{pedido_id}/repetir")
+async def repetir_pedido_conta(
+    slug: str,
+    pedido_id: uuid.UUID,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    cliente, pizzaria = await _cliente_autenticado(slug, authorization, db)
+    pedido = (await db.execute(
+        select(Pedido).where(
+            Pedido.id == pedido_id,
+            Pedido.pizzaria_id == pizzaria.id,
+            Pedido.cliente_id == cliente.id,
+        )
+    )).scalar_one_or_none()
+    if not pedido:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado.")
+
+    produtos = list((await db.execute(
+        select(Produto).where(Produto.pizzaria_id == pizzaria.id, Produto.disponivel == True)  # noqa: E712
+    )).scalars().all())
+    por_id = {str(produto.id): produto for produto in produtos}
+    por_nome = {produto.nome.strip().lower(): produto for produto in produtos}
+    adicionais_precos = {
+        str(item.get("nome") or "").strip().lower(): Decimal(str(item.get("preco") or 0))
+        for item in (pizzaria.adicionais or [])
+    }
+    itens_disponiveis: list[dict[str, Any]] = []
+    indisponiveis: list[str] = []
+    for item in (pedido.itens or []):
+        nome_salvo = str(item.get("nome") or "").strip()
+        nome_base = re.sub(r"\s*\([^)]*\)\s*$", "", nome_salvo).strip().lower()
+        produto = por_id.get(str(item.get("produto_id") or "")) or por_nome.get(nome_base)
+        if not produto:
+            indisponiveis.append(nome_salvo or "Item removido")
+            continue
+        tamanho = item.get("tamanho")
+        preco = Decimal(str(produto.preco))
+        if produto.tamanhos:
+            tamanho_atual = next((t for t in produto.tamanhos if str(t.get("tamanho")) == str(tamanho)), None)
+            if not tamanho_atual:
+                indisponiveis.append(nome_salvo or produto.nome)
+                continue
+            preco = Decimal(str(tamanho_atual.get("preco") or 0))
+        adicionais = [
+            nome for nome in (item.get("adicionais") or [])
+            if str(nome).strip().lower() in adicionais_precos
+        ]
+        for adicional in adicionais:
+            preco += adicionais_precos[str(adicional).strip().lower()]
+        itens_disponiveis.append({
+            "produto_id": str(produto.id),
+            "nome": produto.nome,
+            "tamanho": tamanho,
+            "preco": float(preco),
+            "quantidade": max(1, int(item.get("quantidade") or 1)),
+            "observacao": item.get("observacao") or "",
+            "adicionais": adicionais,
+            "imagem_url": produto.imagem_url,
+        })
+    return {"itens": itens_disponiveis, "indisponiveis": indisponiveis}
 async def _enviar_confirmacao_whatsapp(
     pizzaria_id: uuid.UUID,
     pedido_id: uuid.UUID,

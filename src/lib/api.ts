@@ -1079,6 +1079,57 @@ export interface PedidoAcompanhamento {
   tempo_estimado: string;
 }
 
+export interface ClienteConta {
+  id: string;
+  nome: string;
+  telefone: string;
+  email: string;
+  endereco_padrao?: string | null;
+  total_pedidos: number;
+  total_gasto: number;
+}
+
+export interface ClienteContaAuth {
+  access_token: string;
+  token_type: "bearer";
+  cliente: ClienteConta;
+}
+
+export interface ClientePedidoConta {
+  id: string;
+  numero_pedido: number;
+  status: string;
+  status_label: string;
+  tipo: "delivery" | "retirada";
+  itens: Array<{
+    produto_id?: string;
+    nome: string;
+    quantidade: number;
+    preco_unit?: number;
+    tamanho?: string | null;
+    observacao?: string | null;
+    adicionais?: string[];
+  }>;
+  valor_total: number;
+  criado_em: string;
+  atualizado_em: string;
+  em_andamento: boolean;
+}
+
+export interface ClienteRepetirPedido {
+  itens: Array<{
+    produto_id: string;
+    nome: string;
+    tamanho?: string | null;
+    preco: number;
+    quantidade: number;
+    observacao?: string;
+    adicionais: string[];
+    imagem_url?: string | null;
+  }>;
+  indisponiveis: string[];
+}
+
 /**
  * API pública do cardápio digital (sem autenticação).
  * Não usa Bearer token — é consumida pelo link público da pizzaria.
@@ -1092,12 +1143,13 @@ export const menuApi = {
     }
     return res.json();
   },
-  submitOrder: async (slug: string, data: PedidoDigitalPayload, idempotencyKey: string): Promise<PedidoDigitalResponse> => {
+  submitOrder: async (slug: string, data: PedidoDigitalPayload, idempotencyKey: string, customerToken?: string | null): Promise<PedidoDigitalResponse> => {
     const res = await fetch(`${API_BASE}/menu/${slug}/pedido`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Idempotency-Key': idempotencyKey,
+        ...(customerToken ? { Authorization: `Bearer ${customerToken}` } : {}),
       },
       body: JSON.stringify(data),
     });
@@ -1113,6 +1165,62 @@ export const menuApi = {
     if (!res.ok) {
       const b = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Pedido nao encontrado', b);
+    }
+    return res.json();
+  },
+  registerCustomer: async (slug: string, data: { nome: string; telefone: string; email: string; senha: string }): Promise<ClienteContaAuth> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}/conta/cadastro`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Não foi possível criar sua conta', b);
+    }
+    return res.json();
+  },
+  loginCustomer: async (slug: string, data: { email: string; senha: string }): Promise<ClienteContaAuth> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}/conta/entrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Não foi possível entrar', b);
+    }
+    return res.json();
+  },
+  getCustomer: async (slug: string, token: string): Promise<ClienteConta> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}/conta`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Sua sessão expirou', b);
+    }
+    const data = await res.json();
+    return data.cliente;
+  },
+  getCustomerOrders: async (slug: string, token: string): Promise<ClientePedidoConta[]> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}/conta/pedidos`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Não foi possível carregar seus pedidos', b);
+    }
+    const data = await res.json();
+    return data.pedidos || [];
+  },
+  repeatCustomerOrder: async (slug: string, token: string, orderId: string): Promise<ClienteRepetirPedido> => {
+    const res = await fetch(`${API_BASE}/menu/${slug}/conta/pedidos/${orderId}/repetir`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || 'Não foi possível repetir este pedido', b);
     }
     return res.json();
   },

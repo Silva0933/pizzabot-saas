@@ -18,6 +18,8 @@ import {
   CampanhaCardapio,
   CupomCardapio,
   PedidoAcompanhamento,
+  ClienteConta,
+  ClientePedidoConta,
 } from "../../lib/api";
 import "../../styles/cardapio-publico.css";
 
@@ -154,6 +156,18 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [tracking, setTracking] = useState<PedidoAcompanhamento | null>(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
   const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [accountTab, setAccountTab] = useState<"login" | "register">("login");
+  const [accountForm, setAccountForm] = useState({ nome: "", telefone: "", email: "", senha: "" });
+  const [accountToken, setAccountToken] = useState<string | null>(() => {
+    try { return localStorage.getItem(`pizzabot:customer-token:${slug}`); } catch { return null; }
+  });
+  const [customer, setCustomer] = useState<ClienteConta | null>(null);
+  const [customerOrders, setCustomerOrders] = useState<ClientePedidoConta[]>([]);
+  const [accountLoading, setAccountLoading] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [repeatingOrderId, setRepeatingOrderId] = useState<string | null>(null);
+
 
 
   // Modal de produto
@@ -183,6 +197,37 @@ export function CardapioPublico({ slug }: { slug: string }) {
       window.clearInterval(refreshTimer);
     };
   }, [slug]);
+
+  useEffect(() => {
+    if (!accountToken) {
+      setCustomer(null);
+      setCustomerOrders([]);
+      return;
+    }
+    let active = true;
+    setAccountLoading(true);
+    Promise.all([menuApi.getCustomer(slug, accountToken), menuApi.getCustomerOrders(slug, accountToken)])
+      .then(([conta, pedidos]) => {
+        if (!active) return;
+        setCustomer(conta);
+        setCustomerOrders(pedidos);
+        setCheckoutForm((form) => ({
+          ...form,
+          nome: conta.nome || form.nome,
+          telefone: conta.telefone || form.telefone,
+        }));
+        setAccountError(null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setAccountToken(null);
+        setCustomer(null);
+        setCustomerOrders([]);
+        try { localStorage.removeItem(`pizzabot:customer-token:${slug}`); } catch { /* modo privado */ }
+      })
+      .finally(() => { if (active) setAccountLoading(false); });
+    return () => { active = false; };
+  }, [accountToken, slug]);
 
   // ---- Categorias ----
   const categorias = useMemo(() => {
@@ -377,6 +422,85 @@ export function CardapioPublico({ slug }: { slug: string }) {
     }
   }
 
+  async function submitCustomerAccount(event: React.FormEvent) {
+    event.preventDefault();
+    setAccountLoading(true);
+    setAccountError(null);
+    try {
+      const auth = accountTab === "register"
+        ? await menuApi.registerCustomer(slug, accountForm)
+        : await menuApi.loginCustomer(slug, { email: accountForm.email, senha: accountForm.senha });
+      setAccountToken(auth.access_token);
+      setCustomer(auth.cliente);
+      setCheckoutForm((form) => ({ ...form, nome: auth.cliente.nome || form.nome, telefone: auth.cliente.telefone || form.telefone }));
+      try { localStorage.setItem(`pizzabot:customer-token:${slug}`, auth.access_token); } catch { /* modo privado */ }
+      setCustomerOrders(await menuApi.getCustomerOrders(slug, auth.access_token));
+      setAccountForm((form) => ({ ...form, senha: "" }));
+    } catch (error: any) {
+      setAccountError(error.message || "Não foi possível acessar sua conta.");
+    } finally {
+      setAccountLoading(false);
+    }
+  }
+
+  function logoutCustomer() {
+    setAccountToken(null);
+    setCustomer(null);
+    setCustomerOrders([]);
+    setAccountTab("login");
+    setAccountError(null);
+    try { localStorage.removeItem(`pizzabot:customer-token:${slug}`); } catch { /* modo privado */ }
+  }
+
+  async function repeatCustomerOrder(order: ClientePedidoConta) {
+    if (!accountToken || repeatingOrderId) return;
+    setRepeatingOrderId(order.id);
+    setAccountError(null);
+    try {
+      const repeated = await menuApi.repeatCustomerOrder(slug, accountToken, order.id);
+      if (!repeated.itens.length) {
+        setAccountError("Os produtos deste pedido não estão mais disponíveis no cardápio.");
+        return;
+      }
+      setCart(repeated.itens.map((item, index) => ({
+        id: `${item.produto_id}-${item.tamanho || "unico"}-repeat-${index}`,
+        produtoId: item.produto_id,
+        nome: item.nome,
+        tamanho: item.tamanho || null,
+        preco: Number(item.preco),
+        quantidade: item.quantidade,
+        observacao: item.observacao || "",
+        adicionais: item.adicionais || [],
+        imgUrl: item.imagem_url || undefined,
+      })));
+      setCartPulse(true);
+      window.setTimeout(() => setCartPulse(false), 700);
+      setAccountOpen(false);
+      setSacolaOpen(true);
+    } catch (error: any) {
+      setAccountError(error.message || "Não foi possível repetir este pedido.");
+    } finally {
+      setRepeatingOrderId(null);
+    }
+  }
+
+  async function trackCustomerOrder(order: ClientePedidoConta) {
+    const telefone = customer?.telefone || "";
+    setTrackingForm({ numero: String(order.numero_pedido), telefone });
+    setTracking(null);
+    setTrackingError(null);
+    setAccountOpen(false);
+    setTrackingOpen(true);
+    setTrackingLoading(true);
+    try {
+      setTracking(await menuApi.trackOrder(slug, order.numero_pedido, telefone));
+    } catch (error: any) {
+      setTrackingError(error.message || "Pedido não encontrado.");
+    } finally {
+      setTrackingLoading(false);
+    }
+  }
+
 
   // ---- Botão "+" do card: adiciona direto ou abre o seletor de tamanho ----
   function handleQuickAdd(e: React.MouseEvent<HTMLElement>, p: MenuProduto) {
@@ -440,9 +564,9 @@ export function CardapioPublico({ slug }: { slug: string }) {
       endereco_lat: checkoutForm.lat ?? undefined,
       endereco_lon: checkoutForm.lon ?? undefined,
       forma_pagamento: checkoutForm.pagamento,
+      cupom: cupomAplicado || undefined,
       observacoes: checkoutForm.observacoes || undefined,
       itens: cart.map(i => ({
-      cupom: cupomAplicado || undefined,
         produto_id: i.produtoId,
         nome: i.nome + (i.tamanho ? ` (${i.tamanho})` : ""),
         quantidade: i.quantidade,
@@ -458,7 +582,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
         checkoutRequestKeyRef.current = crypto.randomUUID?.() ||
           `pedido-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       }
-      const res = await menuApi.submitOrder(slug, payload, checkoutRequestKeyRef.current);
+      const res = await menuApi.submitOrder(slug, payload, checkoutRequestKeyRef.current, accountToken);
       setResultado(res);
       setStep("confirmacao");
       setCupomAplicado(null);
@@ -470,6 +594,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
           JSON.stringify({ numero: res.numero_pedido, telefone: checkoutForm.telefone }),
         );
       } catch { /* modo privado */ }
+      if (accountToken) {
+        Promise.all([menuApi.getCustomer(slug, accountToken), menuApi.getCustomerOrders(slug, accountToken)])
+          .then(([conta, pedidos]) => { setCustomer(conta); setCustomerOrders(pedidos); })
+          .catch(() => { /* a sessão será revalidada na próxima abertura */ });
+      }
       setCart([]);
       checkoutRequestKeyRef.current = null;
     } catch (e: any) {
@@ -1113,6 +1242,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
                   <span>Sacola</span><b>{cartCount}</b>
                 </button>
+                <button className={`cdp-header-account ${customer ? "connected" : ""}`} onClick={() => setAccountOpen(true)} aria-label="Minha conta">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M4 22a8 8 0 0 1 16 0"/></svg>
+                  <span>{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
+                  {customer && <i aria-hidden="true" />}
+                </button>
               </div>
             </nav>
 
@@ -1452,6 +1586,76 @@ export function CardapioPublico({ slug }: { slug: string }) {
               <a className="cdp-whatsapp-float" href={waUrl} target="_blank" rel="noopener noreferrer" aria-label="Falar no WhatsApp">
                 <svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
               </a>
+            )}
+
+            {accountOpen && (
+              <div className="cdp-account-overlay" onClick={() => setAccountOpen(false)}>
+                <section className="cdp-account-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Minha conta">
+                  <button className="cdp-account-close" onClick={() => setAccountOpen(false)} aria-label="Fechar">×</button>
+                  <header className="cdp-account-head">
+                    <small>MINHA CONTA</small>
+                    <h2>{customer ? `Olá, ${customer.nome.split(" ")[0]}` : "Acesse sua conta"}</h2>
+                    <p>{customer ? "Acompanhe seus pedidos e peça seus favoritos novamente." : "Entre para ter histórico, acompanhamento rápido e recompra em poucos cliques."}</p>
+                  </header>
+
+                  {!customer ? (
+                    <>
+                      <div className="cdp-account-tabs" role="tablist">
+                        <button type="button" className={accountTab === "login" ? "active" : ""} onClick={() => { setAccountTab("login"); setAccountError(null); }}>Entrar</button>
+                        <button type="button" className={accountTab === "register" ? "active" : ""} onClick={() => { setAccountTab("register"); setAccountError(null); }}>Fazer cadastro</button>
+                      </div>
+                      <form className="cdp-account-form" onSubmit={submitCustomerAccount}>
+                        {accountTab === "register" && (
+                          <div className="cdp-account-form-row">
+                            <label><span>Nome</span><input required minLength={2} autoComplete="name" value={accountForm.nome} onChange={(e) => setAccountForm((form) => ({ ...form, nome: e.target.value }))} placeholder="Como podemos chamar você?" /></label>
+                            <label><span>WhatsApp</span><input required minLength={10} inputMode="tel" autoComplete="tel" value={accountForm.telefone} onChange={(e) => setAccountForm((form) => ({ ...form, telefone: e.target.value }))} placeholder="(11) 99999-9999" /></label>
+                          </div>
+                        )}
+                        <label><span>E-mail</span><input required type="email" autoComplete="email" value={accountForm.email} onChange={(e) => setAccountForm((form) => ({ ...form, email: e.target.value }))} placeholder="voce@email.com" /></label>
+                        <label><span>Senha</span><input required type="password" minLength={10} autoComplete={accountTab === "register" ? "new-password" : "current-password"} value={accountForm.senha} onChange={(e) => setAccountForm((form) => ({ ...form, senha: e.target.value }))} placeholder="Mínimo de 10 caracteres" /></label>
+                        {accountError && <div className="cdp-account-error">{accountError}</div>}
+                        <button className="cdp-account-submit" disabled={accountLoading}>{accountLoading ? "Aguarde..." : accountTab === "register" ? "Criar minha conta" : "Entrar"}</button>
+                        <p className="cdp-account-privacy">Seus dados ficam vinculados somente a esta loja e são usados para seus pedidos.</p>
+                      </form>
+                    </>
+                  ) : (
+                    <div className="cdp-account-dashboard">
+                      <div className="cdp-account-profile">
+                        <span>{customer.nome.slice(0, 1).toUpperCase()}</span>
+                        <div><strong>{customer.nome}</strong><small>{customer.email} · {customer.telefone}</small></div>
+                        <button onClick={logoutCustomer}>Sair</button>
+                      </div>
+                      <div className="cdp-account-stats">
+                        <div><strong>{customerOrders.length}</strong><small>pedidos recentes</small></div>
+                        <div><strong>{customerOrders.filter((order) => order.em_andamento).length}</strong><small>em andamento</small></div>
+                        <div><strong>{fmt(customer.total_gasto || customerOrders.reduce((sum, order) => sum + order.valor_total, 0))}</strong><small>em pedidos</small></div>
+                      </div>
+                      <section className="cdp-account-orders">
+                        <header><div><small>SEUS PEDIDOS</small><h3>Histórico e acompanhamento</h3></div></header>
+                        {accountLoading ? <div className="cdp-account-empty">Carregando seus pedidos...</div> : customerOrders.length === 0 ? (
+                          <div className="cdp-account-empty"><span>⌁</span><strong>Seu histórico começa aqui</strong><p>Depois do primeiro pedido, você poderá acompanhar e repetir por esta área.</p></div>
+                        ) : customerOrders.map((order) => (
+                          <article key={order.id} className={order.em_andamento ? "active" : ""}>
+                            <div className="cdp-account-order-top">
+                              <div><strong>Pedido #{order.numero_pedido}</strong><small>{new Date(order.criado_em).toLocaleDateString("pt-BR")} · {order.itens.reduce((sum, item) => sum + item.quantidade, 0)} itens</small></div>
+                              <span className={order.status === "cancelado" ? "cancelled" : order.em_andamento ? "live" : ""}>{order.status_label}</span>
+                            </div>
+                            <p>{order.itens.slice(0, 3).map((item) => `${item.quantidade}× ${item.nome}`).join(" · ")}{order.itens.length > 3 ? " · ..." : ""}</p>
+                            <div className="cdp-account-order-bottom">
+                              <strong>{fmt(order.valor_total)}</strong>
+                              <div>
+                                <button onClick={() => trackCustomerOrder(order)}>Acompanhar</button>
+                                <button className="primary" disabled={repeatingOrderId === order.id} onClick={() => repeatCustomerOrder(order)}>{repeatingOrderId === order.id ? "Carregando..." : "Pedir novamente"}</button>
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </section>
+                      {accountError && <div className="cdp-account-error">{accountError}</div>}
+                    </div>
+                  )}
+                </section>
+              </div>
             )}
 
             {trackingOpen && (
