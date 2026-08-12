@@ -2264,28 +2264,41 @@
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--accent) 75%, white 25%);
+  border-radius: 50%;
+  background: var(--grad);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 14px 34px rgba(0,0,0,.42), 0 0 0 5px color-mix(in srgb, var(--accent) 10%, transparent);
+  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+  isolation: isolate;
+}
 
 /* Conta do consumidor — login, histórico, acompanhamento e recompra. */
 .cdp-header-account {
   position: relative;
-  min-height: 42px;
-  padding: 0 14px;
+  z-index: 2;
+  min-height: 44px;
+  padding: 0 15px 0 9px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 1px solid var(--bg3);
-  border-radius: var(--radius-sm);
-  background: transparent;
+  border: 1px solid var(--bg4) !important;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg2) 82%, transparent);
   color: var(--text);
   font: inherit;
   font-size: 12px;
   font-weight: 800;
   cursor: pointer;
-  transition: border-color .2s, background .2s, transform .2s;
+  pointer-events: auto;
+  box-shadow: 0 6px 20px rgba(0,0,0,.12);
+  transition: border-color .2s, background .2s, transform .2s, box-shadow .2s;
 }
-.cdp-header-account:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); transform: translateY(-1px); }
-.cdp-header-account > span { display: none; }
+.cdp-header-account:hover { border-color: var(--accent) !important; background: color-mix(in srgb, var(--accent) 12%, var(--bg2)); transform: translateY(-1px); box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 16%, transparent); }
+.cdp-header-account:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 42%, transparent); outline-offset: 2px; }
+.cdp-header-account-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: 0 0 30px; border-radius: 9px; background: color-mix(in srgb, var(--accent) 15%, var(--bg)); color: var(--accent); }
+.cdp-header-account-label { display: inline; white-space: nowrap; }
 .cdp-header-account.connected { border-color: color-mix(in srgb, #22c55e 42%, var(--bg3)); }
 .cdp-header-account i {
   position: absolute;
@@ -2302,7 +2315,7 @@
 .cdp-account-overlay {
   position: fixed;
   inset: 0;
-  z-index: 140;
+  z-index: 320;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -2464,8 +2477,9 @@
 .cdp-theme-metropole .cdp-header-account { border-radius: 999px; }
 
 @media (max-width: 1180px) {
-  .cdp-header-account span { display: none; }
-  .cdp-header-account { width: 42px; padding: 0; }
+  .cdp-header-account-label { display: none; }
+  .cdp-header-account { width: 44px; padding: 0; }
+  .cdp-header-account-icon { width: 100%; height: 100%; background: transparent; }
 }
 @media (max-width: 720px) {
   .cdp-account-overlay { align-items: end; padding: 0; }
@@ -2479,15 +2493,14 @@
   .cdp-account-order-bottom { align-items: flex-end; }
   .cdp-account-order-bottom > div { flex-direction: column; }
   .cdp-account-order-bottom button { min-height: 38px; }
-  .cdp-header-account { min-height: 40px; width: 40px; }
+  .cdp-header-account { min-height: 42px; width: 42px; flex: 0 0 42px; }
 }
-  border-radius: 50%;
-  background: var(--grad);
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 14px 34px rgba(0,0,0,.42), 0 0 0 5px color-mix(in srgb, var(--accent) 10%, transparent);
-  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
-  isolation: isolate;
+@media (max-width: 480px) {
+  .cdp-header-store-meta { display: none; }
+  .cdp-site-actions { margin-left: auto; gap: 6px; }
+  .cdp-header-cart { width: 48px; padding: 0 5px; justify-content: center; gap: 3px; }
+  .cdp-header-cart > span { display: none; }
+  .cdp-header-cart b { min-width: 18px; height: 18px; padding: 0 4px; }
 }
 .cdp-cart-float:hover {
   transform: translateY(-3px) scale(1.04);

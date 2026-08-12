@@ -1269,9 +1269,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
                   <span>Sacola</span><b>{cartCount}</b>
                 </button>
-                <button className={`cdp-header-account ${customer ? "connected" : ""}`} onClick={() => setAccountOpen(true)} aria-label={customer ? `Conta de ${customer.nome}` : "Minha conta"}>
-                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M4 22a8 8 0 0 1 16 0"/></svg>
-                  <span>{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
+                <button type="button" className={`cdp-header-account ${customer ? "connected" : ""}`} onClick={() => setAccountOpen(true)} aria-label={customer ? `Abrir conta de ${customer.nome}` : "Acessar minha conta"} title={customer ? `Conta de ${customer.nome}` : "Entrar ou criar minha conta"}>
+                  <span className="cdp-header-account-icon" aria-hidden="true">
+                    <svg width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>
+                  </span>
+                  <span className="cdp-header-account-label">{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
                   {customer && <i aria-hidden="true" />}
                 </button>
               </div>
