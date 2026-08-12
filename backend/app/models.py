@@ -317,6 +317,7 @@ class Cliente(Base):
     email: Mapped[str | None] = mapped_column(String)
     senha_hash: Mapped[str | None] = mapped_column(Text)
     conta_ativa: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    conta_versao: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     conta_atualizada_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     memoria_resumo: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     memoria_atualizada_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

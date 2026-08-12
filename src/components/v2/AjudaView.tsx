@@ -9,6 +9,7 @@ import React, { useState } from "react";
 import {
   HelpCircle, ClipboardList, TrendingUp, MessageSquare, UtensilsCrossed,
   Store, Lightbulb, ChevronDown, Rocket, Globe, Palette, Bike, ReceiptText,
+  Users,
 } from "lucide-react";
 
 type HelpItem = { titulo: string; descricao: string };
@@ -23,7 +24,7 @@ type HelpSection = {
 const SECOES: HelpSection[] = [
   { id: "visao", icon: Rocket, titulo: "1. Visão geral do PizzaBot", resumo: "Do pedido à entrega, em um único painel.", itens: [
     { titulo: "O que o PizzaBot faz", descricao: "A atendente de IA conversa pelo WhatsApp, vende os produtos cadastrados, monta pedidos, calcula entrega, recebe pagamentos quando configurado e acompanha o andamento." },
-    { titulo: "Menu do painel", descricao: "Use Pedidos, Análise, Conversas, Cardápio, Temas, Meu Negócio, Entregadores, Assinatura e Ajuda para administrar a operação." },
+    { titulo: "Menu do painel", descricao: "Use Pedidos, Análise, Conversas, Clientes, Cardápio, Temas, Meu Negócio, Entregadores, Assinatura e Ajuda para administrar a operação." },
     { titulo: "Atualizações em tempo real", descricao: "Pedidos e conversas são atualizados no painel. Salve as configurações para que passem a valer na operação." },
   ] },
   { id: "pedidos", icon: ClipboardList, titulo: "2. Pedidos", resumo: "Controle a produção, saída e entrega.", itens: [
@@ -42,36 +43,42 @@ const SECOES: HelpSection[] = [
     { titulo: "Assumir conversa", descricao: "Pause o bot em uma conversa para responder pessoalmente e reative-o ao terminar." },
     { titulo: "Encaminhamento", descricao: "Quando o cliente pede uma pessoa ou a IA não consegue resolver, a conversa pode ser direcionada para a equipe." },
   ] },
-  { id: "cardapio", icon: UtensilsCrossed, titulo: "5. Cardápio", resumo: "Produtos, tamanhos e disponibilidade.", itens: [
+  { id: "clientes", icon: Users, titulo: "5. Clientes", resumo: "Contas, compras e controle de acesso.", itens: [
+    { titulo: "Base de clientes", descricao: "Veja as pessoas que criaram uma conta no cardápio, pesquise por nome, e-mail ou telefone e acompanhe pedidos e valor gasto." },
+    { titulo: "Detalhes e pedidos", descricao: "Abra um cliente para consultar contato, endereço salvo, data de cadastro e até os 100 pedidos mais recentes." },
+    { titulo: "Redefinir senha", descricao: "Crie uma senha temporária com pelo menos 10 caracteres. As sessões antigas do cliente são encerradas automaticamente." },
+    { titulo: "Excluir conta", descricao: "A exclusão remove o acesso e anonimiza os dados pessoais, preservando os pedidos no histórico da pizzaria." },
+  ] },
+  { id: "cardapio", icon: UtensilsCrossed, titulo: "6. Cardápio", resumo: "Produtos, tamanhos e disponibilidade.", itens: [
     { titulo: "Produtos reais", descricao: "Cadastre categorias, preço, imagem, tamanhos, adicionais, regras e disponibilidade. A IA e o site oferecem apenas o que existe aqui." },
     { titulo: "Disponibilidade", descricao: "Desative um produto sem apagá-lo quando ele estiver em falta." },
     { titulo: "Importação", descricao: "Envie PDF, foto ou texto do seu cardápio para acelerar o cadastro e revise os dados antes de publicar." },
   ] },
-  { id: "temas", icon: Palette, titulo: "6. Temas, banners e cupons", resumo: "Personalize a identidade do cardápio público.", itens: [
+  { id: "temas", icon: Palette, titulo: "7. Temas, banners e cupons", resumo: "Personalize a identidade do cardápio público.", itens: [
     { titulo: "Identidade visual", descricao: "Escolha Brasa, Trattoria ou Metrópole; personalize fontes, cantos, cores de fundo, superfície, textos e botões." },
     { titulo: "Cartões e botões", descricao: "Escolha cartões elevados, minimalistas ou contornados; e botões em gradiente ou cor sólida." },
     { titulo: "Banners e ofertas", descricao: "Na aba Banners e cupons dentro de Temas, crie campanhas com imagem, chamada, botão, ordem e cupom associado." },
     { titulo: "Cupons", descricao: "Crie descontos em percentual ou reais, com pedido mínimo e validade. O servidor valida as regras no fechamento." },
   ] },
-  { id: "negocio", icon: Store, titulo: "7. Meu Negócio", resumo: "Configurações organizadas em categorias expansíveis.", itens: [
+  { id: "negocio", icon: Store, titulo: "8. Meu Negócio", resumo: "Configurações organizadas em categorias expansíveis.", itens: [
     { titulo: "Como navegar", descricao: "Clique para abrir ou recolher Identidade e horário, Atendimento e automação, Cardápio e pagamentos, Logística e entregas e Área sensível." },
     { titulo: "Identidade e horário", descricao: "Cadastre endereço, logo, banner, telefone e link do Google Maps. Configure horário e a mensagem fora de expediente." },
     { titulo: "Atendimento e pagamentos", descricao: "Conecte WhatsApp por QR Code, ative o bot, copie o link do cardápio e configure Pix, Mercado Pago ou Asaas." },
     { titulo: "Logística", descricao: "Defina tempos, taxas por bairro e encontre o link da Área do entregador." },
     { titulo: "Loja aberta ou fechada", descricao: "Use o controle de funcionamento para pausar pedidos quando precisar fechar mais cedo." },
   ] },
-  { id: "entregadores", icon: Bike, titulo: "8. Entregadores", resumo: "Organize entregas com uma área própria.", itens: [
+  { id: "entregadores", icon: Bike, titulo: "9. Entregadores", resumo: "Organize entregas com uma área própria.", itens: [
     { titulo: "Acesso", descricao: "Em Meu Negócio → Geral → Logística e entregas, copie o link da Área do entregador e envie para a equipe." },
     { titulo: "Pedidos disponíveis", descricao: "O entregador vê pedidos de delivery quando eles estão Prontos para entrega e ele está disponível." },
     { titulo: "Finalização", descricao: "Ao assumir a entrega, o pedido segue para A caminho; quando concluído, é marcado como entregue e vai para o histórico." },
   ] },
-  { id: "digital", icon: Globe, titulo: "9. Cardápio Digital", resumo: "Seu site de vendas ligado ao painel.", itens: [
+  { id: "digital", icon: Globe, titulo: "10. Cardápio Digital", resumo: "Seu site de vendas ligado ao painel.", itens: [
     { titulo: "Sacola", descricao: "Ao tocar em +, o produto anima até a sacola. A sacola flutuante fica acima do botão de WhatsApp." },
     { titulo: "Localização", descricao: "Com endereço e link do Google Maps cadastrados, o site exibe um mapa e um atalho para o cliente abrir a rota." },
     { titulo: "Acompanhar pedido", descricao: "O cliente acompanha pelo número e telefone. A visibilidade é configurada em Temas → Banners e cupons." },
     { titulo: "Checkout", descricao: "O cliente escolhe entrega ou retirada, informa endereço, aplica cupom quando houver e o pedido entra no painel." },
   ] },
-  { id: "assinatura", icon: ReceiptText, titulo: "10. Assinatura e dúvidas rápidas", resumo: "Plano, cobrança e soluções comuns.", itens: [
+  { id: "assinatura", icon: ReceiptText, titulo: "11. Assinatura e dúvidas rápidas", resumo: "Plano, cobrança e soluções comuns.", itens: [
     { titulo: "Central de assinaturas", descricao: "Acompanhe plano, recorrência, faturas, vencimentos e as opções de gerenciamento disponíveis na conta." },
     { titulo: "Cobrança via Asaas", descricao: "Com a integração configurada, pagamentos confirmados atualizam a fatura e o ciclo da assinatura." },
     { titulo: "IA não responde", descricao: "Confira WhatsApp conectado, bot ativo e loja aberta." },

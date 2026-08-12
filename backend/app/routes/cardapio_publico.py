@@ -202,7 +202,7 @@ def _normalizar_email(email: str) -> str:
 
 
 def _token_conta(cliente: Cliente, pizzaria: Pizzaria) -> str:
-    return create_access_token(str(cliente.id), extra={"typ": "cliente", "pizzaria_id": str(pizzaria.id), "slug": pizzaria.slug}, expires_minutes=43_200)
+    return create_access_token(str(cliente.id), extra={"typ": "cliente", "pizzaria_id": str(pizzaria.id), "slug": pizzaria.slug, "ver": int(cliente.conta_versao or 1)}, expires_minutes=43_200)
 
 
 # ============================================
@@ -731,6 +731,8 @@ async def _cliente_autenticado(
     )).scalar_one_or_none()
     if not pizzaria or not cliente or getattr(pizzaria, "suspensa", False):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sua sessão não é mais válida.")
+    if int(payload.get("ver", 1)) != int(cliente.conta_versao or 1):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sua sessão foi encerrada. Entre novamente.")
     return cliente, pizzaria
 
 
@@ -768,11 +770,13 @@ async def cadastrar_conta_cliente(
         cliente = Cliente(pizzaria_id=pizzaria.id, telefone=telefone)
         db.add(cliente)
         await db.flush()
+    ja_possuia_credencial = bool(cliente.senha_hash or cliente.conta_ativa)
     cliente.nome = body.nome.strip()
     cliente.telefone = telefone
     cliente.email = email
     cliente.senha_hash = hash_password(body.senha)
     cliente.conta_ativa = True
+    cliente.conta_versao = int(cliente.conta_versao or 1) + (1 if ja_possuia_credencial else 0)
     cliente.conta_atualizada_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(cliente)

@@ -420,6 +420,60 @@ export const pedidosApi = {
 };
 
 // ============================================
+// Clientes cadastrados no cardapio digital
+// ============================================
+export interface ClientePainel {
+  id: string;
+  nome: string;
+  telefone: string;
+  email: string;
+  endereco_padrao: string | null;
+  total_pedidos: number;
+  total_gasto: number;
+  ultima_visita: string | null;
+  criado_em: string | null;
+  conta_atualizada_em: string | null;
+}
+
+export interface ClientePainelPedido {
+  id: string;
+  numero_pedido: number | null;
+  status: string;
+  status_label: string;
+  tipo: string;
+  itens: Array<{ nome?: string; quantidade?: number; tamanho?: string }>;
+  valor_total: number;
+  criado_em: string;
+}
+
+export interface ClientePainelDetalhe {
+  cliente: ClientePainel;
+  pedidos: ClientePainelPedido[];
+}
+
+export const clientesApi = {
+  list: (pizzariaId: string, busca = "") => {
+    const qs = new URLSearchParams({ limit: "300" });
+    if (busca.trim()) qs.set("busca", busca.trim());
+    return api.get<{ clientes: ClientePainel[]; total: number }>(
+      `/pizzarias/${pizzariaId}/clientes?${qs.toString()}`,
+    );
+  },
+  get: (pizzariaId: string, clienteId: string) =>
+    api.get<ClientePainelDetalhe>(`/pizzarias/${pizzariaId}/clientes/${clienteId}`),
+  resetPassword: (pizzariaId: string, clienteId: string, novaSenha: string) =>
+    api.patch<{ ok: boolean; mensagem: string }>(
+      `/pizzarias/${pizzariaId}/clientes/${clienteId}/senha`,
+      { nova_senha: novaSenha },
+    ),
+  remove: (pizzariaId: string, clienteId: string) =>
+    request<{ ok: boolean; mensagem: string }>(
+      `/pizzarias/${pizzariaId}/clientes/${clienteId}`,
+      { method: "DELETE", headers: { "X-Confirm-Delete": "true" } },
+    ),
+};
+
+// ============================================
 // Entregadores — gestão pelo dono
 // ============================================
 export interface EntregadoresResp {

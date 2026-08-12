@@ -15,6 +15,7 @@ from app.routes import (
     auth,
     cardapio,
     cardapio_publico,
+    clientes,
     conversas,
     entregadores,
     health,
@@ -127,6 +128,7 @@ app.include_router(webhook.router)
 app.include_router(webhook_pagamento.router)
 app.include_router(ws.router)
 app.include_router(cardapio_publico.router)
+app.include_router(clientes.router)
 
 
 @app.get("/")

@@ -20,6 +20,7 @@ import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
 import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
 import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
 import { CardapioPublico } from "./components/v2/CardapioPublico";
+import { ClientesView } from "./components/v2/ClientesView";
 import { TemasView } from "./components/v2/TemasView";
 import { DriverApp } from "./components/driver/DriverApp";
 import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
@@ -618,6 +619,7 @@ function AdminApp() {
           ]}
         />
       )}
+      {nav === "clientes" && <ClientesView pizzariaId={pizzaria.id}/>}
       {nav === "cardapio"  && <CardapioViewV2 pizzariaId={pizzaria.id}/>}
       {nav === "temas"     && <TemasView pizzaria={pizzaria} onUpdated={setPizzaria}/>}
       {nav === "negocio"   && (

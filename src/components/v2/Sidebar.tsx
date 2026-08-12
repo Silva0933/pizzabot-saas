@@ -18,9 +18,10 @@ import {
   Bike,
   MoreHorizontal,
   Palette,
+  Users,
 } from "lucide-react";
 
-export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "cardapio" | "temas" | "negocio" | "entregadores" | "assinatura" | "ajuda" | "admin";
+export type NavKey = "inicio" | "analise" | "conversas" | "pedidos" | "clientes" | "cardapio" | "temas" | "negocio" | "entregadores" | "assinatura" | "ajuda" | "admin";
 
 export interface NavBadges {
   conversas?: number;
@@ -40,6 +41,7 @@ const NAV_ITEMS: { key: NavKey; label: string; icon: React.ComponentType<{ class
   { key: "pedidos",   label: "Pedidos",      icon: ClipboardList },
   { key: "analise",   label: "Análise",      icon: TrendingUp },
   { key: "conversas", label: "Conversas",    icon: MessageSquare },
+  { key: "clientes",   label: "Clientes",     icon: Users },
   { key: "cardapio",  label: "Cardápio",     icon: UtensilsCrossed },
   { key: "temas",     label: "Temas",        icon: Palette },
   { key: "negocio",   label: "Meu Negócio",  icon: Store },

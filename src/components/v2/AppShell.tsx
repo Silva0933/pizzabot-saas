@@ -142,6 +142,7 @@ export const NAV_PAGE_META: Record<NavKey, { title: string; subtitle?: string }>
   analise:   { title: "Análise", subtitle: "Desempenho e métricas do seu negócio" },
   conversas: { title: "Conversas", subtitle: "Mensagens dos clientes no WhatsApp" },
   pedidos:   { title: "Pedidos",   subtitle: "Acompanhe o fluxo dos pedidos" },
+  clientes:  { title: "Clientes", subtitle: "Contas, histórico de compras e acessos" },
   cardapio:  { title: "Cardápio",  subtitle: "Produtos, categorias e preços" },
   temas:     { title: "Temas", subtitle: "Personalize a identidade do cardápio" },
   negocio:   { title: "Meu Negócio", subtitle: "Tudo sobre sua pizzaria" },
