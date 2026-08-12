@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ExternalLink, LayoutTemplate, Loader2, Megaphone, Palette, RotateCcw, Save, Type } from "lucide-react";
+import { Check, ExternalLink, Image, LayoutTemplate, Loader2, Megaphone, Palette, RotateCcw, Save, Type } from "lucide-react";
 import { PromocoesCardapioPanel } from "./PromocoesCardapioPanel";
 import {
   BackendPizzaria,
@@ -90,6 +90,7 @@ const RADII: Record<TemaBordas, string> = { retas: "4px", suaves: "14px", arredo
 
 export function TemasView({ pizzaria, onUpdated }: Props) {
   const [config, setConfig] = useState<TemaCardapioConfig>(() => normalizarTema(pizzaria.tema_cardapio));
+  const [bannerUrl, setBannerUrl] = useState(pizzaria.banner_url || "");
   const [area, setArea] = useState<"identidade" | "promocoes">("identidade");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -104,8 +105,8 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
   const previewMuted = isLight ? "#766055" : "#afa6a0";
 
   const changed = useMemo(
-    () => JSON.stringify(normalizarTema(pizzaria.tema_cardapio)) !== JSON.stringify(config),
-    [pizzaria.tema_cardapio, config],
+    () => JSON.stringify(normalizarTema(pizzaria.tema_cardapio)) !== JSON.stringify(config) || (pizzaria.banner_url || "") !== bannerUrl.trim(),
+    [pizzaria.tema_cardapio, pizzaria.banner_url, config, bannerUrl],
   );
 
   function update<K extends keyof TemaCardapioConfig>(key: K, value: TemaCardapioConfig[K]) {
@@ -143,7 +144,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
         cupons: latestTheme.cupons ?? config.cupons,
         mostrar_acompanhamento: latestTheme.mostrar_acompanhamento ?? config.mostrar_acompanhamento,
       };
-      const updated = await pizzariasApi.update(pizzaria.id, { tema_cardapio: merged });
+      const updated = await pizzariasApi.update(pizzaria.id, { tema_cardapio: merged, banner_url: bannerUrl.trim() || null });
       setConfig(merged);
       onUpdated(updated);
       setSaved(true);
@@ -257,6 +258,20 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
 
 
           <section className="rounded-2xl border border-line bg-surface p-4 md:p-5">
+            <div className="flex items-center gap-2 mb-1"><Image className="w-4 h-4 text-brand-500" /><h3 className="font-bold text-ink">Imagem do banner principal</h3></div>
+            <p className="text-xs text-ink-muted mb-4">Use uma imagem horizontal com o produto mais à direita. O texto do cardápio ficará protegido e alinhado à esquerda.</p>
+            <label className="block">
+              <span className="block text-xs font-semibold text-ink-muted mb-1.5">Link da imagem do banner</span>
+              <input type="url" value={bannerUrl} onChange={(event) => { setBannerUrl(event.target.value); setSaved(false); }} placeholder="https://exemplo.com/banner.jpg"
+                className="w-full px-3 py-2.5 rounded-xl border border-line bg-surface-muted text-sm text-ink outline-none focus:border-brand-500" />
+            </label>
+            <div className="mt-3 overflow-hidden rounded-xl border border-line bg-surface-muted">
+              {bannerUrl.trim() ? <img src={bannerUrl.trim()} alt="Prévia do banner" className="h-40 w-full object-cover object-right" /> : <div className="h-40 grid place-items-center text-xs text-ink-subtle">Cole o link de uma imagem para ver a prévia.</div>}
+            </div>
+            <p className="mt-2 text-[11px] text-ink-subtle">Recomendado: 1920 × 720 px. Formatos JPG, PNG ou WebP hospedados em um link público.</p>
+          </section>
+          <section className="rounded-2xl border border-line bg-surface p-4 md:p-5">
+
             <h3 className="font-bold text-ink mb-4">Textos de apresentação</h3>
             <div className="space-y-3">
               <TextField label="Chamada pequena" value={config.chamada || ""} onChange={(v) => update("chamada", v)} maxLength={70} />
@@ -289,7 +304,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
               <span className="text-[8px] px-2 py-1 border border-current/20" style={{ borderRadius: RADII[config.bordas || "suaves"] }}>Sacola 0</span>
             </div>
             <div className="min-h-[270px] p-6 flex items-end relative bg-cover bg-center"
-              style={{ backgroundImage: pizzaria.banner_url ? `linear-gradient(90deg, ${config.cor_fundo}f2 10%, ${config.cor_fundo}55), url(${pizzaria.banner_url})` : `linear-gradient(135deg, ${config.cor_fundo}, ${config.cor_secundaria}66)` }}>
+              style={{ backgroundImage: bannerUrl.trim() ? `linear-gradient(90deg, ${config.cor_fundo}f2 10%, ${config.cor_fundo}55), url(${bannerUrl.trim()})` : `linear-gradient(135deg, ${config.cor_fundo}, ${config.cor_secundaria}66)`, backgroundPosition: "right center" }}>
               <div className="relative max-w-[330px]">
                 <p className="text-[8px] font-bold tracking-[.18em] mb-2" style={{ color: config.cor_primaria }}>{config.chamada}</p>
                 <h4 className="text-[36px] leading-[.9]" style={{ fontFamily: titleFont }}>

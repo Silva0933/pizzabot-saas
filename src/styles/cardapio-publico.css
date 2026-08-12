@@ -1130,27 +1130,27 @@
   font-size: 10px;
 }
 .cdp-banner {
-  height: min(730px, 78vh);
-  min-height: 620px;
+  height: min(720px, 76vh);
+  min-height: 590px;
   align-items: center;
   background: #080706;
 }
-.cdp-banner-img { filter: saturate(1.08) contrast(1.04); }
+.cdp-banner-img { filter: saturate(1.08) contrast(1.04); object-position: 78% center; }
 .cdp-banner-img-blur { filter: blur(18px) brightness(.42) saturate(1.25); }
 .cdp-banner-scrim {
   background:
-    linear-gradient(90deg, #060504 3%, #060504f5 31%, #0605049c 55%, #0605041a 82%),
+    linear-gradient(90deg, #060504 0%, #060504fb 29%, #060504cc 47%, #06050458 64%, #06050408 83%),
     linear-gradient(0deg, #090907 0%, transparent 24%);
 }
 .cdp-banner-content {
-  width: min(1420px, 100%);
+  width: min(1600px, 100%);
   margin: 0 auto;
-  padding: 70px max(28px, 5vw);
+  padding: 70px max(36px, 8vw);
   align-items: center;
 }
 .cdp-banner-content > .cdp-logo-ring,
 .cdp-banner-content > .cdp-logo-placeholder { display: none; }
-.cdp-banner-info { max-width: 730px; }
+.cdp-banner-info { width: min(660px, 49vw); max-width: 660px; }
 .cdp-hero-eyebrow {
   margin: 0 0 15px;
   color: var(--accent);
