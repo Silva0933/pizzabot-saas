@@ -151,6 +151,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [cupomInput, setCupomInput] = useState("");
   const [cupomAplicado, setCupomAplicado] = useState<string | null>(null);
   const [cupomFeedback, setCupomFeedback] = useState<string | null>(null);
+  const [topOfferVisible, setTopOfferVisible] = useState(true);
+  const [topOfferCopied, setTopOfferCopied] = useState(false);
   const [trackingOpen, setTrackingOpen] = useState(false);
   const [trackingForm, setTrackingForm] = useState({ numero: "", telefone: "" });
   const [tracking, setTracking] = useState<PedidoAcompanhamento | null>(null);
@@ -1204,45 +1206,70 @@ export function CardapioPublico({ slug }: { slug: string }) {
           /* ===== MENU PRINCIPAL ===== */
           <>
             {/* Banner hero da pizzaria */}
-            <div className="cdp-offerbar">
-              <span>Pedido direto, atendimento mais rápido</span>
-              <strong>
-                {pizz.aberto && <span className="cdp-kitchen-live-dot" aria-hidden="true"><i /></span>}
-                {pizz.aberto ? "Cozinha aberta agora" : "Confira nosso cardápio"}
-              </strong>
-            </div>
+            {topOfferVisible && (
+              <div className="cdp-offerbar">
+                <div className="cdp-offerbar-content">
+                  {cuponsAtivos[0] ? (
+                    <>
+                      <span className="cdp-offerbar-message">
+                        Oferta especial: <b>{cuponsAtivos[0].descricao || (cuponsAtivos[0].tipo === "percentual" ? `${cuponsAtivos[0].valor}% OFF` : `${fmt(cuponsAtivos[0].valor)} OFF`)}</b>
+                      </span>
+                      <strong className="cdp-offerbar-code">com <b>{cuponsAtivos[0].codigo}</b></strong>
+                      <button
+                        className="cdp-offerbar-copy"
+                        type="button"
+                        onClick={async () => {
+                          const codigo = cuponsAtivos[0].codigo.toUpperCase();
+                          setCupomInput(codigo);
+                          setCupomAplicado(codigo);
+                          try { await navigator.clipboard.writeText(codigo); } catch { /* Mantém a aplicação do cupom mesmo sem acesso à área de transferência. */ }
+                          setTopOfferCopied(true);
+                          window.setTimeout(() => setTopOfferCopied(false), 1800);
+                        }}
+                      >
+                        {topOfferCopied ? "Copiado!" : "Copiar cupom"}
+                      </button>
+                    </>
+                  ) : (
+                    <span className="cdp-offerbar-message">Peça direto pelo cardápio e acompanhe tudo em tempo real</span>
+                  )}
+                </div>
+                <button className="cdp-offerbar-close" type="button" onClick={() => setTopOfferVisible(false)} aria-label="Fechar aviso">×</button>
+              </div>
+            )}
 
             <nav className="cdp-site-header" aria-label="Navegação do cardápio">
-              <button className="cdp-site-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+              <button className="cdp-site-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label={`${pizz.nome} — voltar ao início`}>
                 {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
-                <span><strong>{pizz.nome}</strong><small>Cardápio digital</small></span>
               </button>
+              <div className="cdp-header-store-meta" aria-label={`Loja ${pizz.aberto ? "aberta" : "fechada"}`}>
+                <strong className={pizz.aberto ? "open" : "closed"}>
+                  <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} aria-hidden="true" />
+                  {pizz.aberto ? "Aberto agora" : "Fechado agora"}
+                </strong>
+                {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
+                  <span>{pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min</span>
+                )}
+              </div>
               <div className="cdp-site-links">
                 <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Início</button>
                 <button onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>Cardápio</button>
                 {campanhasAtivas.length > 0 && <button onClick={() => document.getElementById("promocoes")?.scrollIntoView({ behavior: "smooth" })}>Promoções</button>}
                 {pizz.endereco_maps_url && <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">Nossa localização</a>}
-                <button onClick={() => document.getElementById("como-pedir")?.scrollIntoView({ behavior: "smooth" })}>Como pedir</button>
+                <button onClick={() => document.getElementById("como-pedir")?.scrollIntoView({ behavior: "smooth" })}>Dúvidas</button>
               </div>
               <div className="cdp-site-actions">
-                {pizz.endereco_maps_url && (
-                  <a className="cdp-header-location" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer" aria-label="Abrir nossa localização">
-                    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
-                    <span>Localização</span>
-                  </a>
-                )}
                 {tema.mostrar_acompanhamento !== false && (
                   <button className="cdp-header-track" onClick={() => setTrackingOpen(true)}>
-                    <svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
                     <span>Acompanhar pedido</span>
                   </button>
                 )}
-                {waUrl && <a href={waUrl} target="_blank" rel="noopener noreferrer" className="cdp-header-contact">Atendimento</a>}
                 <button className="cdp-header-cart" onClick={() => setSacolaOpen(true)}>
                   <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
                   <span>Sacola</span><b>{cartCount}</b>
                 </button>
-                <button className={`cdp-header-account ${customer ? "connected" : ""}`} onClick={() => setAccountOpen(true)} aria-label="Minha conta">
+                <button className={`cdp-header-account ${customer ? "connected" : ""}`} onClick={() => setAccountOpen(true)} aria-label={customer ? `Conta de ${customer.nome}` : "Minha conta"}>
                   <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M4 22a8 8 0 0 1 16 0"/></svg>
                   <span>{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
                   {customer && <i aria-hidden="true" />}

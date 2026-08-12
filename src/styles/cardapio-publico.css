@@ -1000,21 +1000,34 @@
   box-shadow: none;
 }
 .cdp-offerbar {
-  min-height: 34px;
-  padding: 7px max(24px, 5vw);
+  min-height: 30px;
+  padding: 5px max(44px, 5vw);
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 16px;
+  position: relative;
   background: var(--accent);
   color: #170b06;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
-  letter-spacing: .03em;
-  text-transform: uppercase;
+  letter-spacing: .01em;
 }
-.cdp-offerbar strong { padding-left: 16px; border-left: 1px solid #170b0640; }
-.cdp-offerbar strong { display: inline-flex; align-items: center; gap: 8px; }
+.cdp-offerbar-content { display: flex; align-items: center; justify-content: center; gap: 11px; }
+.cdp-offerbar-message b { font-weight: 950; }
+.cdp-offerbar-code { font-weight: 700; }
+.cdp-offerbar-code b { margin-left: 4px; font-weight: 950; text-transform: uppercase; }
+.cdp-offerbar-copy,
+.cdp-offerbar-close {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 950;
+  cursor: pointer;
+}
+.cdp-offerbar-copy { text-decoration: underline; text-underline-offset: 2px; }
+.cdp-offerbar-close { width: 30px; height: 30px; position: absolute; right: max(10px, 2vw); top: 50%; transform: translateY(-50%); font-size: 18px; line-height: 1; }
 .cdp-kitchen-live-dot {
   width: 10px;
   height: 10px;
@@ -1041,11 +1054,11 @@
   75%, 100% { transform: scale(1.65); opacity: 0; }
 }
 .cdp-site-header {
-  min-height: 76px;
-  padding: 8px max(28px, calc((100vw - 1420px)/2));
+  min-height: 72px;
+  padding: 7px max(28px, calc((100vw - 1700px)/2));
   display: flex;
   align-items: center;
-  gap: 26px;
+  gap: 18px;
   position: relative;
   z-index: 40;
   background: #0b0908f2;
@@ -1061,16 +1074,16 @@
 .cdp-site-brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  flex: 0 0 auto;
   padding: 0;
   background: transparent;
   color: var(--text) !important;
   text-align: left;
 }
 .cdp-site-brand > img, .cdp-site-brand > span:first-child {
-  width: 52px;
-  height: 52px;
-  border-radius: 13px;
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
   object-fit: cover;
   display: grid;
   place-items: center;
@@ -1078,9 +1091,11 @@
   border: 1px solid var(--bg3);
   font-size: 26px;
 }
-.cdp-site-brand > span:last-child { display: grid; gap: 2px; }
-.cdp-site-brand strong { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
-.cdp-site-brand small { color: var(--text3); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; }
+.cdp-header-store-meta { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.cdp-header-store-meta strong { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 850; }
+.cdp-header-store-meta strong.open { color: #22c55e; }
+.cdp-header-store-meta strong.closed { color: #f87171; }
+.cdp-header-store-meta > span { color: var(--text3); font-size: 11px; }
 .cdp-site-links { margin: auto; display: flex; align-items: center; gap: 34px; }
 .cdp-site-links button {
   padding: 10px 0;
@@ -1090,7 +1105,7 @@
   font-weight: 700;
 }
 .cdp-site-links button:hover { color: var(--text); }
-.cdp-site-actions { display: flex; align-items: center; gap: 9px; }
+.cdp-site-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .cdp-header-contact, .cdp-header-cart {
   min-height: 44px;
   padding: 0 16px;
@@ -1376,11 +1391,17 @@
   .cdp-main-area { padding-inline: 28px; }
 }
 @media (max-width: 720px) {
-  .cdp-offerbar { min-height: 29px; padding-inline: 15px; font-size: 9px; justify-content: space-between; }
-  .cdp-offerbar strong { padding-left: 0; border: 0; }
-  .cdp-site-header { min-height: 64px; padding: 6px 14px; position: relative; }
-  .cdp-site-brand > img, .cdp-site-brand > span:first-child { width: 46px; height: 46px; }
-  .cdp-site-brand > span:last-child { display: none; }
+  .cdp-offerbar { min-height: 31px; padding: 5px 37px 5px 12px; font-size: 8.5px; }
+  .cdp-offerbar-content { width: 100%; gap: 7px; overflow: hidden; justify-content: center; }
+  .cdp-offerbar-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cdp-offerbar-code { white-space: nowrap; }
+  .cdp-offerbar-copy { flex: 0 0 auto; white-space: nowrap; }
+  .cdp-offerbar-close { right: 4px; }
+  .cdp-site-header { min-height: 62px; padding: 6px 12px; gap: 8px; position: relative; }
+  .cdp-site-brand > img, .cdp-site-brand > span:first-child { width: 44px; height: 44px; }
+  .cdp-header-store-meta { gap: 0; }
+  .cdp-header-store-meta strong { font-size: 10px; }
+  .cdp-header-store-meta > span { display: none; }
   .cdp-header-contact { display: none; }
   .cdp-header-cart { min-height: 40px; padding: 0 12px; }
   .cdp-banner { height: 670px; min-height: 0; align-items: flex-end; }
@@ -2264,6 +2285,7 @@
   transition: border-color .2s, background .2s, transform .2s;
 }
 .cdp-header-account:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); transform: translateY(-1px); }
+.cdp-header-account > span { display: none; }
 .cdp-header-account.connected { border-color: color-mix(in srgb, #22c55e 42%, var(--bg3)); }
 .cdp-header-account i {
   position: absolute;
