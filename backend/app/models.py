@@ -313,6 +313,7 @@ class Cliente(Base):
     telefone: Mapped[str] = mapped_column(String, nullable=False)
     nome: Mapped[str | None] = mapped_column(String)
     endereco_padrao: Mapped[str | None] = mapped_column(Text)
+    endereco_dados: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     preferencias: Mapped[str | None] = mapped_column(Text)
     email: Mapped[str | None] = mapped_column(String)
     senha_hash: Mapped[str | None] = mapped_column(Text)

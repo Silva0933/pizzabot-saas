@@ -2662,3 +2662,15 @@
 .cdp-btn-gradiente .cdp-hero-primary,
 .cdp-btn-gradiente .cdp-btn-primary,
 .cdp-btn-gradiente .cdp-floating-cart { background: linear-gradient(135deg, var(--button, var(--accent)), var(--accent2)); }
+.cdp-account-settings { display: grid; gap: 10px; padding: 15px; border: 1px solid var(--bg3); border-radius: 13px; background: color-mix(in srgb, var(--bg) 76%, transparent); }
+.cdp-account-settings header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cdp-account-settings header small { color: var(--accent); font-size: 10px; font-weight: 900; letter-spacing: .14em; }
+.cdp-account-settings header h3 { margin: 4px 0 0; font-size: 16px; }
+.cdp-account-settings header button { min-height: 34px; padding: 0 11px; border: 1px solid var(--bg3); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 10px; font-weight: 900; cursor: pointer; }
+.cdp-account-address-summary { display: grid; gap: 5px; }
+.cdp-account-address-summary > span { color: var(--text3); font-size: 9px; font-weight: 900; letter-spacing: .1em; }
+.cdp-account-address-summary strong { font-size: 12px; line-height: 1.45; }
+.cdp-account-address-summary small { color: var(--text3); font-size: 10px; }
+.cdp-account-edit-form { display: grid; gap: 12px; padding-top: 4px; }
+.cdp-account-edit-form label { display: grid; gap: 7px; }
+.cdp-account-edit-form label > span { color: var(--text2); font-size: 11px; font-weight: 800; }

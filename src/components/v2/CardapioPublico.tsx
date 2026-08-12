@@ -169,6 +169,43 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [accountLoading, setAccountLoading] = useState(false);
   const [accountError, setAccountError] = useState<string | null>(null);
   const [repeatingOrderId, setRepeatingOrderId] = useState<string | null>(null);
+  const [accountEditOpen, setAccountEditOpen] = useState(false);
+  const [accountEditSaving, setAccountEditSaving] = useState(false);
+  const [accountEditError, setAccountEditError] = useState<string | null>(null);
+  const [accountEditForm, setAccountEditForm] = useState({
+    nome: "", telefone: "", email: "", cep: "", rua: "", numero: "", bairro: "", complemento: "", referencia: "",
+  });
+
+  function preencherCheckoutDaConta(conta: ClienteConta) {
+    const endereco = conta.endereco || { cep: "", rua: "", numero: "", bairro: "", complemento: "", referencia: "" };
+    setCheckoutForm((form) => ({
+      ...form,
+      nome: conta.nome || form.nome,
+      telefone: conta.telefone || form.telefone,
+      rua: endereco.rua || form.rua,
+      numero: endereco.numero || form.numero,
+      bairro: endereco.bairro || form.bairro,
+      referencia: endereco.referencia || form.referencia,
+    }));
+  }
+
+  function abrirEdicaoConta() {
+    if (!customer) return;
+    const endereco = customer.endereco || {};
+    setAccountEditForm({
+      nome: customer.nome || "", telefone: customer.telefone || "", email: customer.email || "",
+      cep: endereco.cep || "", rua: endereco.rua || "", numero: endereco.numero || "",
+      bairro: endereco.bairro || "", complemento: endereco.complemento || "", referencia: endereco.referencia || "",
+    });
+    setAccountEditError(null);
+    setAccountEditOpen(true);
+  }
+
+  function fecharEdicaoConta() {
+    setAccountEditOpen(false);
+    setAccountEditError(null);
+  }
+
 
 
 
@@ -213,11 +250,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
         if (!active) return;
         setCustomer(conta);
         setCustomerOrders(pedidos);
-        setCheckoutForm((form) => ({
-          ...form,
-          nome: conta.nome || form.nome,
-          telefone: conta.telefone || form.telefone,
-        }));
+        preencherCheckoutDaConta(conta);
         setAccountError(null);
       })
       .catch(() => {
@@ -424,6 +457,14 @@ export function CardapioPublico({ slug }: { slug: string }) {
     }
   }
 
+  function abrirAcompanhamentoNaConta() {
+    setTrackingOpen(false);
+    setTrackingError(null);
+    setAccountError(null);
+    setAccountTab(accountToken ? "login" : "register");
+    setAccountOpen(true);
+  }
+
   async function submitCustomerAccount(event: React.FormEvent) {
     event.preventDefault();
     setAccountLoading(true);
@@ -434,7 +475,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
         : await menuApi.loginCustomer(slug, { email: accountForm.email, senha: accountForm.senha });
       setAccountToken(auth.access_token);
       setCustomer(auth.cliente);
-      setCheckoutForm((form) => ({ ...form, nome: auth.cliente.nome || form.nome, telefone: auth.cliente.telefone || form.telefone }));
+      preencherCheckoutDaConta(auth.cliente);
       try { localStorage.setItem(`pizzabot:customer-token:${slug}`, auth.access_token); } catch { /* modo privado */ }
       setCustomerOrders(await menuApi.getCustomerOrders(slug, auth.access_token));
       setAccountForm((form) => ({ ...form, senha: "" }));
@@ -454,9 +495,43 @@ export function CardapioPublico({ slug }: { slug: string }) {
     try { localStorage.removeItem(`pizzabot:customer-token:${slug}`); } catch { /* modo privado */ }
   }
 
+
+  async function salvarDadosConta(event: React.FormEvent) {
+    event.preventDefault();
+    if (!accountToken || accountEditSaving) return;
+    if (accountEditForm.cep.replace(/\D/g, "").length !== 8) {
+      setAccountEditError("Informe um CEP valido com 8 digitos.");
+      return;
+    }
+    setAccountEditSaving(true);
+    setAccountEditError(null);
+    try {
+      const conta = await menuApi.updateCustomer(slug, accountToken, {
+        nome: accountEditForm.nome,
+        telefone: accountEditForm.telefone,
+        email: accountEditForm.email,
+        endereco: {
+          cep: accountEditForm.cep,
+          rua: accountEditForm.rua,
+          numero: accountEditForm.numero,
+          bairro: accountEditForm.bairro,
+          complemento: accountEditForm.complemento || undefined,
+          referencia: accountEditForm.referencia || undefined,
+        },
+      });
+      setCustomer(conta);
+      preencherCheckoutDaConta(conta);
+      setAccountEditOpen(false);
+    } catch (error: any) {
+      setAccountEditError(error.message || "Nao foi possivel salvar seus dados.");
+    } finally {
+      setAccountEditSaving(false);
+    }
+  }
+
   async function repeatCustomerOrder(order: ClientePedidoConta) {
-    if (!accountToken || repeatingOrderId) return;
     setRepeatingOrderId(order.id);
+    if (!accountToken || repeatingOrderId) return;
     setAccountError(null);
     try {
       const repeated = await menuApi.repeatCustomerOrder(slug, accountToken, order.id);
@@ -1260,7 +1335,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
               <div className="cdp-site-actions">
                 {tema.mostrar_acompanhamento !== false && (
-                  <button className="cdp-header-track" onClick={() => setTrackingOpen(true)}>
+                  <button className="cdp-header-track" onClick={abrirAcompanhamentoNaConta}>
                     <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
                     <span>Acompanhar pedido</span>
                   </button>
@@ -1654,6 +1729,42 @@ export function CardapioPublico({ slug }: { slug: string }) {
                         <div><strong>{customer.nome}</strong><small>{customer.email} · {customer.telefone}</small></div>
                         <button onClick={logoutCustomer}>Sair</button>
                       </div>
+                      <section className="cdp-account-settings">
+                        <header>
+                          <div><small>SEUS DADOS</small><h3>Perfil e entrega</h3></div>
+                          <button type="button" onClick={accountEditOpen ? fecharEdicaoConta : abrirEdicaoConta}>{accountEditOpen ? "Fechar" : "Editar dados"}</button>
+                        </header>
+                        {!accountEditOpen ? (
+                          <div className="cdp-account-address-summary">
+                            <span>ENDERECO SALVO</span>
+                            <strong>{customer.endereco?.rua ? customer.endereco.rua + ", " + customer.endereco.numero + " - " + customer.endereco.bairro : "Cadastre seu endereco para pedir mais rapido."}</strong>
+                            {customer.endereco?.cep && <small>CEP {customer.endereco.cep} {customer.endereco.complemento ? "- " + customer.endereco.complemento : ""}</small>}
+                          </div>
+                        ) : (
+                          <form className="cdp-account-edit-form" onSubmit={salvarDadosConta}>
+                            <div className="cdp-account-form-row">
+                              <label><span>Nome</span><input required minLength={2} value={accountEditForm.nome} onChange={(e) => setAccountEditForm((form) => ({ ...form, nome: e.target.value }))} /></label>
+                              <label><span>WhatsApp</span><input required minLength={10} inputMode="tel" value={accountEditForm.telefone} onChange={(e) => setAccountEditForm((form) => ({ ...form, telefone: e.target.value }))} /></label>
+                            </div>
+                            <label><span>E-mail</span><input required type="email" value={accountEditForm.email} onChange={(e) => setAccountEditForm((form) => ({ ...form, email: e.target.value }))} /></label>
+                            <div className="cdp-account-form-row">
+                              <label><span>CEP</span><input required inputMode="numeric" maxLength={9} value={accountEditForm.cep} onChange={(e) => setAccountEditForm((form) => ({ ...form, cep: e.target.value }))} placeholder="00000-000" /></label>
+                              <label><span>Bairro</span><input required minLength={2} value={accountEditForm.bairro} onChange={(e) => setAccountEditForm((form) => ({ ...form, bairro: e.target.value }))} /></label>
+                            </div>
+                            <div className="cdp-account-form-row">
+                              <label><span>Rua / Avenida</span><input required minLength={2} value={accountEditForm.rua} onChange={(e) => setAccountEditForm((form) => ({ ...form, rua: e.target.value }))} /></label>
+                              <label><span>Numero</span><input required value={accountEditForm.numero} onChange={(e) => setAccountEditForm((form) => ({ ...form, numero: e.target.value }))} /></label>
+                            </div>
+                            <div className="cdp-account-form-row">
+                              <label><span>Complemento</span><input value={accountEditForm.complemento} onChange={(e) => setAccountEditForm((form) => ({ ...form, complemento: e.target.value }))} placeholder="Apto, bloco, casa..." /></label>
+                              <label><span>Referencia</span><input value={accountEditForm.referencia} onChange={(e) => setAccountEditForm((form) => ({ ...form, referencia: e.target.value }))} placeholder="Opcional" /></label>
+                            </div>
+                            {accountEditError && <div className="cdp-account-error">{accountEditError}</div>}
+                            <button className="cdp-account-submit" disabled={accountEditSaving}>{accountEditSaving ? "Salvando..." : "Salvar dados e endereco"}</button>
+                          </form>
+                        )}
+                      </section>
+
                       <div className="cdp-account-stats">
                         <div><strong>{customerOrders.length}</strong><small>pedidos recentes</small></div>
                         <div><strong>{customerOrders.filter((order) => order.em_andamento).length}</strong><small>em andamento</small></div>

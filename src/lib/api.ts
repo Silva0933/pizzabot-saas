@@ -1133,12 +1133,22 @@ export interface PedidoAcompanhamento {
   tempo_estimado: string;
 }
 
+export interface ClienteEnderecoConta {
+  cep: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  complemento?: string;
+  referencia?: string;
+}
+
 export interface ClienteConta {
-  id: string;
   nome: string;
+  id: string;
   telefone: string;
   email: string;
   endereco_padrao?: string | null;
+  endereco?: ClienteEnderecoConta | null;
   total_pedidos: number;
   total_gasto: number;
 }
@@ -1257,6 +1267,22 @@ export const menuApi = {
     const data = await res.json();
     return data.cliente;
   },
+  updateCustomer: async (slug: string, token: string, data: {
+    nome: string; telefone: string; email: string; endereco: ClienteEnderecoConta;
+  }): Promise<ClienteConta> => {
+    const res = await fetch(API_BASE + "/menu/" + slug + "/conta", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(res.status, b?.detail || "Nao foi possivel salvar seus dados", b);
+    }
+    const result = await res.json();
+    return result.cliente;
+  },
+
   getCustomerOrders: async (slug: string, token: string): Promise<ClientePedidoConta[]> => {
     const res = await fetch(`${API_BASE}/menu/${slug}/conta/pedidos`, {
       headers: { Authorization: `Bearer ${token}` },

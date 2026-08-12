@@ -16,7 +16,7 @@ from typing import Any
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from app.auth import create_access_token, decode_token, hash_password, verify_password
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
@@ -131,6 +131,22 @@ class ClienteContaLoginIn(BaseModel):
     senha: str = Field(min_length=10, max_length=128)
 
 
+class ClienteEnderecoIn(BaseModel):
+    cep: str = Field(min_length=8, max_length=10)
+    rua: str = Field(min_length=2, max_length=180)
+    numero: str = Field(min_length=1, max_length=30)
+    bairro: str = Field(min_length=2, max_length=120)
+    complemento: str | None = Field(default=None, max_length=120)
+    referencia: str | None = Field(default=None, max_length=180)
+
+
+class ClienteContaAtualizarIn(BaseModel):
+    nome: str = Field(min_length=2, max_length=120)
+    telefone: str = Field(min_length=10, max_length=20)
+    email: str = Field(min_length=5, max_length=254)
+    endereco: ClienteEnderecoIn
+
+
 # ============================================
 # Helper: recálculo de preços (anti-tampering)
 # ============================================
@@ -218,6 +234,20 @@ def _limpar_telefone(tel: str) -> str:
     elif not digits.startswith("55") and len(digits) >= 12:
         pass  # já tem DDI
     return digits
+
+def _telefones_equivalentes(tel: str) -> set[str]:
+    """Returns equivalent forms of a Brazilian WhatsApp number."""
+    digits = re.sub(r"\D", "", tel)
+    nacional = digits[2:] if digits.startswith("55") and len(digits) in {12, 13} else digits
+    variantes = {digits, _limpar_telefone(digits), nacional}
+    if len(nacional) == 11 and nacional[2:3] == "9":
+        sem_nono = nacional[:2] + nacional[3:]
+        variantes.update({sem_nono, "55" + sem_nono})
+    elif len(nacional) == 10:
+        com_nono = nacional[:2] + "9" + nacional[2:]
+        variantes.update({com_nono, "55" + com_nono})
+    return {numero for numero in variantes if numero}
+
 
 def _calcular_desconto(
     tema_cardapio: dict[str, Any] | None,
@@ -698,6 +728,7 @@ def _cliente_publico(cliente: Cliente) -> dict[str, Any]:
         "telefone": cliente.telefone,
         "email": cliente.email or "",
         "endereco_padrao": cliente.endereco_padrao,
+        "endereco": cliente.endereco_dados or {},
         "total_pedidos": cliente.total_pedidos,
         "total_gasto": float(cliente.total_gasto or 0),
     }
@@ -819,7 +850,65 @@ async def minha_conta_cliente(
     return {"cliente": _cliente_publico(cliente)}
 
 
+
+@router.put("/{slug}/conta")
+async def atualizar_conta_cliente(
+    slug: str,
+    body: ClienteContaAtualizarIn,
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    cliente, pizzaria = await _cliente_autenticado(slug, authorization, db)
+    email = _normalizar_email(body.email)
+    telefone = _limpar_telefone(body.telefone)
+    cep = re.sub(r"\D", "", body.endereco.cep)
+    if len(telefone) < 12:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe um WhatsApp valido com DDD.")
+    if len(cep) != 8:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe um CEP valido com 8 digitos.")
+
+    email_em_uso = (await db.execute(
+        select(Cliente.id).where(
+            Cliente.pizzaria_id == pizzaria.id,
+            func.lower(Cliente.email) == email,
+            Cliente.id != cliente.id,
+        )
+    )).scalar_one_or_none()
+    if email_em_uso:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este e-mail ja esta vinculado a outra conta.")
+    telefone_em_uso = (await db.execute(
+        select(Cliente.id).where(
+            Cliente.pizzaria_id == pizzaria.id,
+            Cliente.telefone == telefone,
+            Cliente.id != cliente.id,
+        )
+    )).scalar_one_or_none()
+    if telefone_em_uso:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este WhatsApp ja esta vinculado a outra conta.")
+
+    endereco = {
+        "cep": cep,
+        "rua": body.endereco.rua.strip(),
+        "numero": body.endereco.numero.strip(),
+        "bairro": body.endereco.bairro.strip(),
+        "complemento": (body.endereco.complemento or "").strip(),
+        "referencia": (body.endereco.referencia or "").strip(),
+    }
+    endereco_padrao = f"{endereco['rua']}, n {endereco['numero']} - {endereco['bairro']}"
+    if endereco["complemento"]:
+        endereco_padrao += f", {endereco['complemento']}"
+
+    cliente.nome = body.nome.strip()
+    cliente.telefone = telefone
+    cliente.email = email
+    cliente.endereco_dados = endereco
+    cliente.endereco_padrao = endereco_padrao
+    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(cliente)
 def _pedido_conta(pedido: Pedido) -> dict[str, Any]:
+    return {"cliente": _cliente_publico(cliente)}
+
     labels = {
         "novo": "Recebido", "confirmado": "Confirmado", "no_forno": "Em preparo",
         "pronto_entrega": "Pronto", "a_caminho": "Saiu para entrega",
@@ -846,9 +935,14 @@ async def pedidos_conta_cliente(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     cliente, pizzaria = await _cliente_autenticado(slug, authorization, db)
+    telefones = _telefones_equivalentes(cliente.telefone)
     pedidos = list((await db.execute(
         select(Pedido)
-        .where(Pedido.pizzaria_id == pizzaria.id, Pedido.cliente_id == cliente.id)
+        .outerjoin(Cliente, Pedido.cliente_id == Cliente.id)
+        .where(
+            Pedido.pizzaria_id == pizzaria.id,
+            or_(Pedido.cliente_id == cliente.id, Cliente.telefone.in_(telefones)),
+        )
         .order_by(Pedido.created_at.desc())
         .limit(30)
     )).scalars().all())
@@ -863,11 +957,14 @@ async def repetir_pedido_conta(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     cliente, pizzaria = await _cliente_autenticado(slug, authorization, db)
+    telefones = _telefones_equivalentes(cliente.telefone)
     pedido = (await db.execute(
-        select(Pedido).where(
+        select(Pedido)
+        .outerjoin(Cliente, Pedido.cliente_id == Cliente.id)
+        .where(
             Pedido.id == pedido_id,
             Pedido.pizzaria_id == pizzaria.id,
-            Pedido.cliente_id == cliente.id,
+            or_(Pedido.cliente_id == cliente.id, Cliente.telefone.in_(telefones)),
         )
     )).scalar_one_or_none()
     if not pedido:
