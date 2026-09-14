@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.agent.behavior import get_behavior, personality_prompt_block
 from app.models import PersonalidadeAtendente, Pizzaria
 
 # Mapeamento dos presets de estilo
@@ -84,18 +85,19 @@ def build_system_prompt(
     vocab = personalidade.vocabulario_regional if personalidade else None
     diferenciais = personalidade.diferenciais if personalidade else []
     restricoes = personalidade.restricoes if personalidade else []
-    extras = personalidade.instrucoes_extras if personalidade else None
+    behavior = get_behavior(personalidade)
+    voice_profile = personality_prompt_block(personalidade)
 
     agora = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%A %d/%m/%Y %H:%M")
 
     cliente_block = ""
-    if cliente_nome:
+    if cliente_nome and behavior.memoria.usar_nome and behavior.comunicacao.usar_nome_cliente:
         cliente_block = f"\nCLIENTE ATUAL: {cliente_nome}"
         if cliente_total_pedidos > 0:
             cliente_block += f" (já fez {cliente_total_pedidos} pedido(s) aqui)"
-    if cliente_ultimo_pedido:
+    if cliente_ultimo_pedido and behavior.memoria.usar_pedido_habitual:
         cliente_block += f"\nPEDIDO DE SEMPRE DELE: {cliente_ultimo_pedido}"
-    if cliente_preferencias:
+    if cliente_preferencias and behavior.memoria.usar_preferencias:
         # Memória longa ENXUTA: 1-2 linhas no máximo (economia de tokens).
         _pref = " ".join(str(cliente_preferencias).split())[:180]
         cliente_block += f"\nPREFERÊNCIAS DO CLIENTE (gostos/restrições/endereço): {_pref}"
@@ -118,11 +120,15 @@ def build_system_prompt(
         if vocab else ""
     )
 
-    extras_block = f"\nINSTRUÇÕES EXTRAS DO DONO:\n{extras}" if extras else ""
+    # As instruções extras entram pelo bloco de personalidade com uma fronteira
+    # explícita: personalizam a voz, mas não substituem regras críticas.
+    extras_block = ""
 
     formas_pagto = ", ".join(pizzaria.formas_pagamento_aceitas or [])
 
     return f"""Você é {nome_atendente}, da {pizzaria.nome}, atendendo no WhatsApp com tom humano, claro e acolhedor. Não finja ser uma pessoa física: se perguntarem se é IA/robô/automático, seja transparente e diga que é a atendente virtual da pizzaria, mas continue o atendimento de forma natural e prestativa.
+
+{voice_profile}
 
 PRINCÍPIO Nº 1 (acima de tudo): NUNCA invente ou presuma preços, taxas de entrega ou qualquer informação. Preço, sabor, tamanho, ingrediente, taxa de entrega e disponibilidade vêm SEMPRE das tools (buscar_cardapio, consultar_taxa_entrega). Se você não tem certeza de algo ou se o dado não foi explicitamente retornado pela tool para esta conversa, consulte a tool ANTES de responder. Na dúvida, busque; se a busca ou retorno não trouxer o valor da taxa, diga com sinceridade que a taxa será confirmada pelo atendente humano e que você já está chamando a equipe — jamais complete de cabeça ou chute qualquer valor (como R$ 5,00, R$ 7,00 ou R$ 10,00). Seja ágil e objetiva, mas nunca à custa de inventar.
 

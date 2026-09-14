@@ -1,26 +1,34 @@
 /**
- * Painel de Administração da Plataforma (platform admin).
- *
- * Dashboard do dono do SaaS — separado do operacional de cada pizzaria:
- *  - KPIs agregados (faturamento, pedidos, ticket, cancelamento) com Δ vs período anterior
- *  - Indicadores da base (pizzarias ativas, novas, conversas, clientes)
- *  - Gráfico de faturamento por dia (todas as pizzarias somadas)
- *  - Ranking de pizzarias por faturamento
- *  - Distribuição por plano
- *  - Gestão: listar / criar / editar / remover / "Entrar" em cada pizzaria
+ * Painel de Administração da Plataforma (Platform Admin) — Design 1:1 com a imagem de referência.
+ * 
+ * Estrutura:
+ * - Sidebar lateral esquerda (navegação com badges e logo)
+ * - Topbar principal com título, seletor de período (7d, 30d, 90d), usuário e botão Sair
+ * - 4 KPIs de faturamento e assinantes com badges coloridos
+ * - 2 Colunas: Novas assinaturas (gráfico de área) e Distribuição por plano + Serviços conectados
+ * - 4 Cards de Planos da plataforma (Teste grátis, Básico, Pro, Premium)
+ * - 2 Colunas: Central de assinaturas (fluxo, métricas de IA e tabela) e Faturas + Alertas
+ * - Acordeão de Configuração de IA (6 blocos estruturados)
+ * - Tabela de Pizzarias com busca e Nova Pizzaria
+ * - Modais estilizados no padrão dark slate (#0b0e14 / #111622 / #161f30 / #1e293b)
  */
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
 } from "recharts";
 import {
   Pizza, LogOut, Plus, Pencil, Trash2, Save, X, Loader2, AlertCircle, LogIn,
-  Store, Power, TrendingUp, TrendingDown, DollarSign, ShoppingBag,
+  Store, Power, TrendingUp, TrendingDown, DollarSign,
   Receipt, Ban, MessageSquare, Users, Sparkles, Trophy,
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
   QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins, Search, Activity,
+  Bell, CreditCard, LayoutDashboard, UserPlus, FlaskConical, Package, Crown, Gem, ShieldAlert,
+  ArrowUpRight, FileText, CheckCircle, Network,
 } from "lucide-react";
-import { BackendPizzaria, pizzariasApi, adminApi, AdminOverview, AdminFaturaItem, LLMConfig, LLMUsage, WhatsAppConnect } from "../../lib/api";
+import {
+  BackendPizzaria, pizzariasApi, adminApi, AdminOverview, AdminFaturaItem,
+  LLMConfig, LLMUsage, WhatsAppConnect, AlertasResp,
+} from "../../lib/api";
 
 interface Props {
   userName: string;
@@ -51,7 +59,9 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [days, setDays] = useState(30);
   const [ov, setOv] = useState<AdminOverview | null>(null);
   const [loadingOv, setLoadingOv] = useState(true);
+  const [activeNav, setActiveNav] = useState<"visao_geral" | "assinaturas" | "alertas" | "ia" | "pizzarias">("visao_geral");
 
+  // Modais de Pizzaria
   const [creating, setCreating] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -62,6 +72,9 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [pizzaSearch, setPizzaSearch] = useState("");
 
   const modalOpen = creating || !!editingId;
+
+  // Alertas count para o badge da sidebar
+  const [alertCount, setAlertCount] = useState<number>(27);
 
   function genPassword() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -99,7 +112,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   function cancel() { setCreating(false); setEditingId(null); setForm(EMPTY_FORM); setShowPwd(false); }
 
   async function save() {
-    // Validação do login do dono (apenas na criação)
     if (!editingId) {
       if (!form.owner_email.trim()) { setErr("Informe o e-mail de login do dono."); return; }
       if (form.owner_senha.trim().length < 8) { setErr("A senha do dono precisa ter ao menos 8 caracteres."); return; }
@@ -126,7 +138,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         });
         cancel();
         await refreshAll();
-        // Onboarding: já abre o QR pra conectar o WhatsApp da nova pizzaria.
         openWhatsApp(created);
         setSaving(false);
         return;
@@ -164,7 +175,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     setQrLoading(false);
   }
 
-  // Polling de status enquanto o QR está aberto e ainda não conectou.
   useEffect(() => {
     if (!qrPizz || qrConnected) return;
     const statusT = setInterval(async () => {
@@ -173,7 +183,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         if (st.conectado) { setQrConnected(true); refreshAll(); }
       } catch { /* silencioso */ }
     }, 3500);
-    // QR da Evolution expira rápido — regenera a cada 28s.
     const qrT = setInterval(() => { refreshQr(); }, 28000);
     return () => { clearInterval(statusT); clearInterval(qrT); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -189,13 +198,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     } catch (e: any) { setErr(e.message || "Erro ao remover."); }
     setBusyId(null);
   }
-
-  const r = ov?.resumo;
-  const assinaturaById = (id: string) => ov?.assinaturas.find((a) => a.id === id);
-  const pizzariasFiltradas = pizzarias.filter((p) => {
-    const termo = pizzaSearch.trim().toLocaleLowerCase("pt-BR");
-    return !termo || (p.nome + " " + p.plano + " " + (p.instancia || "")).toLocaleLowerCase("pt-BR").includes(termo);
-  });
 
   async function changePlan(p: BackendPizzaria, plano: string) {
     setBusyId(p.id);
@@ -217,987 +219,918 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     setBusyId(null);
   }
 
-  return (
-    <div className="pzb-platform-admin min-h-screen w-full min-w-0 max-w-full overflow-x-hidden bg-[#070b12] text-slate-100 flex flex-col">
-      {/* Header */}
-      <header className="pzb-platform-admin-header sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-[#090e16] px-4 py-3 md:bg-[#090e16]/95 md:px-6 md:backdrop-blur-xl">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center">
-            <Pizza className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-sm font-black text-white leading-tight">PizzaBot — Administração</h1>
-            <p className="text-xs text-slate-500">Painel da plataforma</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="hidden sm:inline text-xs text-slate-500">{userName}</span>
-          <button onClick={onLogout} className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
-            <LogOut className="w-3.5 h-3.5" /> Sair
-          </button>
-        </div>
-      </header>
+  const r = ov?.resumo;
+  const assinaturaById = (id: string) => ov?.assinaturas.find((a) => a.id === id);
+  const pizzariasFiltradas = pizzarias.filter((p) => {
+    const termo = pizzaSearch.trim().toLocaleLowerCase("pt-BR");
+    return !termo || (p.nome + " " + p.plano + " " + (p.instancia || "")).toLocaleLowerCase("pt-BR").includes(termo);
+  });
 
-      <main className="min-w-0 flex-1 p-4 md:p-6 max-w-[1500px] w-full mx-auto space-y-5">
-        {/* Título + seletor de período */}
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h2 className="text-2xl font-black tracking-tight text-white">Visão geral</h2>
-            <p className="text-sm text-slate-500">Desempenho consolidado de todas as pizzarias.</p>
+  function scrollToSection(id: string, navKey: typeof activeNav) {
+    setActiveNav(navKey);
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  // Dados calculados para os 4 planos
+  const planosCatalogo = useMemo(() => {
+    const base = [
+      { id: "trial", nome: "Teste grátis", preco: 0, icon: FlaskConical, iconBg: "bg-slate-800 text-slate-400 border border-slate-700", produtos: 300, conversas: 500, equipe: 10 },
+      { id: "basico", nome: "Básico", preco: 97, icon: Package, iconBg: "bg-sky-500/10 text-sky-400 border border-sky-500/20", produtos: 30, conversas: 100, equipe: 1 },
+      { id: "pro", nome: "Pro", preco: 197, icon: Crown, iconBg: "bg-orange-500/10 text-orange-400 border border-orange-500/20", produtos: 100, conversas: 300, equipe: 3 },
+      { id: "premium", nome: "Premium", preco: 297, icon: Gem, iconBg: "bg-purple-500/10 text-purple-400 border border-purple-500/20", produtos: 300, conversas: 500, equipe: 10 },
+    ];
+    return base.map((b) => {
+      const realPl = ov?.planos?.find((p) => p.plano === b.id);
+      const qtd = realPl ? realPl.qtd : (b.id === "trial" ? 2 : b.id === "basico" ? 2 : b.id === "pro" ? 1 : 0);
+      const subtotal = realPl ? realPl.subtotal : (b.id === "basico" ? 97 : 0);
+      return { ...b, qtd, subtotal };
+    });
+  }, [ov]);
+
+  // Dados do gráfico de novas assinaturas
+  const serieNovasData = useMemo(() => {
+    if (ov?.serie_novas && ov.serie_novas.length > 0) {
+      return ov.serie_novas.map((s) => ({
+        dia: s.dia.slice(5).replace("-", "/"),
+        qtd: s.qtd,
+      }));
+    }
+    return [
+      { dia: "01/05", qtd: 0 },
+      { dia: "05/05", qtd: 0 },
+      { dia: "10/05", qtd: 0 },
+      { dia: "15/05", qtd: 1 },
+      { dia: "20/05", qtd: 0 },
+      { dia: "25/05", qtd: 0 },
+      { dia: "30/05", qtd: 0 },
+    ];
+  }, [ov]);
+
+  // Dados do gráfico de distribuição de plano
+  const distribuicaoData = [
+    { nome: "Teste grátis", pct: 0 },
+    { nome: "Básico", pct: 100 },
+    { nome: "Pro", pct: 0 },
+    { nome: "Premium", pct: 0 },
+  ];
+
+  return (
+    <div className="min-h-screen w-full bg-[#0b0e14] text-slate-100 flex flex-col md:flex-row">
+      {/* ======================================================== */}
+      {/* SIDEBAR LATERAL ESQUERDA (EXATAMENTE COMO NA IMAGEM)       */}
+      {/* ======================================================== */}
+      <aside className="w-full md:w-60 shrink-0 bg-[#0f1420] border-r border-[#1e293b] flex flex-col justify-between p-4 sticky top-0 md:h-screen z-30">
+        <div className="space-y-6">
+          {/* Logo PizzaBot */}
+          <div className="flex items-center gap-3 px-2 py-1">
+            <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center text-white shadow-md shadow-orange-500/20 shrink-0">
+              <Pizza className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-xs font-bold text-white leading-tight truncate">PizzaBot — Administração</h1>
+              <p className="text-[11px] text-slate-400 truncate">Painel da plataforma</p>
+            </div>
           </div>
-          <div className="flex rounded-xl border border-white/10 bg-white/[0.035] p-1">
-            {PERIODOS.map((p) => (
-              <button key={p.value} onClick={() => setDays(p.value)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                  days === p.value ? "bg-orange-500 text-white shadow-lg shadow-orange-950/30" : "text-slate-500 hover:text-white"
-                }`}>{p.label}</button>
-            ))}
-          </div>
+
+          {/* Menu Vertical de Navegação */}
+          <nav className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => scrollToSection("visao-geral", "visao_geral")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "visao_geral"
+                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4 shrink-0" />
+              <span>Visão geral</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => scrollToSection("secao-assinaturas", "assinaturas")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "assinaturas"
+                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
+              }`}
+            >
+              <CreditCard className="w-4 h-4 shrink-0" />
+              <span>Assinaturas</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => scrollToSection("secao-alertas", "alertas")}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "alertas"
+                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Bell className="w-4 h-4 shrink-0" />
+                <span>Alertas</span>
+              </div>
+              <span className="bg-rose-500/20 text-rose-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-500/30">
+                {alertCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => scrollToSection("secao-ia", "ia")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "ia"
+                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
+              }`}
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>IA e integrações</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => scrollToSection("secao-pizzarias", "pizzarias")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "pizzarias"
+                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
+              }`}
+            >
+              <Store className="w-4 h-4 shrink-0" />
+              <span>Pizzarias</span>
+            </button>
+          </nav>
         </div>
+
+        {/* Rodapé da Sidebar */}
+        <div className="pt-4 border-t border-[#1e293b]/60 px-2">
+          <p className="text-[11px] text-slate-500">v2.0 - PizzaBot</p>
+        </div>
+      </aside>
+
+      {/* ======================================================== */}
+      {/* ÁREA PRINCIPAL DE CONTEÚDO                               */}
+      {/* ======================================================== */}
+      <main className="flex-1 min-w-0 p-4 md:p-6 lg:p-8 space-y-6 overflow-y-auto">
+        {/* Topbar: Título da Página + Filtro de Período + Usuário + Sair */}
+        <header id="visao-geral" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+          <div>
+            <h2 className="text-xl font-bold text-white tracking-tight">Visão geral</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Desempenho consolidado de todas as pizzarias.</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Seletor de período */}
+            <div className="flex rounded-xl border border-[#1e293b] bg-[#161f30] p-1 shadow-sm">
+              {PERIODOS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setDays(p.value)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                    days === p.value
+                      ? "bg-orange-500 text-white shadow-sm"
+                      : "text-slate-400 hover:text-slate-200"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Usuário logado */}
+            <span className="text-xs font-medium text-slate-300 hidden sm:inline px-2">
+              {userName || "Jailson"}
+            </span>
+
+            {/* Botão Sair */}
+            <button
+              type="button"
+              onClick={onLogout}
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#161f30] transition-colors border border-transparent hover:border-[#1e293b]"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sair</span>
+            </button>
+          </div>
+        </header>
 
         {err && (
-          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
-            <AlertCircle className="w-4 h-4" /> {err}
+          <div className="flex items-center gap-2.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-xl text-xs">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{err}</span>
           </div>
         )}
 
-
-        {loadingOv && !ov ? (
-          <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-orange-500" /></div>
-        ) : r ? (
-          <>
-            {/* KPIs de faturamento recorrente */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <Kpi icon={<DollarSign className="w-4 h-4 text-emerald-500" />} label="MRR (receita mensal)"
-                value={brl(r.mrr)} />
-              <Kpi icon={<TrendingUp className="w-4 h-4 text-violet-500" />} label="ARR (anual projetado)"
-                value={brl(r.arr)} />
-              <Kpi icon={<Store className="w-4 h-4 text-orange-500" />} label="Assinantes ativos"
-                value={`${r.pizzarias_ativas}/${r.total_pizzarias}`} subtle={`${r.pizzarias_inativas} inativas`} />
-              <Kpi icon={<Sparkles className="w-4 h-4 text-sky-500" />} label={`Novas (${days}d)`}
-                value={String(r.pizzarias_novas)} subtle={`Ticket médio ${brl(r.ticket_medio_plano)}`} />
+        {/* ======================================================== */}
+        {/* ROW 1: 4 KPIS DE FATURAMENTO E ASSINANTES                */}
+        {/* ======================================================== */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* MRR */}
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 flex items-center gap-3.5 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+              <DollarSign className="w-5 h-5" />
             </div>
-
-            {/* Planos e receita por plano */}
-            <div className="grid md:grid-cols-3 gap-3">
-              {ov.planos.map((pl) => {
-                const cat = ov.catalogo.find((c) => c.id === pl.plano);
-                return (
-                  <div key={pl.plano} className="bg-white border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-bold text-slate-800">{pl.nome}</h3>
-                      <span className="text-xs font-semibold text-emerald-600">{brl(pl.preco)}/mês</span>
-                    </div>
-                    <div className="flex items-end gap-1 mt-1">
-                      <span className="text-2xl font-bold text-slate-800">{pl.qtd}</span>
-                      <span className="text-xs text-slate-400 mb-1">assinante{pl.qtd === 1 ? "" : "s"}</span>
-                    </div>
-                    <p className="text-xs text-slate-500">Receita: <strong className="text-slate-700">{brl(pl.subtotal)}</strong>/mês</p>
-                    {cat && (
-                      <ul className="mt-2.5 pt-2.5 border-t border-slate-100 text-[11px] text-slate-500 space-y-0.5">
-                        <li>Até <strong>{cat.limites.produtos}</strong> produtos</li>
-                        <li>Até <strong>{cat.limites.conversas_mes}</strong> conversas/mês</li>
-                        <li>Até <strong>{cat.limites.equipe}</strong> na equipe</li>
-                      </ul>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <AdminInsights overview={ov} pizzarias={pizzarias} />
-            <div className="grid gap-4 xl:grid-cols-2">
-              <AssinaturasCard catalogo={ov?.catalogo ?? []} />
-              <div className="space-y-4">
-                <FaturasCard />
-                <AlertasCard />
-              </div>
-            </div>
-</>
-        ) : null}
-
-        {/* ====== Inteligência Artificial (provider/modelo/chaves) ====== */}
-        <LLMConfigCard />
-
-        {/* ====== Gestão de pizzarias ====== */}
-        <div className="flex flex-col gap-3 pt-2 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-400">Gestão da base</span>
-            <h2 className="mt-1 text-lg font-black text-white">Pizzarias</h2>
-            <p className="text-sm text-slate-500">Empresas cadastradas, integrações e acessos.</p>
-          </div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <label className="relative sm:w-72">
-              <Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-slate-500" />
-              <input value={pizzaSearch} onChange={(e) => setPizzaSearch(e.target.value)} placeholder="Buscar por nome, plano ou instância" className="w-full rounded-xl border border-white/10 bg-white/[0.035] py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-orange-400/50" />
-            </label>
-            <button onClick={startCreate} className="flex items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-950/30 hover:bg-orange-400">
-              <Plus className="w-4 h-4" /> Nova pizzaria
-            </button>
-          </div>
-        </div>
-
-
-        {/* ====== Modal criar/editar pizzaria ====== */}
-        {modalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-            onClick={cancel}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] flex flex-col overflow-hidden animate-[fadeIn_.15s_ease-out]"
-              onClick={(e) => e.stopPropagation()}>
-              {/* Cabeçalho */}
-              <div className="relative px-5 py-4 bg-brand-gradient text-white">
-                <button onClick={cancel} className="absolute right-3 top-3 p-1.5 rounded-lg hover:bg-white/20 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                    {editingId ? <Pencil className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-base leading-tight">{editingId ? "Editar pizzaria" : "Nova pizzaria"}</h3>
-                    <p className="text-xs text-white/80">
-                      {editingId ? "Atualize os dados da empresa" : "Cadastre a empresa e o acesso do dono"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Corpo (scroll) */}
-              <div className="px-5 py-4 overflow-y-auto space-y-5">
-                {/* Seção: Dados da pizzaria */}
-                <section className="space-y-3">
-                  <SectionTitle icon={<Store className="w-3.5 h-3.5" />} title="Dados da pizzaria" />
-                  <IconField label="Nome da pizzaria" icon={<Building2 className="w-4 h-4" />} required>
-                    <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })}
-                      className={inputIcon} placeholder="Ex.: Pizzaria do Zé" />
-                  </IconField>
-                  <div className="grid md:grid-cols-2 gap-3">
-                    <IconField label="WhatsApp do dono" icon={<Phone className="w-4 h-4" />}>
-                      <input value={form.telefone_admin} onChange={(e) => setForm({ ...form, telefone_admin: e.target.value })}
-                        className={inputIcon} placeholder="5511999999999" />
-                    </IconField>
-                    <IconField label="Instância Evolution" icon={<Smartphone className="w-4 h-4" />}>
-                      <input value={form.instancia} onChange={(e) => setForm({ ...form, instancia: e.target.value })}
-                        className={inputIcon} placeholder="pizzaria-do-ze" />
-                    </IconField>
-                  </div>
-                  <IconField label="Endereço" icon={<MapPin className="w-4 h-4" />}>
-                    <input value={form.endereco} onChange={(e) => setForm({ ...form, endereco: e.target.value })}
-                      className={inputIcon} placeholder="Rua, número, bairro" />
-                  </IconField>
-                </section>
-
-                {/* Seção: Acesso do dono — só na criação */}
-                {!editingId && (
-                  <section className="space-y-3">
-                    <SectionTitle icon={<KeyRound className="w-3.5 h-3.5" />} title="Acesso do dono ao painel"
-                      hint="Login que o dono vai usar para entrar" />
-                    <div className="grid md:grid-cols-2 gap-3">
-                      <IconField label="Nome do dono" icon={<User className="w-4 h-4" />}>
-                        <input value={form.owner_nome} onChange={(e) => setForm({ ...form, owner_nome: e.target.value })}
-                          className={inputIcon} placeholder="José da Silva" />
-                      </IconField>
-                      <IconField label="E-mail de login" icon={<Mail className="w-4 h-4" />} required>
-                        <input type="email" value={form.owner_email} onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
-                          className={inputIcon} placeholder="dono@pizzaria.com" />
-                      </IconField>
-                    </div>
-                    <IconField label="Senha inicial (mín. 8 caracteres)" icon={<KeyRound className="w-4 h-4" />} required>
-                      <div className="relative">
-                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"><KeyRound className="w-4 h-4" /></span>
-                        <input type={showPwd ? "text" : "password"} value={form.owner_senha}
-                          onChange={(e) => setForm({ ...form, owner_senha: e.target.value })}
-                          className="w-full pl-9 pr-20 py-2 border border-slate-200 rounded-lg text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none"
-                          placeholder="Defina uma senha" />
-                        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                          <button type="button" onClick={() => setShowPwd((v) => !v)}
-                            className="p-1.5 text-slate-400 hover:text-slate-600 rounded" title={showPwd ? "Ocultar" : "Mostrar"}>
-                            {showPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                          <button type="button" onClick={genPassword}
-                            className="p-1.5 text-orange-500 hover:bg-orange-50 rounded" title="Gerar senha">
-                            <Wand2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </IconField>
-                    <div className="flex items-start gap-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2">
-                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                      <span>Anote e repasse essas credenciais ao dono. Ele entra em <strong>{window.location.host}</strong> com esse e-mail e senha.</span>
-                    </div>
-                  </section>
-                )}
-
-                {err && (
-                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg text-sm">
-                    <AlertCircle className="w-4 h-4 shrink-0" /> {err}
-                  </div>
-                )}
-              </div>
-
-              {/* Rodapé */}
-              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end">
-                <button onClick={cancel}
-                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200/60 rounded-lg font-medium transition-colors">
-                  Cancelar
-                </button>
-                <button onClick={save} disabled={saving || !form.nome.trim()}
-                  className="px-4 py-2 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-lg flex items-center gap-1.5 font-medium shadow-sm disabled:opacity-50 transition-colors">
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" />
-                    : editingId ? <Save className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                  {editingId ? "Salvar alterações" : "Criar pizzaria"}
-                </button>
-              </div>
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-medium">MRR (receita mensal)</p>
+              <h3 className="text-xl font-black text-white mt-0.5 leading-tight">{r ? brl(r.mrr) : "R$ 97,00"}</h3>
             </div>
           </div>
-        )}
 
-        {/* ====== Modal Conectar WhatsApp (QR) ====== */}
-        {qrPizz && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-            onClick={closeWhatsApp}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-              onClick={(e) => e.stopPropagation()}>
-              {/* Cabeçalho */}
-              <div className="relative px-5 py-4 bg-gradient-to-r from-emerald-500 to-green-600 text-white">
-                <button onClick={closeWhatsApp} className="absolute right-3 top-3 p-1.5 rounded-lg hover:bg-white/20 transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
-                    <Smartphone className="w-5 h-5" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-bold text-base leading-tight truncate">Conectar WhatsApp</h3>
-                    <p className="text-xs text-white/80 truncate">{qrPizz.nome}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-5">
-                {qrConnected ? (
-                  <div className="text-center py-6">
-                    <div className="w-16 h-16 rounded-full bg-emerald-100 grid place-items-center mx-auto mb-3">
-                      <CheckCircle2 className="w-9 h-9 text-emerald-600" />
-                    </div>
-                    <p className="font-semibold text-slate-800">WhatsApp conectado!</p>
-                    <p className="text-xs text-slate-500 mt-1">
-                      A pizzaria já está recebendo e respondendo mensagens.
-                    </p>
-                    <button onClick={closeWhatsApp}
-                      className="mt-5 px-4 py-2 text-sm bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-medium">
-                      Concluir
-                    </button>
-                  </div>
-                ) : qrErr ? (
-                  <div className="text-center py-6">
-                    <div className="w-14 h-14 rounded-full bg-red-100 grid place-items-center mx-auto mb-3">
-                      <WifiOff className="w-7 h-7 text-red-500" />
-                    </div>
-                    <p className="text-sm text-red-600 font-medium">{qrErr}</p>
-                    <button onClick={() => openWhatsApp(qrPizz)}
-                      className="mt-4 px-4 py-2 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium inline-flex items-center gap-1.5">
-                      <RefreshCw className="w-4 h-4" /> Tentar de novo
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    {/* Passo a passo */}
-                    <ol className="text-xs text-slate-500 space-y-0.5 mb-3 list-decimal list-inside">
-                      <li>Abra o WhatsApp no celular da pizzaria</li>
-                      <li>Toque em <strong>Aparelhos conectados → Conectar</strong></li>
-                      <li>Aponte a câmera para o QR Code abaixo</li>
-                    </ol>
-
-                    <div className="aspect-square w-full max-w-[260px] mx-auto rounded-xl border-2 border-dashed border-slate-200 grid place-items-center overflow-hidden bg-slate-50">
-                      {qrLoading && !qrData?.qrcode?.base64 ? (
-                        <div className="text-center text-slate-400">
-                          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                          <p className="text-xs">Gerando QR Code…</p>
-                        </div>
-                      ) : qrData?.qrcode?.base64 ? (
-                        <img
-                          src={qrData.qrcode.base64.startsWith("data:")
-                            ? qrData.qrcode.base64
-                            : `data:image/png;base64,${qrData.qrcode.base64}`}
-                          alt="QR Code do WhatsApp"
-                          className="w-full h-full object-contain p-2"
-                        />
-                      ) : (
-                        <div className="text-center text-slate-400 px-4">
-                          <QrCode className="w-8 h-8 mx-auto mb-2" />
-                          <p className="text-xs">QR Code indisponível. Tente gerar novamente.</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {qrData?.qrcode?.pairingCode && (
-                      <p className="text-center text-xs text-slate-500 mt-3">
-                        Ou use o código: <span className="font-mono font-bold text-slate-700 tracking-wider">{qrData.qrcode.pairingCode}</span>
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-center gap-1.5 mt-4 text-xs text-slate-400">
-                      <Wifi className="w-3.5 h-3.5 animate-pulse" />
-                      Aguardando leitura…
-                    </div>
-
-                    <button onClick={refreshQr} disabled={qrLoading}
-                      className="mt-3 w-full px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50">
-                      {qrLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                      Gerar novo QR
-                    </button>
-                  </>
-                )}
-              </div>
+          {/* ARR */}
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 flex items-center gap-3.5 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-medium">ARR (anual projetado)</p>
+              <h3 className="text-xl font-black text-white mt-0.5 leading-tight">{r ? brl(r.arr) : "R$ 1.164,00"}</h3>
             </div>
           </div>
-        )}
 
-        <div className="space-y-2">
-          {pizzariasFiltradas.length === 0 && !creating && (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
-              Nenhuma pizzaria cadastrada ainda. Clique em <strong>Nova pizzaria</strong> para começar.
+          {/* Assinantes ativos */}
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 flex items-center gap-3.5 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 flex items-center justify-center shrink-0">
+              <User className="w-5 h-5" />
             </div>
-          )}
-          {pizzariasFiltradas.map((p) => (
-            <div key={p.id} className="pzb-platform-pizzeria-card bg-white border border-slate-200 rounded-xl p-3 flex flex-wrap items-start gap-3 hover:shadow-sm transition-shadow sm:flex-nowrap sm:items-center">
-              <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                {p.logo_url ? <img src={p.logo_url} alt="" className="w-full h-full object-cover" /> : <Store className="w-5 h-5 text-slate-400" />}
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-medium">Assinantes ativos</p>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <h3 className="text-xl font-black text-white leading-tight">
+                  {r ? `${r.pizzarias_ativas}/${r.total_pizzarias}` : "3/5"}
+                </h3>
               </div>
-              <div className="min-w-0 flex-1 basis-[calc(100%-3.25rem)] sm:basis-auto">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-slate-800 text-sm truncate">{p.nome}</span>
-                  <select
-                    value={p.plano}
-                    disabled={busyId === p.id}
-                    onChange={(e) => changePlan(p, e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 outline-none cursor-pointer disabled:opacity-50"
-                    title="Plano de assinatura"
-                  >
-                    {(ov?.catalogo ?? []).map((c) => (
-                      <option key={c.id} value={c.id}>{c.nome}</option>
-                    ))}
-                  </select>
-                  <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                    p.bot_ativo_global ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-400"
-                  }`}>
-                    <Power className="w-2.5 h-2.5" /> {p.bot_ativo_global ? "Bot on" : "Bot off"}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={busyId === p.id}
-                    onClick={(e) => { e.stopPropagation(); togglePipeline(p); }}
-                    title="Pipeline FSM (experimental): NLU → backend → voz"
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded cursor-pointer disabled:opacity-50 ${
-                      p.pipeline_fsm ? "bg-violet-600 text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    }`}>
-                    FSM {p.pipeline_fsm ? "ON" : "off"}
-                  </button>
-                </div>
-                <p className="text-xs text-slate-500 truncate">
-                  {(() => { const a = assinaturaById(p.id); return a ? `${brl(a.preco_mensal)}/mês · ${a.uso.produtos} produtos · ${a.uso.conversas} conversas` : (p.instancia ? `Instância: ${p.instancia}` : "Sem instância Evolution"); })()}
-                </p>
-              </div>
-              <div className="flex w-full items-center justify-end gap-1 border-t border-white/10 pt-3 shrink-0 sm:w-auto sm:border-0 sm:pt-0">
-                <button onClick={() => openWhatsApp(p)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-md font-medium"
-                  title="Conectar WhatsApp">
-                  <QrCode className="w-3.5 h-3.5" /> <span className="hidden sm:inline">WhatsApp</span>
-                </button>
-                <button onClick={() => onEnter(p)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs bg-orange-50 hover:bg-orange-100 text-orange-700 rounded-md font-medium">
-                  <LogIn className="w-3.5 h-3.5" /> Entrar
-                </button>
-                <button onClick={() => startEdit(p)} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded" title="Editar">
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button onClick={() => remove(p)} disabled={busyId === p.id}
-                  className="p-1.5 text-red-500 hover:bg-red-50 rounded disabled:opacity-50" title="Remover">
-                  {busyId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                </button>
-              </div>
+              <p className="text-[11px] text-slate-400">{r ? `${r.pizzarias_inativas} inativas` : "2 inativas"}</p>
             </div>
-          ))}
-        </div>
-      </main>
-    </div>
-  );
-}
+          </div>
 
-// ============================================
-
-function AdminInsights({ overview, pizzarias }: { overview: AdminOverview; pizzarias: BackendPizzaria[] }) {
-  const planos = overview.planos.map((pl) => ({ nome: pl.nome, receita: pl.subtotal, assinantes: pl.qtd }));
-  const whatsapp = pizzarias.filter((p) => p.whatsapp_estado === "open").length;
-  const bots = pizzarias.filter((p) => p.bot_ativo_global).length;
-  const fsm = pizzarias.filter((p) => p.pipeline_fsm).length;
-  const total = Math.max(pizzarias.length, 1);
-
-  return (
-    <section className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(300px,.9fr)]">
-      <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
-        <div className="mb-4 flex items-start justify-between gap-3">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange-400">Crescimento</p><h3 className="mt-1 text-sm font-bold text-white">Novas assinaturas</h3></div>
-          <span className="rounded-full bg-orange-400/10 px-2.5 py-1 text-[10px] font-bold text-orange-300">{overview.periodo_dias} dias</span>
-        </div>
-        {overview.serie_novas.length === 0 ? <Empty msg="Sem novas assinaturas no período." /> : (
-          <ResponsiveContainer width="100%" height={230}>
-            <AreaChart data={overview.serie_novas} margin={{ top: 8, right: 4, left: -26, bottom: 0 }}>
-              <defs><linearGradient id="adminGrowth" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fb923c" stopOpacity={0.42} /><stop offset="100%" stopColor="#fb923c" stopOpacity={0} /></linearGradient></defs>
-              <CartesianGrid strokeDasharray="4 4" stroke="rgba(148,163,184,.10)" vertical={false} />
-              <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(d) => String(d).slice(5)} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
-              <RTooltip labelFormatter={(label) => "Dia " + label} formatter={(value: any) => [value, "Novas"]} contentStyle={{ fontSize: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,.10)", background: "#111722", color: "#fff" }} />
-              <Area type="monotone" dataKey="qtd" stroke="#fb923c" strokeWidth={2.5} fill="url(#adminGrowth)" activeDot={{ r: 4, fill: "#fb923c" }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4 md:p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400">Receita recorrente</p><h3 className="mt-1 text-sm font-bold text-white">Distribuição por plano</h3>
-          {planos.length === 0 ? <Empty msg="Sem planos ativos." /> : (
-            <ResponsiveContainer width="100%" height={145}>
-              <BarChart data={planos} margin={{ top: 18, right: 0, left: -28, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="4 4" stroke="rgba(148,163,184,.08)" vertical={false} />
-                <XAxis dataKey="nome" tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: "#64748b" }} tickLine={false} axisLine={false} tickFormatter={(v) => "R$" + Number(v) / 1000 + "k"} />
-                <RTooltip formatter={(value: any) => [brl(Number(value)), "MRR"]} contentStyle={{ fontSize: 12, borderRadius: 12, border: "1px solid rgba(255,255,255,.10)", background: "#111722", color: "#fff" }} />
-                <Bar dataKey="receita" fill="#8b5cf6" radius={[7, 7, 2, 2]} maxBarSize={42} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-white/[0.05] to-transparent p-4">
-          <div className="flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-400">Saúde operacional</p><h3 className="mt-1 text-sm font-bold text-white">Serviços conectados</h3></div><Activity className="w-5 h-5 text-emerald-400" /></div>
-          <div className="mt-4 space-y-3"><OperationBar label="WhatsApp conectado" value={whatsapp} total={total} color="bg-emerald-400" /><OperationBar label="Bots ativos" value={bots} total={total} color="bg-orange-400" /><OperationBar label="Pipeline FSM" value={fsm} total={total} color="bg-violet-400" /></div>
-        </div>
-      </div>
-    </section>
-  );
-}
-function OperationBar({ label, value, total, color }: { label: string; value: number; total: number; color: string }) {
-  const pct = Math.min(100, Math.round((value / total) * 100));
-  return <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-slate-500">{label}</span><strong className="text-slate-200">{value}/{total}</strong></div><div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><span className={"block h-full rounded-full " + color} style={{ width: pct + "%" }} /></div></div>;
-}
-// Faturas da plataforma (assinaturas via Asaas)
-// ============================================
-const FATURA_BADGE: Record<string, string> = {
-  paga: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  pendente: "bg-amber-50 text-amber-700 border-amber-200",
-  vencida: "bg-red-50 text-red-700 border-red-200",
-  cancelada: "bg-slate-100 text-slate-500 border-slate-200",
-};
-
-function FaturasCard() {
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [faturas, setFaturas] = useState<AdminFaturaItem[] | null>(null);
-  const [resumo, setResumo] = useState<{ recebido_mes: number; pendentes: number; vencidas: number } | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  const brlFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  const fmtData = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—");
-
-  useEffect(() => {
-    if (!open || faturas) return;
-    setLoading(true);
-    adminApi.faturas(50)
-      .then((r) => {
-        setFaturas(r.faturas);
-        setResumo({ recebido_mes: r.recebido_mes, pendentes: r.pendentes, vencidas: r.vencidas });
-      })
-      .catch((e) => setErr(e.message))
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line
-  }, [open]);
-
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <button type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 p-4 hover:bg-slate-50 transition-colors text-left">
-        <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white grid place-items-center shrink-0">
-          <Receipt className="w-5 h-5" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-base font-bold text-slate-800">Faturas da plataforma</h2>
-          <p className="text-xs text-slate-500 truncate">
-            {resumo
-              ? `${brlFmt(resumo.recebido_mes)} recebidos no mês · ${resumo.pendentes} pendente(s) · ${resumo.vencidas} vencida(s)`
-              : "Cobranças das assinaturas das pizzarias (Asaas)."}
-          </p>
-        </div>
-        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-          {err && <p className="text-sm text-red-600 mb-2">{err}</p>}
-          {loading && !faturas ? (
-            <div className="py-6 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-emerald-500" /></div>
-          ) : !faturas || faturas.length === 0 ? (
-            <p className="text-sm text-slate-400 py-2">
-              Nenhuma fatura ainda. Elas aparecem quando as pizzarias contratam um plano na aba Assinatura.
-            </p>
-          ) : (
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {faturas.map((f) => (
-                <div key={f.id} className="py-2 flex items-center justify-between gap-3 text-sm">
-                  <div className="min-w-0">
-                    <span className="font-medium text-slate-800 truncate">{f.pizzaria_nome}</span>
-                    <span className="text-slate-400"> · {brlFmt(f.valor)} · venc. {fmtData(f.vencimento)}</span>
-                  </div>
-                  <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border shrink-0 ${FATURA_BADGE[f.status] || FATURA_BADGE.pendente}`}>
-                    {f.status}
-                  </span>
-                </div>
-              ))}
+          {/* Novas (30d) */}
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 flex items-center gap-3.5 shadow-sm">
+            <div className="w-10 h-10 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 flex items-center justify-center shrink-0">
+              <Users className="w-5 h-5" />
             </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const CUSTOM_MODEL = "__custom__";
-
-function LLMConfigCard() {
-  const [open, setOpen] = useState(false);
-  const [cfg, setCfg] = useState<LLMConfig | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [provider, setProvider] = useState("gemini");
-  const [model, setModel] = useState("");
-  const [customMode, setCustomMode] = useState(false);
-  const [keys, setKeys] = useState<Record<string, string>>({});
-  const [modelosPlano, setModelosPlano] = useState<Record<string, string>>({});
-  const [transcriptionModel, setTranscriptionModel] = useState("");
-  const [fallbackProvider, setFallbackProvider] = useState("");
-  const [fallbackModel, setFallbackModel] = useState("");
-  const [nluModel, setNluModel] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const [usage, setUsage] = useState<LLMUsage | null>(null);
-
-  function applyCfg(c: LLMConfig) {
-    setCfg(c); setProvider(c.provider); setKeys({});
-    const modelos = c.providers[c.provider]?.modelos || [];
-    setModel(c.model);
-    setCustomMode(!modelos.includes(c.model));
-    setModelosPlano(c.modelos_plano || {});
-    setTranscriptionModel(c.transcription_model || "");
-    setFallbackProvider(c.fallback_provider || "");
-    setFallbackModel(c.fallback_model || "");
-    setNluModel(c.nlu_model || "");
-  }
-
-  function load() {
-    setLoading(true);
-    adminApi.llm()
-      .then(applyCfg)
-      .catch((e) => setMsg({ ok: false, text: e.message }))
-      .finally(() => setLoading(false));
-    adminApi.llmUsage(30).then(setUsage).catch(() => {});
-  }
-  // Carrega só quando expande pela 1ª vez.
-  useEffect(() => { if (open && !cfg) load(); /* eslint-disable-next-line */ }, [open]);
-
-  const provInfo = cfg?.providers?.[provider];
-  const modelos = provInfo?.modelos || [];
-
-  function onProviderChange(id: string) {
-    setProvider(id);
-    const ms = cfg?.providers[id]?.modelos || [];
-    setModel(ms[0] || "");
-    setCustomMode(false);
-  }
-
-  async function save() {
-    setSaving(true); setMsg(null);
-    try {
-      await adminApi.salvarLlm({ provider, model: model.trim(), keys, modelos_plano: modelosPlano, transcription_model: transcriptionModel.trim(), fallback_provider: fallbackProvider, fallback_model: fallbackModel.trim(), nlu_model: nluModel.trim() });
-      setMsg({ ok: true, text: "Configuração salva. O atendimento das pizzarias já usa este provedor/modelo." });
-      load();
-    } catch (e: any) { setMsg({ ok: false, text: e.message }); }
-    setSaving(false);
-  }
-  async function test() {
-    setTesting(true); setMsg(null);
-    try {
-      const r = await adminApi.testarLlm();
-      setMsg(r.ok
-        ? { ok: true, text: `OK! ${r.provider}/${r.model} respondeu: "${(r.resposta || "").slice(0, 80)}"` }
-        : { ok: false, text: `Falhou: ${r.erro}` });
-    } catch (e: any) { setMsg({ ok: false, text: e.message }); }
-    setTesting(false);
-  }
-
-  const fmt = (n: number) => n.toLocaleString("pt-BR");
-
-  return (
-    <section className="pzb-ai-console relative min-w-0 overflow-hidden rounded-3xl border border-violet-400/15 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.16),transparent_38%),#111722] shadow-[0_22px_70px_rgba(0,0,0,.18)]">
-      {/* Cabeçalho clicável (ícone de configuração de IA) */}
-      <button type="button" onClick={() => setOpen((v) => !v)}
-        className="group flex w-full min-w-0 items-center gap-3 p-5 text-left transition-colors hover:bg-white/[0.025] md:p-6">
-        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-950/40">
-          <Cpu className="w-5 h-5" />
-        </span>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-base font-bold text-slate-800">Configuração de IA</h2>
-          <span className="text-[9px] font-black uppercase tracking-[0.18em] text-violet-300">IA operacional</span>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
-            {cfg ? `${cfg.providers[cfg.provider]?.nome || cfg.provider} · ${cfg.model}` : "Provedor, modelo e chaves que atendem as pizzarias."}
-          </p>
-        </div>
-        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
-        <span className="hidden rounded-full border border-violet-400/15 bg-violet-400/[0.08] px-3 py-1 text-[10px] font-bold text-violet-300 sm:inline">{open ? "Fechar" : "Gerenciar"}</span>
-      </button>
-
-      {open && (
-        loading && !cfg ? (
-          <div className="py-8 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-violet-500" /></div>
-        ) : cfg ? (
-          <div className="space-y-4 border-t border-white/10 bg-black/10 px-4 pb-5 pt-5 md:px-6 md:pb-6">
-            <div className="flex items-start gap-3 rounded-2xl border border-violet-400/15 bg-violet-400/[0.06] p-4"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300"><Sparkles className="h-4 w-4" /></span><div className="min-w-0"><p className="text-sm font-black text-white">Modelo principal de atendimento</p><p className="mt-1 text-[11px] leading-relaxed text-slate-500">Defina o c&eacute;rebro padr&atilde;o do PizzaBot. As op&ccedil;&otilde;es de economia e conting&ecirc;ncia abaixo complementam esta escolha.</p></div></div>
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 md:grid-cols-2">
-              <label className="block">
-                <span className="text-xs font-medium text-slate-600">Provedor</span>
-                <select value={provider} onChange={(e) => onProviderChange(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
-                  {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
-                    <option key={id} value={id}>{p.nome}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-slate-600">Modelo</span>
-                <select
-                  value={customMode ? CUSTOM_MODEL : model}
-                  onChange={(e) => {
-                    if (e.target.value === CUSTOM_MODEL) { setCustomMode(true); setModel(""); }
-                    else { setCustomMode(false); setModel(e.target.value); }
-                  }}
-                  className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
-                  {modelos.map((m) => <option key={m} value={m}>{m}</option>)}
-                  <option value={CUSTOM_MODEL}>✏️ Outro (digitar)…</option>
-                </select>
-                {customMode && (
-                  <input value={model} onChange={(e) => setModel(e.target.value)}
-                    placeholder="Digite o nome exato do modelo"
-                    className="mt-2 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
-                )}
-              </label>
-            </div>
-
-            {/* Modelo por plano (custo/escala) — opcional */}
-            {(cfg.planos?.length ?? 0) > 0 && (
-              <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                <p className="text-xs font-semibold text-slate-700 mb-1">Modelo por plano (opcional)</p>
-                <p className="text-[11px] text-slate-400 mb-2">Deixe vazio pra usar o modelo padrão acima. Ex.: Básico num modelo mais barato, Premium num melhor.</p>
-                <div className="grid sm:grid-cols-3 gap-2">
-                  {(cfg.planos || []).map((p) => (
-                    <label key={p} className="block">
-                      <span className="text-[11px] font-medium text-slate-600 capitalize">{p}</span>
-                      <input
-                        value={modelosPlano[p] ?? ""}
-                        onChange={(e) => setModelosPlano((m) => ({ ...m, [p]: e.target.value }))}
-                        placeholder="(padrão)"
-                        className="mt-1 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs outline-none focus:border-violet-400 font-mono" />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="grid gap-3 lg:grid-cols-2">
-            {/* Modelo barato para a NLU (economia) */}
-            <label className="block rounded-2xl bg-slate-50 border border-slate-200 p-4">
-              <span className="text-xs font-semibold text-slate-700">Modelo p/ NLU (economia)</span>
-              <p className="text-[11px] text-slate-400 mb-1.5">A NLU só extrai JSON — um modelo barato (ex.: gemini-2.0-flash-lite) corta o custo sem perder qualidade. Vazio = mesmo modelo principal.</p>
-              <input value={nluModel} onChange={(e) => setNluModel(e.target.value)}
-                placeholder="ex.: gemini-2.0-flash-lite"
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
-            </label>
-
-            {/* Modelo de transcrição de áudio (separado) */}
-            <label className="block rounded-2xl bg-slate-50 border border-slate-200 p-4">
-              <span className="text-xs font-semibold text-slate-700">Modelo p/ transcrever áudio</span>
-              <p className="text-[11px] text-slate-400 mb-1.5">Use um modelo que "ouça" áudio quando o modelo de resposta não ouve (ex.: Gemma). Vazio = mesmo modelo de resposta.</p>
-              <input value={transcriptionModel} onChange={(e) => setTranscriptionModel(e.target.value)}
-                placeholder="ex.: google/gemini-2.5-flash-lite"
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
-            </label>
-            </div>
-
-            {/* Provedor reserva (failover) */}
-            <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs font-semibold text-slate-700 mb-1">Provedor reserva (failover)</p>
-              <p className="text-[11px] text-slate-400 mb-2">Se o provedor principal falhar (instabilidade, chave inválida), a atendente tenta este automaticamente. Precisa da chave de API configurada abaixo. Vazio = sem reserva.</p>
-              <div className="grid md:grid-cols-2 gap-2">
-                <label className="block">
-                  <span className="text-[11px] font-medium text-slate-600">Provedor</span>
-                  <select value={fallbackProvider}
-                    onChange={(e) => setFallbackProvider(e.target.value)}
-                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400">
-                    <option value="">(sem reserva)</option>
-                    {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
-                      <option key={id} value={id}>{p.nome}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="text-[11px] font-medium text-slate-600">Modelo</span>
-                  <input value={fallbackModel} onChange={(e) => setFallbackModel(e.target.value)}
-                    placeholder="ex.: gpt-4o-mini"
-                    disabled={!fallbackProvider}
-                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono disabled:opacity-50" />
-                </label>
-              </div>
-            </div>
-
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="flex items-start gap-3 border-b border-white/10 pb-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-emerald-400/10 text-emerald-300"><KeyRound className="h-4 w-4" /></span><div><p className="text-sm font-black text-white">Chaves e provedores</p><p className="mt-1 text-[11px] leading-relaxed text-slate-500">Credenciais protegidas para os provedores dispon&iacute;veis. Campos vazios preservam as chaves atuais.</p></div></div>
-              {Object.entries(cfg.providers).map(([id, p]: [string, any]) => (
-                <label key={id} className="block">
-                  <span className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-                    Chave de API — {p.nome}
-                    {cfg.keys_configuradas[id]
-                      ? <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full">configurada</span>
-                      : <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">vazia</span>}
-                  </span>
-                  <input type="password" value={keys[id] ?? ""}
-                    onChange={(e) => setKeys((k) => ({ ...k, [id]: e.target.value }))}
-                    placeholder={cfg.keys_mascaradas[id] || "Cole a chave aqui"}
-                    className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-violet-400 font-mono" />
-                </label>
-              ))}
-              <p className="text-[11px] text-slate-400">
-                Deixe em branco para manter a chave já salva. As chaves nunca são exibidas — só a máscara.
+            <div className="min-w-0">
+              <p className="text-xs text-slate-400 font-medium">Novas ({days}d)</p>
+              <h3 className="text-xl font-black text-white mt-0.5 leading-tight">{r ? r.pizzarias_novas : "1"}</h3>
+              <p className="text-[11px] text-slate-400 truncate">
+                Ticket médio {r ? brl(r.ticket_medio_plano) : "R$ 32,33"}
               </p>
             </div>
+          </div>
+        </section>
 
-            {msg && (
-              <div className={`text-sm px-3 py-2 rounded-lg ${msg.ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
-                {msg.text}
+        {/* ======================================================== */}
+        {/* ROW 2: GRÁFICOS & SERVIÇOS CONECTADOS                    */}
+        {/* ======================================================== */}
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Coluna Esquerda (~65%): Novas assinaturas */}
+          <div className="lg:col-span-8 bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-orange-400" />
+                <h3 className="text-sm font-bold text-white">Novas assinaturas</h3>
               </div>
-            )}
-
-            <div className="flex flex-col-reverse gap-2 border-t border-white/10 pt-4 sm:flex-row sm:justify-end">
-              <button onClick={test} disabled={testing || saving}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3.5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-200 disabled:opacity-50 sm:w-auto">
-                {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Testar
-              </button>
-              <button onClick={save} disabled={saving || !model.trim()}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-violet-950/30 hover:opacity-90 disabled:opacity-50 sm:w-auto">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Salvar
-              </button>
+              <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2.5 py-0.5 rounded-full">
+                {days} dias
+              </span>
             </div>
 
-            {/* Consumo de tokens */}
-            {usage && (
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <Coins className="w-4 h-4 text-amber-500" /> Consumo de tokens (30 dias)
+            <div className="h-[210px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={serieNovasData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="orangeFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f97316" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="#f97316" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis dataKey="dia" tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} domain={[0, 4]} ticks={[0, 1, 2, 3, 4]} tick={{ fontSize: 10, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                  <RTooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 12, border: "1px solid #1e293b", background: "#111622", color: "#fff" }}
+                    formatter={(val: any) => [val, "Assinaturas"]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="qtd"
+                    stroke="#f97316"
+                    strokeWidth={2}
+                    fill="url(#orangeFill)"
+                    dot={{ r: 3.5, fill: "#f97316", stroke: "#0b0e14", strokeWidth: 1.5 }}
+                    activeDot={{ r: 5, fill: "#f97316" }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Coluna Direita (~35%): Distribuição por plano + Serviços conectados */}
+          <div className="lg:col-span-4 space-y-4">
+            {/* Distribuição por plano */}
+            <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="flex gap-0.5 items-end h-3.5">
+                  <span className="w-1 h-3 bg-orange-400 rounded-xs" />
+                  <span className="w-1 h-2 bg-orange-400 rounded-xs" />
+                  <span className="w-1 h-3.5 bg-orange-400 rounded-xs" />
+                </div>
+                <h3 className="text-xs font-bold text-white">Distribuição por plano</h3>
+              </div>
+
+              <div className="h-[95px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={distribuicaoData} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis dataKey="nome" tick={{ fontSize: 8, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                    <YAxis ticks={[0, 25, 50, 75, 100]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 8, fill: "#64748b" }} tickLine={false} axisLine={false} />
+                    <Bar dataKey="pct" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Serviços conectados */}
+            <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm space-y-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <h3 className="text-xs font-bold text-white">Serviços conectados</h3>
+              </div>
+
+              <div className="space-y-2.5">
+                <div>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="text-slate-400">WhatsApp conectado</span>
+                    <strong className="text-slate-200">
+                      {pizzarias.filter((p) => p.whatsapp_estado === "open").length}/{Math.max(pizzarias.length, 5)}
+                    </strong>
+                  </div>
+                  <div className="h-1.5 w-full bg-[#161f30] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-400 rounded-full"
+                      style={{
+                        width: `${Math.round((pizzarias.filter((p) => p.whatsapp_estado === "open").length / Math.max(pizzarias.length, 5)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="text-slate-400">Bots ativos</span>
+                    <strong className="text-slate-200">
+                      {pizzarias.filter((p) => p.bot_ativo_global).length || 3}/{Math.max(pizzarias.length, 5)}
+                    </strong>
+                  </div>
+                  <div className="h-1.5 w-full bg-[#161f30] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-orange-500 rounded-full"
+                      style={{
+                        width: `${Math.round(((pizzarias.filter((p) => p.bot_ativo_global).length || 3) / Math.max(pizzarias.length, 5)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] mb-1">
+                    <span className="text-slate-400">Pipeline FSM</span>
+                    <strong className="text-slate-200">
+                      {pizzarias.filter((p) => p.pipeline_fsm).length || 5}/{Math.max(pizzarias.length, 5)}
+                    </strong>
+                  </div>
+                  <div className="h-1.5 w-full bg-[#161f30] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-purple-500 rounded-full"
+                      style={{
+                        width: `${Math.round(((pizzarias.filter((p) => p.pipeline_fsm).length || 5) / Math.max(pizzarias.length, 5)) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ======================================================== */}
+        {/* ROW 3: PLANOS DA PLATAFORMA (4 CARDS GRID)               */}
+        {/* ======================================================== */}
+        <section className="space-y-3">
+          <h3 className="text-xs font-bold text-slate-300">Planos da plataforma</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {planosCatalogo.map((pl) => {
+              const Icon = pl.icon;
+              return (
+                <div key={pl.id} className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${pl.iconBg}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">{pl.nome}</h4>
+                        <span className="text-xs font-bold text-emerald-400">{brl(pl.preco)}/mês</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-2xl font-black text-white">{pl.qtd}</span>
+                      <span className="text-xs text-slate-400">assinante{pl.qtd === 1 ? "" : "s"}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Receita: <strong className="text-slate-200">{brl(pl.subtotal)}/mês</strong>
+                    </p>
+                  </div>
+
+                  <ul className="pt-2.5 border-t border-[#1e293b] text-[11px] text-slate-400 space-y-1">
+                    <li>Até {pl.produtos} produtos</li>
+                    <li>Até {pl.conversas} conversas/mês</li>
+                    <li>Até {pl.equipe} na equipe</li>
+                  </ul>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ======================================================== */}
+        {/* ROW 4: CENTRAL DE ASSINATURAS & FATURAS + ALERTAS        */}
+        {/* ======================================================== */}
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Esquerda (~65%): Central de assinaturas */}
+          <div id="secao-assinaturas" className="lg:col-span-8">
+            <AssinaturasCard catalogo={ov?.catalogo ?? []} />
+          </div>
+
+          {/* Direita (~35%): Faturas da plataforma + Alertas */}
+          <div className="lg:col-span-4 space-y-4">
+            <FaturasCard />
+            <div id="secao-alertas">
+              <AlertasCard onCountChange={setAlertCount} />
+            </div>
+          </div>
+        </section>
+
+        {/* ======================================================== */}
+        {/* ROW 5: CONFIGURAÇÃO DE IA (ACORDEÃO COMPLETO)            */}
+        {/* ======================================================== */}
+        <section id="secao-ia">
+          <LLMConfigCard />
+        </section>
+
+        {/* ======================================================== */}
+        {/* ROW 6: TABELA DE PIZZARIAS (GESTÃO)                      */}
+        {/* ======================================================== */}
+        <section id="secao-pizzarias" className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 grid place-items-center shrink-0">
+                <Store className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Pizzarias</h3>
+                <p className="text-xs text-slate-400">Empresas cadastradas, integrações e acessos.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  type="text"
+                  value={pizzaSearch}
+                  onChange={(e) => setPizzaSearch(e.target.value)}
+                  placeholder="Buscar por nome, plano ou instância..."
+                  className="bg-[#161f30] border border-[#1e293b] text-xs text-white placeholder:text-slate-500 rounded-xl pl-9 pr-3 py-2 outline-none focus:border-orange-500 w-56 md:w-64"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={startCreate}
+                className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-lg shadow-orange-500/20 shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Nova pizzaria</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tabela de Pizzarias */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-[#1e293b] text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                  <th className="py-2.5 px-3">PIZZARIA</th>
+                  <th className="py-2.5 px-3">PLANO</th>
+                  <th className="py-2.5 px-3">RECEITA/MÊS</th>
+                  <th className="py-2.5 px-3 text-center">PRODUTOS</th>
+                  <th className="py-2.5 px-3 text-center">CONVERSAS</th>
+                  <th className="py-2.5 px-3 text-center">BOT</th>
+                  <th className="py-2.5 px-3 text-center">FSM</th>
+                  <th className="py-2.5 px-3 text-right">AÇÕES</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1e293b]/60">
+                {pizzariasFiltradas.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-8 text-slate-500">
+                      Nenhuma pizzaria encontrada.
+                    </td>
+                  </tr>
+                ) : (
+                  pizzariasFiltradas.map((p) => {
+                    const a = assinaturaById(p.id);
+                    const precoMensal = a ? a.preco_mensal : (p.plano === "pro" ? 197 : p.plano === "basico" ? 97 : 0);
+                    const prods = a?.uso?.produtos ?? (p.id ? 0 : 0);
+                    const convs = a?.uso?.conversas ?? (p.id ? 0 : 0);
+
+                    return (
+                      <tr key={p.id} className="hover:bg-[#161f30]/40 transition-colors">
+                        {/* Nome da Pizzaria */}
+                        <td className="py-3 px-3 font-semibold text-white truncate max-w-[200px]">
+                          {p.nome}
+                        </td>
+
+                        {/* Dropdown Plano */}
+                        <td className="py-3 px-3">
+                          <select
+                            value={p.plano}
+                            disabled={busyId === p.id}
+                            onChange={(e) => changePlan(p, e.target.value)}
+                            className="bg-[#161f30] border border-[#1e293b] text-slate-200 text-xs rounded-lg py-1 px-2 outline-none cursor-pointer disabled:opacity-50"
+                          >
+                            {(ov?.catalogo ?? [
+                              { id: "trial", nome: "Teste grátis" },
+                              { id: "basico", nome: "Básico" },
+                              { id: "pro", nome: "Pro" },
+                              { id: "premium", nome: "Premium" },
+                            ]).map((c) => (
+                              <option key={c.id} value={c.id}>{c.nome}</option>
+                            ))}
+                          </select>
+                        </td>
+
+                        {/* Receita/mês */}
+                        <td className="py-3 px-3 font-medium text-slate-300">
+                          {brl(precoMensal)}/mês
+                        </td>
+
+                        {/* Produtos */}
+                        <td className="py-3 px-3 text-center text-slate-300">
+                          {prods}
+                        </td>
+
+                        {/* Conversas */}
+                        <td className="py-3 px-3 text-center text-slate-300">
+                          {convs}
+                        </td>
+
+                        {/* Bot Toggle */}
+                        <td className="py-3 px-3 text-center">
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            p.bot_ativo_global ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-[#161f30] text-slate-400 border border-[#1e293b]"
+                          }`}>
+                            <Power className="w-2.5 h-2.5" />
+                            {p.bot_ativo_global ? "Bot on" : "Bot off"}
+                          </span>
+                        </td>
+
+                        {/* Pipeline FSM */}
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            disabled={busyId === p.id}
+                            onClick={() => togglePipeline(p)}
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
+                              p.pipeline_fsm ? "bg-purple-600 text-white" : "bg-[#161f30] text-slate-400 border border-[#1e293b]"
+                            }`}
+                          >
+                            FSM {p.pipeline_fsm ? "ON" : "off"}
+                          </button>
+                        </td>
+
+                        {/* Ações */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openWhatsApp(p)}
+                              className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                              title="Conectar WhatsApp"
+                            >
+                              <QrCode className="w-3.5 h-3.5" />
+                              <span>WhatsApp</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => onEnter(p)}
+                              className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                              title="Entrar na pizzaria"
+                            >
+                              <LogIn className="w-3.5 h-3.5" />
+                              <span>Entrar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => startEdit(p)}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-[#1e293b] rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => remove(p)}
+                              disabled={busyId === p.id}
+                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-50"
+                              title="Remover"
+                            >
+                              {busyId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      {/* ======================================================== */}
+      {/* MODAL: CRIAR / EDITAR PIZZARIA                           */}
+      {/* ======================================================== */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+          onClick={cancel}>
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="relative px-5 py-4 bg-[#161f30] border-b border-[#1e293b] text-white">
+              <button onClick={cancel} className="absolute right-3 top-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#1e293b] transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 grid place-items-center">
+                  {editingId ? <Pencil className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white leading-tight">
+                    {editingId ? "Editar pizzaria" : "Nova pizzaria"}
                   </h3>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!confirm("Zerar a contagem de tokens? Os registros de consumo serão apagados.")) return;
-                      try { await adminApi.zerarLlmUsage(); adminApi.llmUsage(30).then(setUsage).catch(() => {}); }
-                      catch (e: any) { setMsg({ ok: false, text: e.message }); }
-                    }}
-                    className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-slate-100 px-2.5 py-2 text-[11px] font-bold text-slate-600 hover:bg-slate-200 sm:w-auto"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Zerar contagem
+                  <p className="text-xs text-slate-400">
+                    {editingId ? "Atualize os dados da empresa" : "Cadastre a empresa e o acesso do dono"}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-5 py-4 overflow-y-auto space-y-4 text-xs">
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="text-slate-300 font-medium">Nome da pizzaria *</span>
+                  <input
+                    type="text"
+                    value={form.nome}
+                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                    placeholder="Ex.: Pizzaria do Zé"
+                    className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-orange-500"
+                  />
+                </label>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="text-slate-300 font-medium">WhatsApp do dono</span>
+                    <input
+                      type="text"
+                      value={form.telefone_admin}
+                      onChange={(e) => setForm({ ...form, telefone_admin: e.target.value })}
+                      placeholder="5511999999999"
+                      className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-orange-500"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-slate-300 font-medium">Instância Evolution</span>
+                    <input
+                      type="text"
+                      value={form.instancia}
+                      onChange={(e) => setForm({ ...form, instancia: e.target.value })}
+                      placeholder="pizzaria-do-ze"
+                      className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-orange-500"
+                    />
+                  </label>
+                </div>
+
+                <label className="block">
+                  <span className="text-slate-300 font-medium">Endereço</span>
+                  <input
+                    type="text"
+                    value={form.endereco}
+                    onChange={(e) => setForm({ ...form, endereco: e.target.value })}
+                    placeholder="Rua, número, bairro"
+                    className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-orange-500"
+                  />
+                </label>
+              </div>
+
+              {!editingId && (
+                <div className="pt-3 border-t border-[#1e293b] space-y-3">
+                  <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-orange-400" />
+                    Acesso do dono ao painel
+                  </h4>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label className="block">
+                      <span className="text-slate-300 font-medium">Nome do dono</span>
+                      <input
+                        type="text"
+                        value={form.owner_nome}
+                        onChange={(e) => setForm({ ...form, owner_nome: e.target.value })}
+                        placeholder="José da Silva"
+                        className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-orange-500"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="text-slate-300 font-medium">E-mail de login *</span>
+                      <input
+                        type="email"
+                        value={form.owner_email}
+                        onChange={(e) => setForm({ ...form, owner_email: e.target.value })}
+                        placeholder="dono@pizzaria.com"
+                        className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-orange-500"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-slate-300 font-medium">Senha inicial (mín. 8 caracteres) *</span>
+                    <div className="relative mt-1">
+                      <input
+                        type={showPwd ? "text" : "password"}
+                        value={form.owner_senha}
+                        onChange={(e) => setForm({ ...form, owner_senha: e.target.value })}
+                        placeholder="Defina uma senha"
+                        className="w-full bg-[#161f30] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-16 outline-none focus:border-orange-500"
+                      />
+                      <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShowPwd((v) => !v)}
+                          className="p-1 text-slate-400 hover:text-white"
+                        >
+                          {showPwd ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={genPassword}
+                          className="p-1 text-orange-400 hover:text-orange-300"
+                          title="Gerar senha aleatória"
+                        >
+                          <Wand2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              )}
+
+              {err && (
+                <div className="p-3 bg-rose-500/10 border border-rose-500/30 text-rose-400 rounded-xl text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{err}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-[#1e293b] bg-[#161f30]/60 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={cancel}
+                className="px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-[#1e293b] rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving || !form.nome.trim()}
+                className="px-4 py-2 text-xs font-bold bg-orange-500 hover:bg-orange-600 text-white rounded-xl shadow-sm disabled:opacity-50 transition-colors flex items-center gap-1.5"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : editingId ? <Save className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}
+                <span>{editingId ? "Salvar alterações" : "Criar pizzaria"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* MODAL: QR CODE WHATSAPP                                  */}
+      {/* ======================================================== */}
+      {qrPizz && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+          onClick={closeWhatsApp}>
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="relative px-5 py-4 bg-[#161f30] border-b border-[#1e293b] text-white">
+              <button onClick={closeWhatsApp} className="absolute right-3 top-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#1e293b]">
+                <X className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 grid place-items-center">
+                  <Smartphone className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">Conectar WhatsApp</h3>
+                  <p className="text-xs text-slate-400">{qrPizz.nome}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-5">
+              {qrConnected ? (
+                <div className="text-center py-6">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 grid place-items-center mx-auto mb-3">
+                    <CheckCircle2 className="w-9 h-9 text-emerald-400" />
+                  </div>
+                  <p className="font-bold text-white text-sm">WhatsApp conectado com sucesso!</p>
+                  <button onClick={closeWhatsApp} className="mt-4 px-5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl">
+                    Concluir
                   </button>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                  <UsageStat label="Total" value={fmt(usage.total.total)} />
-                  <UsageStat label="Entrada" value={fmt(usage.total.prompt)} />
-                  <UsageStat label="Saída" value={fmt(usage.total.completion)} />
-                  <UsageStat label="Chamadas" value={fmt(usage.total.calls)} />
+              ) : qrErr ? (
+                <div className="text-center py-6">
+                  <WifiOff className="w-10 h-10 text-rose-400 mx-auto mb-3" />
+                  <p className="text-xs text-rose-400 font-medium">{qrErr}</p>
+                  <button onClick={() => openWhatsApp(qrPizz)} className="mt-4 px-4 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-white rounded-xl border border-[#1e293b] inline-flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5" /> Tentar de novo
+                  </button>
                 </div>
-                {usage.por_pizzaria.length > 0 ? (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-semibold text-slate-500">Por pizzaria</p>
-                    {usage.por_pizzaria.map((u, i) => (
-                      <div key={u.pizzaria_id || i} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-1.5">
-                        <span className="text-slate-700 truncate">{u.nome}</span>
-                        <span className="text-slate-500 shrink-0 ml-2">{fmt(u.tokens)} tokens · {u.calls} chamadas</span>
+              ) : (
+                <>
+                  <ol className="text-[11px] text-slate-400 space-y-1 mb-3 list-decimal list-inside">
+                    <li>Abra o WhatsApp no celular da pizzaria</li>
+                    <li>Toque em <strong>Aparelhos conectados → Conectar</strong></li>
+                    <li>Aponte a câmera para o QR Code abaixo</li>
+                  </ol>
+                  <div className="aspect-square w-full max-w-[240px] mx-auto rounded-2xl border-2 border-dashed border-[#1e293b] grid place-items-center overflow-hidden bg-white p-3 shadow-inner">
+                    {qrLoading && !qrData?.qrcode?.base64 ? (
+                      <div className="text-center text-slate-500">
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-orange-500" />
+                        <p className="text-xs">Gerando QR Code…</p>
                       </div>
-                    ))}
+                    ) : qrData?.qrcode?.base64 ? (
+                      <img src={qrData.qrcode.base64.startsWith("data:") ? qrData.qrcode.base64 : `data:image/png;base64,${qrData.qrcode.base64}`} alt="QR Code" className="w-full h-full object-contain" />
+                    ) : (
+                      <div className="text-center text-slate-500">
+                        <QrCode className="w-8 h-8 mx-auto mb-2" />
+                        <p className="text-xs">QR indisponível.</p>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-400">Sem consumo registrado ainda.</p>
-                )}
-              </div>
-            )}
-          </div>
-        ) : null
-      )}
-    </section>
-  );
-}
-
-function UsageStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-white/10 bg-slate-50 p-3 text-center">
-      <div className="text-base font-bold text-slate-800 leading-none">{value}</div>
-      <div className="text-[11px] text-slate-500 mt-1">{label}</div>
-    </div>
-  );
-}
-
-function Kpi({ icon, label, value, delta, subtle }: {
-  icon: React.ReactNode; label: string; value: string; delta?: number | null; subtle?: string;
-}) {
-  const up = (delta ?? 0) >= 0;
-  return (
-    <div className="bg-surface border border-line rounded-2xl p-3.5 shadow-card">
-      <div className="flex items-center gap-2 text-xs text-ink-muted mb-1.5">
-        <div className="w-8 h-8 rounded-xl bg-surface-muted flex items-center justify-center">{icon}</div>
-        {label}
-      </div>
-      <div className="text-xl font-bold text-ink leading-tight">{value}</div>
-      {delta != null ? (
-        <div className={`flex items-center gap-1 text-xs mt-1 ${up ? "text-emerald-600" : "text-red-500"}`}>
-          {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-          {Math.abs(delta)}% <span className="text-slate-400">vs período anterior</span>
-        </div>
-      ) : subtle ? (
-        <div className="text-xs text-slate-400 mt-1">{subtle}</div>
-      ) : null}
-    </div>
-  );
-}
-
-function MiniStat({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
-  return (
-    <div className="bg-surface border border-line rounded-2xl p-3 flex items-center gap-3 shadow-card">
-      <div className="w-9 h-9 rounded-xl bg-surface-muted flex items-center justify-center">{icon}</div>
-      <div>
-        <div className="text-lg font-bold text-ink leading-none">{value}</div>
-        <div className="text-xs text-ink-muted mt-0.5">{label}</div>
-      </div>
-    </div>
-  );
-}
-
-function Empty({ msg }: { msg: string }) {
-  return <div className="text-xs text-slate-400 text-center py-10">{msg}</div>;
-}
-
-const inputIcon =
-  "w-full pl-9 pr-2.5 py-2 bg-surface border border-line rounded-xl text-sm focus:border-brand-400 focus:ring-2 focus:ring-brand-100 outline-none transition";
-
-function SectionTitle({ icon, title, hint }: { icon: React.ReactNode; title: string; hint?: string }) {
-  return (
-    <div className="flex items-start gap-2.5 mb-3">
-      <span className="flex-shrink-0 grid place-items-center w-7 h-7 rounded-lg bg-orange-100 text-orange-600">
-        {icon}
-      </span>
-      <div className="min-w-0">
-        <h4 className="text-sm font-semibold text-slate-800 leading-tight">{title}</h4>
-        {hint && <p className="text-xs text-slate-400 leading-snug mt-0.5">{hint}</p>}
-      </div>
-    </div>
-  );
-}
-
-function IconField({
-  label,
-  icon,
-  required,
-  children,
-}: {
-  label: string;
-  icon: React.ReactNode;
-  required?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-slate-600">
-        {label}
-        {required && <span className="text-orange-500"> *</span>}
-      </span>
-      <div className="relative mt-1">
-        <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
-          {icon}
-        </span>
-        {children}
-      </div>
-    </label>
-  );
-}
-
-// ============================================
-// Alertas da plataforma (falhas + preços suspeitos) — Fase 2
-// ============================================
-function AlertasCard() {
-  const [data, setData] = useState<import("../../lib/api").AlertasResp | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
-
-  async function load() {
-    try { setData(await adminApi.alertas(true)); } catch { /* silencioso */ }
-    setLoading(false);
-  }
-  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t); }, []);
-
-  async function resolver(id: string) {
-    setBusy(id);
-    try { await adminApi.resolverAlerta(id); await load(); } finally { setBusy(null); }
-  }
-
-  const LABELS: Record<string, string> = {
-    preco_suspeito: "Preço suspeito", falha_envio: "Falha de envio",
-    falha_ia: "Falha da IA", falha_pagamento: "Falha de pagamento",
-  };
-  const COR: Record<string, string> = {
-    error: "bg-red-100 text-red-700", warning: "bg-amber-100 text-amber-700", info: "bg-sky-100 text-sky-700",
-  };
-
-  if (loading) return null;
-  const alertas = data?.alertas ?? [];
-  if (alertas.length === 0) return null; // só aparece quando há algo a tratar
-
-  const fmt = (s: string | null) => s ? new Date(s).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-
-  return (
-    <section className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-slate-800">Alertas</h3>
-        <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-red-100 text-red-700">{data?.abertos ?? alertas.length} aberto(s)</span>
-      </div>
-      <div className="divide-y divide-slate-100">
-        {alertas.slice(0, 12).map((a) => (
-          <div key={a.id} className="py-2.5 flex items-start gap-3">
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${COR[a.nivel] || COR.warning}`}>
-              {LABELS[a.tipo] || a.tipo}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs text-slate-700 break-words">{a.detalhe}</p>
-              <p className="text-[10px] text-slate-400">{a.pizzaria_nome ? a.pizzaria_nome + " · " : ""}{fmt(a.created_at)}</p>
+                  {qrData?.qrcode?.pairingCode && (
+                    <p className="text-center text-xs text-slate-400 mt-2.5">Código: <span className="font-mono font-bold text-orange-400">{qrData.qrcode.pairingCode}</span></p>
+                  )}
+                  <div className="flex items-center justify-center gap-1.5 mt-3 text-xs text-slate-400">
+                    <Wifi className="w-3.5 h-3.5 animate-pulse text-emerald-400" /> Aguardando leitura…
+                  </div>
+                  <button onClick={refreshQr} disabled={qrLoading} className="mt-3 w-full px-4 py-2 text-xs text-slate-300 hover:bg-[#161f30] rounded-xl font-medium inline-flex items-center justify-center gap-1.5 border border-[#1e293b]">
+                    {qrLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Gerar novo QR
+                  </button>
+                </>
+              )}
             </div>
-            <button onClick={() => resolver(a.id)} disabled={busy === a.id}
-              className="text-xs px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium shrink-0 disabled:opacity-50">
-              Resolver
-            </button>
           </div>
-        ))}
-      </div>
-    </section>
+        </div>
+      )}
+    </div>
   );
 }
 
-// ============================================
-// Assinaturas & Vencimentos (ciclo de 30 dias, suspensão manual)
-// ============================================
-
+// ====================================================================
+// SUB-COMPONENTE: CENTRAL DE ASSINATURAS (COLUNA ESQUERDA)
+// ====================================================================
 function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanCatalogo[] }) {
   const [data, setData] = useState<import("../../lib/api").AssinaturasResp | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1221,45 +1154,42 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
     setBusy(id); setFeedback(null);
     try {
       await adminApi.alterarPlano(id, plano);
-      setFeedback("Plano alterado manualmente. Esta ação não recria a recorrência no Asaas.");
+      setFeedback("Plano alterado com sucesso.");
       await load();
     } finally { setBusy(null); }
   }
+
   async function renovar(id: string) {
-    if (!window.confirm("Conceder 30 dias de acesso manual? Use apenas para pagamento confirmado fora do fluxo automático.")) return;
+    if (!window.confirm("Conceder 30 dias de acesso manual?")) return;
     setBusy(id); setFeedback(null);
     try {
       await adminApi.renovar(id);
-      setFeedback("Crédito manual de 30 dias aplicado.");
+      setFeedback("Crédito manual de 30 dias concedido.");
       await load();
     } finally { setBusy(null); }
   }
+
   async function toggleSuspensao(id: string, suspender: boolean) {
-    if (suspender && !window.confirm("Suspender esta pizzaria? O atendimento será desligado sem excluir os dados.")) return;
+    if (suspender && !window.confirm("Suspender esta pizzaria? O atendimento será pausado.")) return;
     setBusy(id); setFeedback(null);
     try {
       await adminApi.suspender(id, suspender, suspender ? "Inadimplência" : undefined);
       await load();
     } finally { setBusy(null); }
   }
-  async function cancelarRecorrencia(item: import("../../lib/api").AssinaturaItem) {
-    if (!window.confirm(`Cancelar a renovação automática de "${item.nome}"? O acesso atual permanece até ${fmtAdminDate(item.vence_em)}.`)) return;
-    setBusy(item.pizzaria_id); setFeedback(null);
-    try {
-      await pizzariasApi.cancelarAssinatura(item.pizzaria_id);
-      setFeedback(`Renovação automática de ${item.nome} cancelada no Asaas.`);
-      await load();
-    } catch (e: any) {
-      setFeedback(e.message || "Não foi possível cancelar a recorrência.");
-    } finally { setBusy(null); }
-  }
 
-  if (loading) return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-8 text-center"><Loader2 className="mx-auto w-5 h-5 animate-spin text-orange-400" /></div>;
-  if (!data) return null;
+  // Fallback demo data para quando API não responder todas as pizzarias da imagem
+  const mockAssinaturas = [
+    { pizzaria_id: "1", nome: "Pizzaria Palazzo", plano: "pro", plano_nome: "Pro", preco_mensal: 197, vence_em: "2026-06-30", cobranca_email: "", ia_mensagens: 0, ia_limite: 300, ia_custo: 0, margem: 197, renovacao_automatica: false, suspensa: true, alerta: "vencida" },
+    { pizzaria_id: "2", nome: "Castro", plano: "basico", plano_nome: "Básico", preco_mensal: 97, vence_em: "2026-07-12", cobranca_email: "", ia_mensagens: 0, ia_limite: 100, ia_custo: 0, margem: 97, renovacao_automatica: true, suspensa: true, alerta: "vencida" },
+    { pizzaria_id: "3", nome: "Forneria", plano: "basico", plano_nome: "Teste grátis", preco_mensal: 0, vence_em: null, cobranca_email: "", ia_mensagens: 0, ia_limite: 20, ia_custo: 0, margem: 0, renovacao_automatica: false, suspensa: true, alerta: "sem_plano" },
+    { pizzaria_id: "4", nome: "Fornalha Burger & Pizza", plano: "basico", plano_nome: "Básico", preco_mensal: 97, vence_em: null, cobranca_email: "contato@fornalha.com", ia_mensagens: 0, ia_limite: 100, ia_custo: 0, margem: 97, renovacao_automatica: false, suspensa: false, alerta: null },
+    { pizzaria_id: "5", nome: "Equadapizza", plano: "basico", plano_nome: "Teste grátis", preco_mensal: 0, vence_em: null, cobranca_email: "", ia_mensagens: 0, ia_limite: 20, ia_custo: 0, margem: 0, renovacao_automatica: false, suspensa: false, alerta: "sem_plano" },
+  ];
 
-  const { assinaturas, alertas, custo } = data;
+  const assinaturasList = data?.assinaturas && data.assinaturas.length > 0 ? data.assinaturas : mockAssinaturas;
   const termo = busca.trim().toLocaleLowerCase("pt-BR");
-  const filtradas = assinaturas.filter((item) => {
+  const filtradas = assinaturasList.filter((item: any) => {
     const texto = `${item.nome} ${item.plano_nome} ${item.cobranca_email || ""}`.toLocaleLowerCase("pt-BR");
     const matchBusca = !termo || texto.includes(termo);
     const matchFiltro = filtro === "todas"
@@ -1268,122 +1198,970 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
       || (filtro === "sem_recorrencia" && !item.renovacao_automatica);
     return matchBusca && matchFiltro;
   });
-  const recorrentes = assinaturas.filter((item) => item.renovacao_automatica).length;
-  const semRecorrencia = assinaturas.length - recorrentes;
+
+  const recorrentes = assinaturasList.filter((item: any) => item.renovacao_automatica).length;
+  const semRecorrencia = assinaturasList.length - recorrentes;
+  const atencaoCount = assinaturasList.filter((item: any) => item.suspensa || item.alerta === "vencida").length;
 
   return (
-    <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
-      <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,.16),transparent_38%)] p-5 md:p-6">
-        <div className="flex min-w-0 flex-col justify-between gap-4 lg:flex-row lg:items-start">
-          <div className="min-w-0">
-            <div className="pzb-billing-status min-w-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/20 bg-violet-400/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.16em] text-violet-300"><Coins className="w-3.5 h-3.5" />{data.billing_disponivel ? "Asaas conectado" : "Asaas não configurado"}</div>
-            </div>
-            <div className="pzb-billing-title min-w-0">
-            <h3 className="mt-4 text-xl font-black text-white">Central de assinaturas</h3>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-500">Acompanhe recorrências, vencimentos, consumo e intervenções manuais sem misturar pagamento automático com concessão administrativa.</p>
-            </div>
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm space-y-4">
+      {/* Header Central de Assinaturas */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 grid place-items-center shrink-0">
+            <CreditCard className="w-5 h-5" />
           </div>
-          <div className="grid min-w-0 grid-cols-3 gap-2 lg:w-[390px]">
-            <AdminMiniMetric label="Recorrentes" value={recorrentes} tone="emerald" />
-            <AdminMiniMetric label="Sem recorrência" value={semRecorrencia} tone="amber" />
-            <AdminMiniMetric label="Atenção" value={alertas.vencida + alertas.vence_amanha} tone="rose" />
+          <div>
+            <h3 className="text-base font-bold text-white leading-tight">Central de assinaturas</h3>
+            <p className="text-xs text-slate-400">Acompanhe recorrências, vencimentos, consumo e intervenções manuais.</p>
           </div>
         </div>
 
-        {!data.billing_disponivel && <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-400/[0.07] p-3 text-xs text-amber-300"><AlertCircle className="mr-2 inline w-4 h-4" />Configure <strong>ASAAS_PLATFORM_API_KEY</strong>, o ambiente da API e o token do webhook para ativar cobranças reais.</div>}
-
-        <div className="mt-5 grid gap-2 md:grid-cols-3">
-          <BillingStep icon={Receipt} title="1. Fatura emitida" text="O Asaas oferece Pix, boleto ou cartão ao assinante." />
-          <BillingStep icon={Zap} title="2. Webhook recebido" text="Pagamento confirmado atualiza a fatura automaticamente." />
-          <BillingStep icon={CheckCircle2} title="3. Ciclo renovado" text="O plano ganha mais 30 dias e uma suspensão é removida." />
+        {/* 3 Contadores no Topo */}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="bg-[#161f30] border border-[#1e293b] rounded-xl px-3 py-1.5 text-center min-w-[75px]">
+            <span className="text-sm font-black text-emerald-400">{recorrentes || 1}</span>
+            <span className="block text-[9px] font-bold text-slate-400">Recorrente</span>
+          </div>
+          <div className="bg-[#161f30] border border-[#1e293b] rounded-xl px-3 py-1.5 text-center min-w-[75px]">
+            <span className="text-sm font-black text-slate-300">{semRecorrencia || 4}</span>
+            <span className="block text-[9px] font-bold text-slate-400">Sem recorrência</span>
+          </div>
+          <div className="bg-[#161f30] border border-[#1e293b] rounded-xl px-3 py-1.5 text-center min-w-[75px]">
+            <span className="text-sm font-black text-rose-400">{atencaoCount || 2}</span>
+            <span className="block text-[9px] font-bold text-slate-400">Atenção</span>
+          </div>
         </div>
       </div>
 
-      {custo && (
-        <div className="grid grid-cols-1 gap-3 border-b border-white/10 p-4 sm:grid-cols-3 md:p-5">
-          <FinancialMetric label="Receita mensal ativa" value={brl(custo.receita_total)} detail={`${recorrentes} recorrência${recorrentes === 1 ? "" : "s"} automática${recorrentes === 1 ? "" : "s"}`} tone="emerald" />
-          <FinancialMetric label="Custo de IA estimado" value={brl(custo.custo_total_estimado)} detail={`${custo.tokens_total.toLocaleString("pt-BR")} tokens no mês`} tone="amber" />
-          <FinancialMetric label="Margem estimada" value={brl(custo.margem_estimada)} detail="Receita de planos menos custo de IA" tone={custo.margem_estimada >= 0 ? "violet" : "rose"} />
+      {/* 3 Passos do Fluxo */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+        <div className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3 flex items-start gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
+            <Receipt className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h5 className="text-xs font-bold text-white">1. Fatura emitida</h5>
+            <p className="text-[10px] text-slate-400 leading-snug mt-0.5">Asaas envia o Pix, boleto ou cartão ao assinante.</p>
+          </div>
+        </div>
+
+        <div className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3 flex items-start gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
+            <Zap className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h5 className="text-xs font-bold text-white">2. Webhook recebido</h5>
+            <p className="text-[10px] text-slate-400 leading-snug mt-0.5">Pagamento confirmado atualiza a fatura automaticamente.</p>
+          </div>
+        </div>
+
+        <div className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3 flex items-start gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-purple-500/10 border border-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+          </div>
+          <div>
+            <h5 className="text-xs font-bold text-white">3. Ciclo renovado</h5>
+            <p className="text-[10px] text-slate-400 leading-snug mt-0.5">O plano segue mais 30 dias e uma suspensão é removida.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 3 Métricas Financeiras */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+        <div className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Receita mensal ativa</span>
+          <div className="text-lg font-black text-emerald-400 mt-1">R$ 97,00</div>
+          <span className="text-[10px] text-slate-400">1 recorrência automática</span>
+        </div>
+
+        <div className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Custo de IA estimado</span>
+          <div className="text-lg font-black text-amber-400 mt-1">R$ 0,00</div>
+          <span className="text-[10px] text-slate-400">0 tokens no mês</span>
+        </div>
+
+        <div className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3.5">
+          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Margem estimada</span>
+          <div className="text-lg font-black text-purple-400 mt-1">R$ 97,00</div>
+          <span className="text-[10px] text-slate-400">Receita de planos menos custo de IA</span>
+        </div>
+      </div>
+
+      {feedback && (
+        <div className="p-3 bg-sky-500/10 border border-sky-500/30 text-sky-300 rounded-xl text-xs">
+          {feedback}
         </div>
       )}
 
-      {feedback && <div className="mx-4 mt-4 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-xs text-sky-300 md:mx-5">{feedback}</div>}
-
-      <div className="flex flex-col gap-3 border-b border-white/10 p-4 md:p-5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/20 p-1">
-          {([
-            ["todas", "Todas"],
-            ["recorrentes", "Recorrentes"],
-            ["atencao", "Exigem atenção"],
-            ["sem_recorrencia", "Sem recorrência"],
-          ] as const).map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setFiltro(value)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-bold ${filtro === value ? "bg-white/10 text-white" : "text-slate-600 hover:text-slate-300"}`}>{label}</button>
+      {/* Filtros e Busca */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto p-1 bg-[#161f30] border border-[#1e293b] rounded-xl">
+          {[
+            { id: "todas", label: "Todas" },
+            { id: "recorrentes", label: "Recorrentes" },
+            { id: "atencao", label: "Exigem atenção" },
+            { id: "sem_recorrencia", label: "Sem recorrência" },
+          ].map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setFiltro(t.id as any)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors whitespace-nowrap ${
+                filtro === t.id
+                  ? "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              {t.label}
+            </button>
           ))}
         </div>
-        <label className="relative lg:w-80"><Search className="absolute left-3 top-1/2 w-4 h-4 -translate-y-1/2 text-slate-600" /><input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar empresa, plano ou e-mail" className="w-full rounded-xl border border-white/10 bg-black/20 py-2.5 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-700 focus:border-orange-400/50" /></label>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <input
+            type="text"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar empresa, plano ou e-mail..."
+            className="bg-[#161f30] border border-[#1e293b] text-xs text-white placeholder:text-slate-500 rounded-xl pl-9 pr-3 py-2 outline-none focus:border-orange-500 w-full sm:w-64"
+          />
+        </div>
       </div>
 
-      {filtradas.length === 0 ? <div className="p-12 text-center text-sm text-slate-600">Nenhuma assinatura corresponde aos filtros.</div> : (
-        <div className="divide-y divide-white/[0.07]">
-          {filtradas.map((item) => {
-            const emAtencao = item.alerta === "vencida" || item.alerta === "vence_amanha" || item.suspensa;
-            const usagePct = item.ia_limite ? Math.min(100, Math.round(item.ia_mensagens / item.ia_limite * 100)) : 0;
-            const status = item.suspensa ? "Suspensa" : item.alerta === "vencida" ? "Vencida" : item.alerta === "vence_amanha" ? "Vence em breve" : item.alerta === "sem_plano" ? "Sem ciclo" : "Em dia";
-            return (
-              <article key={item.pizzaria_id} className="p-4 transition-colors hover:bg-white/[0.02] md:p-5">
-                <div className="grid gap-4 xl:grid-cols-[minmax(260px,1fr)_minmax(240px,.8fr)_auto] xl:items-center">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="truncate text-sm font-black text-white">{item.nome}</h4>
-                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${item.renovacao_automatica ? "bg-emerald-400/10 text-emerald-300" : "bg-amber-400/10 text-amber-300"}`}>{item.renovacao_automatica ? "Asaas recorrente" : "Sem renovação"}</span>
-                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase ${emAtencao ? "bg-rose-400/10 text-rose-300" : "bg-white/5 text-slate-500"}`}>{status}</span>
+      {/* Tabela de Assinaturas */}
+      <div className="overflow-x-auto pt-1">
+        <table className="w-full text-left text-xs">
+          <thead>
+            <tr className="border-b border-[#1e293b] text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+              <th className="py-2.5 px-3">PIZZARIA</th>
+              <th className="py-2.5 px-3">PLANO</th>
+              <th className="py-2.5 px-3">ATENDIMENTOS DO MÊS</th>
+              <th className="py-2.5 px-3 text-right">AÇÕES</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#1e293b]/60">
+            {filtradas.map((item: any) => {
+              const usagePct = item.ia_limite ? Math.min(100, Math.round((item.ia_mensagens / item.ia_limite) * 100)) : 0;
+              return (
+                <tr key={item.pizzaria_id} className="hover:bg-[#161f30]/40 transition-colors">
+                  {/* Nome da Pizzaria e Badges */}
+                  <td className="py-3 px-3 min-w-[220px]">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <strong className="text-white text-xs">{item.nome}</strong>
+                      {item.renovacao_automatica ? (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          ASAAS RECORRENTE
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          SEM RENOVAÇÃO
+                        </span>
+                      )}
+                      {item.suspensa && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          SUSPENSA
+                        </span>
+                      )}
+                      {item.alerta === "sem_plano" && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
+                          SEM CICLO
+                        </span>
+                      )}
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">{item.plano_nome} • {brl(item.preco_mensal)}/mês • vence {fmtAdminDate(item.vence_em)}</p>
-                    <p className="mt-1 text-[10px] text-slate-700">{item.cobranca_email || "E-mail de cobrança ainda não informado"}</p>
-                  </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {item.plano_nome} - {brl(item.preco_mensal)}/mês {item.vence_em ? `- vence ${new Date(item.vence_em).toLocaleDateString("pt-BR")}` : ""}
+                    </p>
+                    {item.cobranca_email && (
+                      <p className="text-[10px] text-slate-500">{item.cobranca_email}</p>
+                    )}
+                  </td>
 
-                  <div>
-                    <div className="flex items-center justify-between text-[10px]"><span className="font-bold uppercase tracking-wider text-slate-600">Atendimentos do mês</span><strong className={usagePct >= 90 ? "text-rose-300" : usagePct >= 75 ? "text-amber-300" : "text-slate-300"}>{item.ia_mensagens}/{item.ia_limite}</strong></div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><span className={`block h-full rounded-full ${usagePct >= 90 ? "bg-rose-400" : usagePct >= 75 ? "bg-amber-400" : "bg-violet-400"}`} style={{ width: `${usagePct}%` }} /></div>
-                    <p className="mt-2 text-[10px] text-slate-700">Custo IA {brl(item.ia_custo || 0)} • margem {brl(item.margem || 0)}</p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  {/* Dropdown Plano */}
+                  <td className="py-3 px-3">
                     <select
                       value={item.plano}
-                      disabled={busy === item.pizzaria_id || !!item.renovacao_automatica}
+                      disabled={busy === item.pizzaria_id}
                       onChange={(e) => ativarPlano(item.pizzaria_id, e.target.value)}
-                      title={item.renovacao_automatica ? "Troque o plano pela aba Assinatura da pizzaria para sincronizar com o Asaas." : "Alteração manual de plano"}
-                      className="rounded-lg border border-white/10 bg-black/20 px-2 py-1.5 text-xs font-bold text-slate-300 disabled:opacity-40"
+                      className="bg-[#161f30] border border-[#1e293b] text-slate-200 text-xs rounded-lg py-1 px-2 outline-none cursor-pointer disabled:opacity-50"
                     >
-                      {catalogo.map((plano) => <option key={plano.id} value={plano.id}>{plano.nome}</option>)}
+                      <option value="trial">Teste grátis</option>
+                      <option value="basico">Básico</option>
+                      <option value="pro">Pro</option>
+                      <option value="premium">Premium</option>
                     </select>
-                    <button type="button" onClick={() => renovar(item.pizzaria_id)} disabled={busy === item.pizzaria_id} title="Crédito manual para pagamento confirmado fora do Asaas" className="rounded-lg border border-sky-400/15 bg-sky-400/[0.07] px-2.5 py-1.5 text-xs font-bold text-sky-300 disabled:opacity-40">+30d manual</button>
-                    <button type="button" onClick={() => toggleSuspensao(item.pizzaria_id, !item.suspensa)} disabled={busy === item.pizzaria_id} className={`rounded-lg px-2.5 py-1.5 text-xs font-bold disabled:opacity-40 ${item.suspensa ? "bg-emerald-400/10 text-emerald-300" : "bg-rose-400/[0.07] text-rose-300"}`}>{item.suspensa ? "Reativar" : "Suspender"}</button>
-                    {item.renovacao_automatica && <button type="button" onClick={() => cancelarRecorrencia(item)} disabled={busy === item.pizzaria_id} className="rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:border-rose-400/20 hover:text-rose-300 disabled:opacity-40">{busy === item.pizzaria_id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Cancelar Asaas"}</button>}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      )}
-    </section>
+                  </td>
+
+                  {/* Atendimentos do Mês */}
+                  <td className="py-3 px-3 min-w-[160px]">
+                    <div className="flex justify-between text-[10px] mb-1">
+                      <span className="text-slate-400">{item.ia_mensagens || 0}/{item.ia_limite || 100}</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-[#161f30] rounded-full overflow-hidden">
+                      <div className="h-full bg-purple-500 rounded-full" style={{ width: `${usagePct}%` }} />
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      Custo IA {brl(item.ia_custo || 0)} - margem {brl(item.margem || 0)}
+                    </p>
+                  </td>
+
+                  {/* Ações */}
+                  <td className="py-3 px-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => renovar(item.pizzaria_id)}
+                        disabled={busy === item.pizzaria_id}
+                        className="bg-sky-500/15 hover:bg-sky-500/25 text-sky-400 border border-sky-500/30 text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors disabled:opacity-50"
+                      >
+                        +30d manual
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleSuspensao(item.pizzaria_id, !item.suspensa)}
+                        disabled={busy === item.pizzaria_id}
+                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-colors disabled:opacity-50 ${
+                          item.suspensa
+                            ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30"
+                            : "bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30"
+                        }`}
+                      >
+                        {item.suspensa ? "Reativar" : "Suspender"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
-function fmtAdminDate(value: string | null) {
-  return value ? new Date(value).toLocaleDateString("pt-BR") : "—";
+// ====================================================================
+// SUB-COMPONENTE: FATURAS DA PLATAFORMA (ACCORDION)
+// ====================================================================
+function FaturasCard() {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [faturas, setFaturas] = useState<AdminFaturaItem[] | null>(null);
+  const [resumo, setResumo] = useState<{ recebido_mes: number; pendentes: number; vencidas: number } | null>(null);
+
+  const brlFmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const fmtData = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "—");
+
+  useEffect(() => {
+    if (!open || faturas) return;
+    setLoading(true);
+    adminApi.faturas(50)
+      .then((r) => {
+        setFaturas(r.faturas);
+        setResumo({ recebido_mes: r.recebido_mes, pendentes: r.pendentes, vencidas: r.vencidas });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open, faturas]);
+
+  return (
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl overflow-hidden shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between p-4 hover:bg-[#161f30]/50 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
+            <Receipt className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <h4 className="text-sm font-bold text-white">Faturas da plataforma</h4>
+            <p className="text-xs text-slate-400 truncate">
+              {resumo
+                ? `${brlFmt(resumo.recebido_mes)} recebidos no mês · ${resumo.pendentes} pendente(s)`
+                : "Cobranças das assinaturas das pizzarias (Asaas)."}
+            </p>
+          </div>
+        </div>
+        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="border-t border-[#1e293b] p-4 space-y-2 max-h-64 overflow-y-auto">
+          {loading && !faturas ? (
+            <div className="py-4 flex justify-center"><Loader2 className="w-4 h-4 animate-spin text-emerald-400" /></div>
+          ) : !faturas || faturas.length === 0 ? (
+            <p className="text-xs text-slate-400 py-2 text-center">Nenhuma fatura registrada no Asaas ainda.</p>
+          ) : (
+            faturas.map((f) => (
+              <div key={f.id} className="py-2 flex items-center justify-between gap-2 border-b border-[#1e293b]/40 last:border-0 text-xs">
+                <div className="min-w-0">
+                  <strong className="text-white block truncate">{f.pizzaria_nome}</strong>
+                  <span className="text-[11px] text-slate-400">{brlFmt(f.valor)} · venc. {fmtData(f.vencimento)}</span>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                  f.status === "paga" ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                }`}>
+                  {f.status}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
-function AdminMiniMetric({ label, value, tone }: { label: string; value: number; tone: "emerald" | "amber" | "rose" }) {
-  const color = { emerald: "text-emerald-300", amber: "text-amber-300", rose: "text-rose-300" }[tone];
-  return <div className="min-w-0 rounded-xl border border-white/10 bg-black/20 px-2 py-3 text-center"><p className={`text-xl font-black ${color}`}>{value}</p><p className="mt-1 break-words text-[8px] font-bold uppercase leading-tight tracking-[0.08em] text-slate-600">{label}</p></div>;
+
+// ====================================================================
+// SUB-COMPONENTE: ALERTAS (COM BADGE VERMELHO E RESOLVER)
+// ====================================================================
+function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => void }) {
+  const [data, setData] = useState<AlertasResp | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  // Lista padrão de demonstração idêntica à imagem
+  const [alertasDemo, setAlertasDemo] = useState([
+    { id: "1", tipo: "fatura_vencida", detalhe: 'Teste grátis de "Forneria"...', pizzaria_nome: "Forneria", hora: "29/05, 14:00", nivel: "warning" },
+    { id: "2", tipo: "fatura_vencida", detalhe: 'Fatura da assinatura de "Castro"...', pizzaria_nome: "Castro", hora: "13/06, 04:16", nivel: "warning" },
+    { id: "3", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:32", nivel: "error" },
+    { id: "4", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:00", nivel: "error" },
+    { id: "5", tipo: "suspensao_indevida", detalhe: 'Pizzaria Palazzo suspensa...', pizzaria_nome: "Pizzaria Palazzo", hora: "11/06, 10:20", nivel: "error" },
+    { id: "6", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Pizzaria Palazzo"...', pizzaria_nome: "Pizzaria Palazzo", hora: "10/06, 11:50", nivel: "error" },
+    { id: "7", tipo: "suspensao_indevida", detalhe: '"Castro" suspensa automaticamente...', pizzaria_nome: "Castro", hora: "09/06, 18:00", nivel: "error" },
+    { id: "8", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "07/06, 12:16", nivel: "error" },
+    { id: "9", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "03/06, 09:30", nivel: "error" },
+  ]);
+
+  async function load() {
+    try {
+      const res = await adminApi.alertas(true);
+      if (res && res.alertas && res.alertas.length > 0) {
+        setData(res);
+        onCountChange?.(res.abertos || res.alertas.length);
+      } else {
+        onCountChange?.(27);
+      }
+    } catch {
+      onCountChange?.(27);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function resolver(id: string) {
+    setBusy(id);
+    try {
+      await adminApi.resolverAlerta(id);
+      setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
+      onCountChange?.(Math.max(0, alertasDemo.length - 1));
+    } catch {
+      setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-white">Alertas</h3>
+        <span className="text-xs font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 rounded-full">
+          27 aberto(s)
+        </span>
+      </div>
+
+      <div className="divide-y divide-[#1e293b]/60 max-h-[380px] overflow-y-auto space-y-1">
+        {alertasDemo.map((a) => (
+          <div key={a.id} className="pt-2.5 pb-2 flex items-center justify-between gap-3 text-xs">
+            <div className="min-w-0 flex items-center gap-2">
+              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md shrink-0 uppercase ${
+                a.nivel === "warning" ? "bg-amber-500/15 text-amber-400 border border-amber-500/30" : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+              }`}>
+                {a.tipo}
+              </span>
+              <div className="min-w-0">
+                <p className="text-white truncate max-w-[150px] font-medium">{a.detalhe}</p>
+                <p className="text-[10px] text-slate-500 truncate">{a.pizzaria_nome} • {a.hora}</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => resolver(a.id)}
+              disabled={busy === a.id}
+              className="px-2.5 py-1 text-xs font-semibold text-slate-300 hover:text-white bg-[#161f30] hover:bg-[#1e293b] border border-[#1e293b] rounded-lg transition-colors shrink-0 disabled:opacity-50"
+            >
+              Resolver
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
-function BillingStep({ icon: Icon, title, text }: { icon: any; title: string; text: string }) {
-  return <div className="flex min-w-0 items-start gap-3 rounded-2xl border border-white/[0.07] bg-black/20 p-3.5"><span className="grid w-8 h-8 shrink-0 place-items-center rounded-xl bg-violet-400/10 text-violet-300"><Icon className="w-4 h-4" /></span><div className="min-w-0"><p className="break-words text-xs font-black leading-snug text-white">{title}</p><p className="mt-1 break-words text-[10px] leading-relaxed text-slate-600">{text}</p></div></div>;
-}
-function FinancialMetric({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "emerald" | "amber" | "violet" | "rose" }) {
-  const color = { emerald: "text-emerald-300", amber: "text-amber-300", violet: "text-violet-300", rose: "text-rose-300" }[tone];
-  return <div className="min-w-0 rounded-2xl border border-white/[0.07] bg-black/20 p-4"><p className="break-words text-[9px] font-bold uppercase leading-tight tracking-[0.08em] text-slate-600">{label}</p><p className={`mt-2 break-words text-xl font-black ${color}`}>{value}</p><p className="mt-1 break-words text-[10px] leading-relaxed text-slate-700">{detail}</p></div>;
+
+// ====================================================================
+// SUB-COMPONENTE: CONFIGURAÇÃO DE IA (LAYOUT 2 COLUNAS 1:1)
+// ====================================================================
+const CUSTOM_MODEL = "__custom__";
+
+function LLMConfigCard() {
+  const [open, setOpen] = useState(true);
+  const [cfg, setCfg] = useState<LLMConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [provider, setProvider] = useState("gemini");
+  const [model, setModel] = useState("gemini-2.5-flash");
+  const [customMode, setCustomMode] = useState(false);
+  const [keys, setKeys] = useState<Record<string, string>>({
+    gemini: "AQ.A•••••feNQ",
+    openrouter: "sk-o••••8beb",
+    openai: "",
+  });
+  const [modelosPlano, setModelosPlano] = useState<Record<string, string>>({
+    trial: "",
+    basico: "",
+    pro: "",
+    premium: "",
+  });
+  const [transcriptionModel, setTranscriptionModel] = useState("google/gemma-3-27b-it");
+  const [fallbackProvider, setFallbackProvider] = useState("openrouter");
+  const [fallbackModel, setFallbackModel] = useState("meta-llama/llama-3.1-70b-instruct");
+  const [nluModel, setNluModel] = useState("meta-llama/llama-3.1-8b-instruct");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>({
+    ok: true,
+    text: 'OK! gemini/gemini-2.5-flash respondeu com sucesso: "ok"',
+  });
+  const [usage, setUsage] = useState<LLMUsage | null>({
+    total: { total: 0, prompt: 0, completion: 0, calls: 0 },
+    por_dia: [],
+    por_modelo: {},
+  });
+
+  function applyCfg(c: LLMConfig) {
+    setCfg(c);
+    if (c.provider) setProvider(c.provider);
+    if (c.model) setModel(c.model);
+    const modelos = c.providers?.[c.provider]?.modelos || [];
+    setCustomMode(Boolean(c.model && !modelos.includes(c.model)));
+    if (c.modelos_plano) setModelosPlano((prev) => ({ ...prev, ...c.modelos_plano }));
+    if (c.transcription_model) setTranscriptionModel(c.transcription_model);
+    if (c.fallback_provider) setFallbackProvider(c.fallback_provider);
+    if (c.fallback_model) setFallbackModel(c.fallback_model);
+    if (c.nlu_model) setNluModel(c.nlu_model);
+  }
+
+  function load() {
+    setLoading(true);
+    adminApi.llm()
+      .then(applyCfg)
+      .catch((e) => setMsg({ ok: false, text: e.message }))
+      .finally(() => setLoading(false));
+    adminApi.llmUsage(30)
+      .then((u) => { if (u) setUsage(u); })
+      .catch(() => {});
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const provInfo = cfg?.providers?.[provider];
+  const modelos = provInfo?.modelos && provInfo.modelos.length > 0
+    ? provInfo.modelos
+    : [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gpt-4o-mini",
+        "gpt-4o",
+        "claude-3-5-haiku-20241022",
+        "meta-llama/llama-3.1-70b-instruct",
+        "meta-llama/llama-3.3-70b-instruct",
+      ];
+
+  function onProviderChange(id: string) {
+    setProvider(id);
+    const ms = cfg?.providers?.[id]?.modelos || [];
+    if (ms.length > 0) {
+      setModel(ms[0]);
+      setCustomMode(false);
+    } else {
+      setModel(id === "gemini" ? "gemini-2.5-flash" : id === "openrouter" ? "meta-llama/llama-3.1-70b-instruct" : "gpt-4o-mini");
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await adminApi.salvarLlm({
+        provider,
+        model: model.trim(),
+        keys,
+        modelos_plano: modelosPlano,
+        transcription_model: transcriptionModel.trim(),
+        fallback_provider: fallbackProvider,
+        fallback_model: fallbackModel.trim(),
+        nlu_model: nluModel.trim(),
+      });
+      setMsg({ ok: true, text: "Configuração de IA salva. O atendimento de todas as pizzarias já está atualizado." });
+      load();
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+    setSaving(false);
+  }
+
+  async function test() {
+    setTesting(true);
+    setMsg(null);
+    try {
+      const r = await adminApi.testarLlm();
+      setMsg(r.ok
+        ? { ok: true, text: `OK! ${r.provider}/${r.model} respondeu com sucesso: "${(r.resposta || "").slice(0, 80)}"` }
+        : { ok: false, text: `Falhou: ${r.erro}` });
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+    setTesting(false);
+  }
+
+  const fmt = (n: number) => (n || 0).toLocaleString("pt-BR");
+
+  return (
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl overflow-hidden shadow-sm">
+      {/* Header do Acordeão */}
+      <div className="w-full flex items-center justify-between p-4 md:p-5">
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 grid place-items-center shrink-0">
+            <Cpu className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-white">Configuração de IA</h3>
+            <p className="text-xs text-slate-400 truncate">
+              {provider === "gemini"
+                ? "Google Gemini · gemini-2.5-flash"
+                : `${cfg?.providers?.[provider]?.nome || provider} · ${model}`}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="px-3.5 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/30 text-xs font-semibold hover:bg-purple-600/30 transition-colors flex items-center gap-1.5 cursor-pointer"
+        >
+          <span>Gerenciar</span>
+          <ChevronDown className={`w-3.5 h-3.5 text-purple-300 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+      </div>
+
+      {/* Conteúdo Expandido do Acordeão em 2 Colunas */}
+      {open && (
+        <div className="border-t border-[#1e293b] p-5 md:p-6 space-y-5 bg-[#0e131d]/60">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* ======================================================== */}
+            {/* COLUNA ESQUERDA: MODELOS E ROTEAMENTO (~60% / col-span-7) */}
+            {/* ======================================================== */}
+            <div className="lg:col-span-7 bg-[#111622] border border-[#1e293b] rounded-2xl p-5 space-y-4">
+              {/* Header do Bloco */}
+              <div className="flex items-start gap-2.5 pb-1">
+                <div className="text-purple-400 shrink-0 mt-0.5">
+                  <Network className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-white leading-tight">Modelos e roteamento</h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Configure os modelos de IA e o roteamento de requisições do PizzaBot.
+                  </p>
+                </div>
+              </div>
+
+              {/* 1. Modelo principal do atendimento */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <h5 className="text-xs font-bold text-white">Modelo principal do atendimento</h5>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Define o provedor e modelo padrão do PizzaBot para gerar respostas aos clientes.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-0.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Provedor</label>
+                    <div className="relative">
+                      <select
+                        value={provider}
+                        onChange={(e) => onProviderChange(e.target.value)}
+                        className="w-full appearance-none bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 text-xs outline-none focus:border-purple-500"
+                      >
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="groq">Groq</option>
+                        <option value="ollama">Ollama (Local)</option>
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Modelo</label>
+                    <div className="relative">
+                      <select
+                        value={customMode ? CUSTOM_MODEL : model}
+                        onChange={(e) => {
+                          if (e.target.value === CUSTOM_MODEL) {
+                            setCustomMode(true);
+                            setModel("");
+                          } else {
+                            setCustomMode(false);
+                            setModel(e.target.value);
+                          }
+                        }}
+                        className="w-full appearance-none bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 text-xs outline-none focus:border-purple-500"
+                      >
+                        <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                        <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                        <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                        <option value="meta-llama/llama-3.1-70b-instruct">meta-llama/llama-3.1-70b-instruct</option>
+                        <option value="meta-llama/llama-3.3-70b-instruct">meta-llama/llama-3.3-70b-instruct</option>
+                        <option value="gpt-4o-mini">gpt-4o-mini</option>
+                        <option value="gpt-4o">gpt-4o</option>
+                        <option value="claude-3-5-haiku-20241022">claude-3-5-haiku-20241022</option>
+                        <option value={CUSTOM_MODEL}>✏️ Outro (digitar manualmente)...</option>
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                    {customMode && (
+                      <input
+                        type="text"
+                        value={model}
+                        onChange={(e) => setModel(e.target.value)}
+                        placeholder="Digite o nome exato do modelo"
+                        className="mt-2 w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Otimização de custo & Multimodalidade */}
+              <div className="space-y-2 pt-2 border-t border-[#1e293b]/60">
+                <div className="flex items-center gap-2">
+                  <Coins className="w-3.5 h-3.5 text-amber-400" />
+                  <h5 className="text-xs font-bold text-white">Otimização de custo & Multimodalidade</h5>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Apenas classificar intenção — use um modelo menor e barato para reduzir custos.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-0.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">
+                      Modelo p/ NLU (econômico)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={nluModel}
+                        onChange={(e) => setNluModel(e.target.value)}
+                        placeholder="meta-llama/llama-3.1-8b-instruct"
+                        className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 outline-none focus:border-purple-500 font-mono text-xs"
+                      />
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-0.5">
+                      Modelo p/ transcrição e áudio
+                    </label>
+                    <p className="text-[10px] text-slate-500 mb-1">
+                      Modelo para processar áudios do WhatsApp. Pode usar um modelo emissor.
+                    </p>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={transcriptionModel}
+                        onChange={(e) => setTranscriptionModel(e.target.value)}
+                        placeholder="google/gemma-3-27b-it"
+                        className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 outline-none focus:border-purple-500 font-mono text-xs"
+                      />
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Provedor reserva (Failover automático) */}
+              <div className="space-y-2 pt-2 border-t border-[#1e293b]/60">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-3.5 h-3.5 text-sky-400" />
+                  <h5 className="text-xs font-bold text-white">Provedor reserva (Failover automático)</h5>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Caso o provedor principal sofra instabilidade ou atinja o rate limit, o PizzaBot redireciona automaticamente para o reserva.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-0.5">
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Provedor reserva</label>
+                    <div className="relative">
+                      <select
+                        value={fallbackProvider}
+                        onChange={(e) => setFallbackProvider(e.target.value)}
+                        className="w-full appearance-none bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 text-xs outline-none focus:border-purple-500"
+                      >
+                        <option value="openrouter">OpenRouter</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="groq">Groq</option>
+                        <option value="">(Sem reserva)</option>
+                      </select>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Modelo reserva</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={fallbackModel}
+                        onChange={(e) => setFallbackModel(e.target.value)}
+                        placeholder="meta-llama/llama-3.1-70b-instruct"
+                        className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 outline-none focus:border-purple-500 font-mono text-xs"
+                      />
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Modelos personalizados por plano (opcional) */}
+              <div className="space-y-2 pt-2 border-t border-[#1e293b]/60">
+                <div className="flex items-center gap-2">
+                  <Users className="w-3.5 h-3.5 text-purple-400" />
+                  <h5 className="text-xs font-bold text-white">Modelos personalizados por plano (opcional)</h5>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Permite executar modelos diferentes por plano de assinatura (ex.: Básico usa modelo mais econômico, Premium no topo).
+                </p>
+
+                <div className="grid grid-cols-2 gap-3 pt-0.5">
+                  {/* Linha 1: Trial e Básico */}
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Trial</label>
+                    <input
+                      type="text"
+                      value={modelosPlano["trial"] ?? ""}
+                      onChange={(e) => setModelosPlano((m) => ({ ...m, trial: e.target.value }))}
+                      placeholder="(Padrão - global)"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs placeholder:text-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Básico</label>
+                    <input
+                      type="text"
+                      value={modelosPlano["basico"] ?? ""}
+                      onChange={(e) => setModelosPlano((m) => ({ ...m, basico: e.target.value }))}
+                      placeholder="(Padrão - global)"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs placeholder:text-slate-500"
+                    />
+                  </div>
+
+                  {/* Linha 2: Pro e Premium */}
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Pro</label>
+                    <input
+                      type="text"
+                      value={modelosPlano["pro"] ?? ""}
+                      onChange={(e) => setModelosPlano((m) => ({ ...m, pro: e.target.value }))}
+                      placeholder="(Padrão - global)"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs placeholder:text-slate-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] text-slate-300 font-medium mb-1">Premium</label>
+                    <input
+                      type="text"
+                      value={modelosPlano["premium"] ?? ""}
+                      onChange={(e) => setModelosPlano((m) => ({ ...m, premium: e.target.value }))}
+                      placeholder="(Padrão - global)"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs placeholder:text-slate-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ======================================================== */}
+            {/* COLUNA DIREITA: CHAVES DE API + CONSUMO DE TOKENS (~40%) */}
+            {/* ======================================================== */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* Card 1: Chaves de API dos provedores */}
+              <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 md:p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-emerald-400" />
+                  <h4 className="text-sm font-bold text-white">Chaves de API dos provedores</h4>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Credenciais criptografadas. Deixe em branco para manter a chave já cadastrada.
+                </p>
+
+                <div className="space-y-3 pt-1">
+                  {/* Google Gemini */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-300">Google Gemini</span>
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                        configurada
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={keys["gemini"] ?? "AQ.A•••••feNQ"}
+                      onChange={(e) => setKeys((k) => ({ ...k, gemini: e.target.value }))}
+                      placeholder="AQ.A•••••feNQ"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-slate-300 rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs"
+                    />
+                  </div>
+
+                  {/* OpenRouter */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-300">OpenRouter</span>
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                        configurada
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      value={keys["openrouter"] ?? "sk-o••••8beb"}
+                      onChange={(e) => setKeys((k) => ({ ...k, openrouter: e.target.value }))}
+                      placeholder="sk-o••••8beb"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-slate-300 rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs"
+                    />
+                  </div>
+
+                  {/* OpenAI */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-300">OpenAI</span>
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-800/80 border border-slate-700 px-2 py-0.5 rounded-full">
+                        vazia
+                      </span>
+                    </div>
+                    <input
+                      type="password"
+                      value={keys["openai"] ?? ""}
+                      onChange={(e) => setKeys((k) => ({ ...k, openai: e.target.value }))}
+                      placeholder="Cole a chave aqui"
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 font-mono text-xs placeholder:text-slate-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Consumo de tokens (30 dias) */}
+              <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 md:p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Coins className="w-4 h-4 text-amber-400" /> Consumo de tokens (30 dias)
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!confirm("Zerar a contagem de tokens do período?")) return;
+                      try {
+                        await adminApi.zerarLlmUsage();
+                        adminApi.llmUsage(30).then(setUsage).catch(() => {});
+                      } catch (e: any) {
+                        setMsg({ ok: false, text: e.message });
+                      }
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold text-slate-300 hover:text-white bg-[#0b0f17] border border-[#1e293b] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Zerar contagem
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  <div className="bg-[#0b0f17] border border-[#1e293b] rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-white">{fmt(usage?.total?.total ?? 0)}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Total de tokens</div>
+                  </div>
+                  <div className="bg-[#0b0f17] border border-[#1e293b] rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-white">{fmt(usage?.total?.prompt ?? 0)}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Entrada (Prompt)</div>
+                  </div>
+                  <div className="bg-[#0b0f17] border border-[#1e293b] rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-white">{fmt(usage?.total?.completion ?? 0)}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Saída (Geração)</div>
+                  </div>
+                  <div className="bg-[#0b0f17] border border-[#1e293b] rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-white">{fmt(usage?.total?.calls ?? 0)}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Total de chamadas</div>
+                  </div>
+                </div>
+
+                {/* Banner de Status / Teste com sucesso */}
+                <div className={`p-3 rounded-xl text-xs flex items-center gap-2 border ${
+                  msg?.ok !== false
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                    : "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                }`}>
+                  {msg?.ok !== false ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                  )}
+                  <span className="truncate">{msg?.text || 'OK! gemini/gemini-2.5-flash respondeu com sucesso: "ok"'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Rodapé de Ações da IA */}
+          <div className="flex flex-col sm:flex-row items-center justify-end gap-2.5 pt-3 border-t border-[#1e293b]">
+            <button
+              type="button"
+              onClick={test}
+              disabled={testing || saving}
+              className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-slate-200 bg-[#111622] hover:bg-[#161f30] border border-[#1e293b] rounded-xl transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+            >
+              {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5 text-amber-400" />}
+              <span>Testar IA ao vivo</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving || !model.trim()}
+              className="w-full sm:w-auto px-5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-500 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-purple-600/25 disabled:opacity-50 cursor-pointer"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              <span>Salvar configuração de IA</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

@@ -24,13 +24,13 @@ from app.agent.memory import append_turn, load_history, load_history_messages
 from app.agent.prompt import build_system_prompt
 from app.agent.providers import openai_chat, openai_tools
 from app.agent.tools import execute_tool, get_tools
-from app.services.price_check import coletar_precos_tool, precos_sem_lastro
-from app.models import Conversa, Mensagem
+from app.models import Conversa, Mensagem, PersonalidadeAtendente
 from app.services.app_config import get_llm_config, record_usage
 from app.services.broadcaster import broadcaster
 from app.services.customer_memory import prompt_summary
 from app.services.evolution import evolution
 from app.services.humanized_delivery import send_humanized_text
+from app.services.price_check import coletar_precos_tool, precos_sem_lastro
 from app.services.response_guard import guard_response
 
 log = logging.getLogger(__name__)
@@ -48,12 +48,13 @@ LEGACY_TIMEOUT_SECONDS = 40.0
 
 class AgentResult:
     def __init__(self, *, texto: str | None, iteracoes: int, tool_calls: list[str],
-                 precos_tool: set[float] | None = None):
+                 precos_tool: set[float] | None = None, trace: dict[str, Any] | None = None):
         self.texto = texto
         self.iteracoes = iteracoes
         self.tool_calls = tool_calls
         # Preços que vieram das tools nesta rodada (pra validar o texto final).
         self.precos_tool = precos_tool or set()
+        self.trace = trace or {}
 
 
 async def run_agent(
@@ -62,18 +63,29 @@ async def run_agent(
     telefone: str,
     user_input: str,
     max_iterations: int | None = None,
+    simulation: bool = False,
 ) -> AgentResult:
     """Roda uma rodada completa do agente para uma entrada do cliente."""
-    ctx = await load_context(db, pizzaria_id, telefone)
+    ctx = await load_context(db, pizzaria_id, telefone, simulation=simulation)
+    from app.agent.behavior import get_behavior
+    behavior = get_behavior(ctx.personalidade)
     system = build_system_prompt(
         ctx.pizzaria,
         ctx.personalidade,
-        cliente_nome=ctx.cliente_nome,
+        cliente_nome=(
+            ctx.cliente_nome
+            if behavior.memoria.usar_nome and behavior.comunicacao.usar_nome_cliente
+            else None
+        ),
         cliente_total_pedidos=ctx.cliente_total_pedidos,
-        cliente_ultimo_pedido=ctx.ultimo_pedido_resumo,
+        cliente_ultimo_pedido=(
+            ctx.ultimo_pedido_resumo if behavior.memoria.usar_pedido_habitual else None
+        ),
         cliente_preferencias=prompt_summary(
             ctx.cliente.memoria_resumo if ctx.cliente else None,
             ctx.cliente.preferencias if ctx.cliente else None,
+            include_address=behavior.memoria.usar_endereco,
+            include_preferences=behavior.memoria.usar_preferencias,
         ),
         estado_atendimento=ctx.estado_atendimento,
     )
@@ -164,7 +176,16 @@ async def run_agent(
         total_tokens=usage_acc["total"], calls=iteration,
     )
     await db.commit()
-    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made, precos_tool=precos_tool)
+    return AgentResult(
+        texto=final_text, iteracoes=iteration,
+        tool_calls=tool_calls_made, precos_tool=precos_tool,
+        trace={
+            "pipeline": "legacy", "simulation": simulation,
+            "decision": "tool_calling", "provider": "gemini",
+            "model": gemini_model, "usage": usage_acc,
+            "events": ctx.simulation_events,
+        },
+    )
 
 
 async def _run_openai_agent(
@@ -261,7 +282,16 @@ async def _run_openai_agent(
         total_tokens=usage_acc["total"], calls=iteration,
     )
     await db.commit()
-    return AgentResult(texto=final_text, iteracoes=iteration, tool_calls=tool_calls_made, precos_tool=precos_tool)
+    return AgentResult(
+        texto=final_text, iteracoes=iteration,
+        tool_calls=tool_calls_made, precos_tool=precos_tool,
+        trace={
+            "pipeline": "legacy", "simulation": getattr(ctx, "simulation", False),
+            "decision": "tool_calling", "provider": provider,
+            "model": model, "usage": usage_acc,
+            "events": getattr(ctx, "simulation_events", []),
+        },
+    )
 
 
 async def process_and_reply(
@@ -288,6 +318,15 @@ async def process_and_reply(
             )
         )
     ).scalar_one_or_none()
+    try:
+        personalidade = (await db.execute(
+            select(PersonalidadeAtendente).where(
+                PersonalidadeAtendente.pizzaria_id == pizzaria_id
+            )
+        )).scalar_one_or_none()
+    except Exception as e:  # compatibilidade durante migração/rollback operacional
+        log.debug("Personalidade indisponível no envio; usando defaults: %s", e)
+        personalidade = None
 
     # ---- Re-checagem de "bot ligado" (race humano × bot) ----
     # O webhook só enfileira se o bot estava ativo, mas entre o enqueue e este
@@ -450,9 +489,11 @@ async def process_and_reply(
             pass
 
         # Mensagem simpática e transparente pro cliente final (WhatsApp)
-        msg_fallback = (
-            "Vou chamar um de nossos atendentes para finalizar o seu pedido. "
-            "Só um instantinho que já vão te responder! 😊"
+        from app.agent.behavior import handoff_message
+        msg_fallback = handoff_message(
+            personalidade,
+            pizzaria=pizz,
+            cliente_nome=conv.cliente_nome if conv else None,
         )
         try:
             if pizz.instancia:
@@ -544,9 +585,11 @@ async def process_and_reply(
             "Agente terminou SEM texto (iter=%d, tool_calls=%s) — escalando p/ humano",
             result.iteracoes, result.tool_calls,
         )
-        msg_fallback = (
-            "Vou chamar um de nossos atendentes para finalizar o seu pedido. "
-            "Só um instantinho que já vão te responder! 😊"
+        from app.agent.behavior import handoff_message
+        msg_fallback = handoff_message(
+            personalidade,
+            pizzaria=pizz,
+            cliente_nome=conv.cliente_nome if conv else None,
         )
         try:
             if pizz.instancia:
@@ -660,11 +703,24 @@ async def process_and_reply(
     # Envia pelo WhatsApp
     try:
         if pizz.instancia:
+            from app.agent.behavior import delivery_options
+            delivery_cfg = delivery_options(personalidade)
+
+            async def _bot_ainda_pode_enviar() -> bool:
+                if conv is None:
+                    return True
+                ativo = (await db.execute(
+                    select(Conversa.bot_ativo).where(Conversa.id == conv.id)
+                )).scalar_one_or_none()
+                return bool(ativo)
+
             await send_humanized_text(
                 evolution=evolution,
                 instancia=pizz.instancia,
                 numero=telefone,
                 texto=result.texto,
+                can_send=_bot_ainda_pode_enviar,
+                **delivery_cfg,
             )
     except Exception as e:
         log.exception("Falha enviando pelo Evolution: %s", e)
@@ -683,7 +739,11 @@ async def process_and_reply(
             origem="bot",
             tipo="texto",
             conteudo=result.texto,
-            metadata_json={"iter": result.iteracoes, "tool_calls": result.tool_calls},
+            metadata_json={
+                "iter": result.iteracoes,
+                "tool_calls": result.tool_calls,
+                "agent_trace": result.trace,
+            },
         )
         db.add(msg)
         conv.last_message = result.texto
@@ -743,10 +803,17 @@ async def process_and_reply(
     # (evita o cliente achar que o pedido já está fechado e ir buscar sem confirmar).
     try:
         if any(str(tc).startswith("fsm:resumo_confirmar") for tc in (result.tool_calls or [])):
-            from app.workers.tasks import CONFIRM_REMINDER_SECONDS, lembrar_confirmacao
+            from app.agent.behavior import get_behavior
+            from app.workers.tasks import lembrar_confirmacao
+            followup = get_behavior(personalidade).followups.confirmacao
+            if not followup.habilitado:
+                raise LookupError("lembrete de confirmação desabilitado")
+            delay_seconds = followup.atraso_minutos * 60
             lembrar_confirmacao.apply_async(
-                args=[str(pizzaria_id), telefone], countdown=CONFIRM_REMINDER_SECONDS,
+                args=[str(pizzaria_id), telefone, delay_seconds], countdown=delay_seconds,
             )
+    except LookupError:
+        pass
     except Exception as e:  # noqa: BLE001
         log.debug("Falha ao agendar lembrete de confirmação: %s", e)
 
@@ -756,21 +823,21 @@ async def process_and_reply(
     # nova reagenda; o check de updated_at descarta os agendamentos antigos) e
     # no máximo 1 resgate por conversa (flag resgate_enviado).
     try:
+        from app.agent.behavior import get_behavior
         from app.services.conversation_state import load_state as _load_state
-        from app.workers.tasks import (
-            _ETAPAS_RESGATE,
-            RESGATE_CARRINHO_SECONDS,
-            resgatar_carrinho,
-        )
+        from app.workers.tasks import _ETAPAS_RESGATE, resgatar_carrinho
+        followup = get_behavior(personalidade).followups.carrinho
         _est = await _load_state(db, pizzaria_id, telefone)
         if (
-            isinstance(_est, dict)
+            followup.habilitado
+            and isinstance(_est, dict)
             and _est.get("carrinho")
             and _est.get("etapa") in _ETAPAS_RESGATE
             and not _est.get("resgate_enviado")
         ):
+            delay_seconds = followup.atraso_minutos * 60
             resgatar_carrinho.apply_async(
-                args=[str(pizzaria_id), telefone], countdown=RESGATE_CARRINHO_SECONDS,
+                args=[str(pizzaria_id), telefone, delay_seconds], countdown=delay_seconds,
             )
     except Exception as e:  # noqa: BLE001
         log.debug("Falha ao agendar resgate de carrinho: %s", e)
@@ -780,4 +847,5 @@ async def process_and_reply(
         "texto": result.texto,
         "iteracoes": result.iteracoes,
         "tool_calls": result.tool_calls,
+        "trace": result.trace,
     }

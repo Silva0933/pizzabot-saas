@@ -538,6 +538,93 @@ export const conversasApi = {
 export type EstiloAtendente = "casual" | "profissional" | "proximo";
 export type NivelEmoji = "nenhum" | "pouco" | "moderado" | "muito";
 
+export interface AtendimentoConfig {
+  versao: 1;
+  comunicacao: {
+    tamanho_resposta: "curta" | "equilibrada";
+    max_baloes: number;
+    ritmo_digitacao: "rapido" | "natural" | "calmo";
+    uma_pergunta_por_vez: boolean;
+    usar_nome_cliente: boolean;
+    transparencia_ia: boolean;
+  };
+  vendas: {
+    habilitado: boolean;
+    oferecer_bebida: boolean;
+    oferecer_borda: boolean;
+    oferecer_adicional: boolean;
+    oferecer_sobremesa: boolean;
+    max_ofertas: number;
+  };
+  memoria: {
+    usar_nome: boolean;
+    usar_endereco: boolean;
+    usar_preferencias: boolean;
+    usar_pedido_habitual: boolean;
+  };
+  handoff: {
+    habilitado: boolean;
+    resumo_automatico: boolean;
+    falhas_nlu_limite: number;
+    pendencias_limite: number;
+    mensagem_transicao: string;
+  };
+  followups: {
+    confirmacao: { habilitado: boolean; atraso_minutos: number; mensagem: string };
+    carrinho: { habilitado: boolean; atraso_minutos: number; mensagem: string };
+    respeitar_horario: boolean;
+  };
+}
+
+export const DEFAULT_ATENDIMENTO_CONFIG: AtendimentoConfig = {
+  versao: 1,
+  comunicacao: {
+    tamanho_resposta: "curta",
+    max_baloes: 2,
+    ritmo_digitacao: "natural",
+    uma_pergunta_por_vez: true,
+    usar_nome_cliente: true,
+    transparencia_ia: true,
+  },
+  vendas: {
+    habilitado: true,
+    oferecer_bebida: true,
+    oferecer_borda: true,
+    oferecer_adicional: true,
+    oferecer_sobremesa: false,
+    max_ofertas: 1,
+  },
+  memoria: {
+    usar_nome: true,
+    usar_endereco: true,
+    usar_preferencias: true,
+    usar_pedido_habitual: true,
+  },
+  handoff: {
+    habilitado: true,
+    resumo_automatico: true,
+    falhas_nlu_limite: 3,
+    pendencias_limite: 3,
+    mensagem_transicao:
+      "Vou chamar um de nossos atendentes para finalizar seu atendimento. Só um instante que a equipe já responde por aqui! 😊",
+  },
+  followups: {
+    confirmacao: {
+      habilitado: true,
+      atraso_minutos: 8,
+      mensagem:
+        "Oi{{ primeiro_nome }}! Seu pedido ainda *não foi fechado* 😊 Quando quiser, é só confirmar que eu mando para a cozinha. Posso fechar?",
+    },
+    carrinho: {
+      habilitado: true,
+      atraso_minutos: 25,
+      mensagem:
+        "Oi{{ primeiro_nome }}! Vi que seu pedido ficou pela metade 😊 Quer que eu continue de onde paramos? É só responder por aqui.",
+    },
+    respeitar_horario: true,
+  },
+};
+
 export interface Personalidade {
   id?: string;
   pizzaria_id?: string;
@@ -549,6 +636,7 @@ export interface Personalidade {
   restricoes: string[];
   exemplos_conversa: Array<{ cliente: string; atendente: string }>;
   instrucoes_extras: string | null;
+  config_atendimento: AtendimentoConfig;
 }
 
 export const DEFAULT_PERSONALIDADE: Personalidade = {
@@ -560,7 +648,38 @@ export const DEFAULT_PERSONALIDADE: Personalidade = {
   restricoes: [],
   exemplos_conversa: [],
   instrucoes_extras: null,
+  config_atendimento: DEFAULT_ATENDIMENTO_CONFIG,
 };
+
+export interface AgentHealth {
+  status: "ready" | "attention" | "blocked";
+  errors: number;
+  warnings: number;
+  checks: Array<{
+    key: string;
+    label: string;
+    status: "ok" | "warning" | "error";
+    message: string;
+  }>;
+}
+
+export interface AgentTrace {
+  pipeline?: string;
+  simulation?: boolean;
+  intent?: string;
+  confidence?: number;
+  nlu_deterministic?: boolean;
+  state_before?: string;
+  state_after?: string;
+  decision?: string;
+  next_question?: string | null;
+  corrections?: Record<string, unknown>;
+  provider?: string;
+  model?: string;
+  usage?: Record<string, unknown>;
+  events?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
 
 export const personalityApi = {
   get: (pizzariaId: string) =>
@@ -568,14 +687,31 @@ export const personalityApi = {
   save: (pizzariaId: string, body: Personalidade) =>
     api.put<Personalidade>(`/pizzarias/${pizzariaId}/agente/personalidade`, body),
   preview: (pizzariaId: string, telefone = "5511900000000") =>
-    api.get<{ prompt: string; tamanho_chars: number }>(
+    api.get<{
+      prompt: string;
+      tamanho_chars: number;
+      pipeline: "fsm" | "legacy";
+      fsm_prompt: string;
+      legacy_prompt: string;
+    }>(
       `/pizzarias/${pizzariaId}/agente/prompt?telefone=${telefone}`,
     ),
-  test: (pizzariaId: string, telefone: string, mensagem: string) =>
-    api.post<{ texto: string | null; iteracoes: number; tool_calls: string[] }>(
+  test: (pizzariaId: string, telefone: string, mensagem: string, sessao: string) =>
+    api.post<{
+      texto: string | null;
+      iteracoes: number;
+      tool_calls: string[];
+      sessao: string;
+      modo_seguro: boolean;
+      trace: AgentTrace;
+    }>(
       `/pizzarias/${pizzariaId}/agente/testar`,
-      { telefone, mensagem },
+      { telefone, mensagem, sessao },
     ),
+  resetTest: (pizzariaId: string, sessao: string) =>
+    api.post<{ ok: boolean }>(`/pizzarias/${pizzariaId}/agente/testar/reset`, { sessao }),
+  health: (pizzariaId: string) =>
+    api.get<AgentHealth>(`/pizzarias/${pizzariaId}/agente/health`),
 };
 
 // ============================================

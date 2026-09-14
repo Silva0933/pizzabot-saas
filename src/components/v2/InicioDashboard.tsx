@@ -82,10 +82,10 @@ export function InicioDashboard({
 
         <div className="relative">
           <p className="text-xs font-medium text-white/80 uppercase tracking-wide">{todayLabel()}</p>
-          <h2 className="text-2xl md:text-3xl font-bold mt-1">
+          <h2 className="text-xl font-bold text-white tracking-tight mt-1">
             {greeting()}, {pizzeria.name || "tudo bem"}? 👋
           </h2>
-          <p className="text-sm text-white/90 mt-2 max-w-lg">
+          <p className="text-xs text-white/90 mt-1 max-w-lg">
             {stats.pedidosPendentes > 0
               ? `Você tem ${stats.pedidosPendentes} pedido${stats.pedidosPendentes > 1 ? "s" : ""} aguardando ação agora.`
               : "Tudo tranquilo até agora. Bom dia de trabalho!"}

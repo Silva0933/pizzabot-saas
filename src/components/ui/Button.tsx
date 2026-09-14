@@ -7,13 +7,13 @@ export type ButtonVariant =
 export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "text-white bg-brand-gradient shadow-brand hover:brightness-105 active:brightness-95",
-  solid:   "text-white bg-brand-500 hover:bg-brand-600 active:bg-brand-700",
-  soft:    "text-brand-700 bg-brand-50 border border-brand-100 hover:bg-brand-100",
+  primary: "text-white bg-orange-500 hover:bg-orange-600 active:bg-orange-700 shadow-sm",
+  solid:   "text-white bg-orange-500 hover:bg-orange-600 active:bg-orange-700",
+  soft:    "text-orange-400 bg-orange-500/15 border border-orange-500/25 hover:bg-orange-500/25",
   success: "text-white bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700",
   danger:  "text-white bg-rose-500 hover:bg-rose-600 active:bg-rose-700",
-  outline: "text-ink bg-surface border border-line hover:bg-surface-muted",
-  ghost:   "text-ink-muted hover:bg-surface-muted hover:text-ink",
+  outline: "text-slate-200 bg-[#161f30] border border-[#1e293b] hover:bg-[#1e293b] hover:text-white",
+  ghost:   "text-slate-400 hover:bg-[#161f30] hover:text-white",
 };
 
 const SIZE: Record<ButtonSize, string> = {

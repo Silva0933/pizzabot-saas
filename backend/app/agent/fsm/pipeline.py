@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from copy import deepcopy
 from typing import Any
 
 from sqlalchemy import select
@@ -226,7 +227,14 @@ async def _checar_comprovante_manual(db: AsyncSession, ctx, telefone: str, user_
     )
 
 
-async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str, user_input: str):
+async def run_fsm_agent(
+    db: AsyncSession,
+    pizzaria_id: uuid.UUID,
+    telefone: str,
+    user_input: str,
+    *,
+    simulation: bool = False,
+):
     """Roda o pipeline FSM. Retorna AgentResult ou None (fallback p/ agente legado)."""
     from app.agent.context import load_context
     from app.agent.fsm import engine, nlu, voice
@@ -235,7 +243,9 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     from app.services.app_config import get_llm_config, modelo_para_plano
     from app.services.conversation_state import load_state, save_state
 
-    ctx = await load_context(db, pizzaria_id, telefone)
+    ctx = await load_context(db, pizzaria_id, telefone, simulation=simulation)
+    from app.agent.behavior import get_behavior, handoff_message
+    behavior = get_behavior(ctx.personalidade)
 
     cfg = await get_llm_config(db)
     provider = cfg["provider"]
@@ -255,6 +265,7 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     estado = await load_state(db, pizzaria_id, telefone)
     if not isinstance(estado, dict) or estado.get("pipeline") != "fsm":
         estado = engine.estado_inicial()
+    estado_antes = deepcopy(estado)
 
     # Histórico enxuto (texto puro) p/ a NLU interpretar "sim", "grande", etc.
     msgs = await load_history_messages(db, pizzaria_id, telefone)
@@ -293,12 +304,19 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     else:
         estado["nlu_falhas_consecutivas"] = 0
 
-    if estado.get("nlu_falhas_consecutivas", 0) >= 3:
+    nlu_limite = behavior.handoff.falhas_nlu_limite
+    if behavior.handoff.habilitado and estado.get("nlu_falhas_consecutivas", 0) >= nlu_limite:
         log.warning("FSM escalando por falhas consecutivas de NLU (confianca baixa repetida) para pizzaria=%s tel=%s", pizzaria_id, telefone)
         from app.agent.tools import escalar_humano
-        await escalar_humano(ctx, db, motivo_escalonamento="IA não compreendeu o cliente por 3 vezes consecutivas (confiança NLU muito baixa)")
-        
-        msg_transicao = "Vou chamar um de nossos atendentes para finalizar o seu pedido. Só um instantinho que já vão te responder! 😊"
+        motivo = (
+            f"IA não compreendeu o cliente por {nlu_limite} vezes consecutivas "
+            "(confiança NLU muito baixa)"
+        )
+        await escalar_humano(ctx, db, motivo_escalonamento=motivo)
+
+        msg_transicao = handoff_message(
+            ctx.personalidade, pizzaria=ctx.pizzaria, cliente_nome=ctx.cliente_nome
+        )
         await save_state(db, pizzaria_id, telefone, estado)
         await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
         await append_turn(db, pizzaria_id, telefone, role="assistant", content=msg_transicao)
@@ -307,6 +325,15 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
             texto=msg_transicao, iteracoes=1,
             tool_calls=["fsm:escalado:nlu_falhas"],
             precos_tool=set(),
+            trace={
+                "pipeline": "fsm", "simulation": simulation,
+                "intent": res_nlu.get("intencao"), "confidence": confianca,
+                "nlu_deterministic": bool(res_nlu.get("_deterministica")),
+                "state_before": engine.resumo_estado(estado_antes),
+                "state_after": engine.resumo_estado(estado),
+                "decision": "handoff:nlu_falhas",
+                "events": ctx.simulation_events,
+            },
         )
 
     # Rede de segurança: baixa confiança em algo que não seja pedido → agente legado.
@@ -325,18 +352,27 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
     else:
         estado["pendencias_consecutivas"] = 0
 
-    if estado.get("pendencias_consecutivas", 0) >= 3:
+    pendencias_limite = behavior.handoff.pendencias_limite
+    if behavior.handoff.habilitado and estado.get("pendencias_consecutivas", 0) >= pendencias_limite:
         log.warning("FSM escalando por pendências consecutivas acumuladas para pizzaria=%s tel=%s", pizzaria_id, telefone)
         from app.agent.tools import escalar_humano
-        
+
         erro_pendencia = "Falta de dados/erro no pedido"
         for fato in decisao.get("fatos", []):
             if "precisa resolver" in fato or "erro" in fato:
                 erro_pendencia = fato
-        
-        await escalar_humano(ctx, db, motivo_escalonamento=f"Cliente travou em pendências por 3 vezes consecutivas ({erro_pendencia})")
-        
-        msg_transicao = "Vou chamar um de nossos atendentes para finalizar o seu pedido. Só um instantinho que já vão te responder! 😊"
+
+        await escalar_humano(
+            ctx, db,
+            motivo_escalonamento=(
+                f"Cliente travou em pendências por {pendencias_limite} vezes "
+                f"consecutivas ({erro_pendencia})"
+            ),
+        )
+
+        msg_transicao = handoff_message(
+            ctx.personalidade, pizzaria=ctx.pizzaria, cliente_nome=ctx.cliente_nome
+        )
         await save_state(db, pizzaria_id, telefone, estado)
         await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
         await append_turn(db, pizzaria_id, telefone, role="assistant", content=msg_transicao)
@@ -345,11 +381,21 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
             texto=msg_transicao, iteracoes=1,
             tool_calls=["fsm:escalado:pendencias_limite"],
             precos_tool=set(),
+            trace={
+                "pipeline": "fsm", "simulation": simulation,
+                "intent": res_nlu.get("intencao"), "confidence": confianca,
+                "nlu_deterministic": bool(res_nlu.get("_deterministica")),
+                "state_before": engine.resumo_estado(estado_antes),
+                "state_after": engine.resumo_estado(estado),
+                "decision": "handoff:pendencias",
+                "events": ctx.simulation_events,
+            },
         )
 
     # 3) Voz
     ja_apresentou = bool(estado.get("apresentou")) and decisao.get("acao") != "saudacao"
     voz_usage: dict = {}
+    correcoes: dict[str, Any] = {}
     msg_pronta = decisao.get("mensagem_pronta")
     if msg_pronta:
         # BLINDAGEM (Pilar 2): mensagens CRÍTICAS (resumo/fechamento) vêm prontas do
@@ -442,4 +488,23 @@ async def run_fsm_agent(db: AsyncSession, pizzaria_id: uuid.UUID, telefone: str,
         texto=texto, iteracoes=1,
         tool_calls=[f"fsm:{decisao.get('acao')}:{res_nlu.get('intencao')}"],
         precos_tool=precos_validos,
+        trace={
+            "pipeline": "fsm",
+            "simulation": simulation,
+            "intent": res_nlu.get("intencao"),
+            "confidence": confianca,
+            "nlu_deterministic": bool(res_nlu.get("_deterministica")),
+            "state_before": engine.resumo_estado(estado_antes),
+            "state_after": engine.resumo_estado(estado),
+            "decision": decisao.get("acao"),
+            "next_question": decisao.get("proxima_pergunta"),
+            "corrections": correcoes,
+            "provider": provider_usado,
+            "model": model_usado,
+            "usage": {
+                "nlu": res_nlu.get("_usage") or {},
+                "voice": voz_usage,
+            },
+            "events": ctx.simulation_events,
+        },
     )

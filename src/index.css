@@ -117,81 +117,82 @@ body {
   background-color: #94a3b8;
 }
 /* ============================================================
-   Painel carvão + brasa — tema administrativo alinhado à vitrine.
-   As regras são escopadas ao AppShell para não afetar login,
-   entregadores nem o cardápio público.
+   Painel Dark Slate + Laranja — tema oficial idêntico às telas de referência.
+   Garante coerência visual em 100% dos componentes administrativos.
    ============================================================ */
 .pzb-admin-shell {
   color-scheme: dark;
-  background: #0b0a09;
-  --pzb-admin-bg: #100e0c;
-  --pzb-admin-surface: #171411;
-  --pzb-admin-surface-2: #211b17;
-  --pzb-admin-line: #342920;
-  --pzb-admin-text: #f8f1ea;
-  --pzb-admin-muted: #a99d94;
-  --pzb-admin-accent: #f26b21;
+  background: #0b0e14;
+  --pzb-admin-bg: #0b0e14;
+  --pzb-admin-surface: #111622;
+  --pzb-admin-surface-2: #161f30;
+  --pzb-admin-line: #1e293b;
+  --pzb-admin-text: #f8fafc;
+  --pzb-admin-muted: #94a3b8;
+  --pzb-admin-accent: #f97316;
   /* Tokens semânticos usados pelas telas v2 (bg-surface, text-ink etc.). */
-  --color-canvas: #100e0c;
-  --color-surface: #171411;
-  --color-surface-muted: #211b17;
-  --color-line: #3a2d24;
-  --color-ink: #f8f1ea;
-  --color-ink-muted: #b3a69d;
-  --color-ink-subtle: #80736a;
-  --shadow-card: 0 1px 0 rgba(255,255,255,.035), 0 12px 30px rgba(0,0,0,.2);
-  --shadow-card-hover: 0 18px 42px rgba(0,0,0,.32);
+  --color-canvas: #0b0e14;
+  --color-surface: #111622;
+  --color-surface-muted: #161f30;
+  --color-line: #1e293b;
+  --color-ink: #f8fafc;
+  --color-ink-muted: #94a3b8;
+  --color-ink-subtle: #64748b;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 .pzb-admin-content {
-  background:
-    radial-gradient(circle at 74% -10%, rgba(242, 107, 33, .08), transparent 35%),
-    var(--pzb-admin-bg);
+  background: #0b0e14;
 }
 .pzb-admin-sidebar {
-  background: #0d0b0a !important;
-  border-color: var(--pzb-admin-line) !important;
-  box-shadow: 18px 0 55px rgba(0, 0, 0, .18);
+  background: #0d1117 !important;
+  border-color: #1e2638 !important;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
 }
 .pzb-admin-sidebar > div,
 .pzb-admin-sidebar nav,
-.pzb-admin-sidebar nav + div { border-color: var(--pzb-admin-line) !important; }
+.pzb-admin-sidebar nav + div { border-color: #1e2638 !important; }
 .pzb-admin-sidebar nav button {
-  min-height: 42px;
-  border-radius: 9px;
+  min-height: 40px;
+  border-radius: 10px;
 }
-.pzb-admin-sidebar nav button:hover { background: var(--pzb-admin-surface-2) !important; color: var(--pzb-admin-text) !important; }
+.pzb-admin-sidebar nav button:hover {
+  background: #161f30 !important;
+  color: #f8fafc !important;
+}
 .pzb-admin-sidebar .bg-brand-50 {
-  background: rgba(242, 107, 33, .14) !important;
-  color: #ff985f !important;
-  box-shadow: inset 0 0 0 1px rgba(242, 107, 33, .16);
+  background: rgba(249, 115, 22, 0.12) !important;
+  color: #f97316 !important;
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.2);
 }
-.pzb-admin-sidebar .bg-brand-gradient { background-image: linear-gradient(135deg, #f26b21, #ff4d22); }
+.pzb-admin-sidebar .bg-brand-gradient {
+  background-image: linear-gradient(135deg, #f97316, #ea580c);
+}
 .pzb-admin-topbar {
-  min-height: 68px;
-  background: rgba(14, 12, 10, .92) !important;
-  border-color: var(--pzb-admin-line) !important;
-  backdrop-filter: blur(18px);
+  min-height: 64px;
+  background: #0d1117 !important;
+  border-color: #1e2638 !important;
 }
 .pzb-admin-topbar h1 {
-  color: var(--pzb-admin-text) !important;
-  font-family: "Anton SC", Impact, sans-serif;
-  font-size: 22px;
-  font-weight: 400;
-  letter-spacing: .02em;
-  text-transform: uppercase;
+  color: #ffffff !important;
+  font-family: var(--font-sans) !important;
+  font-size: 1.125rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
 }
-.pzb-admin-topbar > div:first-child p { color: var(--pzb-admin-muted) !important; }
+.pzb-admin-topbar > div:first-child p {
+  color: #94a3b8 !important;
+}
 .pzb-admin-user-menu,
 .pzb-admin-mobile-more,
 .pzb-admin-bottom-nav {
-  background: #171411 !important;
-  border-color: var(--pzb-admin-line) !important;
+  background: #111622 !important;
+  border-color: #1e293b !important;
 }
 .pzb-admin-content > main {
-  min-height: calc(100vh - 68px);
-  background:
-    radial-gradient(circle at 82% 0%, rgba(242, 107, 33, .055), transparent 27%),
-    #100e0c !important;
+  min-height: calc(100vh - 64px);
+  background: #0b0e14 !important;
 }
 .pzb-admin-shell .bg-white,
 .pzb-admin-shell .bg-slate-50,
@@ -219,7 +220,7 @@ body {
 }
 .pzb-admin-shell .text-ink { color: var(--pzb-admin-text) !important; }
 .pzb-admin-shell .text-ink-muted { color: var(--pzb-admin-muted) !important; }
-.pzb-admin-shell .text-ink-subtle { color: #80736a !important; }
+.pzb-admin-shell .text-ink-subtle { color: #64748b !important; }
 .pzb-admin-shell .border-line { border-color: var(--pzb-admin-line) !important; }
 .pzb-admin-shell .ring-line { --tw-ring-color: var(--pzb-admin-line) !important; }
 .pzb-admin-shell .border-slate-50,
@@ -250,63 +251,63 @@ body {
 .pzb-admin-shell .text-slate-400,
 .pzb-admin-shell .text-slate-300,
 .pzb-admin-shell .text-gray-400 {
-  color: #7e7269 !important;
+  color: #64748b !important;
 }
 .pzb-admin-shell .text-brand-600,
 .pzb-admin-shell .text-brand-700,
 .pzb-admin-shell .text-orange-500,
 .pzb-admin-shell .text-orange-600,
 .pzb-admin-shell .text-orange-700 {
-  color: #ff8746 !important;
+  color: #f97316 !important;
 }
 .pzb-admin-shell .bg-brand-50,
 .pzb-admin-shell .bg-orange-50,
 .pzb-admin-shell .bg-orange-100 {
-  background-color: rgba(242, 107, 33, .13) !important;
+  background-color: rgba(249, 115, 22, 0.12) !important;
 }
 .pzb-admin-shell .border-orange-100,
 .pzb-admin-shell .border-orange-200,
 .pzb-admin-shell .border-brand-100,
 .pzb-admin-shell .border-brand-200 {
-  border-color: rgba(242, 107, 33, .3) !important;
+  border-color: rgba(249, 115, 22, 0.25) !important;
 }
 .pzb-admin-shell .shadow-sm,
 .pzb-admin-shell .shadow-md,
 .pzb-admin-shell .shadow-lg {
-  --tw-shadow-color: rgba(0, 0, 0, .42);
+  --tw-shadow-color: rgba(0, 0, 0, 0.5);
 }
 .pzb-admin-shell input:not([type="checkbox"]):not([type="radio"]),
 .pzb-admin-shell textarea,
 .pzb-admin-shell select {
-  background-color: #0f0d0b !important;
+  background-color: #161f30 !important;
   border-color: var(--pzb-admin-line) !important;
   color: var(--pzb-admin-text) !important;
 }
 .pzb-admin-shell input::placeholder,
-.pzb-admin-shell textarea::placeholder { color: #6f635a !important; }
-.pzb-admin-shell select option { background: #171411; color: var(--pzb-admin-text); }
+.pzb-admin-shell textarea::placeholder { color: #475569 !important; }
+.pzb-admin-shell select option { background: #111622; color: var(--pzb-admin-text); }
 .pzb-admin-shell input:focus,
 .pzb-admin-shell textarea:focus,
 .pzb-admin-shell select:focus {
   border-color: var(--pzb-admin-accent) !important;
-  box-shadow: 0 0 0 3px rgba(242, 107, 33, .11) !important;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15) !important;
 }
 .pzb-admin-shell table { color: var(--pzb-admin-text); }
-.pzb-admin-shell thead { background: #211b17 !important; }
+.pzb-admin-shell thead { background: #161f30 !important; }
 .pzb-admin-shell tr { border-color: var(--pzb-admin-line) !important; }
 .pzb-admin-shell [class*="hover:bg-slate-"]:hover,
 .pzb-admin-shell [class*="hover:bg-gray-"]:hover {
   background-color: var(--pzb-admin-surface-2) !important;
 }
-.pzb-admin-shell ::-webkit-scrollbar-thumb { background-color: #49372b; }
-.pzb-admin-shell ::-webkit-scrollbar-thumb:hover { background-color: #624632; }
+.pzb-admin-shell ::-webkit-scrollbar-thumb { background-color: #243044; border-radius: 10px; }
+.pzb-admin-shell ::-webkit-scrollbar-thumb:hover { background-color: #334155; }
 @media (max-width: 767px) {
   .pzb-admin-content > main { padding-bottom: 58px; }
   .pzb-admin-topbar { min-height: 60px; }
-  .pzb-admin-bottom-nav { box-shadow: 0 -12px 35px rgba(0, 0, 0, .32); }
+  .pzb-admin-bottom-nav { box-shadow: 0 -12px 35px rgba(0, 0, 0, .4); }
 }
-.pzb-admin-shell .pzb-admin-sidebar.bg-white { background: #0d0b0a !important; }
-.pzb-admin-shell .pzb-admin-topbar.bg-white { background: rgba(14, 12, 10, .94) !important; }
+.pzb-admin-shell .pzb-admin-sidebar.bg-white { background: #0d1117 !important; }
+.pzb-admin-shell .pzb-admin-topbar.bg-white { background: #0d1117 !important; }
 
 
 /* Platform admin: executive dark workspace */

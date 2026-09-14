@@ -96,12 +96,22 @@ async def enviar_manual(
     if not conv:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversa não encontrada")
 
-    # Só permite envio manual quando o bot está desativado nesta conversa.
+    takeover_msg = None
+    # Enviar manualmente é uma intenção explícita de assumir a conversa. A posse
+    # muda antes do envio para que um worker em andamento pare entre balões.
     if conv.bot_ativo:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "Desative o atendimento do bot nesta conversa para enviar mensagens manualmente.",
+        conv.bot_ativo = False
+        conv.status = "humano_assumiu"
+        takeover_msg = Mensagem(
+            conversa_id=conv.id,
+            pizzaria_id=pizzaria_id,
+            origem="sistema",
+            tipo="texto",
+            conteudo="Atendimento assumido por um operador humano.",
+            metadata_json={"trigger": "human_takeover", "source": "manual_send"},
         )
+        db.add(takeover_msg)
+        await db.commit()
 
     pizz = (
         await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))
@@ -145,8 +155,26 @@ async def enviar_manual(
             },
         },
     )
+    if takeover_msg is not None:
+        await broadcaster.publish(
+            pizz.id,
+            {
+                "tipo": "bot.toggled",
+                "pizzaria_id": str(pizz.id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "bot_ativo": False,
+                    "status": conv.status,
+                },
+            },
+        )
 
-    return {"ok": True, "mensagem_id": str(msg.id)}
+    return {
+        "ok": True,
+        "mensagem_id": str(msg.id),
+        "bot_ativo": conv.bot_ativo,
+        "status": conv.status,
+    }
 
 
 # ============================================
@@ -171,8 +199,26 @@ async def toggle_bot(
     if not conv:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Conversa não encontrada")
 
+    mudou = conv.bot_ativo != body.bot_ativo
     conv.bot_ativo = body.bot_ativo
     conv.status = "bot_ativo" if body.bot_ativo else "humano_assumiu"
+    marker = None
+    if mudou:
+        marker = Mensagem(
+            conversa_id=conv.id,
+            pizzaria_id=pizzaria_id,
+            origem="sistema",
+            tipo="texto",
+            conteudo=(
+                "Atendimento devolvido à atendente virtual. Ela continuará usando o estado atual do pedido."
+                if body.bot_ativo
+                else "Atendimento assumido por um operador humano."
+            ),
+            metadata_json={
+                "trigger": "bot_handback" if body.bot_ativo else "human_takeover",
+            },
+        )
+        db.add(marker)
     await db.commit()
 
     await broadcaster.publish(
@@ -187,6 +233,22 @@ async def toggle_bot(
             },
         },
     )
+    if marker is not None:
+        await broadcaster.publish(
+            pizzaria_id,
+            {
+                "tipo": "mensagem.nova",
+                "pizzaria_id": str(pizzaria_id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "mensagem_id": str(marker.id),
+                    "telefone": conv.cliente_telefone,
+                    "conteudo": marker.conteudo,
+                    "origem": "sistema",
+                    "created_at": marker.created_at.isoformat() if marker.created_at else None,
+                },
+            },
+        )
     return {"ok": True, "bot_ativo": conv.bot_ativo, "status": conv.status}
 
 

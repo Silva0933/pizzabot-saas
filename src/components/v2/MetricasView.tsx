@@ -19,7 +19,20 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import { TrendingUp, TrendingDown, Loader2, AlertCircle, Trophy, Clock, ShoppingBag, DollarSign, Ban, History } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Loader2,
+  AlertCircle,
+  Trophy,
+  Clock,
+  Package,
+  Inbox,
+  BarChart2,
+  DollarSign,
+  Ban,
+  History,
+} from "lucide-react";
 import { metricasApi, MetricasResponse } from "../../lib/api";
 import { HistoricoPedidos } from "./MeuNegocioViewV2";
 
@@ -90,98 +103,119 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
   }));
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-6xl mx-auto pb-24 md:pb-6 relative">
-      <nav className="inline-flex w-full sm:w-auto gap-1 rounded-xl border border-slate-200 bg-white p-1" aria-label="Seções de análise">
-        <button type="button" onClick={() => setArea("analise")} className={`flex-1 sm:flex-none px-4 py-2 rounded-lg text-sm font-semibold transition ${area === "analise" ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}>Visão geral</button>
-        <button type="button" onClick={() => setArea("historico")} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition ${area === "historico" ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100"}`}><History className="w-4 h-4" /> Histórico</button>
+    <div className="p-4 md:p-6 space-y-5 pb-24 md:pb-6 relative">
+      {/* Linha 1: Apenas Subtabs */}
+      <nav className="inline-flex gap-1 rounded-xl border border-[#1e293b] bg-[#111622] p-1" aria-label="Seções de análise">
+        <button
+          type="button"
+          onClick={() => setArea("analise")}
+          className={`px-4 py-2 rounded-lg text-sm font-bold transition ${
+            area === "analise" ? "bg-orange-500 text-white shadow-xs" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Visão geral
+        </button>
+        <button
+          type="button"
+          onClick={() => setArea("historico")}
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition ${
+            area === "historico" ? "bg-orange-500 text-white shadow-xs" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <History className="w-4 h-4" /> Histórico
+        </button>
       </nav>
 
-      {area === "analise" ? <>
-      {/* Overlay suave de carregamento ao trocar período (mantém dados visíveis) */}
-      {refreshing && (
-        <div className="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-10 flex items-start justify-center pt-20 rounded-xl">
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full px-4 py-2 shadow-sm">
-            <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
-            <span className="text-xs font-medium text-slate-600">Atualizando dados...</span>
+      {area === "analise" ? (
+        <>
+          {/* Overlay suave de carregamento ao trocar período */}
+          {refreshing && (
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] z-10 flex items-start justify-center pt-20 rounded-xl">
+              <div className="flex items-center gap-2 bg-[#111622] border border-[#1e293b] text-white rounded-full px-4 py-2 shadow-lg">
+                <Loader2 className="w-4 h-4 animate-spin text-orange-500" />
+                <span className="text-xs font-medium text-slate-300">Atualizando dados...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Linha 2: Header à esquerda + Seletor de período à direita */}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight">Análise do seu negócio</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Como você está indo nos últimos {days} dias.
+              </p>
+            </div>
+            <div className="flex gap-1 bg-[#111622] border border-[#1e293b] rounded-xl p-1">
+              {PERIODOS.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setDays(p.value)}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                    days === p.value
+                      ? "bg-[#24170f] text-[#f97316] border border-orange-500/30 shadow-xs"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {/* Header + seletor de período */}
-      <div className="flex items-end justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-slate-800">Análise do seu negócio</h2>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Como você está indo nos últimos {days} dias.
-          </p>
-        </div>
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
-          {PERIODOS.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              onClick={() => setDays(p.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                days === p.value
-                  ? "bg-white text-orange-700 shadow-sm"
-                  : "text-slate-600 hover:text-slate-800"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {/* Aviso de período sem dados */}
-      {resumo.pedidos === 0 && (
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center">
-          <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-          <p className="text-sm font-semibold text-slate-600">Nenhum pedido nos últimos {days} dias</p>
-          <p className="text-xs text-slate-400 mt-1">Os dados aparecerão conforme os pedidos forem realizados.</p>
-        </div>
-      )}
+          {/* Aviso de período sem dados */}
+          {resumo.pedidos === 0 && (
+            <div className="bg-[#111622] border border-[#1e293b] rounded-2xl py-12 px-6 text-center shadow-sm">
+              <Inbox className="w-9 h-9 mx-auto mb-2 text-slate-400 stroke-[1.5]" />
+              <p className="text-sm font-bold text-white">Nenhum pedido nos últimos {days} dias</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Os dados aparecerão conforme os pedidos forem realizados.
+              </p>
+            </div>
+          )}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Kpi
-          icon={<ShoppingBag className="w-4 h-4" />}
-          label="Pedidos"
-          value={resumo.pedidos.toString()}
-          delta={comparativo.pct_pedidos}
-          accent="orange"
-        />
-        <Kpi
-          icon={<DollarSign className="w-4 h-4" />}
-          label="Vendido"
-          value={formatBRL(resumo.vendido)}
-          delta={comparativo.pct_vendido}
-          accent="emerald"
-        />
-        <Kpi
-          icon={<TrendingUp className="w-4 h-4" />}
-          label="Ticket médio"
-          value={formatBRL(resumo.ticket_medio)}
-          accent="violet"
-        />
-        <Kpi
-          icon={<Ban className="w-4 h-4" />}
-          label="Cancelamento"
-          value={`${resumo.taxa_cancelamento}%`}
-          accent={resumo.taxa_cancelamento > 10 ? "red" : "slate"}
-        />
-      </div>
+          {/* KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Kpi
+              icon={<Package className="w-5 h-5" />}
+              label="Pedidos"
+              value={resumo.pedidos.toString()}
+              delta={comparativo.pct_pedidos ?? -100}
+              accent="orange"
+            />
+            <Kpi
+              icon={<DollarSign className="w-5 h-5" />}
+              label="Vendido"
+              value={formatBRL(resumo.vendido)}
+              delta={comparativo.pct_vendido ?? -100}
+              accent="emerald"
+            />
+            <Kpi
+              icon={<TrendingUp className="w-5 h-5" />}
+              label="Ticket médio"
+              value={formatBRL(resumo.ticket_medio)}
+              accent="violet"
+            />
+            <Kpi
+              icon={<Ban className="w-5 h-5" />}
+              label="Cancelamento"
+              value={`${resumo.taxa_cancelamento}%`}
+              accent="slate"
+            />
+          </div>
 
-      {/* Gráfico: vendas por dia */}
-      <Card title="Vendas por dia" icon={<TrendingUp className="w-4 h-4" />}>
-        {serieFormat.length === 0 ? (
-          <Empty msg="Sem pedidos no período." />
-        ) : (
+          {/* Gráfico: vendas por dia */}
+          <Card title="Vendas por dia" icon={<TrendingUp className="w-4 h-4 text-slate-400" />}>
+            {serieFormat.length === 0 ? (
+              <Empty icon={<BarChart2 className="w-7 h-7 text-slate-500 mb-2" />} msg="Sem pedidos no período." />
+            ) : (
           <div className="h-64 w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <LineChart data={serieFormat} margin={{ top: 5, right: 12, left: -8, bottom: 0 }}>
-                <CartesianGrid stroke="#f1f5f9" />
-                <XAxis dataKey="dia_label" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-                <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                <CartesianGrid stroke="#1e293b" />
+                <XAxis dataKey="dia_label" tick={{ fontSize: 11 }} stroke="#64748b" />
+                <YAxis tick={{ fontSize: 11 }} stroke="#64748b" />
                 <RTooltip content={<CustomTooltip />} />
                 <Line
                   type="monotone"
@@ -200,9 +234,9 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
 
       {/* Grid: horários + top produtos */}
       <div className="grid md:grid-cols-2 gap-4">
-        <Card title="Horários de pico" icon={<Clock className="w-4 h-4" />}>
+        <Card title="Horários de pico" icon={<Clock className="w-4 h-4 text-slate-400" />}>
           {horarios_pico.length === 0 ? (
-            <Empty msg="Sem dados de horário." />
+            <Empty icon={<Clock className="w-6 h-6" />} msg="Sem dados de horário." />
           ) : (
             <div className="h-56 w-full min-w-0">
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -210,57 +244,56 @@ export function MetricasView({ pizzariaId }: MetricasViewProps) {
                   data={horarios_pico.map((h) => ({ ...h, label: `${String(h.hora).padStart(2, "0")}h` }))}
                   margin={{ top: 5, right: 12, left: -8, bottom: 0 }}
                 >
-                  <CartesianGrid stroke="#f1f5f9" />
-                  <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="#94a3b8" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" allowDecimals={false} />
+                  <CartesianGrid stroke="#1e293b" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="#64748b" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="#64748b" allowDecimals={false} />
                   <RTooltip
                     formatter={(v: any) => [`${v} pedido${v > 1 ? "s" : ""}`, ""]}
-                    cursor={{ fill: "#fff7ed" }}
+                    cursor={{ fill: "#161f30" }}
                   />
-                  <Bar dataKey="pedidos" fill="#fdba74" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="pedidos" fill="#f97316" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           )}
         </Card>
 
-        <Card title="Top 5 produtos" icon={<Trophy className="w-4 h-4 text-amber-500" />}>
+        <Card title="Top 5 produtos" icon={<Trophy className="w-4 h-4 text-orange-400" />}>
           {top_produtos.length === 0 ? (
-            <Empty msg="Sem produtos vendidos." />
+            <Empty icon={<Trophy className="w-6 h-6" />} msg="Sem produtos vendidos." />
           ) : (
             <ul className="space-y-2">
               {top_produtos.map((p, idx) => (
                 <li
                   key={p.nome}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50"
+                  className="flex items-center gap-3 p-2.5 rounded-xl bg-[#161f30] border border-[#1e293b]"
                 >
-                  <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${
-                    idx === 0 ? "bg-amber-100 text-amber-700" :
-                    idx === 1 ? "bg-slate-200 text-slate-600" :
-                    idx === 2 ? "bg-orange-100 text-orange-700" :
-                    "bg-slate-100 text-slate-500"
+                  <span className={`w-6 h-6 rounded-full text-xs font-black flex items-center justify-center ${
+                    idx === 0 ? "bg-amber-500/20 text-amber-400" :
+                    idx === 1 ? "bg-slate-700 text-slate-200" :
+                    idx === 2 ? "bg-orange-500/20 text-orange-400" :
+                    "bg-slate-800 text-slate-400"
                   }`}>{idx + 1}</span>
-                  <span className="flex-1 text-sm text-slate-700 truncate">{p.nome}</span>
-                  <span className="text-xs font-semibold text-slate-500">{p.qtd_vendida}x</span>
+                  <span className="flex-1 text-sm font-semibold text-white truncate">{p.nome}</span>
+                  <span className="text-xs font-bold text-slate-400">{p.qtd_vendida}x</span>
                 </li>
               ))}
             </ul>
           )}
         </Card>
       </div>
-      </> : <HistoricoPedidos pizzariaId={pizzariaId} />}
+    </>) : (
+      <HistoricoPedidos pizzariaId={pizzariaId} />
+    )}
     </div>
   );
 }
 
-// ============================================
-// Helpers
-// ============================================
 function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="bg-white border border-slate-200 rounded-xl p-4">
-      <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5 mb-3">
-        <span className="text-slate-500">{icon}</span>
+    <section className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm">
+      <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-4">
+        <span>{icon}</span>
         {title}
       </h3>
       {children}
@@ -268,10 +301,11 @@ function Card({ title, icon, children }: { title: string; icon: React.ReactNode;
   );
 }
 
-function Empty({ msg }: { msg: string }) {
+function Empty({ icon, msg }: { icon?: React.ReactNode; msg: string }) {
   return (
-    <div className="text-center py-10">
-      <p className="text-xs text-slate-400">{msg}</p>
+    <div className="text-center py-12 text-slate-500 flex flex-col items-center justify-center">
+      {icon && <div className="mb-2 text-slate-500">{icon}</div>}
+      <p className="text-xs text-slate-400 font-medium">{msg}</p>
     </div>
   );
 }
@@ -286,33 +320,35 @@ function Kpi({
   accent: "orange" | "emerald" | "violet" | "red" | "slate";
 }) {
   const styles = {
-    orange:  "bg-orange-100 text-orange-700",
-    emerald: "bg-emerald-100 text-emerald-700",
-    violet:  "bg-violet-100 text-violet-700",
-    red:     "bg-red-100 text-red-700",
-    slate:   "bg-slate-100 text-slate-600",
+    orange:  "bg-[#24170f] text-orange-400 border border-orange-500/20",
+    emerald: "bg-emerald-950/40 text-emerald-400 border border-emerald-500/20",
+    violet:  "bg-purple-950/40 text-purple-400 border border-purple-500/20",
+    red:     "bg-rose-950/40 text-rose-400 border border-rose-500/20",
+    slate:   "bg-slate-800/40 text-slate-400 border border-slate-700/40",
   }[accent];
 
   const showDelta = delta !== null && delta !== undefined;
   const positive = (delta ?? 0) >= 0;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl p-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${styles}`}>
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3">
+      <div className="flex items-center gap-3.5 min-w-0">
+        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${styles}`}>
           {icon}
         </div>
-        {showDelta && (
-          <span className={`text-[11px] font-semibold flex items-center gap-0.5 ${
-            positive ? "text-emerald-600" : "text-red-600"
-          }`}>
-            {positive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-            {positive ? "+" : ""}{delta}%
-          </span>
-        )}
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">{label}</p>
+          <p className="text-xl font-black text-white leading-tight truncate mt-0.5">{value}</p>
+        </div>
       </div>
-      <p className="text-[11px] uppercase tracking-wide text-slate-500 font-medium">{label}</p>
-      <p className="text-lg font-bold text-slate-800">{value}</p>
+      {showDelta && (
+        <span className={`text-xs font-bold shrink-0 flex items-center gap-1 ${
+          positive ? "text-emerald-400" : "text-rose-500"
+        }`}>
+          {positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+          {positive ? "+" : ""}{delta}%
+        </span>
+      )}
     </div>
   );
 }

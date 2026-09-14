@@ -11,17 +11,21 @@ import {
 } from "lucide-react";
 import { cardapioApi, BackendProduto, CardapioArquivoInfo, ProdutoImport } from "../../lib/api";
 
-interface Props { pizzariaId: string; }
+interface Props {
+  pizzariaId: string;
+  autoCreate?: boolean;
+  onAutoCreated?: () => void;
+}
 
 const CATEGORIAS = ["pizza", "lanche", "bebida", "sobremesa", "outro"] as const;
 
 const CAT_STYLE: Record<string, { emoji: string; chip: string; bg: string }> = {
-  todos:     { emoji: "🍽️", chip: "bg-slate-100 text-slate-700", bg: "from-slate-500 to-slate-600" },
-  pizza:     { emoji: "🍕", chip: "bg-orange-50 text-orange-700 border-orange-100", bg: "from-orange-500 to-rose-500" },
-  lanche:    { emoji: "🍔", chip: "bg-amber-50 text-amber-700 border-amber-100", bg: "from-amber-500 to-amber-600" },
-  bebida:    { emoji: "🥤", chip: "bg-sky-50 text-sky-700 border-sky-100", bg: "from-sky-500 to-blue-600" },
-  sobremesa: { emoji: "🍰", chip: "bg-pink-50 text-pink-700 border-pink-100", bg: "from-pink-500 to-rose-500" },
-  outro:     { emoji: "🍽️", chip: "bg-slate-50 text-slate-700 border-slate-100", bg: "from-slate-400 to-slate-500" },
+  todos:     { emoji: "🍽️", chip: "bg-[#161f30] text-slate-300 border-[#1e293b]", bg: "from-slate-700 to-slate-800" },
+  pizza:     { emoji: "🍕", chip: "bg-orange-500/15 text-orange-400 border-orange-500/30", bg: "from-orange-500 to-rose-500" },
+  lanche:    { emoji: "🍔", chip: "bg-amber-500/15 text-amber-400 border-amber-500/30", bg: "from-amber-500 to-amber-600" },
+  bebida:    { emoji: "🥤", chip: "bg-sky-500/15 text-sky-400 border-sky-500/30", bg: "from-sky-500 to-blue-600" },
+  sobremesa: { emoji: "🍰", chip: "bg-pink-500/15 text-pink-400 border-pink-500/30", bg: "from-pink-500 to-rose-500" },
+  outro:     { emoji: "🍽️", chip: "bg-slate-700/50 text-slate-300 border-slate-600/50", bg: "from-slate-600 to-slate-700" },
 };
 
 type Form = Omit<BackendProduto, "id" | "pizzaria_id">;
@@ -74,28 +78,28 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition"
+          className="flex-1 px-3.5 py-2 bg-[#161f30] border border-[#1e293b] rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500/50 transition"
         />
         <button
           type="button"
           onClick={addChip}
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+          className="px-4 py-2 bg-[#161f30] hover:bg-[#1e293b] text-slate-300 border border-[#1e293b] rounded-xl text-xs font-semibold transition"
         >
           Adicionar
         </button>
       </div>
       {value && value.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-100 rounded-xl max-h-32 overflow-y-auto">
+        <div className="flex flex-wrap gap-1.5 p-2.5 bg-[#161f30]/60 border border-[#1e293b] rounded-xl max-h-32 overflow-y-auto">
           {value.map((chip, idx) => (
             <span
               key={idx}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 text-xs text-slate-700 rounded-lg font-medium shadow-sm hover:border-slate-300 transition"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#111622] border border-[#1e293b] text-xs text-slate-200 rounded-lg font-medium shadow-sm"
             >
               {chip}
               <button
                 type="button"
                 onClick={() => removeChip(idx)}
-                className="text-slate-400 hover:text-red-500 font-bold ml-1 transition"
+                className="text-slate-400 hover:text-red-400 font-bold ml-1 transition"
               >
                 &times;
               </button>
@@ -103,7 +107,7 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
           ))}
         </div>
       ) : (
-        <p className="text-[10px] text-slate-400 italic">Nenhum item adicionado ainda.</p>
+        <p className="text-[10px] text-slate-500 italic">Nenhum item adicionado ainda.</p>
       )}
     </div>
   );
@@ -112,7 +116,7 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
 // =========================================================
 // Componente Principal: CardapioViewV2
 // =========================================================
-export function CardapioViewV2({ pizzariaId }: Props) {
+export function CardapioViewV2({ pizzariaId, autoCreate = false, onAutoCreated }: Props) {
   const [produtos, setProdutos] = useState<BackendProduto[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -169,6 +173,13 @@ export function CardapioViewV2({ pizzariaId }: Props) {
     setActiveTab("geral");
     setCreating(true);
   }
+
+  useEffect(() => {
+    if (autoCreate && !creating && !editing) {
+      startCreate();
+      onAutoCreated?.();
+    }
+  }, [autoCreate]);
 
   function startEdit(p: BackendProduto) {
     setCreating(false);
@@ -312,29 +323,29 @@ export function CardapioViewV2({ pizzariaId }: Props) {
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto pb-24 md:pb-6 space-y-6">
       {/* Header do Cardápio */}
-      <div className="flex items-center justify-between flex-wrap gap-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-3">
-          <span className="w-12 h-12 rounded-2xl bg-brand-gradient text-white grid place-items-center shadow-brand">
+      <div className="flex items-center justify-between flex-wrap gap-4 bg-[#111622] p-5 rounded-2xl border border-[#1e293b] shadow-sm">
+        <div className="flex items-center gap-3.5">
+          <span className="w-11 h-11 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 grid place-items-center shadow-sm">
             <UtensilsCrossed className="w-5 h-5" />
           </span>
           <div>
-            <h2 className="text-xl font-extrabold text-slate-800 tracking-tight">Cardápio</h2>
-            <p className="text-xs text-slate-500">Total: {produtos.length} {produtos.length === 1 ? "item cadastrado" : "itens cadastrados"}.</p>
+            <h1 className="text-xl font-bold text-white tracking-tight">Cardápio</h1>
+            <p className="text-xs text-slate-400">Total: {produtos.length} {produtos.length === 1 ? "item cadastrado" : "itens cadastrados"}.</p>
           </div>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <button
             onClick={reindex}
             disabled={reindexing}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl font-semibold transition"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 hover:text-white border border-[#1e293b] rounded-xl font-semibold transition disabled:opacity-50"
           >
-            {reindexing ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <RefreshCw className="w-3.5 h-3.5"/>}
+            {reindexing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500"/> : <RefreshCw className="w-3.5 h-3.5"/>}
             Reindexar busca
           </button>
           <ImportarCardapio pizzariaId={pizzariaId} onImported={load} />
           <button
             onClick={startCreate}
-            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-brand-gradient hover:brightness-105 text-white rounded-xl font-bold shadow-brand transition-all hover:-translate-y-0.5 active:translate-y-0"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold shadow-sm transition"
           >
             <Plus className="w-4 h-4"/> Novo produto
           </button>
@@ -342,8 +353,8 @@ export function CardapioViewV2({ pizzariaId }: Props) {
       </div>
 
       {err && (
-        <div className="flex items-center gap-2.5 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm shadow-sm">
-          <AlertCircle className="w-4 h-4 shrink-0 text-red-500"/>
+        <div className="flex items-center gap-2.5 bg-red-950/40 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl text-xs shadow-sm">
+          <AlertCircle className="w-4 h-4 shrink-0 text-red-400"/>
           <span className="font-medium">{err}</span>
         </div>
       )}
@@ -352,10 +363,10 @@ export function CardapioViewV2({ pizzariaId }: Props) {
       <CardapioArquivo pizzariaId={pizzariaId} />
 
       {/* Filtros e Busca */}
-      <div className="space-y-3 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+      <div className="space-y-3 bg-[#111622] p-4 rounded-2xl border border-[#1e293b] shadow-sm">
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
           <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
               <Search className="w-4 h-4" />
             </span>
             <input
@@ -363,12 +374,12 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               placeholder="Pesquisar produto por nome, tag ou apelido..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-sm outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100 transition"
+              className="w-full pl-10 pr-4 py-2 bg-[#161f30] border border-[#1e293b] rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500/50 transition"
             />
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery("")} 
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 font-bold"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white font-bold"
               >
                 &times;
               </button>
@@ -380,7 +391,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
         </div>
 
         {/* Abas das Categorias */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-none border-t border-slate-50 pt-3">
+        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none border-t border-[#1e293b]/60 pt-3">
           {categoriasUnicasFiltro.map((catName) => {
             const style = CAT_STYLE[catName] || CAT_STYLE.outro;
             const isActive = selectedCategory === catName;
@@ -388,10 +399,10 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               <button
                 key={catName}
                 onClick={() => setSelectedCategory(catName)}
-                className={`flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl border transition-all shrink-0 ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all shrink-0 ${
                   isActive
-                    ? "bg-slate-800 text-white border-slate-800 shadow-sm"
-                    : "bg-slate-50 text-slate-600 border-slate-100 hover:bg-slate-100 hover:text-slate-800"
+                    ? "bg-[#1e293b] text-white border-slate-600 shadow-sm"
+                    : "bg-[#161f30] text-slate-400 border-[#1e293b] hover:bg-[#1a2336] hover:text-white"
                 }`}
               >
                 <span>{style.emoji}</span>
@@ -404,11 +415,11 @@ export function CardapioViewV2({ pizzariaId }: Props) {
 
       {/* Grid de Produtos */}
       {produtosFiltrados.length === 0 ? (
-        <div className="bg-white border border-slate-100 rounded-3xl p-16 text-center shadow-sm">
-          <div className="w-16 h-16 rounded-2xl bg-orange-50 grid place-items-center mx-auto mb-4 text-orange-400 shadow-inner">
+        <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-16 text-center shadow-sm">
+          <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 grid place-items-center mx-auto mb-4 text-orange-400">
             <UtensilsCrossed className="w-7 h-7" />
           </div>
-          <p className="text-slate-700 font-bold text-base">Nenhum produto encontrado</p>
+          <p className="text-white font-bold text-base">Nenhum produto encontrado</p>
           <p className="text-xs text-slate-400 mt-1.5">Experimente limpar a busca ou os filtros de categoria.</p>
         </div>
       ) : (
@@ -419,12 +430,12 @@ export function CardapioViewV2({ pizzariaId }: Props) {
             return (
               <article 
                 key={p.id}
-                className={`group bg-white border rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-slate-300 transition-all duration-300 flex flex-col ${
-                  isDisponivel ? "border-slate-100" : "border-slate-200 opacity-75"
+                className={`group bg-[#111622] border rounded-2xl overflow-hidden shadow-sm hover:border-slate-700 transition-all duration-300 flex flex-col ${
+                  isDisponivel ? "border-[#1e293b]" : "border-[#1e293b] opacity-70"
                 }`}
               >
                 {/* Banner de Imagem */}
-                <div className="relative h-32 bg-gradient-to-br from-slate-50 to-slate-100 grid place-items-center overflow-hidden">
+                <div className="relative h-36 bg-[#161f30] grid place-items-center overflow-hidden">
                   {p.imagem_url ? (
                     <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
                   ) : (
@@ -432,7 +443,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   )}
                   
                   {/* Categoria Badge */}
-                  <span className={`absolute top-2.5 left-2.5 text-[9px] font-extrabold px-2.5 py-1 rounded-lg border capitalize tracking-wider ${cat.chip}`}>
+                  <span className="absolute top-2.5 left-2.5 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-900/80 backdrop-blur-sm text-slate-300 border border-white/10 capitalize tracking-wider">
                     {p.categoria || "outro"}
                   </span>
                   
@@ -446,14 +457,14 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                     disabled={loadingStatus[p.id]}
                     className={`absolute top-2.5 right-2.5 text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm transition-all duration-200 border cursor-pointer ${
                       isDisponivel
-                        ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-100"
-                        : "bg-red-50 hover:bg-red-100 text-red-700 border-red-100"
+                        ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30"
+                        : "bg-red-500/15 hover:bg-red-500/25 text-red-400 border-red-500/30"
                     }`}
                   >
                     {loadingStatus[p.id] ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-500" />
+                      <Loader2 className="w-3 h-3 animate-spin text-slate-400" />
                     ) : (
-                      <span className={`w-1.5 h-1.5 rounded-full ${isDisponivel ? "bg-emerald-500 animate-pulse" : "bg-red-500"}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${isDisponivel ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
                     )}
                     {isDisponivel ? "Ativo" : "Pausado"}
                   </button>
@@ -463,19 +474,19 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                   <div>
                     <div className="flex items-start justify-between gap-2">
-                      <h4 className="font-bold text-sm text-slate-800 group-hover:text-orange-500 transition-colors duration-200 leading-tight">
+                      <h3 className="font-bold text-sm text-white group-hover:text-orange-400 transition-colors duration-200 leading-tight">
                         {p.nome}
-                      </h4>
-                      <span className="text-sm font-extrabold text-slate-800 whitespace-nowrap text-right shrink-0">
+                      </h3>
+                      <span className="text-sm font-bold text-emerald-400 whitespace-nowrap text-right shrink-0">
                         {p.tamanhos && p.tamanhos.length > 0 ? (
                           <span className="block">
-                            <span className="text-[9px] text-slate-400 font-medium block leading-none">A partir de</span>
-                            <span className="text-emerald-600 block mt-0.5">
+                            <span className="text-[9px] text-slate-500 font-medium block leading-none">A partir de</span>
+                            <span className="text-emerald-400 block mt-0.5">
                               {Math.min(...p.tamanhos.map(t => Number(t.preco))).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                             </span>
                           </span>
                         ) : (
-                          <span className="text-emerald-600 block">
+                          <span className="text-emerald-400 block">
                             {Number(p.preco).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                           </span>
                         )}
@@ -484,19 +495,19 @@ export function CardapioViewV2({ pizzariaId }: Props) {
 
                     {/* Descrição */}
                     {p.descricao && (
-                      <p className="text-xs text-slate-500 mt-1.5 line-clamp-2 italic leading-relaxed">
+                      <p className="text-xs text-slate-400 mt-1.5 line-clamp-2 italic leading-relaxed">
                         {p.descricao}
                       </p>
                     )}
 
                     {/* Listagem de Variações */}
                     {p.tamanhos && p.tamanhos.length > 0 && (
-                      <div className="mt-2.5 pt-2 border-t border-slate-50 space-y-1">
-                        <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider">Tamanhos:</span>
+                      <div className="mt-2.5 pt-2 border-t border-[#1e293b] space-y-1">
+                        <span className="text-[9px] font-bold text-slate-500 block uppercase tracking-wider">Tamanhos:</span>
                         <div className="flex flex-wrap gap-1">
                           {p.tamanhos.map((t, idx) => (
-                            <span key={idx} className="text-[9px] bg-slate-50 border border-slate-100 px-2 py-0.5 rounded text-slate-600 font-semibold shadow-2xs">
-                              {t.tamanho}: <span className="text-emerald-600 font-bold">R${Number(t.preco).toFixed(1)}</span>
+                            <span key={idx} className="text-[10px] bg-[#161f30] border border-[#1e293b] px-2 py-0.5 rounded text-slate-300 font-medium">
+                              {t.tamanho}: <span className="text-emerald-400 font-bold">R${Number(t.preco).toFixed(1)}</span>
                             </span>
                           ))}
                         </div>
@@ -505,14 +516,14 @@ export function CardapioViewV2({ pizzariaId }: Props) {
 
                     {/* Tags do produto */}
                     {((p.tags && p.tags.length > 0) || (p.aliases && p.aliases.length > 0)) && (
-                      <div className="flex flex-wrap gap-1 mt-2.5 pt-2 border-t border-slate-50">
+                      <div className="flex flex-wrap gap-1 mt-2.5 pt-2 border-t border-[#1e293b]">
                         {p.tags?.map((t, idx) => (
-                          <span key={`tag-${idx}`} className="text-[9px] bg-amber-50 text-amber-700 border border-amber-100/50 px-1.5 py-0.5 rounded-lg font-medium">
+                          <span key={`tag-${idx}`} className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-lg font-medium">
                             #{t}
                           </span>
                         ))}
                         {p.aliases?.map((a, idx) => (
-                          <span key={`alias-${idx}`} className="text-[9px] bg-violet-50 text-violet-700 border border-violet-100/50 px-1.5 py-0.5 rounded-lg font-medium">
+                          <span key={`alias-${idx}`} className="text-[9px] bg-violet-500/10 text-violet-400 border border-violet-500/20 px-1.5 py-0.5 rounded-lg font-medium">
                             {a}
                           </span>
                         ))}
@@ -521,16 +532,16 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   </div>
 
                   {/* Ações */}
-                  <div className="flex gap-2 pt-3 border-t border-slate-50">
+                  <div className="flex gap-2 pt-3 border-t border-[#1e293b]">
                     <button 
                       onClick={() => startEdit(p)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs text-slate-600 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-100 hover:border-slate-200 rounded-xl font-bold transition duration-200"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs text-slate-300 hover:text-white bg-[#161f30] hover:bg-[#1e293b] border border-[#1e293b] rounded-xl font-bold transition duration-200"
                     >
                       <Pencil className="w-3.5 h-3.5"/> Editar
                     </button>
                     <button 
                       onClick={() => remove(p)}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100 rounded-xl font-bold transition duration-200"
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-[#1e293b] hover:border-red-800/40 rounded-xl font-bold transition duration-200"
                     >
                       <Trash2 className="w-3.5 h-3.5"/>
                     </button>
@@ -552,36 +563,36 @@ export function CardapioViewV2({ pizzariaId }: Props) {
       >
         {/* Overlay escuro desfocado */}
         <div 
-          className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300"
+          className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity duration-300"
           onClick={cancel} 
         />
         
         <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10">
           <div
-            className={`w-screen max-w-xl bg-white shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
+            className={`w-screen max-w-xl bg-[#111622] border-l border-[#1e293b] shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
               isFormPanelOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
             {/* Header do Slide-over */}
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div className="px-5 py-4 border-b border-[#1e293b] flex items-center justify-between bg-[#111622]">
               <div>
-                <h3 className="font-extrabold text-base text-slate-800">
+                <h3 className="font-bold text-base text-white">
                   {editing ? "Editar Produto" : "Novo Produto"}
                 </h3>
-                <p className="text-[11px] text-slate-500 mt-0.5">
+                <p className="text-xs text-slate-400 mt-0.5">
                   {editing ? `Alterando "${form.nome}"` : "Cadastre as informações da variação ou produto único"}
                 </p>
               </div>
               <button 
                 onClick={cancel} 
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-xl transition"
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-[#161f30] rounded-xl transition"
               >
-                <X className="w-4.5 h-4.5" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Abas de Navegação do Formulário (scroll horizontal no mobile) */}
-            <div className="flex border-b border-slate-100 px-4 bg-slate-50/50 overflow-x-auto scrollbar-none">
+            <div className="flex border-b border-[#1e293b] px-4 bg-[#0d1117] overflow-x-auto scrollbar-none">
               {([
                 ["geral", "Geral", <LayoutGrid className="w-3.5 h-3.5" />],
                 ["tamanhos", "Tamanhos & Preços", <SlidersHorizontal className="w-3.5 h-3.5" />],
@@ -594,10 +605,10 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                     key={id}
                     type="button"
                     onClick={() => setActiveTab(id)}
-                    className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-bold border-b-2 transition-all -mb-px shrink-0 whitespace-nowrap ${
+                    className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold border-b-2 transition-all -mb-px shrink-0 whitespace-nowrap ${
                       isActive
-                        ? "border-orange-500 text-orange-600"
-                        : "border-transparent text-slate-500 hover:text-slate-800"
+                        ? "border-orange-500 text-orange-400"
+                        : "border-transparent text-slate-400 hover:text-white"
                     }`}
                   >
                     {icon}
@@ -636,7 +647,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                           <button 
                             type="button" 
                             onClick={() => setNovaCategoria(false)}
-                            className="px-2 text-xs font-bold text-orange-500 hover:bg-orange-50 rounded-xl shrink-0"
+                            className="px-2.5 text-xs font-bold text-orange-400 hover:bg-orange-500/10 rounded-xl shrink-0"
                           >
                             Lista
                           </button>
@@ -655,9 +666,9 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                           className={inputCls}
                         >
                           {categoriasDisponiveis.map((c) => (
-                            <option key={c} value={c}>{c}</option>
+                            <option key={c} value={c} className="bg-[#111622] text-white">{c}</option>
                           ))}
-                          <option value="__nova__">➕ Criar categoria…</option>
+                          <option value="__nova__" className="bg-[#111622] text-orange-400">➕ Criar categoria…</option>
                         </select>
                       )}
                     </Field>
@@ -675,7 +686,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   {form.tamanhos === null && (
                     <Field label="Preço Unitário (R$)" required>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">R$</span>
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-bold">R$</span>
                         <input 
                           type="number" 
                           step="0.01" 
@@ -708,7 +719,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   </Field>
 
                   {form.imagem_url && (
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
+                    <div className="p-3 bg-[#161f30] border border-[#1e293b] rounded-xl space-y-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pré-visualização:</span>
                       <img 
                         src={form.imagem_url} 
@@ -719,14 +730,14 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                     </div>
                   )}
 
-                  <label className="flex items-center gap-2 p-2 bg-slate-50 border border-slate-100 rounded-xl cursor-pointer">
+                  <label className="flex items-center gap-2.5 p-3 bg-[#161f30] border border-[#1e293b] rounded-xl cursor-pointer">
                     <input 
                       type="checkbox" 
                       checked={form.disponivel}
                       onChange={(e) => setForm({ ...form, disponivel: e.target.checked })}
-                      className="rounded text-orange-500 focus:ring-orange-300"
+                      className="rounded text-orange-500 focus:ring-orange-400 bg-[#111622] border-[#1e293b]"
                     />
-                    <span className="text-xs font-bold text-slate-700">Disponível no cardápio do bot</span>
+                    <span className="text-xs font-bold text-white">Disponível no cardápio do bot</span>
                   </label>
                 </div>
               )}
@@ -734,14 +745,14 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               {/* ABA 2: TAMANHOS E VARIAÇÕES */}
               {activeTab === "tamanhos" && (
                 <div className="space-y-4 animate-fadeIn">
-                  <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl space-y-1.5">
-                    <h4 className="text-xs font-bold text-orange-800">Múltiplos Tamanhos ou Preços</h4>
-                    <p className="text-[10px] text-orange-600 leading-normal">
+                  <div className="p-3.5 bg-orange-500/10 border border-orange-500/20 rounded-xl space-y-1">
+                    <h4 className="text-xs font-bold text-orange-400">Múltiplos Tamanhos ou Preços</h4>
+                    <p className="text-[11px] text-orange-300/80 leading-normal">
                       Habilite esta opção se o mesmo produto for vendido em formatos diferentes (Ex: Pizza P, M e G ou Refrigerante Lata e 2L).
                     </p>
                   </div>
 
-                  <label className="flex items-center gap-2.5 p-3 border border-slate-100 bg-slate-50/50 rounded-xl cursor-pointer">
+                  <label className="flex items-center gap-2.5 p-3 border border-[#1e293b] bg-[#161f30] rounded-xl cursor-pointer">
                     <input
                       type="checkbox"
                       checked={form.tamanhos !== null}
@@ -752,9 +763,9 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                           setForm({ ...form, tamanhos: null });
                         }
                       }}
-                      className="rounded text-orange-500 focus:ring-orange-300"
+                      className="rounded text-orange-500 focus:ring-orange-400 bg-[#111622] border-[#1e293b]"
                     />
-                    <span className="text-xs font-bold text-slate-700">
+                    <span className="text-xs font-bold text-white">
                       Este produto tem múltiplos tamanhos / variações
                     </span>
                   </label>
@@ -762,14 +773,14 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   {form.tamanhos !== null ? (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between pt-2">
-                        <span className="text-xs font-bold text-slate-700">Lista de Variações</span>
+                        <span className="text-xs font-bold text-white">Lista de Variações</span>
                         <button
                           type="button"
                           onClick={() => {
                             const cur = form.tamanhos || [];
                             setForm({ ...form, tamanhos: [...cur, { tamanho: "", preco: 0 }] });
                           }}
-                          className="text-xs text-orange-500 hover:text-orange-600 font-bold inline-flex items-center gap-1 bg-orange-50 px-2.5 py-1.5 rounded-lg border border-orange-100 transition"
+                          className="text-xs text-orange-400 hover:text-orange-300 font-bold inline-flex items-center gap-1 bg-orange-500/10 px-2.5 py-1.5 rounded-lg border border-orange-500/20 transition"
                         >
                           <Plus className="w-3.5 h-3.5" /> Adicionar tamanho
                         </button>
@@ -777,7 +788,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
 
                       <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                         {(form.tamanhos || []).map((t, idx) => (
-                          <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 border border-slate-100 rounded-xl shadow-2xs">
+                          <div key={idx} className="flex gap-2 items-center bg-[#161f30] p-2.5 border border-[#1e293b] rounded-xl">
                             <input
                               placeholder="Tamanho (ex: Grande, Lata, 2L)"
                               value={t.tamanho}
@@ -786,10 +797,10 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                                 newT[idx] = { ...newT[idx], tamanho: e.target.value };
                                 setForm({ ...form, tamanhos: newT });
                               }}
-                              className="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs outline-none bg-white focus:border-orange-400"
+                              className="flex-1 px-3 py-1.5 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white focus:border-orange-500"
                             />
                             <div className="relative w-28 shrink-0">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">R$</span>
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">R$</span>
                               <input
                                 type="number"
                                 step="0.01"
@@ -800,7 +811,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                                   newT[idx] = { ...newT[idx], preco: Number(e.target.value) || 0 };
                                   setForm({ ...form, tamanhos: newT });
                                 }}
-                                className="w-full pl-7 pr-2.5 py-1.5 border border-slate-200 rounded-lg text-xs outline-none bg-white focus:border-orange-400"
+                                className="w-full pl-7 pr-2.5 py-1.5 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white focus:border-orange-500"
                               />
                             </div>
                             <button
@@ -809,7 +820,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                                 const newT = (form.tamanhos || []).filter((_, i) => i !== idx);
                                 setForm({ ...form, tamanhos: newT.length > 0 ? newT : [] });
                               }}
-                              className="p-2 text-red-500 hover:bg-red-50 rounded-lg hover:text-red-700 transition"
+                              className="p-2 text-red-400 hover:bg-red-950/40 rounded-lg hover:text-red-300 transition"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -818,7 +829,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                       </div>
                     </div>
                   ) : (
-                    <div className="p-8 text-center border border-slate-100 bg-slate-50 rounded-2xl">
+                    <div className="p-8 text-center border border-[#1e293b] bg-[#161f30] rounded-2xl">
                       <p className="text-xs text-slate-400 italic">Configure o preço único na aba "Geral" ou habilite as variações acima.</p>
                     </div>
                   )}
@@ -831,7 +842,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                   
                   {/* Seção Adicionais e Bordas */}
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Adicionais e Bordas</h4>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Adicionais e Bordas</h4>
                     <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
                       Digite os adicionais ou complementos permitidos para este produto (Ex: Borda Catupiry, Massa Grossa, Bacon Extra). Aperte Enter para inserir.
                     </p>
@@ -847,13 +858,13 @@ export function CardapioViewV2({ pizzariaId }: Props) {
 
                   {/* Seção Regras Meia-Meia (Apenas para Categoria Pizza) */}
                   {form.categoria === "pizza" ? (
-                    <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
-                      <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Regras de Meia / Meia</h4>
+                    <div className="mt-4 pt-4 border-t border-[#1e293b] space-y-3">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Regras de Meia / Meia</h4>
                       <p className="text-[10px] text-slate-400 leading-relaxed">
                         Defina se este produto aceita combinação de múltiplos sabores e como será calculado o preço.
                       </p>
                       
-                      <div className="bg-slate-50 p-3.5 border border-slate-100 rounded-xl space-y-3">
+                      <div className="bg-[#161f30] p-3.5 border border-[#1e293b] rounded-xl space-y-3">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -865,13 +876,13 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                                 meia_meia: { ...((form.regras as any)?.meia_meia || {}), permitido: e.target.checked },
                               },
                             })}
-                            className="rounded text-orange-500 focus:ring-orange-300"
+                            className="rounded text-orange-500 focus:ring-orange-400 bg-[#111622] border-[#1e293b]"
                           />
-                          <span className="text-xs font-bold text-slate-700">Permitir divisão de sabores (meia-meia)</span>
+                          <span className="text-xs font-bold text-white">Permitir divisão de sabores (meia-meia)</span>
                         </label>
 
                         {Boolean((form.regras as any)?.meia_meia?.permitido) && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200/50">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#1e293b]">
                             <Field label="Cálculo do Preço">
                               <select
                                 value={(form.regras as any)?.meia_meia?.calculo || "maior_valor"}
@@ -882,7 +893,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                                     meia_meia: { ...((form.regras as any)?.meia_meia || {}), calculo: e.target.value },
                                   },
                                 })}
-                                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs outline-none bg-white"
+                                className="w-full px-2.5 py-2 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white"
                               >
                                 <option value="maior_valor">Maior valor</option>
                                 <option value="media">Média dos valores</option>
@@ -902,7 +913,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                                     meia_meia: { ...((form.regras as any)?.meia_meia || {}), max_sabores: Number(e.target.value) || 2 },
                                   },
                                 })}
-                                className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs outline-none bg-white"
+                                className="w-full px-2.5 py-2 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white"
                               />
                             </Field>
                           </div>
@@ -910,7 +921,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 border border-slate-100 bg-slate-50 rounded-2xl">
+                    <div className="p-4 border border-[#1e293b] bg-[#161f30] rounded-2xl">
                       <p className="text-[10px] text-slate-400 italic">As configurações de meio-a-meio são exclusivas para a categoria "pizza".</p>
                     </div>
                   )}
@@ -921,7 +932,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
               {activeTab === "seo" && (
                 <div className="space-y-4 animate-fadeIn">
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Apelidos / Buscas (Aliases)</h4>
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Apelidos / Buscas (Aliases)</h4>
                     <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
                       Adicione sinônimos ou termos comuns que seus clientes usam no WhatsApp para chamar este produto (Ex: "coca", "refri", "lata"). Isso melhora o entendimento do bot de IA.
                     </p>
@@ -932,8 +943,8 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                     />
                   </div>
 
-                  <div className="space-y-2 mt-4 pt-4 border-t border-slate-100">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider block">Tags de Identificação</h4>
+                  <div className="space-y-2 mt-4 pt-4 border-t border-[#1e293b]">
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Tags de Identificação</h4>
                     <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
                       Crie tags para categorizar ou sinalizar propriedades do produto (Ex: "semcebola", "vegano", "apimentada").
                     </p>
@@ -949,11 +960,11 @@ export function CardapioViewV2({ pizzariaId }: Props) {
             </div>
 
             {/* Rodapé do Slide-over */}
-            <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex gap-2 justify-end">
+            <div className="px-5 py-4 border-t border-[#1e293b] bg-[#111622] flex gap-2 justify-end">
               <button 
                 type="button"
                 onClick={cancel} 
-                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl font-bold transition flex items-center gap-1"
+                className="px-4 py-2 text-xs text-slate-300 hover:text-white hover:bg-[#161f30] border border-[#1e293b] rounded-xl font-bold transition flex items-center gap-1"
               >
                 <X className="w-4 h-4"/> Cancelar
               </button>
@@ -961,7 +972,7 @@ export function CardapioViewV2({ pizzariaId }: Props) {
                 type="button"
                 onClick={save} 
                 disabled={saving || !form.nome || (form.tamanhos === null && !form.preco)}
-                className="px-5 py-2 text-sm bg-brand-gradient hover:brightness-105 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-brand disabled:opacity-50 transition-all"
+                className="px-5 py-2 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 transition-all"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
                 Salvar Produto
@@ -1012,14 +1023,14 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
   const url = info?.existe ? `${cardapioApi.arquivoUrl(pizzariaId)}?t=${Date.now()}` : "";
 
   return (
-    <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
       <div className="flex items-center gap-3">
-        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-blue-500 text-white grid place-items-center shrink-0 shadow-sm shadow-blue-500/10">
+        <span className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 grid place-items-center shrink-0 shadow-sm">
           <FileText className="w-5 h-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-extrabold text-slate-800">Cardápio em PDF / Imagem</h3>
-          <p className="text-xs text-slate-500 leading-tight mt-0.5">
+          <h3 className="text-sm font-bold text-white">Cardápio em PDF / Imagem</h3>
+          <p className="text-xs text-slate-400 leading-tight mt-0.5">
             {info?.existe
               ? `Enviado: ${info.filename} · Enviado no WhatsApp quando pedem o cardápio completo.`
               : "Opcional. O bot envia este arquivo quando o cliente pede o cardápio no WhatsApp."}
@@ -1032,7 +1043,7 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
         <button 
           onClick={() => inputRef.current?.click()} 
           disabled={busy}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-100 rounded-xl font-bold transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-xl font-bold transition disabled:opacity-50"
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {info?.existe ? "Trocar arquivo" : "Enviar arquivo"}
@@ -1040,18 +1051,18 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
         {info?.existe && (
           <>
             {isImg ? (
-              <a href={url} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl font-bold transition">
+              <a href={url} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 border border-[#1e293b] rounded-xl font-semibold transition">
                 Visualizar
               </a>
             ) : (
-              <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-3 py-2 text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-xl font-bold transition">
+              <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-3 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 border border-[#1e293b] rounded-xl font-semibold transition">
                 Abrir PDF
               </a>
             )}
             <button 
               onClick={remover} 
               disabled={busy}
-              className="p-2 text-red-500 hover:bg-red-50 rounded-xl border border-transparent hover:border-red-100 transition disabled:opacity-50" 
+              className="p-2 text-red-400 hover:bg-red-950/40 rounded-xl border border-[#1e293b] hover:border-red-800/40 transition disabled:opacity-50" 
               title="Remover arquivo"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -1060,7 +1071,7 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
         )}
       </div>
 
-      {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
+      {err && <p className="text-xs text-red-400 mt-2">{err}</p>}
     </div>
   );
 }
@@ -1155,27 +1166,27 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
     <>
       <button 
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-3 py-2 text-xs bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-100 rounded-xl font-bold transition"
+        className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 hover:text-white border border-[#1e293b] rounded-xl font-semibold transition"
       >
-        <Sparkles className="w-3.5 h-3.5 text-violet-500" /> Importar via JSON
+        <Sparkles className="w-3.5 h-3.5 text-orange-400" /> Importar via JSON
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fadeIn" onClick={() => !salvando && close()}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-scaleIn" onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 py-4 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white flex items-center justify-between shadow-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn" onClick={() => !salvando && close()}>
+          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-scaleIn" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 bg-[#161f30] border-b border-[#1e293b] text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Sparkles className="w-5 h-5 text-violet-200" />
-                <h3 className="font-extrabold tracking-tight">Importar Cardápio via JSON</h3>
+                <Sparkles className="w-5 h-5 text-orange-400" />
+                <h3 className="font-bold text-sm tracking-tight text-white">Importar Cardápio via JSON</h3>
               </div>
-              <button onClick={close} className="p-1.5 rounded-xl hover:bg-white/20 transition"><X className="w-4.5 h-4.5" /></button>
+              <button onClick={close} className="p-1.5 rounded-xl hover:bg-[#111622] text-slate-400 hover:text-white transition"><X className="w-4.5 h-4.5" /></button>
             </div>
 
             <div className="p-5 overflow-y-auto space-y-4">
               {!itens ? (
                 <div className="space-y-3">
-                  <p className="text-[10px] text-slate-500">Cole um JSON formatado na estrutura correta:</p>
-                  <pre className="text-[9px] bg-slate-50 border border-slate-100 rounded-xl p-3 overflow-x-auto text-slate-600 font-mono leading-normal">{JSON_EXEMPLO}</pre>
+                  <p className="text-xs text-slate-400">Cole um JSON formatado na estrutura correta:</p>
+                  <pre className="text-[10px] bg-[#0d1117] border border-[#1e293b] rounded-xl p-3.5 overflow-x-auto text-slate-300 font-mono leading-relaxed">{JSON_EXEMPLO}</pre>
                   <textarea 
                     value={jsonText} 
                     onChange={(e) => setJsonText(e.target.value)} 
@@ -1186,7 +1197,7 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
                   <button 
                     onClick={carregarJson} 
                     disabled={!jsonText.trim()}
-                    className="px-5 py-2.5 text-xs bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold disabled:opacity-50 transition"
+                    className="px-5 py-2.5 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold disabled:opacity-50 transition"
                   >
                     Carregar e Revisar
                   </button>
@@ -1194,52 +1205,52 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
               ) : (
                 /* Tela de Revisão */
                 <div className="space-y-3">
-                  <div className="p-3 bg-violet-50 border border-violet-100 rounded-xl">
-                    <p className="text-xs font-bold text-violet-800">Revisão de Produtos Extraídos</p>
-                    <p className="text-[10px] text-violet-600">
+                  <div className="p-3.5 bg-orange-500/10 border border-orange-500/20 rounded-xl">
+                    <p className="text-xs font-bold text-orange-400">Revisão de Produtos Extraídos</p>
+                    <p className="text-[11px] text-orange-300/80 mt-0.5">
                       Encontramos {itens.length} itens. Confira atentamente os nomes, categorias e preços e ajuste se necessário antes de confirmar.
                     </p>
                   </div>
                   
-                  <div className="border border-slate-150 rounded-2xl divide-y divide-slate-100 max-h-[48vh] overflow-y-auto shadow-inner bg-slate-50/20">
+                  <div className="border border-[#1e293b] rounded-2xl divide-y divide-[#1e293b] max-h-[48vh] overflow-y-auto bg-[#0d1117]">
                     {itens.map((p, i) => (
                       <div key={i} className="p-3 flex gap-2.5 items-center flex-wrap sm:flex-nowrap">
                         <input 
                           value={p.nome} 
                           onChange={(e) => setItem(i, { nome: e.target.value })}
-                          className="flex-1 min-w-[150px] px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-violet-400 bg-white" 
+                          className="flex-1 min-w-[150px] px-3 py-1.5 border border-[#1e293b] rounded-lg text-xs font-semibold outline-none bg-[#161f30] text-white focus:border-orange-500" 
                           placeholder="Nome do produto" 
                         />
                         <select 
                           value={p.categoria} 
                           onChange={(e) => setItem(i, { categoria: e.target.value })}
-                          className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs outline-none bg-white font-medium"
+                          className="px-2.5 py-1.5 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#161f30] text-white font-medium"
                         >
                           {["pizza","lanche","bebida","sobremesa","outro"].map(c => (
-                            <option key={c} value={c}>{c}</option>
+                            <option key={c} value={c} className="bg-[#111622]">{c}</option>
                           ))}
                         </select>
                         <div className="w-36 shrink-0 text-right">
                           {p.tamanhos && p.tamanhos.length > 0 ? (
-                            <span className="text-[9px] bg-slate-100 text-slate-600 border border-slate-200 px-2 py-1 rounded font-bold block text-center truncate">
+                            <span className="text-[10px] bg-[#161f30] text-slate-300 border border-[#1e293b] px-2 py-1 rounded font-bold block text-center truncate">
                               {p.tamanhos.length} var. ({Math.min(...p.tamanhos.map(t => Number(t.preco)))} min)
                             </span>
                           ) : (
                             <div className="relative">
-                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-slate-400 font-bold">R$</span>
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">R$</span>
                               <input 
                                 type="number" 
                                 step="0.01" 
                                 value={p.preco} 
                                 onChange={(e) => setItem(i, { preco: Number(e.target.value) })}
-                                className="w-full pl-7 pr-2 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-violet-400 bg-white" 
+                                className="w-full pl-7 pr-2.5 py-1.5 border border-[#1e293b] rounded-lg text-xs font-semibold outline-none bg-[#161f30] text-white focus:border-orange-500" 
                               />
                             </div>
                           )}
                         </div>
                         <button 
                           onClick={() => removeItem(i)} 
-                          className="p-1.5 text-red-500 hover:bg-red-50 border border-transparent hover:border-red-100 rounded-lg transition"
+                          className="p-1.5 text-red-400 hover:bg-red-950/40 rounded-lg border border-transparent hover:border-red-800/40 transition"
                           title="Remover produto da importação"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -1249,28 +1260,28 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
                   </div>
                   <button 
                     onClick={() => setItens(null)} 
-                    className="text-xs font-bold text-slate-500 hover:text-slate-700 hover:underline"
+                    className="text-xs font-bold text-slate-400 hover:text-white hover:underline"
                   >
                     ← Voltar e reenviar
                   </button>
                 </div>
               )}
 
-              {err && <p className="text-xs font-medium text-red-600 bg-red-50 p-2.5 border border-red-100 rounded-xl">{err}</p>}
+              {err && <p className="text-xs font-medium text-red-400 bg-red-950/40 p-2.5 border border-red-800/40 rounded-xl">{err}</p>}
             </div>
 
             {itens && (
-              <div className="px-5 py-4 border-t border-slate-150 bg-slate-50 flex justify-end gap-2 shrink-0">
+              <div className="px-5 py-4 border-t border-[#1e293b] bg-[#111622] flex justify-end gap-2 shrink-0">
                 <button 
                   onClick={close} 
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200/50 rounded-xl transition"
+                  className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white hover:bg-[#161f30] rounded-xl transition"
                 >
                   Cancelar
                 </button>
                 <button 
                   onClick={confirmar} 
                   disabled={salvando}
-                  className="px-5 py-2 text-xs bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:opacity-95 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-md shadow-violet-500/10 disabled:opacity-50 transition"
+                  className="px-5 py-2 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 transition"
                 >
                   {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Importar {itens.length} Produto(s)
                 </button>
@@ -1284,12 +1295,12 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
 }
 
 // Estilos Utilitários
-const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-100 outline-none transition bg-white";
+const inputCls = "w-full px-3.5 py-2.5 bg-[#161f30] border border-[#1e293b] rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500/50 transition";
 
 function Field({ label, children, required, full }: any) {
   return (
     <label className={`block ${full ? "md:col-span-2" : ""}`}>
-      <span className="text-xs text-slate-600 font-bold block mb-1">{label}{required && " *"}</span>
+      <span className="text-xs text-slate-400 font-bold block mb-1">{label}{required && " *"}</span>
       <div className="mt-0.5">{children}</div>
     </label>
   );

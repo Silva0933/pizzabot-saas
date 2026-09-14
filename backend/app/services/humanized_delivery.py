@@ -3,20 +3,29 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 
-def typing_delay_ms(texto: str) -> int:
+def typing_delay_ms(
+    texto: str,
+    *,
+    multiplier: float = 1.0,
+    min_delay_ms: int = 600,
+    max_delay_ms: int = 5000,
+) -> int:
     """Tempo de 'digitando' proporcional ao tamanho do texto.
     Curto = quase imediato; longo = pausa maior (com teto pra não cansar)."""
     tamanho = len(texto or "")
     if tamanho <= 15:           # "ok 😊", "perfeito!"
-        return 600
-    if tamanho <= 40:           # frase curta
-        return min(max(tamanho * 28, 900), 1800)
-    if tamanho <= 90:           # 1-2 linhas
-        return min(max(tamanho * 26, 1800), 3000)
-    return min(max(tamanho * 22, 3000), 5000)  # texto longo (teto 5s)
+        base = 600
+    elif tamanho <= 40:
+        base = min(max(tamanho * 28, 900), 1800)
+    elif tamanho <= 90:
+        base = min(max(tamanho * 26, 1800), 3000)
+    else:
+        base = min(max(tamanho * 22, 3000), 5000)
+    return min(max(int(base * multiplier), min_delay_ms), max_delay_ms)
 
 
 def split_balloons(texto: str, *, max_balloons: int = 6, max_chars: int = 320) -> list[str]:
@@ -52,10 +61,25 @@ async def send_humanized_text(
     instancia: str,
     numero: str,
     texto: str,
+    max_balloons: int = 6,
+    max_chars: int = 320,
+    delay_multiplier: float = 1.0,
+    min_delay_ms: int = 600,
+    max_delay_ms: int = 5000,
+    can_send: Callable[[], Awaitable[bool]] | None = None,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
-    for part in split_balloons(texto):
-        delay = typing_delay_ms(part)
+    for part in split_balloons(texto, max_balloons=max_balloons, max_chars=max_chars):
+        # O humano pode assumir entre dois balões. Revalidar aqui evita que o bot
+        # complete a resposta por cima do operador.
+        if can_send is not None and not await can_send():
+            break
+        delay = typing_delay_ms(
+            part,
+            multiplier=delay_multiplier,
+            min_delay_ms=min_delay_ms,
+            max_delay_ms=max_delay_ms,
+        )
         # 1) Mostra "digitando…" e 2) SEGURA pelo tempo proporcional ao texto,
         # garantindo que o indicador apareça (não depende do delay nativo da
         # Evolution, que é instável). Curto = rápido; texto longo = pausa maior.
@@ -72,6 +96,8 @@ async def send_humanized_text(
             await asyncio.sleep(min(delay, 7000) / 1000)
         except Exception:
             pass
+        if can_send is not None and not await can_send():
+            break
         # Sem delay extra no envio — a pausa já foi feita acima.
         results.append(await evolution.send_text(
             instancia=instancia,

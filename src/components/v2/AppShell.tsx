@@ -9,6 +9,7 @@
  * O parent (App.tsx) escolhe o que vai em `children` baseado no `activeNav`.
  */
 import React from "react";
+import { AlertCircle } from "lucide-react";
 import { Sidebar, NavKey, NavBadges } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -79,7 +80,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   return (
-    <div className="pzb-admin-shell min-h-screen bg-[#0b0a09] text-[#f7f1eb] flex">
+    <div className="pzb-admin-shell min-h-screen bg-[#0b0e14] text-[#f8fafc] flex font-sans">
       <Sidebar
         active={activeNav}
         onChange={onNavChange}
@@ -89,7 +90,7 @@ export function AppShell({
         badges={badges}
       />
 
-      <div className="pzb-admin-content flex-1 min-w-0 flex flex-col">
+      <div className="pzb-admin-content flex-1 min-w-0 flex flex-col bg-[#0b0e14]">
         <Topbar
           pageTitle={pageTitle}
           pageSubtitle={pageSubtitle}
@@ -112,23 +113,31 @@ export function AppShell({
         />
 
         {whatsappEstado === "close" && (
-          <div className="bg-red-600 text-white text-sm px-4 py-2 flex items-center justify-between gap-3">
-            <span>
-              <strong>WhatsApp desconectado.</strong> Os clientes não estão sendo atendidos.
-            </span>
-            {onWhatsAppClick && (
-              <button
-                type="button"
-                onClick={onWhatsAppClick}
-                className="shrink-0 bg-white/15 hover:bg-white/25 rounded-lg px-3 py-1 text-xs font-semibold"
-              >
-                Reconectar agora
-              </button>
-            )}
+          <div className="px-4 md:px-6 pt-4">
+            <div className="rounded-xl bg-[#220d0f] border border-red-900/60 px-4 py-3 flex items-center justify-between gap-3 shadow-md">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-red-600/20 text-red-400 grid place-items-center shrink-0">
+                  <AlertCircle className="w-4 h-4" />
+                </div>
+                <div className="text-sm min-w-0">
+                  <strong className="font-bold text-white">WhatsApp desconectado.</strong>{" "}
+                  <span className="text-red-200/90">Os clientes não estão sendo atendidos.</span>
+                </div>
+              </div>
+              {onWhatsAppClick && (
+                <button
+                  type="button"
+                  onClick={onWhatsAppClick}
+                  className="shrink-0 bg-red-600 hover:bg-red-500 text-white font-semibold text-xs px-4 py-2 rounded-lg transition-colors shadow-xs"
+                >
+                  Reconectar agora
+                </button>
+              )}
+            </div>
           </div>
         )}
 
-        <main className="flex-1 min-w-0 bg-[#100e0c]">
+        <main className="flex-1 min-w-0 bg-[#0b0e14]">
           {children}
         </main>
       </div>

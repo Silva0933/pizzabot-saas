@@ -42,21 +42,30 @@ coverage/
 *.tar.gz
 *.bak
 
-# Claude / AI tooling
+# AI tooling
 .claude/
 .mcp.json
+.agents/
+.gemini/
+.codex/hooks.json
+
+# Local reference & external repos
+fazer-ai-agents-pro/
+imagens de base/
 
 # n8n local exports with credentials
 n8n/credentials*.json
 n8n/.env*
 
-# Python venv
+# Python venv & test cache
 __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
 
 # OS
 .DS_Store
 ehthumbs.db
 Desktop.ini
+

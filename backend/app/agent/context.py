@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,8 @@ class AgentContext:
     telefone: str
     ultimo_pedido_resumo: str | None = None
     estado_atendimento: dict | None = None
+    simulation: bool = False
+    simulation_events: list[dict] = field(default_factory=list)
 
     @property
     def cliente_nome(self) -> str | None:
@@ -84,6 +86,8 @@ async def load_context(
     db: AsyncSession,
     pizzaria_id: uuid.UUID,
     telefone: str,
+    *,
+    simulation: bool = False,
 ) -> AgentContext:
     pizz = (
         await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))
@@ -121,5 +125,5 @@ async def load_context(
     return AgentContext(
         pizzaria=pizz, personalidade=pers, cliente=cli,
         telefone=telefone, ultimo_pedido_resumo=resumo,
-        estado_atendimento=estado,
+        estado_atendimento=estado, simulation=simulation,
     )

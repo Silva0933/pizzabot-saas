@@ -65,28 +65,28 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
   return (
     <>
       {/* Desktop sidebar (vertical, fixa à esquerda) */}
-      <aside className="pzb-admin-sidebar hidden md:flex flex-col w-60 bg-white border-r border-slate-200 h-screen sticky top-0">
+      <aside className="pzb-admin-sidebar hidden md:flex flex-col w-60 bg-[#0d1117] border-r border-[#1e2638] h-screen sticky top-0 z-30">
         {/* Logo / nome pizzaria */}
-        <div className="px-4 py-5 border-b border-slate-100 flex items-center gap-2.5">
+        <div className="px-4 py-5 border-b border-[#1e2638] flex items-center gap-2.5">
           {pizzariaLogo ? (
-            <div className="p-0.5 rounded-xl bg-brand-gradient shrink-0">
-              <img src={pizzariaLogo} alt="" className="w-8 h-8 rounded-[10px] object-cover block border-2 border-white" />
+            <div className="p-0.5 rounded-xl bg-orange-500 shrink-0">
+              <img src={pizzariaLogo} alt="" className="w-8 h-8 rounded-[10px] object-cover block border-2 border-[#0d1117]" />
             </div>
           ) : (
-            <div className="w-9 h-9 rounded-xl bg-brand-gradient flex items-center justify-center shadow-brand shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-orange-500 flex items-center justify-center shadow-md shadow-orange-500/20 shrink-0">
               <Pizza className="w-5 h-5 text-white" />
             </div>
           )}
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">
-              {pizzariaNome || "PizzaBot"}
+            <p className="text-sm font-bold text-white truncate">
+              {pizzariaNome || "Fornalha Burger & Pizza"}
             </p>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Painel</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Painel</p>
           </div>
         </div>
 
         {/* Itens */}
-        <nav className="flex-1 px-2 py-3 space-y-0.5 overflow-y-auto">
+        <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map(({ key, label, icon: Icon }) => {
             const isActive = active === key;
             const badge =
@@ -97,19 +97,17 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
                 key={key}
                 type="button"
                 onClick={() => onChange(key)}
-                className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                className={`relative w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm transition-all ${
                   isActive
-                    ? "bg-brand-50 text-brand-700 shadow-sm"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-800"
+                    ? "bg-orange-500/10 text-orange-500 font-semibold shadow-xs"
+                    : "text-slate-400 hover:bg-[#161f30] hover:text-slate-200 font-medium"
                 }`}
               >
-                {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-brand-gradient" />}
-                <Icon className={`w-4 h-4 ${isActive ? "text-brand-600" : "text-slate-400"}`} />
+                {isActive && <span className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-orange-500" />}
+                <Icon className={`w-4 h-4 ${isActive ? "text-orange-500" : "text-slate-400"}`} />
                 <span className="flex-1 text-left">{label}</span>
                 {badge !== undefined && badge > 0 && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                    isActive ? "bg-orange-200 text-orange-800" : "bg-slate-200 text-slate-700"
-                  }`}>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500 text-white min-w-[18px] text-center">
                     {badge > 99 ? "99+" : badge}
                   </span>
                 )}
@@ -119,37 +117,37 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
 
           {isPlatformAdmin && (
             <>
-              <div className="my-3 border-t border-slate-100" />
+              <div className="my-3 border-t border-[#1e2638]" />
               <button
                 type="button"
                 onClick={() => onChange("admin")}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   active === "admin"
-                    ? "bg-violet-50 text-violet-700"
-                    : "text-slate-600 hover:bg-slate-50"
+                    ? "bg-violet-500/15 text-violet-400 font-semibold"
+                    : "text-slate-400 hover:bg-[#161f30] hover:text-slate-200"
                 }`}
               >
-                <ShieldCheck className={`w-4 h-4 ${active === "admin" ? "text-violet-600" : "text-slate-400"}`} />
+                <ShieldCheck className={`w-4 h-4 ${active === "admin" ? "text-violet-400" : "text-slate-400"}`} />
                 <span className="text-left">Plataforma</span>
               </button>
             </>
           )}
         </nav>
 
-        <div className="px-3 py-3 border-t border-slate-100">
-          <p className="text-[10px] text-slate-400 text-center">v2.0 · PizzaBot</p>
+        <div className="px-3 py-3 border-t border-[#1e2638]">
+          <p className="text-[11px] text-slate-500 text-center font-medium">v2.0 · PizzaBot</p>
         </div>
       </aside>
 
       {/* Folha "Mais" (mobile) — itens secundários que não cabem na bottom-nav */}
       {moreOpen && (
         <div className="md:hidden fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
-          <div className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
           <div
-            className="pzb-admin-mobile-more absolute bottom-14 left-0 right-0 bg-white border-t border-slate-200 rounded-t-2xl p-2 shadow-lg safe-area-inset-bottom"
+            className="pzb-admin-mobile-more absolute bottom-14 left-0 right-0 bg-[#111622] border-t border-[#1e293b] rounded-t-2xl p-3 shadow-2xl safe-area-inset-bottom"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-3 gap-1.5">
               {MOBILE_OVERFLOW_ITEMS.map(({ key, label, icon: Icon }) => {
                 const isActive = active === key;
                 return (
@@ -157,11 +155,11 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
                     key={key}
                     type="button"
                     onClick={() => { onChange(key); setMoreOpen(false); }}
-                    className={`flex flex-col items-center gap-1 py-3 rounded-xl text-sm font-medium transition-colors ${
-                      isActive ? "bg-orange-50 text-orange-700" : "text-slate-600 hover:bg-slate-50"
+                    className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-xs font-medium transition-colors ${
+                      isActive ? "bg-orange-500/15 text-orange-400 font-bold border border-orange-500/25" : "text-slate-400 hover:bg-[#161f30] hover:text-white"
                     }`}
                   >
-                    <Icon className={`w-5 h-5 ${isActive ? "text-orange-600" : "text-slate-400"}`} />
+                    <Icon className={`w-5 h-5 ${isActive ? "text-orange-400" : "text-slate-400"}`} />
                     <span className="text-[11px]">{label}</span>
                   </button>
                 );
@@ -170,11 +168,11 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
                 <button
                   type="button"
                   onClick={() => { onChange("admin"); setMoreOpen(false); }}
-                  className={`flex flex-col items-center gap-1 py-3 rounded-xl text-sm font-medium transition-colors ${
-                    active === "admin" ? "bg-violet-50 text-violet-700" : "text-slate-600 hover:bg-slate-50"
+                  className={`flex flex-col items-center gap-1.5 py-3 rounded-xl text-xs font-medium transition-colors ${
+                    active === "admin" ? "bg-violet-500/20 text-violet-400 font-bold border border-violet-500/30" : "text-slate-400 hover:bg-[#161f30] hover:text-white"
                   }`}
                 >
-                  <ShieldCheck className={`w-5 h-5 ${active === "admin" ? "text-violet-600" : "text-slate-400"}`} />
+                  <ShieldCheck className={`w-5 h-5 ${active === "admin" ? "text-violet-400" : "text-slate-400"}`} />
                   <span className="text-[11px]">Plataforma</span>
                 </button>
               )}
@@ -184,7 +182,7 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
       )}
 
       {/* Mobile bottom-nav */}
-      <nav className="pzb-admin-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-white border-t border-slate-200 flex items-center justify-around py-1 safe-area-inset-bottom">
+      <nav className="pzb-admin-bottom-nav md:hidden fixed bottom-0 left-0 right-0 z-50 h-14 bg-[#0d1117] border-t border-[#1e293b] flex items-center justify-around py-1 safe-area-inset-bottom">
         {MOBILE_PRIMARY_ITEMS.map(({ key, label, icon: Icon }) => {
           const isActive = active === key;
           const badge =
@@ -197,8 +195,8 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
               onClick={() => { onChange(key); setMoreOpen(false); }}
               className="flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-0 flex-1 relative"
             >
-              <Icon className={`w-5 h-5 ${isActive ? "text-orange-600" : "text-slate-400"}`} />
-              <span className={`text-[10px] truncate max-w-full ${isActive ? "text-orange-700 font-semibold" : "text-slate-500"}`}>
+              <Icon className={`w-5 h-5 ${isActive ? "text-orange-400" : "text-slate-400"}`} />
+              <span className={`text-[10px] truncate max-w-full ${isActive ? "text-orange-400 font-semibold" : "text-slate-400"}`}>
                 {label}
               </span>
               {badge !== undefined && badge > 0 && (
@@ -216,8 +214,8 @@ export function Sidebar({ active, onChange, pizzariaNome, pizzariaLogo, isPlatfo
           onClick={() => setMoreOpen((o) => !o)}
           className="flex flex-col items-center gap-0.5 px-1 py-1.5 min-w-0 flex-1 relative"
         >
-          <MoreHorizontal className={`w-5 h-5 ${overflowActive || moreOpen ? "text-orange-600" : "text-slate-400"}`} />
-          <span className={`text-[10px] ${overflowActive || moreOpen ? "text-orange-700 font-semibold" : "text-slate-500"}`}>
+          <MoreHorizontal className={`w-5 h-5 ${overflowActive || moreOpen ? "text-orange-400" : "text-slate-400"}`} />
+          <span className={`text-[10px] ${overflowActive || moreOpen ? "text-orange-400 font-semibold" : "text-slate-400"}`}>
             Mais
           </span>
         </button>

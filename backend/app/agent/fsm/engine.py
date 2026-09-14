@@ -27,6 +27,7 @@ def estado_inicial() -> dict[str, Any]:
         "tipo": None, "endereco": None, "pagamento": None, "pagar_agora": None,
         "cardapio_enviado": False, "cardapio_ofertado": False,
         "apresentou": False, "upsell_feito": False,
+        "upsell_ofertas": 0, "upsell_ultimo_tamanho": 0,
         "observacoes": None,
     }
 
@@ -321,8 +322,12 @@ async def _opcoes_upsell(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
     """Levanta o que a pizzaria REALMENTE tem pra oferecer no upsell: bebidas (do
     cardápio) e bordas/adicionais (cadastro da casa). Só oferecemos o que existe —
     assim a atendente nunca propõe algo que não há. Best-effort."""
+    from app.agent.behavior import get_behavior
+    vendas = get_behavior(ctx.personalidade).vendas
     bebidas: list[str] = []
     try:
+        if not vendas.oferecer_bebida:
+            raise LookupError("bebidas desabilitadas")
         from sqlalchemy import text as _text
         rows = (await db.execute(_text(
             "SELECT nome FROM public.produtos "
@@ -332,6 +337,8 @@ async def _opcoes_upsell(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
             "ORDER BY ordem, nome LIMIT 12"
         ), {"pid": str(ctx.pizzaria.id)})).fetchall()
         bebidas = [r[0] for r in rows if r[0]]
+    except LookupError:
+        pass
     except Exception as e:  # noqa: BLE001
         log.debug("Falha ao consultar bebidas p/ upsell: %s", e)
 
@@ -343,9 +350,29 @@ async def _opcoes_upsell(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
             if not isinstance(a, dict) or not a.get("nome"):
                 continue
             tipo = (a.get("tipo") or "adicional").lower()
-            (bordas if "borda" in tipo else adicionais).append(a["nome"])
+            if "borda" in tipo and vendas.oferecer_borda:
+                bordas.append(a["nome"])
+            elif "borda" not in tipo and vendas.oferecer_adicional:
+                adicionais.append(a["nome"])
 
-    return {"bebidas": bebidas, "bordas": bordas, "adicionais": adicionais}
+    sobremesas: list[str] = []
+    if vendas.oferecer_sobremesa:
+        try:
+            from sqlalchemy import text as _text
+            rows = (await db.execute(_text(
+                "SELECT nome FROM public.produtos "
+                "WHERE pizzaria_id = :pid AND disponivel = true "
+                "AND (categoria ILIKE '%sobremesa%' OR categoria ILIKE '%doce%') "
+                "ORDER BY ordem, nome LIMIT 12"
+            ), {"pid": str(ctx.pizzaria.id)})).fetchall()
+            sobremesas = [r[0] for r in rows if r[0]]
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha ao consultar sobremesas p/ upsell: %s", e)
+
+    return {
+        "bebidas": bebidas, "bordas": bordas,
+        "adicionais": adicionais, "sobremesas": sobremesas,
+    }
 
 
 def _fatos_pizzaria(pizz) -> str:
@@ -394,6 +421,9 @@ def _eh_confirmacao(intencao: str | None, texto: str) -> bool:
 
 def _item_de_sempre(ctx) -> str | None:
     """Nome do 'pedido de sempre' do cliente — só string real não-vazia."""
+    from app.agent.behavior import get_behavior
+    if not get_behavior(ctx.personalidade).memoria.usar_pedido_habitual:
+        return None
     v = getattr(ctx, "ultimo_pedido_resumo", None)
     return v.strip() if isinstance(v, str) and v.strip() else None
 
@@ -800,11 +830,11 @@ async def processar(
                     x_clean = "".join(c for c in unicodedata.normalize("NFD", str(x).strip().lower()) if unicodedata.category(c) != "Mn")
                     import re as _re
                     return _re.sub(r"\s+", " ", x_clean)
-                
+
                 alvo = _norm(prod_inv)
                 estado["carrinho"] = [
                     it for it in estado["carrinho"]
-                    if (not it.get("nome") or _norm(it.get("nome")) != alvo) and 
+                    if (not it.get("nome") or _norm(it.get("nome")) != alvo) and
                        (not it.get("sabores") or all(_norm(s) != alvo for s in it["sabores"]))
                 ]
 
@@ -871,7 +901,8 @@ async def processar(
             decisao["precos_validos"] = [v for v in pv if v > 0]
             # Espelha o pedido em construção no card do painel (Kanban "Novos") em
             # tempo real — itens/total/entrega/pagamento conforme vão sendo coletados.
-            await _sincronizar_rascunho(db, ctx, estado, calc)
+            if getattr(ctx, "simulation", False) is not True:
+                await _sincronizar_rascunho(db, ctx, estado, calc)
 
     # Dúvida geral / conversa fiada → RESPONDE de verdade (não força o funil).
     # IMPORTANTE: se o cliente JÁ tem itens no carrinho e só fez bate-papo ou recusou
@@ -1066,6 +1097,8 @@ async def processar(
                 partes.append("Bordas: " + ", ".join(opc["bordas"][:8]))
             if opc["adicionais"]:
                 partes.append("Adicionais: " + ", ".join(opc["adicionais"][:8]))
+            if opc.get("sobremesas"):
+                partes.append("Sobremesas: " + ", ".join(opc["sobremesas"][:8]))
             if partes:
                 estado["etapa"] = "COLETA_ITENS"
                 decisao["acao"] = "coletar_item"
@@ -1084,8 +1117,19 @@ async def processar(
     # 0b) UPSELL sutil — uma única vez, logo após o 1º item entrar no carrinho.
     # Só oferece o que a casa REALMENTE tem (bebida/borda/adicional); se não há nada
     # pra oferecer, pula o upsell silenciosamente.
-    if not estado.get("upsell_feito"):
+    from app.agent.behavior import get_behavior
+    vendas_cfg = get_behavior(ctx.personalidade).vendas
+    ofertas_feitas = int(estado.get("upsell_ofertas") or (1 if estado.get("upsell_feito") else 0))
+    tamanho_carrinho = len(estado.get("carrinho") or [])
+    pode_oferecer = (
+        vendas_cfg.habilitado
+        and vendas_cfg.max_ofertas > ofertas_feitas
+        and tamanho_carrinho > int(estado.get("upsell_ultimo_tamanho") or 0)
+    )
+    if pode_oferecer:
         estado["upsell_feito"] = True
+        estado["upsell_ofertas"] = ofertas_feitas + 1
+        estado["upsell_ultimo_tamanho"] = tamanho_carrinho
         opc = await _opcoes_upsell(ctx, db)
         ofertas = []
         if opc["bordas"]:
@@ -1094,20 +1138,25 @@ async def processar(
             ofertas.append("um adicional")
         if opc["bebidas"]:
             ofertas.append("uma bebida")
+        if opc.get("sobremesas"):
+            ofertas.append("uma sobremesa")
         if ofertas:
             estado["etapa"] = "COLETA_ITENS"
             estado["aguardando_upsell"] = True
             # Uma ÚNICA opção no total (ex.: só a Coca Cola 2L)? Guarda o nome:
             # se o cliente aceitar com um "quero" seco, adicionamos ESSE item
             # direto — jamais "qual você quer?" com uma opção só.
-            todas_opcoes = opc["bebidas"] + opc["bordas"] + opc["adicionais"]
+            todas_opcoes = (
+                opc["bebidas"] + opc["bordas"] + opc["adicionais"]
+                + (opc.get("sobremesas") or [])
+            )
             if len(todas_opcoes) == 1:
                 estado["upsell_item_unico"] = todas_opcoes[0]
             decisao["acao"] = "upsell"
             # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
             itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
             decisao["fatos"].append("Anotei: " + "; ".join(itens_nomes))
-            
+
             partes = []
             if opc["bebidas"]:
                 partes.append("bebidas (" + ", ".join(opc["bebidas"][:6]) + ")")
@@ -1115,14 +1164,21 @@ async def processar(
                 partes.append("bordas (" + ", ".join(opc["bordas"][:6]) + ")")
             if opc["adicionais"]:
                 partes.append("adicionais (" + ", ".join(opc["adicionais"][:6]) + ")")
+            if opc.get("sobremesas"):
+                partes.append("sobremesas (" + ", ".join(opc["sobremesas"][:6]) + ")")
             decisao["fatos"].append(
                 "Base de conhecimento para você (NÃO diga essas opções a não ser que ele peça): " + " · ".join(partes)
             )
-            
+
             opcoes_txt = []
-            if opc["bebidas"]: opcoes_txt.append("uma bebida")
-            if opc["bordas"]: opcoes_txt.append("uma borda")
-            if opc["adicionais"]: opcoes_txt.append("algum adicional")
+            if opc["bebidas"]:
+                opcoes_txt.append("uma bebida")
+            if opc["bordas"]:
+                opcoes_txt.append("uma borda")
+            if opc["adicionais"]:
+                opcoes_txt.append("algum adicional")
+            if opc.get("sobremesas"):
+                opcoes_txt.append("uma sobremesa")
             opcoes_juntas = " ou ".join(opcoes_txt)
 
             decisao["proxima_pergunta"] = (

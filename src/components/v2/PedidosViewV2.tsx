@@ -281,36 +281,52 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       </div>
 
       {/* Cabeçalho + filtros */}
-      <div className="bg-surface border border-line rounded-2xl shadow-card overflow-hidden">
-        <div className="px-4 md:px-5 py-3.5 bg-brand-gradient text-white flex items-center gap-2.5">
-          <ClipboardList className="w-5 h-5" />
-          <h2 className="font-bold text-base md:text-lg">Gerenciamento de Pedidos</h2>
-          {uso && uso.atendimentos_limite > 0 && (
-            <span
-              title={`Atendimentos da IA neste mês (cota do plano ${uso.plano}). Faltam ${uso.atendimentos_restante}.`}
-              className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-semibold bg-white/15 rounded-full px-2.5 py-1"
+      <div className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#1e293b] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-500/25 text-orange-400 grid place-items-center shrink-0">
+              <ClipboardList className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight">Gerenciamento de Pedidos</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {modoProblemas ? "Pedidos que precisam de revisão manual." : "Avance os pedidos etapa por etapa; correcoes ficam registradas."}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 shrink-0">
+            {uso && uso.atendimentos_limite > 0 && (
+              <span
+                title={`Atendimentos da IA neste mês (cota do plano ${uso.plano}). Faltam ${uso.atendimentos_restante}.`}
+                className="inline-flex items-center gap-1.5 text-xs font-semibold bg-[#161f30] border border-[#1e293b] text-slate-300 rounded-xl px-3 py-1.5"
+              >
+                <Gauge className="w-3.5 h-3.5 text-slate-400" />
+                {uso.atendimentos}/{uso.atendimentos_limite} atendimentos
+              </span>
+            )}
+            <button
+              onClick={() => { const proximo = !modoProblemas; setModoProblemas(proximo); if (proximo) loadProblemas(); }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
+                modoProblemas
+                  ? "bg-rose-600 border-rose-500 text-white"
+                  : "bg-[#161f30] border-[#1e293b] text-slate-300 hover:bg-[#1c273c]"
+              }`}
             >
-              <Gauge className="w-3.5 h-3.5" />
-              {uso.atendimentos}/{uso.atendimentos_limite} atendimentos
-            </span>
-          )}
-        </div>
-        <div className="px-4 md:px-5 py-2.5 border-b border-line bg-surface-muted/50 flex items-center justify-between gap-3">
-          <p className="text-xs text-ink-muted">{modoProblemas ? "Pedidos que precisam de revisao manual." : "Avance os pedidos etapa por etapa; correcoes ficam registradas."}</p>
-          <button onClick={() => { const proximo = !modoProblemas; setModoProblemas(proximo); if (proximo) loadProblemas(); }} className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${modoProblemas ? "bg-rose-600 border-rose-600 text-white" : "bg-surface border-line text-ink hover:border-rose-200 hover:text-rose-700"}`}>
-            <TriangleAlert className="w-3.5 h-3.5" /> {modoProblemas ? "Voltar aos pedidos" : "Pedidos com problema"}
-          </button>
+              <TriangleAlert className="w-3.5 h-3.5 text-slate-400" />
+              {modoProblemas ? "Voltar aos pedidos" : "Pedidos com problema"}
+            </button>
+          </div>
         </div>
 
-        <div className="p-3 md:p-4 flex flex-row gap-2.5 border-b border-line items-center">
-          <div className="flex items-center gap-1.5 text-xs text-ink-muted bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 shrink-0">
-            <CalendarDays className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="font-semibold text-emerald-700">Pedidos de hoje</span>
+        <div className="px-5 py-3 border-b border-[#1e293b] flex flex-row gap-3 items-center">
+          <div className="flex items-center gap-2 text-xs font-semibold bg-[#064e3b]/50 border border-emerald-500/30 text-emerald-400 rounded-xl px-3.5 py-2 shrink-0">
+            <CalendarDays className="w-3.5 h-3.5" />
+            <span>Pedidos de hoje</span>
           </div>
           <select
             value={statusFiltro}
             onChange={(e) => setStatusFiltro(e.target.value)}
-            className="flex-1 px-3 py-2 border border-line rounded-lg text-sm text-ink outline-none focus:border-brand-400 bg-surface"
+            className="flex-1 max-w-xs px-3.5 py-2 border border-[#1e293b] rounded-xl text-xs font-medium text-slate-200 outline-none focus:border-orange-500 bg-[#161f30]"
           >
             <option value="">Todos os status</option>
             {ORDER_STATUS_LIST.map((s) => (
@@ -320,12 +336,27 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
         </div>
 
         {/* Quadro de pedidos */}
-        <div className="p-3 md:p-4">
+        <div className="p-4">
           {filtrados.length === 0 ? (
-            <div className="text-sm text-ink-subtle text-center py-14">
-              <Package className="w-7 h-7 mx-auto mb-2 opacity-40" />
-              {statusFiltro
-                ? "Nenhum pedido com este status hoje." : modoProblemas ? "Nenhum pedido com problema aberto." : "Nenhum pedido hoje ainda. Eles aparecerao aqui conforme chegarem!"}
+            <div className="rounded-2xl border border-dashed border-[#1e293b] bg-[#0b0e14]/40 py-24 px-4 flex flex-col items-center justify-center text-center">
+              <div className="w-14 h-14 text-slate-600 mb-3 grid place-items-center">
+                <svg className="w-12 h-12 stroke-[1.2]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m7.5 4.27 9 5.15" />
+                  <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" />
+                  <path d="m3.3 7 8.7 5 8.7-5" />
+                  <path d="M12 22V12" />
+                </svg>
+              </div>
+              <p className="text-sm font-bold text-white">
+                {statusFiltro
+                  ? "Nenhum pedido com este status hoje."
+                  : modoProblemas
+                    ? "Nenhum pedido com problema aberto."
+                    : "Nenhum pedido hoje ainda."}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                Eles aparecerão aqui conforme chegarem!
+              </p>
             </div>
           ) : (
             <OrderBoard pedidos={filtrados} statusLabel={statusLabel} renderCard={renderCard} />
@@ -336,26 +367,30 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
       <Modal
         open={!!historico}
         onClose={() => setHistorico(null)}
-        title={historico ? `Historico do pedido #${historico.pedido.numero_pedido ?? "-"}` : ""}
-        subtitle="Todas as mudancas ficam registradas"
+        title={historico ? `Histórico do pedido #${historico.pedido.numero_pedido ?? "-"}` : ""}
+        subtitle="Todas as mudanças ficam registradas"
         icon={History}
-        gradient={false}
+        footer={
+          <Button variant="outline" size="sm" onClick={() => setHistorico(null)}>
+            Fechar
+          </Button>
+        }
       >
         {!historico || historico.eventos.length === 0 ? (
-          <p className="text-sm text-ink-muted">Este pedido ainda nao possui eventos registrados.</p>
+          <p className="text-sm text-slate-400 py-4 text-center">Este pedido ainda não possui eventos registrados.</p>
         ) : (
           <ol className="space-y-3">
             {historico.eventos.map((evento) => (
-              <li key={evento.id} className="border border-line rounded-xl p-3">
-                <div className="flex justify-between gap-2 text-sm font-bold text-ink">
-                  <span>{evento.tipo.replaceAll("_", " ")}</span>
-                  <time className="text-[11px] font-medium text-ink-muted shrink-0">{new Date(evento.created_at).toLocaleString("pt-BR")}</time>
+              <li key={evento.id} className="bg-[#161f30] border border-[#1e293b] rounded-xl p-3.5 shadow-sm">
+                <div className="flex justify-between gap-2 text-sm font-bold text-white">
+                  <span className="capitalize">{evento.tipo.replaceAll("_", " ")}</span>
+                  <time className="text-[11px] font-medium text-slate-400 shrink-0">{new Date(evento.created_at).toLocaleString("pt-BR")}</time>
                 </div>
                 {(evento.status_anterior || evento.status_novo) && (
-                  <p className="text-xs text-ink-muted mt-1">{statusLabel(evento.status_anterior || "novo")} {" -> "} {statusLabel(evento.status_novo || "novo")}</p>
+                  <p className="text-xs text-slate-300 mt-1">{statusLabel(evento.status_anterior || "novo")} {" → "} {statusLabel(evento.status_novo || "novo")}</p>
                 )}
-                {evento.motivo && <p className="text-xs text-ink mt-1.5"><span className="font-semibold">Motivo:</span> {evento.motivo}</p>}
-                <p className="text-[11px] text-ink-subtle mt-1">Por {evento.ator_nome || "Sistema"} - {evento.ator_tipo}</p>
+                {evento.motivo && <p className="text-xs text-slate-200 mt-1.5"><span className="font-semibold text-orange-400">Motivo:</span> {evento.motivo}</p>}
+                <p className="text-[11px] text-slate-500 mt-1">Por {evento.ator_nome || "Sistema"} · {evento.ator_tipo}</p>
               </li>
             ))}
           </ol>
@@ -368,28 +403,29 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
         title={acao?.tipo === "corrigir" ? "Corrigir pedido" : acao?.tipo === "resolver" ? "Resolver problema" : "Sinalizar problema"}
         subtitle={acao ? `Pedido #${acao.pedido.numero_pedido ?? "-"}` : ""}
         icon={acao?.tipo === "corrigir" ? Wrench : acao?.tipo === "resolver" ? CircleCheck : TriangleAlert}
-        gradient={acao?.tipo === "problema"}
         footer={<>
           <Button variant="outline" size="sm" disabled={salvandoAcao} onClick={() => setAcao(null)}>Cancelar</Button>
           <Button variant={acao?.tipo === "problema" ? "danger" : "primary"} size="sm" isLoading={salvandoAcao} onClick={confirmarAcao}>
-            {acao?.tipo === "corrigir" ? "Registrar correcao" : acao?.tipo === "resolver" ? "Resolver pedido" : "Enviar para problemas"}
+            {acao?.tipo === "corrigir" ? "Registrar correção" : acao?.tipo === "resolver" ? "Resolver pedido" : "Enviar para problemas"}
           </Button>
         </>}
       >
-        {acao?.tipo === "corrigir" && (
-          <label className="block text-sm font-semibold text-ink mb-4">
-            Novo status
-            <select value={statusCorrecao} onChange={(e) => setStatusCorrecao(e.target.value)} className="mt-1.5 w-full px-3 py-2 border border-line rounded-lg bg-surface font-normal">
-              {ORDER_STATUS_LIST.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
-            </select>
+        <div className="space-y-4">
+          {acao?.tipo === "corrigir" && (
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+              Novo status
+              <select value={statusCorrecao} onChange={(e) => setStatusCorrecao(e.target.value)} className="mt-1.5 w-full h-10 px-3 border border-[#1e293b] rounded-xl bg-[#161f30] text-xs text-white font-medium outline-none focus:border-orange-500/50">
+                {ORDER_STATUS_LIST.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+            {acao?.tipo === "resolver" ? "Como o problema foi resolvido? (opcional)" : "Justificativa obrigatória"}
+            <textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={4} maxLength={800}
+              placeholder={acao?.tipo === "corrigir" ? "Ex.: pedido foi marcado como entregue por engano" : "Descreva o que aconteceu"}
+              className="mt-1.5 w-full p-3 border border-[#1e293b] rounded-xl bg-[#161f30] text-xs text-white placeholder:text-slate-500 font-normal resize-y outline-none focus:border-orange-500/50" />
           </label>
-        )}
-        <label className="block text-sm font-semibold text-ink">
-          {acao?.tipo === "resolver" ? "Como o problema foi resolvido? (opcional)" : "Justificativa obrigatoria"}
-          <textarea value={justificativa} onChange={(e) => setJustificativa(e.target.value)} rows={4} maxLength={800}
-            placeholder={acao?.tipo === "corrigir" ? "Ex.: pedido foi marcado como entregue por engano" : "Descreva o que aconteceu"}
-            className="mt-1.5 w-full px-3 py-2 border border-line rounded-lg bg-surface font-normal resize-y outline-none focus:border-brand-400" />
-        </label>
+        </div>
       </Modal>
     </div>
   );

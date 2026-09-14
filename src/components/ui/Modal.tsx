@@ -26,7 +26,7 @@ interface ModalProps {
 }
 
 /** Diálogo centralizado, via portal. Fecha no overlay e no Esc. */
-export function Modal({ open, onClose, title, subtitle, icon: Icon, gradient = true, size = "md", children, footer }: ModalProps) {
+export function Modal({ open, onClose, title, subtitle, icon: Icon, gradient = false, size = "md", children, footer }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -38,40 +38,42 @@ export function Modal({ open, onClose, title, subtitle, icon: Icon, gradient = t
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={onClose}
     >
       <div
-        className={cn("bg-surface rounded-2xl shadow-pop w-full overflow-hidden animate-pop-in", SIZE[size])}
+        className={cn(
+          "bg-[#111622] border border-[#1e293b] text-white rounded-2xl shadow-2xl w-full overflow-hidden animate-pop-in duration-200",
+          SIZE[size]
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
-          <div
-            className={cn(
-              "relative px-5 py-4 flex items-center gap-3",
-              gradient ? "bg-brand-gradient text-white" : "border-b border-line",
-            )}
-          >
+          <div className="relative px-6 py-4 border-b border-[#1e293b] bg-[#161f30] flex items-center gap-3.5">
             {Icon && (
-              <span className={cn("w-9 h-9 rounded-xl grid place-items-center shrink-0", gradient ? "bg-white/20" : "bg-brand-50 text-brand-600")}>
+              <span className="w-10 h-10 rounded-xl bg-[#241a12] border border-amber-900/30 text-orange-400 grid place-items-center shrink-0">
                 <Icon className="w-5 h-5" />
               </span>
             )}
             <div className="min-w-0 flex-1">
-              <h2 className={cn("font-bold text-base truncate", gradient ? "text-white" : "text-ink")}>{title}</h2>
-              {subtitle && <p className={cn("text-xs truncate", gradient ? "text-white/80" : "text-ink-muted")}>{subtitle}</p>}
+              <h2 className="font-bold text-base text-white truncate">{title}</h2>
+              {subtitle && <p className="text-xs text-slate-400 truncate mt-0.5">{subtitle}</p>}
             </div>
             <button
               type="button"
               onClick={onClose}
-              className={cn("p-1.5 rounded-lg transition-colors shrink-0", gradient ? "hover:bg-white/20 text-white" : "hover:bg-surface-muted text-ink-muted")}
+              className="w-8 h-8 rounded-lg bg-[#111622] hover:bg-[#1e293b] text-slate-400 hover:text-white border border-[#1e293b] grid place-items-center transition-colors shrink-0"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         )}
-        <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">{children}</div>
-        {footer && <div className="px-5 py-3 border-t border-line bg-surface-muted flex justify-end gap-2">{footer}</div>}
+        <div className="px-6 py-5 max-h-[75vh] overflow-y-auto bg-[#111622] text-slate-200">{children}</div>
+        {footer && (
+          <div className="px-6 py-3.5 border-t border-[#1e293b] bg-[#161f30] flex justify-end items-center gap-2.5">
+            {footer}
+          </div>
+        )}
       </div>
     </div>,
     document.body,

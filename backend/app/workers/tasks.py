@@ -79,9 +79,13 @@ CONFIRM_REMINDER_SECONDS = 480  # 8 min
 
 
 @celery_app.task(name="pizzabot.lembrar_confirmacao")
-def lembrar_confirmacao(pizzaria_id: str, telefone: str) -> dict:
+def lembrar_confirmacao(
+    pizzaria_id: str, telefone: str, delay_seconds: int | None = None
+) -> dict:
     """Se o cliente viu o resumo e não confirmou, manda UM lembrete perguntando."""
-    return asyncio.run(_lembrar_confirmacao_async(uuid.UUID(pizzaria_id), telefone))
+    return asyncio.run(
+        _lembrar_confirmacao_async(uuid.UUID(pizzaria_id), telefone, delay_seconds)
+    )
 
 
 # Tempo (segundos) com o pedido parado no meio do funil até UM toque de resgate.
@@ -92,18 +96,26 @@ _ETAPAS_RESGATE = ("COLETA_ITENS", "ENTREGA", "ENDERECO", "PAGAMENTO")
 
 
 @celery_app.task(name="pizzabot.resgatar_carrinho")
-def resgatar_carrinho(pizzaria_id: str, telefone: str) -> dict:
+def resgatar_carrinho(
+    pizzaria_id: str, telefone: str, delay_seconds: int | None = None
+) -> dict:
     """Carrinho abandonado: se o pedido parou no meio do funil, manda UM resgate."""
-    return asyncio.run(_resgatar_carrinho_async(uuid.UUID(pizzaria_id), telefone))
+    return asyncio.run(
+        _resgatar_carrinho_async(uuid.UUID(pizzaria_id), telefone, delay_seconds)
+    )
 
 
-async def _resgatar_carrinho_async(pizzaria_id: uuid.UUID, telefone: str) -> dict:
+async def _resgatar_carrinho_async(
+    pizzaria_id: uuid.UUID, telefone: str, delay_seconds: int | None = None
+) -> dict:
     from datetime import datetime, timedelta, timezone
 
     from sqlalchemy import select, text
 
+    from app.agent.behavior import get_behavior, render_template
     from app.db import AsyncSessionLocal, engine
-    from app.models import Conversa, Mensagem, Pizzaria
+    from app.models import Conversa, Mensagem, PersonalidadeAtendente, Pizzaria
+    from app.services.business_hours import esta_aberto
     from app.services.broadcaster import broadcaster
     from app.services.conversation_state import load_state, save_state
     from app.services.evolution import evolution
@@ -111,6 +123,7 @@ async def _resgatar_carrinho_async(pizzaria_id: uuid.UUID, telefone: str) -> dic
     try:
         async with AsyncSessionLocal() as db:
             estado = await load_state(db, pizzaria_id, telefone)
+            effective_delay = int(delay_seconds or RESGATE_CARRINHO_SECONDS)
             # Só resgata se AINDA está no meio do funil com itens no carrinho.
             if (
                 not isinstance(estado, dict)
@@ -129,7 +142,7 @@ async def _resgatar_carrinho_async(pizzaria_id: uuid.UUID, telefone: str) -> dic
             """), {"pid": str(pizzaria_id), "tel": telefone})).first()
             if row and row[0]:
                 idade = datetime.now(timezone.utc) - row[0]
-                if idade < timedelta(seconds=RESGATE_CARRINHO_SECONDS - 60):
+                if idade < timedelta(seconds=max(effective_delay - 60, 0)):
                     return {"ok": False, "motivo": "conversa_ativa"}
 
             conv = (await db.execute(select(Conversa).where(
@@ -141,13 +154,29 @@ async def _resgatar_carrinho_async(pizzaria_id: uuid.UUID, telefone: str) -> dic
                 return {"ok": False, "motivo": "humano_assumiu"}
 
             pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
-            if not pizz or not pizz.instancia or getattr(pizz, "suspensa", False):
+            if not pizz or not pizz.instancia or getattr(pizz, "suspensa", False) is True:
                 return {"ok": False, "motivo": "pizzaria_indisponivel"}
+            try:
+                personalidade = (await db.execute(select(PersonalidadeAtendente).where(
+                    PersonalidadeAtendente.pizzaria_id == pizzaria_id
+                ))).scalar_one_or_none()
+            except Exception as e:  # compatibilidade com tarefas antigas/migração em andamento
+                log.debug("Config de follow-up indisponível; usando padrão: %s", e)
+                personalidade = None
+            followups = get_behavior(personalidade).followups
+            cfg_resgate = followups.carrinho
+            if not cfg_resgate.habilitado:
+                return {"ok": False, "motivo": "resgate_desabilitado"}
+            if followups.respeitar_horario and not esta_aberto(
+                pizz.horario_funcionamento, override=getattr(pizz, "aberto_manual", None)
+            ):
+                return {"ok": False, "motivo": "fora_do_horario"}
 
-            # Template fixo (sem LLM — custo zero), gentil e única.
-            texto = (
-                "Oi! Vi que seu pedido ficou pela metade 😊 Quer que eu finalize pra você? "
-                "É só me responder por aqui!"
+            texto = render_template(
+                cfg_resgate.mensagem,
+                pizzaria=pizz,
+                cliente_nome=conv.cliente_nome if conv else None,
+                atendente_nome=getattr(personalidade, "nome", None),
             )
             try:
                 await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
@@ -199,13 +228,17 @@ async def _resgatar_carrinho_async(pizzaria_id: uuid.UUID, telefone: str) -> dic
             pass
 
 
-async def _lembrar_confirmacao_async(pizzaria_id: uuid.UUID, telefone: str) -> dict:
+async def _lembrar_confirmacao_async(
+    pizzaria_id: uuid.UUID, telefone: str, delay_seconds: int | None = None
+) -> dict:
     from datetime import datetime, timezone
 
     from sqlalchemy import select
 
+    from app.agent.behavior import get_behavior, render_template
     from app.db import AsyncSessionLocal, engine
-    from app.models import Conversa, Mensagem, Pizzaria
+    from app.models import Conversa, Mensagem, PersonalidadeAtendente, Pizzaria
+    from app.services.business_hours import esta_aberto
     from app.services.broadcaster import broadcaster
     from app.services.conversation_state import load_state, save_state
     from app.services.evolution import evolution
@@ -228,14 +261,32 @@ async def _lembrar_confirmacao_async(pizzaria_id: uuid.UUID, telefone: str) -> d
                 return {"ok": False, "motivo": "humano_assumiu"}
 
             pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+            if not pizz or not pizz.instancia or getattr(pizz, "suspensa", False) is True:
+                return {"ok": False, "motivo": "pizzaria_indisponivel"}
+            try:
+                personalidade = (await db.execute(select(PersonalidadeAtendente).where(
+                    PersonalidadeAtendente.pizzaria_id == pizzaria_id
+                ))).scalar_one_or_none()
+            except Exception as e:  # compatibilidade com tarefas antigas/migração em andamento
+                log.debug("Config de follow-up indisponível; usando padrão: %s", e)
+                personalidade = None
+            followups = get_behavior(personalidade).followups
+            cfg_confirmacao = followups.confirmacao
+            if not cfg_confirmacao.habilitado:
+                return {"ok": False, "motivo": "lembrete_desabilitado"}
+            if followups.respeitar_horario and not esta_aberto(
+                pizz.horario_funcionamento, override=getattr(pizz, "aberto_manual", None)
+            ):
+                return {"ok": False, "motivo": "fora_do_horario"}
 
-            texto = (
-                "Oi! Seu pedido ainda *não foi fechado* 😊 Quando quiser, é só me confirmar que "
-                "eu mando pra cozinha. Posso fechar o pedido?"
+            texto = render_template(
+                cfg_confirmacao.mensagem,
+                pizzaria=pizz,
+                cliente_nome=conv.cliente_nome if conv else None,
+                atendente_nome=getattr(personalidade, "nome", None),
             )
             try:
-                if pizz and pizz.instancia:
-                    await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
+                await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
             except Exception as e_send:  # noqa: BLE001
                 log.warning("Falha ao enviar lembrete de confirmação: %s", e_send)
                 return {"ok": False, "erro": str(e_send)}

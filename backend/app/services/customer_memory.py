@@ -57,7 +57,21 @@ def build_memory_summary(
     return current
 
 
-def prompt_summary(memoria: dict[str, Any] | None, fallback_preferencias: str | None = None) -> str | None:
-    if memoria and memoria.get("resumo_prompt"):
-        return str(memoria["resumo_prompt"])[:MAX_SUMMARY_CHARS]
-    return _clean_text(fallback_preferencias, limit=MAX_SUMMARY_CHARS)
+def prompt_summary(
+    memoria: dict[str, Any] | None,
+    fallback_preferencias: str | None = None,
+    *,
+    include_address: bool = True,
+    include_preferences: bool = True,
+) -> str | None:
+    parts: list[str] = []
+    if memoria:
+        if include_address and memoria.get("endereco_padrao"):
+            parts.append(f"Endereco: {memoria['endereco_padrao']}")
+        if include_preferences and memoria.get("preferencias"):
+            parts.append(f"Preferencias: {memoria['preferencias']}")
+    if not parts and include_preferences:
+        fallback = _clean_text(fallback_preferencias, limit=MAX_SUMMARY_CHARS)
+        if fallback:
+            parts.append(f"Preferencias: {fallback}")
+    return "; ".join(parts)[:MAX_SUMMARY_CHARS] or None

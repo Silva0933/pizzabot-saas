@@ -23,7 +23,7 @@ import { CardapioPublico } from "./components/v2/CardapioPublico";
 import { ClientesView } from "./components/v2/ClientesView";
 import { TemasView } from "./components/v2/TemasView";
 import { DriverApp } from "./components/driver/DriverApp";
-import { MeuNegocioViewV2 } from "./components/v2/MeuNegocioViewV2";
+import { MeuNegocioViewV2, NegocioTab } from "./components/v2/MeuNegocioViewV2";
 import { EntregadoresView } from "./components/v2/EntregadoresView";
 import { PlatformAdminView } from "./components/v2/PlatformAdminView";
 import { MetricasView } from "./components/v2/MetricasView";
@@ -149,6 +149,36 @@ function AdminApp() {
   const [productCount, setProductCount] = useState(0);
   const [atendenteOk, setAtendenteOk] = useState(false);
   const [nav, setNav] = useState<NavKey>("pedidos");
+  const [negocioTab, setNegocioTab] = useState<NegocioTab>("atendente");
+  const [openWhatsAppDirectly, setOpenWhatsAppDirectly] = useState(false);
+  const [openPaymentDirectly, setOpenPaymentDirectly] = useState(false);
+  const [openCardapioNovo, setOpenCardapioNovo] = useState(false);
+
+  function handleMenuClick() {
+    setNav("cardapio");
+    setOpenCardapioNovo(true);
+  }
+
+  function handleWhatsAppClick() {
+    setNav("negocio");
+    setNegocioTab("geral");
+    setOpenWhatsAppDirectly(true);
+    setOpenPaymentDirectly(false);
+  }
+
+  function handlePaymentClick() {
+    setNav("negocio");
+    setNegocioTab("geral");
+    setOpenPaymentDirectly(true);
+    setOpenWhatsAppDirectly(false);
+  }
+
+  function handleAtendenteClick() {
+    setNav("negocio");
+    setNegocioTab("atendente");
+    setOpenWhatsAppDirectly(false);
+    setOpenPaymentDirectly(false);
+  }
   const [liveEvent, setLiveEvent] = useState<WsEvent | null>(null);
   const [pendingOrderAlerts, setPendingOrderAlerts] = useState(0);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() =>
@@ -532,6 +562,13 @@ function AdminApp() {
           setNav("pedidos");
           return;
         }
+        if (k !== "negocio") {
+          setOpenWhatsAppDirectly(false);
+          setOpenPaymentDirectly(false);
+        }
+        if (k !== "cardapio") {
+          setOpenCardapioNovo(false);
+        }
         setNav(k as NavKey);
       }}
       pageTitle={meta.title}
@@ -550,7 +587,7 @@ function AdminApp() {
       lojaStatusManual={pizzaria.aberto_manual ?? null}
       onSetLojaStatus={handleSetLojaStatus}
       whatsappEstado={pizzaria.instancia ? pizzaria.whatsapp_estado ?? null : null}
-      onWhatsAppClick={() => setNav("negocio")}
+      onWhatsAppClick={handleWhatsAppClick}
       isTrial={pizzaria.plano === "trial" && !(pizzaria.suspensa ?? false)}
       onTrialClick={() => setNav("assinatura")}
       isPlatformAdmin={user.is_platform_admin}
@@ -595,35 +632,52 @@ function AdminApp() {
             {
               id: "menu", title: "Cadastre seu cardápio",
               description: "Adicione pelo menos 3 produtos",
-              done: productCount >= 3, action: () => setNav("cardapio"),
+              done: productCount >= 3, action: handleMenuClick,
+              actionLabel: "Cadastrar",
             },
             {
               id: "wpp", title: "Conecte o WhatsApp",
               description: "Escaneie o QR code em Meu Negócio para ativar o atendimento",
               // Só conta como feito quando a conexão está ATIVA ('open') — ter o
               // nome da instância salvo não significa que o QR foi lido.
-              done: pizzaria.whatsapp_estado === "open", action: () => setNav("negocio"),
+              done: pizzaria.whatsapp_estado === "open", action: handleWhatsAppClick,
               actionLabel: "Conectar",
             },
             {
               id: "pay", title: "Configure pagamento",
               description: "Mercado Pago ou Asaas (opcional — pode pular)",
               done: pizzaria.gateway_pagamento !== "manual" && Boolean(pizzaria.mp_access_token || pizzaria.asaas_api_key),
-              action: () => setNav("negocio"),
+              action: handlePaymentClick,
+              actionLabel: "Configurar",
             },
             {
               id: "atendente", title: "Personalize a atendente",
               description: "Defina nome, estilo e diferenciais",
-              done: atendenteOk, action: () => setNav("negocio"),
+              done: atendenteOk, action: handleAtendenteClick,
+              actionLabel: "Personalizar",
             },
           ]}
         />
       )}
       {nav === "clientes" && <ClientesView pizzariaId={pizzaria.id}/>}
-      {nav === "cardapio"  && <CardapioViewV2 pizzariaId={pizzaria.id}/>}
+      {nav === "cardapio"  && (
+        <CardapioViewV2
+          pizzariaId={pizzaria.id}
+          autoCreate={openCardapioNovo}
+          onAutoCreated={() => setOpenCardapioNovo(false)}
+        />
+      )}
       {nav === "temas"     && <TemasView pizzaria={pizzaria} onUpdated={setPizzaria}/>}
       {nav === "negocio"   && (
-        <MeuNegocioViewV2 pizzaria={pizzaria} onUpdated={setPizzaria}/>
+        <MeuNegocioViewV2
+          pizzaria={pizzaria}
+          onUpdated={setPizzaria}
+          initialTab={negocioTab}
+          openWhatsApp={openWhatsAppDirectly}
+          onWhatsAppOpened={() => setOpenWhatsAppDirectly(false)}
+          openPayment={openPaymentDirectly}
+          onPaymentOpened={() => setOpenPaymentDirectly(false)}
+        />
       )}
       {nav === "entregadores" && <EntregadoresView pizzariaId={pizzaria.id}/>}
       {nav === "assinatura" && <AssinaturaView pizzariaId={pizzaria.id}/>}

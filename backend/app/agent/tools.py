@@ -30,6 +30,14 @@ log = logging.getLogger(__name__)
 ToolFn = Callable[..., Coroutine[Any, Any, dict[str, Any]]]
 
 
+def _simulated(ctx: AgentContext, action: str, **details: Any) -> bool:
+    """Registra uma ação bloqueada pelo playground e informa modo simulado."""
+    if getattr(ctx, "simulation", False) is not True:
+        return False
+    ctx.simulation_events.append({"action": action, "simulated": True, **details})
+    return True
+
+
 # ===============================================================
 # DECLARAÇÕES (o que o Gemini "vê")
 # ===============================================================
@@ -513,6 +521,8 @@ async def enviar_cardapio_arquivo(ctx: AgentContext, db: AsyncSession) -> dict[s
     )).first()
     if not row:
         return {"ok": False, "motivo": "sem_arquivo"}
+    if _simulated(ctx, "enviar_cardapio_arquivo", filename=row[0] or "cardapio"):
+        return {"ok": True, "enviado": True, "simulado": True}
     if not ctx.pizzaria.instancia:
         return {"ok": False, "motivo": "sem_instancia"}
 
@@ -1122,6 +1132,30 @@ async def registrar_pedido(
                 ),
             }
 
+    if _simulated(ctx, "registrar_pedido", total=calculo.get("valor_total"), tipo=tipo):
+        metodo = _metodo_online(forma_pagamento) if pagar_agora else None
+        pagamento = (
+            {"ok": True, "metodo": "pix" if metodo == "pix" else "link", "simulado": True}
+            if metodo else {}
+        )
+        return {
+            "ok": True,
+            "pedido_id": "SIMULADO",
+            "numero_pedido": 999,
+            "valor_total": float(calculo["valor_total"]),
+            "valor_itens": float(calculo["valor_itens"]),
+            "taxa_entrega": float(calculo["taxa_entrega"]),
+            "tempo_estimado": (
+                f"{ctx.pizzaria.tempo_entrega_min}-{ctx.pizzaria.tempo_entrega_max} min"
+                if tipo == "delivery"
+                else f"{ctx.pizzaria.tempo_retirada_min}-{ctx.pizzaria.tempo_retirada_max} min"
+            ),
+            "aguardando_pagamento": bool(metodo),
+            "status_pedido": "simulado",
+            "pagamento": pagamento,
+            "simulado": True,
+        }
+
     itens_norm = calculo["itens"]
     valor_itens_total = float(calculo["valor_itens"])
     taxa_entrega = float(calculo["taxa_entrega"])
@@ -1480,6 +1514,8 @@ async def _enviar_pix_manual(ctx: AgentContext, db: AsyncSession, ped: Pedido, c
 
 async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = "pix") -> dict[str, Any]:
     """Tool: cria a cobrança do pedido atual e envia Pix (QR) ou link de cartão."""
+    if _simulated(ctx, "gerar_pagamento", metodo=metodo):
+        return {"ok": True, "metodo": metodo, "simulado": True}
     cli = ctx.cliente or (await db.execute(
         select(Cliente).where(
             Cliente.pizzaria_id == ctx.pizzaria.id,
@@ -1546,6 +1582,8 @@ async def atualizar_pedido(
     novas_observacoes: str | None = None,
     novo_valor_total: float | None = None,
 ) -> dict[str, Any]:
+    if _simulated(ctx, "atualizar_pedido"):
+        return {"ok": True, "numero_pedido": 999, "simulado": True}
     ped = await _resolver_pedido(ctx, db, pedido_id_alterar)
     if not ped:
         return {"ok": False, "erro": "nenhum pedido ativo encontrado para este cliente"}
@@ -1580,6 +1618,8 @@ async def cancelar_pedido(
     pedido_id_cancelar: str | None = None,
     motivo_cancelamento: str = "Cancelado pelo cliente",
 ) -> dict[str, Any]:
+    if _simulated(ctx, "cancelar_pedido", motivo=motivo_cancelamento):
+        return {"ok": True, "numero_pedido": 999, "cancelado": True, "simulado": True}
     ped = await _resolver_pedido(ctx, db, pedido_id_cancelar)
     if not ped:
         return {"ok": False, "erro": "nenhum pedido ativo encontrado para este cliente"}
@@ -1620,6 +1660,8 @@ async def escalar_humano(
     *,
     motivo_escalonamento: str,
 ) -> dict[str, Any]:
+    if _simulated(ctx, "escalar_humano", motivo=motivo_escalonamento):
+        return {"ok": True, "mensagem": "Handoff simulado.", "simulado": True}
     conv = (
         await db.execute(
             select(Conversa).where(
@@ -1634,14 +1676,69 @@ async def escalar_humano(
         conv.status = "humano_necessario"
         await db.flush()
 
-        # Salva a mensagem interna com origem="sistema" no banco
+        from app.agent.behavior import get_behavior
+        handoff_cfg = get_behavior(ctx.personalidade).handoff
+        resumo: dict[str, Any] = {
+            "motivo": motivo_escalonamento,
+            "cliente": conv.cliente_nome,
+            "telefone": ctx.telefone,
+        }
+        if handoff_cfg.resumo_automatico:
+            try:
+                from app.services.conversation_state import load_state
+                estado = await load_state(db, ctx.pizzaria.id, ctx.telefone)
+                if isinstance(estado, dict):
+                    resumo.update({
+                        "etapa": estado.get("etapa"),
+                        "itens": [
+                            {
+                                "nome": item.get("nome") or " / ".join(item.get("sabores") or []),
+                                "quantidade": item.get("qtd") or item.get("quantidade") or 1,
+                                "tamanho": item.get("tamanho"),
+                            }
+                            for item in (estado.get("carrinho") or [])
+                            if isinstance(item, dict)
+                        ],
+                        "tipo": estado.get("tipo"),
+                        "endereco": estado.get("endereco"),
+                        "pagamento": estado.get("pagamento"),
+                    })
+                recentes = (await db.execute(
+                    select(Mensagem).where(
+                        Mensagem.conversa_id == conv.id,
+                        Mensagem.origem == "cliente",
+                    ).order_by(Mensagem.created_at.desc()).limit(3)
+                )).scalars().all()
+                resumo["ultimas_mensagens_cliente"] = [
+                    msg.conteudo[:240] for msg in reversed(recentes)
+                ]
+            except Exception as e:  # noqa: BLE001
+                log.debug("Falha ao montar resumo de handoff: %s", e)
+
+        itens_txt = ", ".join(
+            f"{item.get('quantidade', 1)}x {item.get('nome')}"
+            + (f" ({item.get('tamanho')})" if item.get("tamanho") else "")
+            for item in resumo.get("itens", [])
+        ) or "nenhum item confirmado"
+        conteudo_handoff = (
+            f"Atendimento transferido para humano. Motivo: {motivo_escalonamento}\n"
+            f"Resumo: etapa {resumo.get('etapa') or 'não identificada'}; "
+            f"itens: {itens_txt}; tipo: {resumo.get('tipo') or 'pendente'}; "
+            f"pagamento: {resumo.get('pagamento') or 'pendente'}."
+        )
+
+        # Salva a mensagem interna com resumo estruturado para o operador.
         msg = Mensagem(
             conversa_id=conv.id,
             pizzaria_id=ctx.pizzaria.id,
             origem="sistema",
             tipo="texto",
-            conteudo=f"Atendimento transferido para humano. Motivo: {motivo_escalonamento}",
-            metadata_json={"trigger": "escalar_humano", "motivo": motivo_escalonamento},
+            conteudo=conteudo_handoff,
+            metadata_json={
+                "trigger": "escalar_humano",
+                "motivo": motivo_escalonamento,
+                "handoff_summary": resumo,
+            },
         )
         db.add(msg)
         await db.flush()
@@ -1659,6 +1756,7 @@ async def escalar_humano(
                     "telefone": ctx.telefone,
                     "cliente_nome": conv.cliente_nome,
                     "motivo": motivo_escalonamento,
+                    "resumo": resumo,
                 },
             },
         )
@@ -1673,6 +1771,7 @@ async def escalar_humano(
                     "bot_ativo": False,
                     "status": "humano_necessario",
                     "motivo": motivo_escalonamento,
+                    "resumo": resumo,
                 },
             },
         )
@@ -1708,6 +1807,15 @@ async def lembrar_cliente(
     endereco_padrao: str | None = None,
     preferencias: str | None = None,
 ) -> dict[str, Any]:
+    if _simulated(ctx, "lembrar_cliente"):
+        return {"ok": True, "memoria": "Memória simulada.", "simulado": True}
+    from app.agent.behavior import get_behavior
+    memoria_cfg = get_behavior(ctx.personalidade).memoria
+    nome = nome if memoria_cfg.usar_nome else None
+    endereco_padrao = endereco_padrao if memoria_cfg.usar_endereco else None
+    preferencias = preferencias if memoria_cfg.usar_preferencias else None
+    if not any((nome, endereco_padrao, preferencias)):
+        return {"ok": True, "memoria": None, "ignorado_por_configuracao": True}
     cli = ctx.cliente
     if not cli:
         cli = Cliente(pizzaria_id=ctx.pizzaria.id, telefone=ctx.telefone)
@@ -1958,6 +2066,8 @@ async def registrar_avaliacao(
     except (TypeError, ValueError):
         return {"ok": False, "erro": "nota inválida — peça uma nota de 0 a 10."}
     n = max(0, min(n, 10))
+    if _simulated(ctx, "registrar_avaliacao", nota=n):
+        return {"ok": True, "nota": n, "simulado": True}
 
     cli = await _cliente_do_ctx(ctx, db)
     if not cli:
