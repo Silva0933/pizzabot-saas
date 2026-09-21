@@ -136,6 +136,14 @@ async def ativar_assinatura(db: AsyncSession, pizz: Pizzaria, plano: str) -> dic
     plano = (plano or "").lower()
     if plano not in PLANS or PLANS[plano]["ordem"] <= 0:
         raise BillingError(f"Plano inválido para assinatura: {plano}")
+
+    # Recarrega os ajustes do admin ANTES de cobrar: cada processo tem seu cache
+    # em memoria, e um preco desatualizado aqui vira cobranca errada no Asaas.
+    from app.services.plans import carregar_planos
+    try:
+        await carregar_planos(db)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Nao consegui recarregar os planos; usando o cache: %s", e)
     email = (pizz.cobranca_email or "").strip()
     cpf_cnpj = "".join(ch for ch in (pizz.cobranca_cpf_cnpj or "") if ch.isdigit())
     if not email or len(cpf_cnpj) not in (11, 14):

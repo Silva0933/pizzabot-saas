@@ -23,12 +23,13 @@ import {
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
   QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins, Search, Activity,
   Bell, CreditCard, LayoutDashboard, UserPlus, FlaskConical, Package, Crown, Gem, ShieldAlert,
-  ArrowUpRight, FileText, CheckCircle, Network, Copy, Link2, ServerCog,
+  ArrowUpRight, FileText, CheckCircle, Network, Copy, Link2, ServerCog, Tag,
 } from "lucide-react";
 import {
   BackendPizzaria, pizzariasApi, adminApi, AdminOverview, AdminFaturaItem,
   LLMConfig, LLMUsage, WhatsAppConnect, AlertasResp, EvolutionConfig,
 } from "../../lib/api";
+import { PlanosAdminPanel } from "./PlanosAdminPanel";
 
 interface Props {
   userName: string;
@@ -59,7 +60,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [days, setDays] = useState(30);
   const [ov, setOv] = useState<AdminOverview | null>(null);
   const [loadingOv, setLoadingOv] = useState(true);
-  const [activeNav, setActiveNav] = useState<"visao_geral" | "assinaturas" | "alertas" | "ia">("visao_geral");
+  const [activeNav, setActiveNav] = useState<"visao_geral" | "assinaturas" | "planos" | "alertas" | "ia">("visao_geral");
 
   // Modais de Pizzaria
   const [creating, setCreating] = useState(false);
@@ -320,6 +321,19 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 
             <button
               type="button"
+              onClick={() => goTo("planos")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeNav === "planos"
+                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
+              }`}
+            >
+              <Tag className="w-4 h-4 shrink-0" />
+              <span>Planos</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => goTo("alertas")}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeNav === "alertas"
@@ -365,6 +379,8 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         {/* ============================================================ */}
         {/* ABA: VISÃO GERAL                                             */}
         {/* ============================================================ */}
+        {activeNav === "planos" && <PlanosAdminPanel />}
+
         {activeNav === "visao_geral" && (
           <div className="space-y-6">
         {/* Topbar: Título da Página + Filtro de Período + Usuário + Sair */}

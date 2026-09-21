@@ -82,6 +82,16 @@ async def lifespan(app: FastAPI):
         await ensure_table()
     except Exception as e:  # noqa: BLE001
         log.warning("Falha ao garantir tabela app_config: %s", e)
+    # Precos e limites de plano ajustados pelo admin ficam em app_config; sem
+    # isto o processo usaria so os defaults do codigo ate o primeiro salvamento.
+    try:
+        from app.db import AsyncSessionLocal
+        from app.services.plans import carregar_planos
+        async with AsyncSessionLocal() as db:
+            await carregar_planos(db)
+        log.info("Catalogo de planos carregado.")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao carregar ajustes de plano: %s", e)
     # Re-sincroniza o webhook das instâncias existentes para incluir o novo
     # evento PRESENCE_UPDATE ("digitando"). Best-effort, não bloqueia o boot.
     try:

@@ -14,7 +14,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.db import get_db
@@ -168,6 +168,94 @@ async def platform_overview(
         "assinaturas": assinaturas,
         "serie_novas": serie_novas,
     }
+
+
+@router.get("/planos")
+async def listar_planos(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Catálogo completo para edição (inclui o trial)."""
+    from app.services.plans import PLANS, carregar_planos, plans_editaveis
+
+    ajustes = await carregar_planos(db)
+    return {
+        "planos": plans_editaveis(),
+        # O default do código, pra tela poder mostrar "voltar ao padrão".
+        "padrao": sorted(PLANS.values(), key=lambda p: p["ordem"]),
+        "ajustados": sorted(ajustes.keys()),
+    }
+
+
+class PlanoLimitesIn(BaseModel):
+    produtos: int | None = Field(default=None, ge=1, le=100000)
+    conversas_mes: int | None = Field(default=None, ge=1, le=1000000)
+    mensagens_ia_mes: int | None = Field(default=None, ge=1, le=10000000)
+    equipe: int | None = Field(default=None, ge=1, le=1000)
+
+
+class PlanoIn(BaseModel):
+    nome: str | None = Field(default=None, min_length=2, max_length=60)
+    preco_mensal: float | None = Field(default=None, ge=0, le=100000)
+    descricao: str | None = Field(default=None, max_length=280)
+    limites: PlanoLimitesIn | None = None
+
+
+@router.put("/planos/{plano_id}")
+async def editar_plano(
+    plano_id: str,
+    body: PlanoIn,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Ajusta nome, preço, descrição e limites de um plano.
+
+    `id` e `ordem` NÃO são editáveis: as assinaturas já criadas no Asaas
+    referenciam o id no externalReference, e mexer nele órfã os pagamentos.
+
+    O preço novo vale para assinaturas NOVAS; quem já assinou segue no valor
+    contratado até trocar de plano, porque a recorrência vive no Asaas.
+    """
+    from app.services.app_config import get_config, set_config
+    from app.services.plans import PLANOS_KEY, PLANS, carregar_planos, plans_editaveis
+
+    plano_id = (plano_id or "").strip().lower()
+    if plano_id not in PLANS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Plano '{plano_id}' não existe")
+
+    atual = await get_config(db, PLANOS_KEY) or {}
+    ajuste = dict(atual.get(plano_id) or {})
+
+    dados = body.model_dump(exclude_unset=True)
+    for campo in ("nome", "preco_mensal", "descricao"):
+        if campo in dados:
+            # None/"" remove o ajuste e volta ao default do código.
+            if dados[campo] in (None, ""):
+                ajuste.pop(campo, None)
+            else:
+                ajuste[campo] = dados[campo]
+
+    if "limites" in dados:
+        limites = dict(ajuste.get("limites") or {})
+        for campo, valor in (dados["limites"] or {}).items():
+            if valor is None:
+                limites.pop(campo, None)
+            else:
+                limites[campo] = valor
+        if limites:
+            ajuste["limites"] = limites
+        else:
+            ajuste.pop("limites", None)
+
+    if ajuste:
+        atual[plano_id] = ajuste
+    else:
+        atual.pop(plano_id, None)
+
+    await set_config(db, PLANOS_KEY, atual)
+    await carregar_planos(db)
+    log.info("Plano '%s' ajustado pelo admin: %s", plano_id, ajuste or "voltou ao padrão")
+    return {"ok": True, "planos": plans_editaveis()}
 
 
 @router.patch("/pizzarias/{pizzaria_id}/plano")

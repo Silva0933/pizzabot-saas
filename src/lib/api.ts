@@ -969,6 +969,30 @@ export interface EvolutionSalvarBody {
   limpar_webhook_token?: boolean;
 }
 
+export interface PlanoAdmin {
+  id: string;
+  nome: string;
+  preco_mensal: number;
+  ordem: number;
+  descricao?: string | null;
+  limites: { produtos: number; conversas_mes: number; mensagens_ia_mes: number; equipe: number };
+}
+
+export interface PlanosResp {
+  planos: PlanoAdmin[];
+  /** Default do codigo, para o botao "voltar ao padrao". */
+  padrao: PlanoAdmin[];
+  ajustados: string[];
+}
+
+/** Campos que o admin pode mudar. `id` e `ordem` ficam de fora de proposito. */
+export interface PlanoPatch {
+  nome?: string | null;
+  preco_mensal?: number | null;
+  descricao?: string | null;
+  limites?: Partial<PlanoAdmin["limites"]>;
+}
+
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
   alertas: (apenasAbertos = true, limit = 100) => api.get<AlertasResp>(`/admin/alertas?apenas_abertos=${apenasAbertos}&limit=${limit}`),
@@ -976,6 +1000,9 @@ export const adminApi = {
   alterarPlano: (pizzariaId: string, plano: string) =>
     api.patch<{ ok: boolean; plano: string; vence_em?: string | null }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
   assinaturas: () => api.get<AssinaturasResp>(`/admin/assinaturas`),
+  planos: () => api.get<PlanosResp>(`/admin/planos`),
+  salvarPlano: (planoId: string, patch: PlanoPatch) =>
+    api.put<{ ok: boolean; planos: PlanoAdmin[] }>(`/admin/planos/${planoId}`, patch),
   renovar: (pizzariaId: string) =>
     api.patch<{ ok: boolean; vence_em: string | null }>(`/admin/pizzarias/${pizzariaId}/renovar`, {}),
   suspender: (pizzariaId: string, suspensa: boolean, motivo?: string) =>
