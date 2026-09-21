@@ -751,7 +751,7 @@ function AssinaturaAviso({ venceEm, suspensa, suspensaMotivo }: {
   // ---- Suspensão: aviso PROMINENTE e fixo (não pode passar despercebido) ----
   if (suspensa) {
     return (
-      <div className="sticky top-0 z-20 mx-3 md:mx-6 mt-3 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3.5 flex items-start gap-3 shadow-sm">
+      <div className="mx-3 md:mx-6 mt-3 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3.5 flex items-start gap-3 shadow-sm">
         <AlertCircle className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
         <div className="min-w-0">
           <p className="text-sm md:text-base font-bold text-red-800">Seu painel está suspenso</p>

@@ -55,7 +55,7 @@ export function Topbar({
   const [storeMenuOpen, setStoreMenuOpen] = useState(false);
 
   return (
-    <header className="pzb-admin-topbar bg-[#0d1117] border-b border-[#1e2638] px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-20">
+    <header className="pzb-admin-topbar bg-[#0d1117] border-b border-[#1e2638] px-4 md:px-6 py-3 flex items-center justify-between sticky top-0 z-30">
       <div className="min-w-0">
         <h1 className="text-base md:text-lg font-extrabold text-white tracking-wide uppercase truncate">{pageTitle}</h1>
         {pageSubtitle && (
