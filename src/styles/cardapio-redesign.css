@@ -1,0 +1,275 @@
+/* ============================================================
+   Cardápio Digital — anatomia do redesenho.
+
+   Importado DEPOIS de cardapio-publico.css. As classes levam sufixo "-r"
+   para não disputar cascata com o layout anterior: o checkout, o modal de
+   produto e o acompanhamento seguem usando as classes originais, que
+   continuam válidas.
+
+   Nenhuma cor literal aqui — tudo sai das custom properties que
+   lib/cardapioTema.ts injeta em .cdp-root. É isso que permite trocar o tema
+   inteiro sem tocar em estilo.
+   ============================================================ */
+
+.cdp-shell-r { width: 100%; background: var(--bg); }
+.cdp-wrap-r { max-width: var(--max); margin: 0 auto; padding: 0 40px; width: 100%; }
+
+/* ---------- Barra de cupom ---------- */
+.cdp-couponbar-r {
+  background: var(--accent); color: var(--button-text);
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 9px 64px; position: relative;
+  font-size: 14px; font-weight: 600; min-height: 28px; text-align: center;
+}
+.cdp-couponbar-code-r {
+  font-weight: 800; letter-spacing: 0.06em;
+  background: var(--button-text); color: var(--accent2);
+  padding: 3px 9px; border-radius: 7px;
+}
+.cdp-couponbar-copy-r {
+  background: transparent; border: 0; color: inherit;
+  font-size: 14px; font-weight: 700; text-decoration: underline;
+  text-underline-offset: 3px; padding: 6px 4px; cursor: pointer; font-family: inherit;
+}
+.cdp-couponbar-close-r {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; border-radius: 10px; border: 0;
+  background: transparent; color: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ---------- Header fixo ---------- */
+.cdp-header-r {
+  position: sticky; top: 0; z-index: 30;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.cdp-header-inner-r {
+  max-width: var(--max); margin: 0 auto; padding: 0 40px;
+  height: 72px; display: flex; align-items: center; gap: 28px;
+}
+.cdp-brand-r { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); }
+.cdp-brand-mark-r {
+  width: 42px; height: 42px; border-radius: 12px; overflow: hidden;
+  background: var(--accent); color: var(--button-text);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-size: 20px;
+}
+.cdp-brand-mark-r img { width: 100%; height: 100%; object-fit: cover; }
+.cdp-brand-text-r { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cdp-brand-name-r { font-size: 24px; line-height: 1; font-weight: 800; }
+.cdp-brand-sub-r { font-size: 12px; color: var(--text3); font-weight: 600; }
+.cdp-nav-r { display: flex; gap: 2px; }
+.cdp-nav-r a {
+  padding: 10px 14px; border-radius: 10px; color: var(--text2);
+  text-decoration: none; font-size: 15px; font-weight: 600;
+  transition: color .16s, background .16s;
+}
+.cdp-nav-r a:hover { color: var(--text); background: var(--bg2); }
+.cdp-header-actions-r { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.cdp-hbtn-r {
+  height: 44px; padding: 0 16px; border-radius: 12px;
+  border: 1px solid var(--line); background: transparent; color: var(--text2);
+  display: flex; align-items: center; gap: 8px;
+  font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+  transition: border-color .16s, color .16s;
+}
+.cdp-hbtn-r:hover { border-color: var(--accent); color: var(--text); }
+.cdp-hbag-r {
+  height: 44px; padding: 0 8px 0 16px; border-radius: 12px;
+  background: var(--button); color: var(--button-text);
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; font-weight: 700; text-decoration: none;
+  border: 0; cursor: pointer; font-family: inherit;
+}
+.cdp-hbag-count-r {
+  min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px;
+  background: var(--button-text); color: var(--accent2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800;
+}
+
+/* ---------- Hero ---------- */
+.cdp-hero-r {
+  max-width: var(--max); margin: 0 auto;
+  padding: 56px 40px 40px;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 56px; align-items: center;
+}
+.cdp-hero-col-r { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
+.cdp-chips-r { display: flex; flex-wrap: wrap; gap: 10px; }
+.cdp-chip-r {
+  display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px;
+  border-radius: 999px; background: var(--bg2); border: 1px solid var(--line);
+  color: var(--text2); font-size: 14px; font-weight: 600;
+}
+.cdp-chip-open-r { background: var(--green-bg); border-color: var(--green); color: var(--green); font-weight: 700; }
+.cdp-chip-closed-r { background: rgba(240,82,82,0.14); border-color: var(--red); color: var(--red); font-weight: 700; }
+.cdp-chip-dot-r { width: 8px; height: 8px; border-radius: 999px; background: currentColor; flex-shrink: 0; }
+.cdp-hero-eyebrow-r {
+  font-size: 14px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--accent2); margin: 0;
+}
+.cdp-hero-title-r { margin: 0; font-size: clamp(42px, 6.4vw, 112px); color: var(--text); }
+.cdp-hero-desc-r { margin: 0; font-size: 20px; line-height: 1.5; color: var(--text2); max-width: 470px; }
+.cdp-hero-ctas-r { display: flex; gap: 12px; flex-wrap: wrap; }
+.cdp-cta-primary-r {
+  height: 56px; padding: 0 28px; border-radius: var(--radius);
+  background: var(--button); color: var(--button-text);
+  display: flex; align-items: center; font-size: 17px; font-weight: 800;
+  text-decoration: none; border: 0; cursor: pointer; font-family: inherit;
+  transition: filter .16s, transform .16s;
+}
+.cdp-cta-primary-r:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.cdp-cta-ghost-r {
+  height: 56px; padding: 0 24px; border-radius: var(--radius);
+  border: 1px solid var(--line); background: transparent; color: var(--text);
+  display: flex; align-items: center; gap: 10px;
+  font-size: 17px; font-weight: 700; text-decoration: none;
+  cursor: pointer; font-family: inherit; transition: border-color .16s;
+}
+.cdp-cta-ghost-r:hover { border-color: var(--accent); }
+.cdp-hero-addr-r {
+  margin: 0; font-size: 15px; color: var(--text3);
+  display: flex; align-items: flex-start; gap: 8px; line-height: 1.45;
+}
+.cdp-hero-addr-r svg { flex-shrink: 0; margin-top: 2px; }
+.cdp-hero-media-r {
+  position: relative; height: 560px; border-radius: 32px;
+  overflow: hidden; background: var(--bg2);
+}
+.cdp-hero-media-r > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cdp-hero-media-ph-r {
+  width: 100%; height: 100%;
+  background: radial-gradient(ellipse 80% 90% at 30% 10%, var(--accent-glow) 0%, transparent 60%), var(--bg2);
+  display: flex; align-items: center; justify-content: center; font-size: 96px;
+}
+.cdp-hero-card-r {
+  position: absolute; left: 20px; right: 20px; bottom: 20px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border: 1px solid var(--line); border-radius: 20px;
+  padding: 16px 16px 16px 20px;
+  display: flex; align-items: center; gap: 16px;
+  backdrop-filter: blur(8px);
+}
+.cdp-hero-card-body-r { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cdp-hero-card-label-r { font-size: 13px; color: var(--accent2); font-weight: 700; }
+.cdp-hero-card-name-r { font-size: 20px; font-weight: 800; color: var(--text); }
+.cdp-hero-card-desc-r {
+  font-size: 14px; color: var(--text2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cdp-hero-card-price-r {
+  font-size: 20px; font-weight: 800; color: var(--text);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.cdp-hero-card-add-r {
+  height: 48px; padding: 0 18px; border-radius: 14px;
+  background: var(--button); color: var(--button-text); border: 0;
+  font-size: 15px; font-weight: 800; font-family: inherit; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+
+/* ---------- Faixa de diferenciais ---------- */
+.cdp-trust-r {
+  list-style: none; margin: 0; padding: 22px 0;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.cdp-trust-item-r {
+  display: flex; gap: 14px; align-items: center;
+  padding: 0 24px; border-right: 1px solid var(--line);
+}
+.cdp-trust-item-r:first-child { padding-left: 0; }
+.cdp-trust-item-r:last-child { border-right: 0; padding-right: 0; }
+.cdp-trust-icon-r {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--bg3); color: var(--accent);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.cdp-trust-text-r { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cdp-trust-title-r { font-size: 16px; font-weight: 700; color: var(--text); }
+.cdp-trust-desc-r { font-size: 14px; color: var(--text3); }
+
+/* ---------- Cabeçalhos de seção ---------- */
+.cdp-sec-r { max-width: var(--max); margin: 0 auto; padding: 24px 40px 72px; }
+.cdp-sec-head-r { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.cdp-sec-title-r { margin: 0; font-size: clamp(30px, 3.6vw, 52px); color: var(--text); }
+.cdp-sec-sub-r { margin: 10px 0 0; font-size: 17px; color: var(--text2); }
+
+/* ---------- Passos ---------- */
+.cdp-steps-r { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.cdp-step-r {
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 28px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.cdp-step-num-r {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: var(--accent); color: var(--button-text);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 800;
+}
+.cdp-step-title-r { font-size: 20px; font-weight: 800; color: var(--text); margin: 0; }
+.cdp-step-desc-r { font-size: 15px; line-height: 1.55; color: var(--text2); margin: 0; }
+
+/* ---------- Dúvidas ---------- */
+.cdp-faq-r { display: flex; flex-direction: column; gap: 12px; max-width: 860px; }
+.cdp-faq-item-r {
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.cdp-faq-q-r {
+  width: 100%; background: transparent; border: 0; cursor: pointer;
+  padding: 20px 22px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  font-family: inherit; font-size: 17px; font-weight: 700; color: var(--text); text-align: left;
+}
+.cdp-faq-icon-r { color: var(--accent); flex-shrink: 0; display: flex; }
+.cdp-faq-a-r { padding: 0 22px 20px; font-size: 15px; line-height: 1.6; color: var(--text2); margin: 0; }
+
+/* ---------- Rodapé ---------- */
+.cdp-footer-r {
+  border-top: 1px solid var(--line); background: var(--bg);
+  padding: 48px 0 40px; margin-top: 24px;
+}
+.cdp-footer-grid-r {
+  max-width: var(--max); margin: 0 auto; padding: 0 40px;
+  display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 40px;
+}
+.cdp-footer-title-r { font-size: 15px; font-weight: 800; color: var(--text); margin: 0 0 14px; }
+.cdp-footer-text-r { font-size: 15px; line-height: 1.7; color: var(--text2); margin: 0; }
+.cdp-footer-link-r { display: block; font-size: 15px; color: var(--text2); text-decoration: none; padding: 4px 0; }
+.cdp-footer-link-r:hover { color: var(--accent); }
+.cdp-footer-bottom-r {
+  max-width: var(--max); margin: 32px auto 0; padding: 20px 40px 0;
+  border-top: 1px solid var(--line);
+  display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  font-size: 14px; color: var(--text3);
+}
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 1080px) {
+  .cdp-nav-r { display: none; }
+  .cdp-trust-r { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 0; }
+  .cdp-trust-item-r:nth-child(2n) { border-right: 0; }
+  .cdp-trust-item-r:nth-child(odd) { padding-left: 0; }
+  .cdp-footer-grid-r { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 860px) {
+  .cdp-hero-r { grid-template-columns: 1fr; gap: 32px; padding: 32px 20px 28px; }
+  .cdp-hero-media-r { height: 340px; border-radius: 24px; }
+  .cdp-wrap-r, .cdp-header-inner-r, .cdp-footer-grid-r, .cdp-footer-bottom-r { padding-left: 20px; padding-right: 20px; }
+  .cdp-sec-r { padding: 20px 20px 56px; }
+  .cdp-steps-r { grid-template-columns: 1fr; }
+  .cdp-couponbar-r { padding: 9px 44px; font-size: 13px; flex-wrap: wrap; gap: 8px; }
+  .cdp-header-actions-r .cdp-hbtn-label-r { display: none; }
+  .cdp-header-actions-r .cdp-hbtn-r { padding: 0 12px; }
+  .cdp-sec-head-r { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .cdp-hero-card-r { flex-wrap: wrap; gap: 12px; }
+}
+@media (max-width: 520px) {
+  .cdp-trust-r { grid-template-columns: 1fr; }
+  .cdp-trust-item-r { border-right: 0; padding-left: 0; padding-right: 0; }
+  .cdp-footer-grid-r { grid-template-columns: 1fr; gap: 28px; }
+  .cdp-hero-desc-r { font-size: 17px; }
+  .cdp-brand-name-r { font-size: 20px; }
+}

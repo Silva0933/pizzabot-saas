@@ -12,81 +12,55 @@ import {
   TemaFonteTexto,
   TemaFonteTitulo,
 } from "../../lib/api";
+import {
+  TEMAS, FONTES_TITULO, FONTES_TEXTO, BORDAS, COPY_PADRAO, resolverTema, type TokensTema,
+} from "../../lib/cardapioTema";
 
 interface Props {
   pizzaria: BackendPizzaria;
   onUpdated: (pizzaria: BackendPizzaria) => void;
 }
 
+/*
+  Presets, fontes e textos padrao vem de lib/cardapioTema.ts — a MESMA fonte que
+  a pagina publica usa. Antes essa tela mantinha copias proprias, entao o preview
+  do painel e o cardapio no ar podiam mostrar paletas diferentes.
+*/
 interface Preset {
   id: TemaCardapioModelo;
   nome: string;
   descricao: string;
-  detalhe: string;
-  config: Required<Pick<TemaCardapioConfig,
-    "modelo" | "fonte_titulo" | "fonte_texto" | "cor_primaria" | "cor_secundaria" | "cor_fundo" | "bordas"
-  >>;
+  config: TokensTema & { modelo: TemaCardapioModelo };
 }
 
-export const TEMA_PRESETS: Preset[] = [
-  {
-    id: "brasa",
-    nome: "Brasa",
-    descricao: "Escuro, intenso e gastronômico",
-    detalhe: "Ideal para burgers, pizzas e cozinha artesanal.",
-    config: {
-      modelo: "brasa", fonte_titulo: "anton", fonte_texto: "inter",
-      cor_primaria: "#f26b21", cor_secundaria: "#ff4d22", cor_fundo: "#090907", bordas: "suaves",
-    },
-  },
-  {
-    id: "trattoria",
-    nome: "Trattoria",
-    descricao: "Clássico, acolhedor e elegante",
-    detalhe: "Perfeito para pizzarias tradicionais e marcas familiares.",
-    config: {
-      modelo: "trattoria", fonte_titulo: "playfair", fonte_texto: "nunito",
-      cor_primaria: "#a52a2a", cor_secundaria: "#d39b45", cor_fundo: "#f5ecdf", bordas: "suaves",
-    },
-  },
-  {
-    id: "metropole",
-    nome: "Metrópole",
-    descricao: "Moderno, vibrante e tecnológico",
-    detalhe: "Para operações jovens, delivery e marcas urbanas.",
-    config: {
-      modelo: "metropole", fonte_titulo: "outfit", fonte_texto: "montserrat",
-      cor_primaria: "#b7f34a", cor_secundaria: "#7c5cff", cor_fundo: "#0b1020", bordas: "arredondadas",
-    },
-  },
-];
-
-const DEFAULT_TEXT = {
-  chamada: "FEITO NA HORA. DO SEU JEITO.",
-  titulo: "O SABOR QUE|ACENDE A FOME.",
-  descricao: "Escolha seus favoritos, personalize o pedido e receba tudo quentinho onde estiver.",
-};
+export const TEMA_PRESETS: Preset[] = (Object.keys(TEMAS) as TemaCardapioModelo[]).map((id) => ({
+  id,
+  nome: TEMAS[id].label,
+  descricao: TEMAS[id].descricao,
+  config: { ...TEMAS[id].tokens, modelo: id },
+}));
 
 export function normalizarTema(tema?: TemaCardapioConfig | null): TemaCardapioConfig {
-  const preset = TEMA_PRESETS.find((p) => p.id === tema?.modelo) || TEMA_PRESETS[0];
-  return { ...preset.config, ...DEFAULT_TEXT, ...(tema || {}) };
+  return resolverTema(tema) as TemaCardapioConfig;
 }
 
-const TITLE_FONTS: Array<{ value: TemaFonteTitulo; label: string; css: string }> = [
-  { value: "anton", label: "Anton — forte", css: '"Anton SC", Impact, sans-serif' },
-  { value: "bebas", label: "Bebas — condensada", css: '"Bebas Neue", Impact, sans-serif' },
-  { value: "playfair", label: "Playfair — elegante", css: '"Playfair Display", Georgia, serif' },
-  { value: "outfit", label: "Outfit — moderna", css: '"Outfit", Inter, sans-serif' },
-];
+const TITLE_FONTS = (Object.keys(FONTES_TITULO) as Array<keyof typeof FONTES_TITULO>).map((value) => ({
+  value: value as TemaFonteTitulo,
+  label: FONTES_TITULO[value].label,
+  css: FONTES_TITULO[value].stack,
+}));
 
-const BODY_FONTS: Array<{ value: TemaFonteTexto; label: string; css: string }> = [
-  { value: "inter", label: "Inter — neutra", css: 'Inter, Arial, sans-serif' },
-  { value: "montserrat", label: "Montserrat — geométrica", css: 'Montserrat, Arial, sans-serif' },
-  { value: "nunito", label: "Nunito — amigável", css: 'Nunito, Arial, sans-serif' },
-  { value: "outfit", label: "Outfit — contemporânea", css: 'Outfit, Arial, sans-serif' },
-];
+const BODY_FONTS = (Object.keys(FONTES_TEXTO) as Array<keyof typeof FONTES_TEXTO>).map((value) => ({
+  value: value as TemaFonteTexto,
+  label: FONTES_TEXTO[value].label,
+  css: FONTES_TEXTO[value].stack,
+}));
 
-const RADII: Record<TemaBordas, string> = { retas: "4px", suaves: "14px", arredondadas: "28px" };
+const RADII: Record<TemaBordas, string> = {
+  retas: BORDAS.retas.raio,
+  suaves: BORDAS.suaves.raio,
+  arredondadas: BORDAS.arredondadas.raio,
+};
 
 export function TemasView({ pizzaria, onUpdated }: Props) {
   const [config, setConfig] = useState<TemaCardapioConfig>(() => normalizarTema(pizzaria.tema_cardapio));
@@ -99,7 +73,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
   const selected = TEMA_PRESETS.find((p) => p.id === config.modelo) || TEMA_PRESETS[0];
   const titleFont = TITLE_FONTS.find((f) => f.value === config.fonte_titulo)?.css || TITLE_FONTS[0].css;
   const bodyFont = BODY_FONTS.find((f) => f.value === config.fonte_texto)?.css || BODY_FONTS[0].css;
-  const tituloPartes = String(config.titulo || DEFAULT_TEXT.titulo).split("|");
+  const tituloPartes = String(config.titulo || COPY_PADRAO.titulo).split("|");
   const isLight = config.modelo === "trattoria";
   const previewText = isLight ? "#2c1d17" : "#fff8ef";
   const previewMuted = isLight ? "#766055" : "#afa6a0";
@@ -118,9 +92,9 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
     setConfig((current) => ({
       ...current,
       ...preset.config,
-      chamada: current.chamada || DEFAULT_TEXT.chamada,
-      titulo: current.titulo || DEFAULT_TEXT.titulo,
-      descricao: current.descricao || DEFAULT_TEXT.descricao,
+      chamada: current.chamada || COPY_PADRAO.chamada,
+      titulo: current.titulo || COPY_PADRAO.titulo,
+      descricao: current.descricao || COPY_PADRAO.descricao,
     }));
     setSaved(false);
   }
@@ -203,7 +177,6 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
                   <span className="flex-1">
                     <strong className="block text-sm font-bold text-white">{preset.nome}</strong>
                     <span className="block text-xs text-slate-400 mt-0.5">{preset.descricao}</span>
-                    <small className="block text-[10px] text-slate-500 mt-1">{preset.detalhe}</small>
                   </span>
                   {active && <span className="w-6 h-6 rounded-full bg-orange-500 text-white grid place-items-center shrink-0 shadow-sm"><Check className="w-3.5 h-3.5" /></span>}
                 </div>
@@ -253,6 +226,10 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
               <ColorField label="Cor principal do texto" value={config.cor_texto || (isLight ? "#2c1d17" : "#f3f4f9")} onChange={(v) => update("cor_texto", v)} />
               <ColorField label="Fundo dos botões" value={config.cor_botao || config.cor_primaria || selected.config.cor_primaria} onChange={(v) => update("cor_botao", v)} />
               <ColorField label="Texto dos botões" value={config.cor_botao_texto || "#ffffff"} onChange={(v) => update("cor_botao_texto", v)} />
+              <ColorField label="Texto secundário" value={config.cor_texto_suave || selected.config.cor_texto_suave} onChange={(v) => update("cor_texto_suave", v)} />
+              <ColorField label="Texto de apoio" value={config.cor_texto_apagado || selected.config.cor_texto_apagado} onChange={(v) => update("cor_texto_apagado", v)} />
+              <ColorField label="Linhas e bordas" value={config.cor_borda || selected.config.cor_borda} onChange={(v) => update("cor_borda", v)} />
+              <ColorField label="Superfície elevada" value={config.cor_superficie_alta || selected.config.cor_superficie_alta} onChange={(v) => update("cor_superficie_alta", v)} />
             </div>
           </section>
 
@@ -279,8 +256,72 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
                 <textarea rows={3} value={config.descricao || ""} maxLength={180} onChange={(e) => update("descricao", e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500" />
               </label>
+              <div className="grid grid-cols-2 gap-3">
+                <TextField label="Botão principal" value={config.cta_primario || ""} onChange={(v) => update("cta_primario", v)} maxLength={28} />
+                <TextField label="Botão secundário" value={config.cta_secundario || ""} onChange={(v) => update("cta_secundario", v)} maxLength={28} />
+              </div>
             </div>
           </section>
+
+          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+            <h3 className="font-bold text-sm text-white mb-1">Barra de cupom</h3>
+            <p className="text-[11px] text-slate-500 mb-4">Aparece no topo do site quando existe um cupom ativo.</p>
+            <label className="flex items-center gap-2 mb-3 cursor-pointer">
+              <input type="checkbox" checked={config.barra_cupom_ativa !== false} onChange={(e) => update("barra_cupom_ativa", e.target.checked)} className="accent-orange-500" />
+              <span className="text-xs font-semibold text-slate-300">Mostrar a barra de cupom</span>
+            </label>
+            <TextField label="Texto da barra" value={config.barra_cupom_texto || ""} onChange={(v) => update("barra_cupom_texto", v)} maxLength={90} />
+          </section>
+
+          <ListaEditavel
+            titulo="Diferenciais"
+            ajuda="Os quatro blocos logo abaixo da capa."
+            itens={config.diferenciais || []}
+            onChange={(itens) => update("diferenciais", itens)}
+            campos={[
+              { chave: "titulo", label: "Título", max: 34 },
+              { chave: "descricao", label: "Descrição", max: 48 },
+            ]}
+            novoItem={{ icone: "relogio", titulo: "", descricao: "" }}
+            max={4}
+          />
+
+          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+            <h3 className="font-bold text-sm text-white mb-4">Títulos das seções</h3>
+            <div className="space-y-3">
+              <TextField label="Promoções" value={config.promocoes_titulo || ""} onChange={(v) => update("promocoes_titulo", v)} maxLength={60} />
+              <TextField label="Subtítulo das promoções" value={config.promocoes_subtitulo || ""} onChange={(v) => update("promocoes_subtitulo", v)} maxLength={90} />
+              <TextField label="Passos do pedido" value={config.passos_titulo || ""} onChange={(v) => update("passos_titulo", v)} maxLength={60} />
+              <TextField label="Dúvidas" value={config.faq_titulo || ""} onChange={(v) => update("faq_titulo", v)} maxLength={60} />
+              <TextField label="Frase do rodapé" value={config.rodape_frase || ""} onChange={(v) => update("rodape_frase", v)} maxLength={80} />
+            </div>
+          </section>
+
+          <ListaEditavel
+            titulo="Passos do pedido"
+            ajuda="Como você explica o processo para quem nunca pediu."
+            itens={config.passos || []}
+            onChange={(itens) => update("passos", itens)}
+            campos={[
+              { chave: "titulo", label: "Título", max: 30 },
+              { chave: "descricao", label: "Descrição", max: 90 },
+            ]}
+            novoItem={{ titulo: "", descricao: "" }}
+            max={3}
+          />
+
+          <ListaEditavel
+            titulo="Dúvidas frequentes"
+            ajuda="Responder aqui reduz mensagem repetida no WhatsApp."
+            itens={config.faq || []}
+            onChange={(itens) => update("faq", itens)}
+            campos={[
+              { chave: "pergunta", label: "Pergunta", max: 90 },
+              { chave: "resposta", label: "Resposta", max: 220 },
+            ]}
+            novoItem={{ pergunta: "", resposta: "" }}
+            max={8}
+          />
         </div>
 
         <aside className="xl:sticky xl:top-24 rounded-2xl border border-[#1e293b] bg-[#111622] p-4 shadow-sm">
@@ -370,5 +411,85 @@ function TextField({ label, help, value, onChange, maxLength }: { label: string;
       <input value={value} maxLength={maxLength} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500" />
       {help && <small className="block text-[10px] text-slate-500 mt-1">{help}</small>}
     </label>
+  );
+}
+
+/**
+ * Lista de blocos repetidos (diferenciais, passos, duvidas).
+ *
+ * Lista vazia = o cardapio usa o texto padrao. Por isso remover tudo e uma acao
+ * segura: a secao nao fica em branco no ar, ela volta ao padrao.
+ */
+function ListaEditavel<T extends Record<string, string | undefined>>({
+  titulo, ajuda, itens, onChange, campos, novoItem, max,
+}: {
+  titulo: string;
+  ajuda?: string;
+  itens: T[];
+  onChange: (itens: T[]) => void;
+  campos: Array<{ chave: keyof T & string; label: string; max: number }>;
+  novoItem: T;
+  max: number;
+}) {
+  const alterar = (indice: number, chave: string, valor: string) => {
+    onChange(itens.map((item, i) => (i === indice ? { ...item, [chave]: valor } : item)));
+  };
+
+  return (
+    <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 className="font-bold text-sm text-white">{titulo}</h3>
+          {ajuda && <p className="text-[11px] text-slate-500 mt-0.5">{ajuda}</p>}
+        </div>
+        {itens.length < max && (
+          <button
+            type="button"
+            onClick={() => onChange([...itens, { ...novoItem }])}
+            className="shrink-0 px-3 py-1.5 rounded-lg border border-[#1e293b] bg-[#161f30] text-[11px] font-semibold text-slate-300 hover:border-orange-500 hover:text-white"
+          >
+            + Adicionar
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        {itens.map((item, indice) => (
+          <div key={indice} className="rounded-xl border border-[#1e293b] bg-[#161f30] p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                {indice + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => onChange(itens.filter((_, i) => i !== indice))}
+                className="text-[11px] font-semibold text-slate-500 hover:text-red-400"
+              >
+                Remover
+              </button>
+            </div>
+            <div className="space-y-2">
+              {campos.map((campo) => (
+                <label className="block" key={campo.chave}>
+                  <span className="block text-[11px] font-semibold text-slate-400 mb-1">{campo.label}</span>
+                  <input
+                    value={(item[campo.chave] as string) || ""}
+                    maxLength={campo.max}
+                    onChange={(e) => alterar(indice, campo.chave, e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg border border-[#1e293b] bg-[#0f1624] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {itens.length === 0 && (
+          <p className="text-[11px] text-slate-500 py-2">
+            Sem itens próprios — o cardápio mostra o texto padrão.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }

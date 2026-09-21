@@ -1215,8 +1215,8 @@ export interface MenuPizzaria {
 }
 
 export type TemaCardapioModelo = "brasa" | "trattoria" | "metropole";
-export type TemaFonteTitulo = "anton" | "bebas" | "playfair" | "outfit";
-export type TemaFonteTexto = "inter" | "montserrat" | "nunito" | "outfit";
+export type TemaFonteTitulo = "big_shoulders" | "anton" | "bebas" | "playfair" | "outfit" | "archivo";
+export type TemaFonteTexto = "figtree" | "inter" | "montserrat" | "nunito" | "outfit" | "dm_sans";
 export type TemaBordas = "retas" | "suaves" | "arredondadas";
 export type TemaEstiloCartoes = "elevado" | "minimal" | "contornado";
 export type TemaEstiloBotao = "gradiente" | "solido";
@@ -1244,6 +1244,22 @@ export interface CupomCardapio {
   ativo: boolean;
 }
 
+export interface TemaDiferencial {
+  icone?: string;
+  titulo: string;
+  descricao?: string;
+}
+
+export interface TemaPasso {
+  titulo: string;
+  descricao?: string;
+}
+
+export interface TemaPerguntaFrequente {
+  pergunta: string;
+  resposta: string;
+}
+
 export interface TemaCardapioConfig {
   modelo?: TemaCardapioModelo;
   fonte_titulo?: TemaFonteTitulo;
@@ -1255,11 +1271,32 @@ export interface TemaCardapioConfig {
   cor_texto?: string;
   cor_botao?: string;
   cor_botao_texto?: string;
+  // Tokens acrescentados com o redesenho: sem eles a pagina fica com buracos
+  // de contraste quando a pizzaria troca so a cor de fundo.
+  cor_superficie_alta?: string;
+  cor_borda?: string;
+  cor_texto_suave?: string;
+  cor_texto_apagado?: string;
+  titulo_caixa_alta?: boolean;
   bordas?: TemaBordas;
   estilo_cartoes?: TemaEstiloCartoes;
   estilo_botao?: TemaEstiloBotao;
   chamada?: string;
   titulo?: string;
+  cta_primario?: string;
+  cta_secundario?: string;
+  barra_cupom_ativa?: boolean;
+  barra_cupom_texto?: string;
+  destaques_titulo?: string;
+  diferenciais?: TemaDiferencial[];
+  promocoes_titulo?: string;
+  promocoes_subtitulo?: string;
+  passos_titulo?: string;
+  passos?: TemaPasso[];
+  localizacao_titulo?: string;
+  faq_titulo?: string;
+  faq?: TemaPerguntaFrequente[];
+  rodape_frase?: string;
   campanhas?: CampanhaCardapio[];
   cupons?: CupomCardapio[];
   mostrar_acompanhamento?: boolean;

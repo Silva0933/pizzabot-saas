@@ -23,6 +23,11 @@ import {
 } from "../../lib/api";
 import { calcEstaAberto, getTextoProximaAbertura } from "../../lib/businessHours";
 import "../../styles/cardapio-publico.css";
+import "../../styles/cardapio-redesign.css";
+import "../../styles/cardapio-cards.css";
+import {
+  resolverTema, temaParaCssVars, googleFontsUrl, carregarFontes, linhasDoTitulo,
+} from "../../lib/cardapioTema";
 
 // ============================================
 // Tipos internos
@@ -52,32 +57,8 @@ const CAT_COLOR: Record<string, string> = {
   pizza: "#f97316", lanche: "#eab308", bebida: "#3b82f6", sobremesa: "#ec4899", outro: "#8b5cf6", todos: "#f97316",
 };
 
-const THEME_DEFAULTS: Record<string, TemaCardapioConfig> = {
-  brasa: { modelo: "brasa", fonte_titulo: "anton", fonte_texto: "inter", cor_primaria: "#f26b21", cor_secundaria: "#ff4d22", cor_fundo: "#090907", bordas: "suaves" },
-  trattoria: { modelo: "trattoria", fonte_titulo: "playfair", fonte_texto: "nunito", cor_primaria: "#a52a2a", cor_secundaria: "#d39b45", cor_fundo: "#f5ecdf", bordas: "suaves" },
-  metropole: { modelo: "metropole", fonte_titulo: "outfit", fonte_texto: "montserrat", cor_primaria: "#b7f34a", cor_secundaria: "#7c5cff", cor_fundo: "#0b1020", bordas: "arredondadas" },
-};
-const THEME_TITLE_FONTS: Record<string, string> = {
-  anton: '"Anton SC", Impact, sans-serif', bebas: '"Bebas Neue", Impact, sans-serif',
-  playfair: '"Playfair Display", Georgia, serif', outfit: '"Outfit", Inter, sans-serif',
-};
-const THEME_BODY_FONTS: Record<string, string> = {
-  inter: 'Inter, Arial, sans-serif', montserrat: 'Montserrat, Arial, sans-serif',
-  nunito: 'Nunito, Arial, sans-serif', outfit: 'Outfit, Arial, sans-serif',
-};
-const THEME_RADII: Record<string, string> = { retas: "4px", suaves: "14px", arredondadas: "28px" };
-
-function resolveTheme(raw?: TemaCardapioConfig | null): TemaCardapioConfig {
-  const modelo = raw?.modelo && THEME_DEFAULTS[raw.modelo] ? raw.modelo : "brasa";
-  return {
-    ...THEME_DEFAULTS[modelo],
-    chamada: "FEITO NA HORA. DO SEU JEITO.",
-    titulo: "O SABOR QUE|ACENDE A FOME.",
-    descricao: "Escolha seus favoritos, personalize o pedido e receba tudo quentinho onde estiver.",
-    ...(raw || {}),
-    modelo,
-  };
-}
+// Tema, fontes e copy padrao vivem em lib/cardapioTema.ts — a mesma fonte de
+// verdade que o editor do painel usa, para preview e producao nao divergirem.
 
 // ============================================
 // Componente Principal
@@ -109,6 +90,64 @@ function fmt(v: number): string {
 }
 
 /** Monta o link wa.me a partir do telefone de contato (normaliza DDI 55). */
+// ============================================
+// Icones (stroke, herdam currentColor)
+// ============================================
+const svgBase = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+
+const IcoRelogio = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+);
+const IcoSacola = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M5 8h14l-1.2 12H6.2z" /><path d="M9 8V6.5a3 3 0 0 1 6 0V8" /></svg>
+);
+const IcoPin = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></svg>
+);
+const IcoMais = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2.4}><path d="M12 5v14M5 12h14" /></svg>
+);
+const IcoChama = ({ s = 20 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={1.9}><path d="M12 3c.8 3.4 5 5.6 5 10.2a5 5 0 0 1-10 0c0-2.3 1-3.8 2.3-4.8.2 1.7 1 2.7 2 3.1-.2-3.2.1-5.8.7-8.5z" /></svg>
+);
+const IcoAjustes = ({ s = 20 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={1.9}><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1" /><circle cx="15" cy="6" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="18" r="2" /></svg>
+);
+const IcoUsuario = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={1.9}><circle cx="12" cy="8" r="4" /><path d="M4 21c1.6-4 4.6-6 8-6s6.4 2 8 6" /></svg>
+);
+const IcoAlvo = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={1.9}><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3" /></svg>
+);
+const IcoFechar = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2.2}><path d="M6 6l12 12M18 6L6 18" /></svg>
+);
+const IcoMaisFino = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M12 5v14M5 12h14" /></svg>
+);
+const IcoMenos = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M5 12h14" /></svg>
+);
+
+/** Icone da faixa de diferenciais, escolhido pelo nome salvo no tema. */
+function IconeDiferencial({ nome }: { nome?: string }) {
+  switch (nome) {
+    case "chama": return <IcoChama />;
+    case "ajustes": return <IcoAjustes />;
+    case "sacola": return <IcoSacola s={20} />;
+    case "pin": return <IcoPin s={20} />;
+    case "relogio":
+    default: return <IcoRelogio s={20} />;
+  }
+}
+
+/** Menor preco do produto (produtos com tamanhos mostram "a partir de"). */
+function precoDe(p: MenuProduto): number {
+  return p.tamanhos && p.tamanhos.length > 0
+    ? Math.min(...p.tamanhos.map((t) => Number(t.preco)))
+    : Number(p.preco);
+}
+
 function waLink(tel?: string | null): string {
   const d = (tel || "").replace(/\D/g, "");
   if (!d) return "";
@@ -547,8 +586,10 @@ export function CardapioPublico({ slug }: { slug: string }) {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const target = cartTargetRef.current;
     if (!target) return;
-    const card = origin.closest(".cdp-product-card");
-    const visual = card?.querySelector(".cdp-product-img, .cdp-product-img-ph") as HTMLElement | null;
+    const card = origin.closest(".cdp-card-r, .cdp-feat-card-r");
+    const visual = card?.querySelector(
+      ".cdp-card-img-r, .cdp-card-ph-r, .cdp-feat-img-r, .cdp-feat-ph-r"
+    ) as HTMLElement | null;
     const sourceRect = (visual || origin).getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
     const flyer = document.createElement("div");
@@ -920,20 +961,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
   const pizz = data.pizzaria;
   const waUrl = waLink(pizz.telefone_contato);
-  const tema = resolveTheme(pizz.tema_cardapio);
-  const tituloTema = String(tema.titulo || "O SABOR QUE|ACENDE A FOME.").split("|");
-  const themeStyle = {
-    "--accent": tema.cor_primaria,
-    "--accent2": tema.cor_secundaria,
-    "--bg": tema.cor_fundo,
-    "--bg2": tema.cor_superficie,
-    "--text": tema.cor_texto,
-    "--button": tema.cor_botao || tema.cor_primaria,
-    "--button-text": tema.cor_botao_texto,
-    "--theme-display": THEME_TITLE_FONTS[tema.fonte_titulo || "anton"],
-    "--theme-body": THEME_BODY_FONTS[tema.fonte_texto || "inter"],
-    "--theme-radius": THEME_RADII[tema.bordas || "suaves"],
-  } as React.CSSProperties;
+  const tema = resolverTema(pizz.tema_cardapio);
+  const linhasTitulo = linhasDoTitulo(tema.titulo || "");
+  // Cada cardapio baixa so as duas familias do seu tema, nao as dez.
+  const fontesUrl = googleFontsUrl(tema);
+  useEffect(() => { carregarFontes(fontesUrl); }, [fontesUrl]);
+  // Destaque do hero: o primeiro produto do cardapio (a ordem ja e a da pizzaria).
+  const produtoDestaque = data.produtos.length > 0 ? data.produtos[0] : null;
+  const [faqAberta, setFaqAberta] = useState<number | null>(0);
+  const themeStyle = temaParaCssVars(tema);
   const embedMapUrl = mapEmbedUrl(pizz);
   const trackingSteps = tracking ? (
     tracking.tipo === "delivery"
@@ -955,43 +991,77 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
 
   // Card de produto reutilizado pela grade plana e pelas seções por categoria.
+  /** Quantas unidades deste produto ja estao na sacola (somando variacoes). */
+  function qtdDoProduto(p: MenuProduto): number {
+    return cart.reduce((total, item) => (item.produtoId === p.id ? total + item.quantidade : total), 0);
+  }
+
+  /**
+   * Tira uma unidade do produto. Mexe na ULTIMA linha adicionada dele — com
+   * tamanhos/adicionais diferentes existe mais de uma linha, e a ultima e a que
+   * a pessoa acabou de mexer.
+   */
+  function tirarUmDoProduto(p: MenuProduto) {
+    setCart(prev => {
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i].produtoId !== p.id) continue;
+        if (prev[i].quantidade > 1) {
+          return prev.map((item, idx) => (idx === i ? { ...item, quantidade: item.quantidade - 1 } : item));
+        }
+        return prev.filter((_, idx) => idx !== i);
+      }
+      return prev;
+    });
+  }
+
   function renderProduct(p: MenuProduto) {
-    const preco = p.tamanhos && p.tamanhos.length > 0
-      ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
-      : Number(p.preco);
-    const temVariacao = p.tamanhos && p.tamanhos.length > 0;
+    const preco = precoDe(p);
+    const temVariacao = !!(p.tamanhos && p.tamanhos.length > 0);
+    const qtd = qtdDoProduto(p);
+    // A pilula de quantidade so aparece em produto simples: com tamanhos, tirar
+    // "um" seria ambiguo (qual tamanho?), entao o + reabre o seletor.
+    const mostrarPilula = qtd > 0 && !temVariacao && pizz.aberto;
+
     return (
-      <button key={p.id} className="cdp-product-card" onClick={() => openProduto(p)}>
-        <div className="cdp-product-img-wrap">
-          {p.imagem_url ? (
-            <img src={p.imagem_url} alt={p.nome} className="cdp-product-img" loading="lazy" />
-          ) : (
-            <div className="cdp-product-img-ph">
-              <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>
-            </div>
-          )}
-          {p.categoria && (
-            <span className="cdp-product-cat-tag">{CAT_EMOJI[p.categoria] || "🍽️"}</span>
-          )}
-        </div>
-        <div className="cdp-product-info">
-          <h3 className="cdp-product-name">{p.nome}</h3>
-          {p.descricao && <p className="cdp-product-desc">{p.descricao}</p>}
-          <div className="cdp-product-footer">
-            <div className="cdp-product-price-wrap">
-              {temVariacao && <span className="cdp-price-from">a partir de</span>}
-              <span className="cdp-price">{fmt(preco)}</span>
-            </div>
-            <div
-              className={`cdp-product-add-btn ${!pizz.aberto ? "disabled" : ""}`}
-              role="button"
-              aria-label={pizz.aberto ? "Adicionar" : "Loja fechada"}
-              aria-disabled={!pizz.aberto}
-              onClick={(e) => handleQuickAdd(e, p)}
-            >{pizz.aberto ? "+" : "—"}</div>
+      <article key={p.id} className="cdp-card-r" onClick={() => openProduto(p)} role="button" tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProduto(p); } }}>
+        <div className="cdp-card-body-r">
+          <h3 className="cdp-card-name-r">{p.nome}</h3>
+          {p.descricao && <p className="cdp-card-desc-r">{p.descricao}</p>}
+          <div className="cdp-card-priceline-r">
+            {temVariacao && <span className="cdp-card-from-r">a partir de</span>}
+            <span className="cdp-card-price-r">{fmt(preco)}</span>
           </div>
         </div>
-      </button>
+
+        <div className="cdp-card-media-r">
+          {p.imagem_url ? (
+            <img src={p.imagem_url} alt={p.nome} className="cdp-card-img-r" loading="lazy" />
+          ) : (
+            <div className="cdp-card-ph-r" aria-hidden="true">{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</div>
+          )}
+
+          {mostrarPilula ? (
+            <div className="cdp-card-qty-r" onClick={(e) => e.stopPropagation()}>
+              <button type="button" className="cdp-card-qty-btn-r" aria-label={`Tirar um ${p.nome}`}
+                onClick={(e) => { e.stopPropagation(); tirarUmDoProduto(p); }}>
+                <IcoMenos />
+              </button>
+              <span className="cdp-card-qty-num-r">{qtd}</span>
+              <button type="button" className="cdp-card-qty-btn-r" aria-label={`Mais um ${p.nome}`}
+                onClick={(e) => handleQuickAdd(e, p)}>
+                <IcoMaisFino />
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="cdp-card-add-r" disabled={!pizz.aberto}
+              aria-label={pizz.aberto ? `Adicionar ${p.nome}` : "Loja fechada"}
+              onClick={(e) => handleQuickAdd(e, p)}>
+              {pizz.aberto ? <IcoMais /> : <IcoMenos />}
+            </button>
+          )}
+        </div>
+      </article>
     );
   }
 
@@ -1507,13 +1577,13 @@ export function CardapioPublico({ slug }: { slug: string }) {
           /* ===== MENU PRINCIPAL ===== */
           <>
             {/* Banner hero da pizzaria */}
-            {topOfferVisible && (
+            {topOfferVisible && tema.barra_cupom_ativa !== false && (
               <div className="cdp-offerbar">
                 <div className="cdp-offerbar-content">
                   {cuponsAtivos[0] ? (
                     <>
                       <span className="cdp-offerbar-message">
-                        Oferta especial: <b>{cuponsAtivos[0].descricao || (cuponsAtivos[0].tipo === "percentual" ? `${cuponsAtivos[0].valor}% OFF` : `${fmt(cuponsAtivos[0].valor)} OFF`)}</b>
+                        {tema.barra_cupom_texto || `Oferta especial: ${cuponsAtivos[0].descricao || (cuponsAtivos[0].tipo === "percentual" ? `${cuponsAtivos[0].valor}% OFF` : `${fmt(cuponsAtivos[0].valor)} OFF`)}`}
                       </span>
                       <strong className="cdp-offerbar-code">com <b>{cuponsAtivos[0].codigo}</b></strong>
                       <button
@@ -1539,46 +1609,58 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
             )}
 
-            <nav className="cdp-site-header" aria-label="Navegação do cardápio">
-              <button className="cdp-site-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} aria-label={`${pizz.nome} — voltar ao início`}>
-                {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
-              </button>
-              <div className="cdp-header-store-meta" aria-label={`Loja ${pizz.aberto ? "aberta" : "fechada"}`}>
-                <strong className={pizz.aberto ? "open" : "closed"}>
-                  <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} aria-hidden="true" />
-                  {pizz.aberto ? "Aberto agora" : "Fechado agora"}
-                </strong>
-                {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
-                  <span>{pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min</span>
-                )}
-              </div>
-              <div className="cdp-site-links">
-                <button onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>Início</button>
-                <button onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>Cardápio</button>
-                {campanhasAtivas.length > 0 && <button onClick={() => document.getElementById("promocoes")?.scrollIntoView({ behavior: "smooth" })}>Promoções</button>}
-                {pizz.endereco_maps_url && <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">Nossa localização</a>}
-                <button onClick={() => document.getElementById("como-pedir")?.scrollIntoView({ behavior: "smooth" })}>Dúvidas</button>
-              </div>
-              <div className="cdp-site-actions">
-                {tema.mostrar_acompanhamento !== false && (
-                  <button className="cdp-header-track" onClick={abrirAcompanhamentoNaConta}>
-                    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
-                    <span>Acompanhar pedido</span>
-                  </button>
-                )}
-                <button className="cdp-header-cart" onClick={() => setSacolaOpen(true)}>
-                  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
-                  <span>Sacola</span><b>{cartCount}</b>
-                </button>
-                <button type="button" className={`cdp-header-account ${customer ? "connected" : ""}`} onClick={() => setAccountOpen(true)} aria-label={customer ? `Abrir conta de ${customer.nome}` : "Acessar minha conta"} title={customer ? `Conta de ${customer.nome}` : "Entrar ou criar minha conta"}>
-                  <span className="cdp-header-account-icon" aria-hidden="true">
-                    <svg width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/></svg>
+            {/* Header fixo: marca, navegacao e acoes. O estado da loja fica na
+                segunda linha da marca porque os chips do hero saem de vista ao rolar. */}
+            <header className="cdp-header-r">
+              <div className="cdp-header-inner-r">
+                <button type="button" className="cdp-brand-r"
+                  onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                  aria-label={`${pizz.nome} — voltar ao início`}>
+                  <span className="cdp-brand-mark-r">
+                    {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
                   </span>
-                  <span className="cdp-header-account-label">{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
-                  {customer && <i aria-hidden="true" />}
+                  <span className="cdp-brand-text-r">
+                    <span className="cdp-brand-name-r cdp-display">{pizz.nome}</span>
+                    <span className="cdp-brand-sub-r" style={{ color: pizz.aberto ? "var(--green)" : "var(--red)" }}>
+                      {pizz.aberto ? "Aberto agora" : "Fechado agora"}
+                    </span>
+                  </span>
                 </button>
+
+                <nav className="cdp-nav-r" aria-label="Navegação do cardápio">
+                  <a href="#inicio" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Início</a>
+                  <a href="#cardapio" onClick={(e) => { e.preventDefault(); document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" }); }}>Cardápio</a>
+                  {campanhasAtivas.length > 0 && (
+                    <a href="#promocoes" onClick={(e) => { e.preventDefault(); document.getElementById("promocoes")?.scrollIntoView({ behavior: "smooth" }); }}>Promoções</a>
+                  )}
+                  {pizz.endereco_maps_url && (
+                    <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">Nossa localização</a>
+                  )}
+                  {(tema.faq || []).length > 0 && (
+                    <a href="#duvidas" onClick={(e) => { e.preventDefault(); document.getElementById("duvidas")?.scrollIntoView({ behavior: "smooth" }); }}>Dúvidas</a>
+                  )}
+                </nav>
+
+                <div className="cdp-header-actions-r">
+                  {tema.mostrar_acompanhamento !== false && (
+                    <button type="button" className="cdp-hbtn-r" onClick={abrirAcompanhamentoNaConta}>
+                      <IcoAlvo />
+                      <span className="cdp-hbtn-label-r">Acompanhar pedido</span>
+                    </button>
+                  )}
+                  <button type="button" className="cdp-hbtn-r" onClick={() => setAccountOpen(true)}
+                    aria-label={customer ? `Abrir conta de ${customer.nome}` : "Minha conta"}>
+                    <IcoUsuario />
+                    <span className="cdp-hbtn-label-r">{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
+                  </button>
+                  <button type="button" className="cdp-hbag-r" onClick={() => setSacolaOpen(true)}>
+                    <IcoSacola s={18} />
+                    Sacola
+                    <span className="cdp-hbag-count-r">{cartCount}</span>
+                  </button>
+                </div>
               </div>
-            </nav>
+            </header>
 
             {!pizz.aberto && (
               <div className="cdp-closed-notice" role="status">
@@ -1590,83 +1672,89 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
             )}
 
-            <header className="cdp-banner">
-              {pizz.banner_url ? (
-                <img src={pizz.banner_url} alt="" className="cdp-banner-img" />
-              ) : pizz.logo_url ? (
-                <div className="cdp-banner-img cdp-banner-img-blur" style={{ backgroundImage: `url(${pizz.logo_url})` }} />
-              ) : (
-                <div className="cdp-banner-img cdp-banner-fallback" />
-              )}
-              <div className="cdp-banner-scrim" />
-
-              <div className="cdp-banner-content">
-                {pizz.logo_url ? (
-                  <div className="cdp-logo-ring">
-                    <img src={pizz.logo_url} alt={pizz.nome} className="cdp-logo" />
-                  </div>
-                ) : (
-                  <div className="cdp-logo-placeholder">🍕</div>
-                )}
-                <div className="cdp-banner-info">
-                  <p className="cdp-hero-eyebrow">{tema.chamada}</p>
-                  <h1 className="cdp-name">{tituloTema[0]}{tituloTema.length > 1 && <><br/><em>{tituloTema.slice(1).join(" ")}</em></>}</h1>
-                  <p className="cdp-hero-description">
-                    {tema.descricao}
-                  </p>
-                  <div className="cdp-hero-ctas">
-                    <button className="cdp-hero-primary" onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>
-                      Ver cardápio <span>→</span>
-                    </button>
-                    {pizz.endereco_maps_url && (
-                      <a className="cdp-hero-secondary" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">
-                        Como chegar
-                      </a>
-                    )}
-                  </div>
-                  {cuponsAtivos[0] && (
-                    <button className="cdp-hero-coupon" onClick={() => { setCupomInput(cuponsAtivos[0].codigo); setCupomAplicado(cuponsAtivos[0].codigo.toUpperCase()); document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" }); }}>
-                      <small>USE O CUPOM</small>
-                      <b>{cuponsAtivos[0].codigo}</b>
-                      <span>{cuponsAtivos[0].descricao || (cuponsAtivos[0].tipo === "percentual" ? `${cuponsAtivos[0].valor}% OFF` : `${fmt(cuponsAtivos[0].valor)} OFF`)}</span>
-                    </button>
+            {/* Hero: chips de estado, titulo de display, CTAs e foto com card de destaque. */}
+            <header className="cdp-hero-r">
+              <div className="cdp-hero-col-r">
+                <div className="cdp-chips-r">
+                  <span className={`cdp-chip-r ${pizz.aberto ? "cdp-chip-open-r" : "cdp-chip-closed-r"}`}>
+                    <span className="cdp-chip-dot-r" />
+                    {pizz.aberto ? "Aberto agora" : "Fechado"}
+                  </span>
+                  {!pizz.aberto && proximaAberturaTexto && (
+                    <span className="cdp-chip-r">{proximaAberturaTexto}</span>
                   )}
-                  <div className="cdp-status-row">
-                    <span className={`cdp-status-pill ${pizz.aberto ? "open" : "closed"}`}>
-                      <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} />
-                      {pizz.aberto ? "Aberto agora" : "Fechado"}
+                  {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
+                    <span className="cdp-chip-r">
+                      <IcoRelogio />
+                      Entrega em {pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min
                     </span>
-                    {!pizz.aberto && proximaAberturaTexto && (
-                      <span className="cdp-proxima-abertura-pill">
-                        ⏰ {proximaAberturaTexto}
-                      </span>
-                    )}
-                    {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
-                      <span className="cdp-tempo-pill">
-                        🕐 {pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min
-                      </span>
-                    )}
-                  </div>
-                  {pizz.endereco && <p className="cdp-endereco">📍 {pizz.endereco}</p>}
+                  )}
+                  <span className="cdp-chip-r"><IcoSacola />Retirada disponível</span>
+                </div>
 
-                  {/* Ações: WhatsApp + Como chegar */}
-                  {(waUrl || pizz.endereco_maps_url) && (
-                    <div className="cdp-banner-actions">
-                      {waUrl && (
-                        <a className="cdp-action-btn cdp-action-wpp" href={waUrl} target="_blank" rel="noopener noreferrer">
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
-                          Falar no WhatsApp
-                        </a>
-                      )}
-                      {pizz.endereco_maps_url && (
-                        <a className="cdp-action-btn cdp-action-map" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                          Como chegar
-                        </a>
-                      )}
-                    </div>
+                {tema.chamada && <p className="cdp-hero-eyebrow-r">{tema.chamada}</p>}
+
+                <h1 className="cdp-hero-title-r cdp-display">
+                  {linhasTitulo.map((linha, i) => (
+                    <React.Fragment key={i}>
+                      {i > 0 && <br />}
+                      {linha}
+                    </React.Fragment>
+                  ))}
+                </h1>
+
+                <p className="cdp-hero-desc-r">{tema.descricao}</p>
+
+                <div className="cdp-hero-ctas-r">
+                  <button
+                    type="button"
+                    className="cdp-cta-primary-r"
+                    onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}
+                  >
+                    {tema.cta_primario}
+                  </button>
+                  {pizz.endereco_maps_url && (
+                    <a className="cdp-cta-ghost-r" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">
+                      <IcoPin />
+                      {tema.cta_secundario}
+                    </a>
                   )}
                 </div>
+
+                {pizz.endereco && (
+                  <p className="cdp-hero-addr-r"><IcoPin />{pizz.endereco}</p>
+                )}
+              </div>
+
+              <div className="cdp-hero-media-r">
+                {pizz.banner_url ? (
+                  <img src={pizz.banner_url} alt="" />
+                ) : pizz.logo_url ? (
+                  <img src={pizz.logo_url} alt={pizz.nome} />
+                ) : (
+                  <div className="cdp-hero-media-ph-r" aria-hidden="true">🍕</div>
+                )}
+                {produtoDestaque && (
+                  <div className="cdp-hero-card-r">
+                    <div className="cdp-hero-card-body-r">
+                      <span className="cdp-hero-card-label-r">Destaque da casa</span>
+                      <span className="cdp-hero-card-name-r">{produtoDestaque.nome}</span>
+                      {produtoDestaque.descricao && (
+                        <span className="cdp-hero-card-desc-r">{produtoDestaque.descricao}</span>
+                      )}
+                    </div>
+                    <span className="cdp-hero-card-price-r">{fmt(precoDe(produtoDestaque))}</span>
+                    <button
+                      type="button"
+                      className="cdp-hero-card-add-r"
+                      onClick={() => openProduto(produtoDestaque)}
+                      aria-label={`Adicionar ${produtoDestaque.nome} à sacola`}
+                    >
+                      <IcoMais />
+                      Adicionar
+                    </button>
+                  </div>
+                )}
               </div>
             </header>
 
@@ -1709,12 +1797,20 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
             )}
 
-            <section className="cdp-trust-strip" aria-label="Diferenciais">
-              <div><span>◷</span><strong>{pizz.tempo_entrega_min && pizz.tempo_entrega_max ? `${pizz.tempo_entrega_min}–${pizz.tempo_entrega_max} min` : "Entrega rápida"}</strong><small>Tempo estimado</small></div>
-              <div><span>🔥</span><strong>Feito na hora</strong><small>Mais sabor no seu pedido</small></div>
-              <div><span>✦</span><strong>Personalizável</strong><small>Escolha tamanhos e adicionais</small></div>
-              <div><span>⌖</span><strong>{pizz.endereco ? "Retirada disponível" : "Pedido online"}</strong><small>Prático do início ao fim</small></div>
-            </section>
+            {/* Diferenciais: 4 blocos, todos editaveis no painel. */}
+            <div className="cdp-wrap-r">
+              <ul className="cdp-trust-r">
+                {(tema.diferenciais || []).slice(0, 4).map((d, i) => (
+                  <li className="cdp-trust-item-r" key={i}>
+                    <span className="cdp-trust-icon-r"><IconeDiferencial nome={d.icone} /></span>
+                    <span className="cdp-trust-text-r">
+                      <span className="cdp-trust-title-r">{d.titulo}</span>
+                      {d.descricao && <span className="cdp-trust-desc-r">{d.descricao}</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
             {/* ===== LAYOUT BODY (sidebar + main) ===== */}
             <div className="cdp-menu-body" id="cardapio">
@@ -1786,27 +1882,34 @@ export function CardapioPublico({ slug }: { slug: string }) {
               <main className="cdp-main-area">
                 {/* Faixa de destaques (só em "Todos", sem busca) */}
                 {selectedCat === "todos" && !searchQuery.trim() && data.produtos.length > 3 && (
-                  <div className="cdp-destaques">
-                    <div className="cdp-destaques-head">🔥 Destaques</div>
-                    <div className="cdp-destaques-row">
-                      {data.produtos.slice(0, 8).map(p => {
-                        const preco = p.tamanhos && p.tamanhos.length > 0
-                          ? Math.min(...p.tamanhos.map(t => Number(t.preco)))
-                          : Number(p.preco);
-                        return (
-                          <button key={p.id} className="cdp-destaque-card" onClick={() => openProduto(p)}>
-                            <div className="cdp-destaque-img">
-                              {p.imagem_url
-                                ? <img src={p.imagem_url} alt={p.nome} loading="lazy" />
-                                : <span>{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</span>}
+                  <div>
+                    <div className="cdp-cathead-r">
+                      <h2 className="cdp-cathead-title-r cdp-display">{tema.destaques_titulo}</h2>
+                      <span className="cdp-cathead-count-r">Os favoritos da casa</span>
+                    </div>
+                    <div className="cdp-feat-track-r">
+                      {data.produtos.slice(0, 8).map(p => (
+                        <article key={p.id} className="cdp-feat-card-r" role="button" tabIndex={0}
+                          onClick={() => openProduto(p)}
+                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProduto(p); } }}>
+                          {p.imagem_url ? (
+                            <img src={p.imagem_url} alt={p.nome} className="cdp-feat-img-r" loading="lazy" />
+                          ) : (
+                            <div className="cdp-feat-ph-r" aria-hidden="true">{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</div>
+                          )}
+                          <div className="cdp-feat-foot-r">
+                            <div className="cdp-feat-info-r">
+                              <h3 className="cdp-feat-name-r">{p.nome}</h3>
+                              <span className="cdp-feat-price-r">{fmt(precoDe(p))}</span>
                             </div>
-                            <div className="cdp-destaque-info">
-                              <span className="cdp-destaque-name">{p.nome}</span>
-                              <span className="cdp-destaque-price">{fmt(preco)}</span>
-                            </div>
-                          </button>
-                        );
-                      })}
+                            <button type="button" className="cdp-feat-add-r" disabled={!pizz.aberto}
+                              aria-label={pizz.aberto ? `Adicionar ${p.nome}` : "Loja fechada"}
+                              onClick={(e) => handleQuickAdd(e, p)}>
+                              {pizz.aberto ? <IcoMais /> : <IcoMenos />}
+                            </button>
+                          </div>
+                        </article>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -1824,29 +1927,28 @@ export function CardapioPublico({ slug }: { slug: string }) {
                       if (itens.length === 0) return null;
                       return (
                         <section key={cat} id={`cat-${cat}`} className="cdp-cat-section">
-                          <div className="cdp-cat-section-head">
-                            <span className="cdp-cat-section-emoji" style={{ background: (CAT_COLOR[cat] || "#f97316") + "26" }}>
-                              {CAT_EMOJI[cat] || "🍽️"}
-                            </span>
-                            <h2 className="cdp-cat-section-title">
+                          <div className="cdp-cathead-r">
+                            <h2 className="cdp-cathead-title-r cdp-display">
                               {cat === "outro" ? "Outros" : cat.charAt(0).toUpperCase() + cat.slice(1)}
                             </h2>
-                            <span className="cdp-cat-section-count">{itens.length}</span>
+                            <span className="cdp-cathead-count-r">
+                              {itens.length} {itens.length === 1 ? "item" : "itens"}
+                            </span>
                           </div>
-                          <div className="cdp-products">{itens.map(renderProduct)}</div>
+                          <div className="cdp-grid-r">{itens.map(renderProduct)}</div>
                         </section>
                       );
                     })}
                   </div>
                 ) : (
-                  <div className="cdp-products">{produtosFiltrados.map(renderProduct)}</div>
+                  <div className="cdp-grid-r">{produtosFiltrados.map(renderProduct)}</div>
                 )}
               </main>
             </div>{/* fim cdp-menu-body */}
 
             {campanhasAtivas.length > 0 && (
               <section className="cdp-campaigns" id="promocoes">
-                <header><p>OFERTAS DA CASA</p><h2>APROVEITE ANTES QUE ACABE</h2><span>Campanhas preparadas especialmente para você.</span></header>
+                <header><p>OFERTAS DA CASA</p><h2>{tema.promocoes_titulo}</h2><span>{tema.promocoes_subtitulo}</span></header>
                 <div className="cdp-campaign-grid">
                   {campanhasAtivas.map((campanha, index) => (
                     <article key={campanha.id} className={index === 0 ? "featured" : ""}>
@@ -1883,11 +1985,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
             )}
 
             <section className="cdp-order-steps" id="como-pedir">
-              <header><p>SIMPLES COMO DEVE SER</p><h2>SEU PEDIDO EM 3 PASSOS</h2></header>
+              <header><p>SIMPLES COMO DEVE SER</p><h2>{tema.passos_titulo}</h2></header>
               <div>
-                <article><small>01</small><i>☰</i><h3>ESCOLHA</h3><p>Navegue pelas categorias e encontre seus favoritos.</p></article>
-                <article><small>02</small><i>＋</i><h3>PERSONALIZE</h3><p>Defina tamanho, adicionais e observações.</p></article>
-                <article><small>03</small><i>⌖</i><h3>RECEBA</h3><p>Informe o endereço ou escolha retirada no local.</p></article>
+                {(tema.passos || []).map((passo, i) => (
+                  <article key={i}>
+                    <small>{String(i + 1).padStart(2, "0")}</small>
+                    <h3>{passo.titulo}</h3>
+                    {passo.descricao && <p>{passo.descricao}</p>}
+                  </article>
+                ))}
               </div>
             </section>
 
@@ -1929,10 +2035,39 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 </div>
               </section>
             )}
+            {(tema.faq || []).length > 0 && (
+              <section className="cdp-sec-r" id="duvidas" aria-label="Dúvidas frequentes">
+                <div className="cdp-sec-head-r">
+                  <h2 className="cdp-sec-title-r cdp-display">{tema.faq_titulo}</h2>
+                </div>
+                <div className="cdp-faq-r">
+                  {(tema.faq || []).map((item, i) => {
+                    const aberta = faqAberta === i;
+                    return (
+                      <div className="cdp-faq-item-r" key={i}>
+                        <h3 style={{ margin: 0 }}>
+                          <button
+                            type="button"
+                            className="cdp-faq-q-r"
+                            aria-expanded={aberta}
+                            onClick={() => setFaqAberta(aberta ? null : i)}
+                          >
+                            {item.pergunta}
+                            <span className="cdp-faq-icon-r">{aberta ? <IcoMenos /> : <IcoMaisFino />}</span>
+                          </button>
+                        </h3>
+                        {aberta && <p className="cdp-faq-a-r">{item.resposta}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
             <section className="cdp-business-info">
               <div className="cdp-business-brand">
                 {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
-                <div><strong>{pizz.nome}</strong><small>Feito com carinho, entregue com sabor.</small></div>
+                <div><strong>{pizz.nome}</strong><small>{tema.rodape_frase}</small></div>
               </div>
               <div><small>ONDE ESTAMOS</small><strong>{pizz.endereco || "Consulte nossa área de atendimento"}</strong></div>
               <div><small>FALE COM A GENTE</small><strong>{pizz.telefone_contato || "Atendimento pelo pedido online"}</strong></div>

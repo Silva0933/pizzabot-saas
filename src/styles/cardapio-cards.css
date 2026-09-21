@@ -1,0 +1,135 @@
+/* ============================================================
+   Cardápio Digital — cabeçalhos de categoria, cards de produto
+   e carrossel de destaques, no recorte do design de referência.
+
+   Importado depois de cardapio-redesign.css. Sem cor literal: tudo sai
+   das custom properties do tema.
+   ============================================================ */
+
+/* ---------- Cabeçalho de categoria ---------- */
+.cdp-cathead-r {
+  display: flex; align-items: baseline; gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px; margin-bottom: 18px;
+}
+.cdp-cathead-title-r { margin: 0; font-size: clamp(28px, 3.4vw, 48px); line-height: 1; color: var(--text); }
+.cdp-cathead-count-r { font-size: 14px; color: var(--text3); white-space: nowrap; }
+
+/* ---------- Carrossel de destaques ---------- */
+.cdp-feat-track-r {
+  display: flex; gap: 14px; overflow-x: auto;
+  padding-bottom: 4px; scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.cdp-feat-track-r::-webkit-scrollbar { display: none; }
+.cdp-feat-card-r {
+  flex: 0 0 196px; scroll-snap-align: start;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 20px; padding: 10px;
+  display: flex; flex-direction: column; gap: 10px;
+  text-align: left; font-family: inherit; cursor: pointer;
+  transition: border-color .16s, transform .16s;
+}
+.cdp-feat-card-r:hover { border-color: var(--accent); transform: translateY(-2px); }
+.cdp-feat-img-r {
+  width: 100%; aspect-ratio: 1 / 1; border-radius: 14px;
+  object-fit: cover; display: block; background: var(--bg3);
+}
+.cdp-feat-ph-r {
+  width: 100%; aspect-ratio: 1 / 1; border-radius: 14px;
+  background: var(--bg3); display: flex; align-items: center;
+  justify-content: center; font-size: 46px;
+}
+.cdp-feat-foot-r {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 8px; padding: 0 4px 4px;
+}
+.cdp-feat-info-r { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cdp-feat-name-r {
+  margin: 0; font-size: 15px; font-weight: 700; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cdp-feat-price-r {
+  font-size: 15px; font-weight: 800;
+  color: color-mix(in srgb, var(--accent) 78%, white);
+  font-variant-numeric: tabular-nums;
+}
+.cdp-feat-add-r {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px;
+  background: var(--button); color: var(--button-text); border: 0;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+
+/* ---------- Card de produto ---------- */
+.cdp-grid-r { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.cdp-card-r {
+  display: flex; gap: 16px; padding: 16px; text-align: left;
+  background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 20px; font-family: inherit; cursor: pointer;
+  transition: border-color .16s;
+  width: 100%;
+}
+.cdp-card-r:hover { border-color: var(--accent); }
+.cdp-card-body-r { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cdp-card-name-r { margin: 0; font-size: 17px; line-height: 1.3; font-weight: 700; color: var(--text); }
+.cdp-card-desc-r {
+  margin: 0; font-size: 14px; line-height: 1.45; color: var(--text2);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cdp-card-priceline-r {
+  margin-top: auto; padding-top: 8px;
+  display: flex; align-items: baseline; gap: 6px;
+}
+.cdp-card-from-r { font-size: 13px; color: var(--text3); }
+.cdp-card-price-r {
+  font-size: 17px; font-weight: 800; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.cdp-card-media-r { position: relative; width: 112px; height: 112px; flex-shrink: 0; }
+.cdp-card-img-r {
+  width: 112px; height: 112px; border-radius: 14px;
+  object-fit: cover; display: block; background: var(--bg3);
+}
+.cdp-card-ph-r {
+  width: 112px; height: 112px; border-radius: 14px; background: var(--bg3);
+  display: flex; align-items: center; justify-content: center; font-size: 40px;
+}
+/* Botao de adicionar: transborda o canto da foto, como no desenho. */
+.cdp-card-add-r {
+  position: absolute; right: -8px; bottom: -8px;
+  width: 46px; height: 46px; border-radius: 999px;
+  background: var(--button); color: var(--button-text);
+  border: 3px solid var(--bg2);
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: filter .16s;
+}
+.cdp-card-add-r:hover { filter: brightness(1.08); }
+/* Ja na sacola: pilula de quantidade centralizada na base da foto. */
+.cdp-card-qty-r {
+  position: absolute; left: 50%; bottom: -10px; transform: translateX(-50%);
+  display: flex; align-items: center; height: 44px;
+  background: var(--button); color: var(--button-text);
+  border: 3px solid var(--bg2); border-radius: 999px;
+}
+.cdp-card-qty-btn-r {
+  width: 40px; height: 40px; border: 0; background: transparent;
+  color: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.cdp-card-qty-num-r { min-width: 18px; text-align: center; font-size: 15px; font-weight: 800; }
+
+/* ---------- Vazio da busca ---------- */
+.cdp-empty-r {
+  border: 1px dashed var(--line); border-radius: 20px;
+  padding: 48px 32px; display: flex; flex-direction: column;
+  align-items: center; gap: 12px; text-align: center;
+}
+.cdp-empty-title-r { margin: 0; font-size: 20px; font-weight: 800; color: var(--text); }
+.cdp-empty-sub-r { margin: 0; font-size: 15px; color: var(--text2); }
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 860px) {
+  .cdp-grid-r { grid-template-columns: 1fr; gap: 12px; }
+  .cdp-card-media-r, .cdp-card-img-r, .cdp-card-ph-r { width: 96px; height: 96px; }
+  .cdp-feat-card-r { flex-basis: 168px; }
+}
