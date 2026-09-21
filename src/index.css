@@ -43,9 +43,53 @@
   --shadow-brand:      0 8px 24px rgba(249, 115, 22, 0.28);
 }
 
+/* ============================================================
+   Escala tipográfica por resolução.
+
+   Todo tamanho do Tailwind é em rem, então ancorar o font-size do <html> faz
+   texto, espaçamento, raio e altura de componente escalarem juntos — mantendo
+   a proporção, que e o que se perde ao mexer em tamanho solto.
+
+   O padrão do navegador é 16px, pensado pra tela grande. Num notebook de
+   1366x768 isso deixa o painel apertado: sobra pouca altura útil e os títulos
+   competem com o conteúdo. A régua abaixo é conservadora — no máximo ~12%
+   menor que o padrão e ~9% maior, longe de qualquer distorção:
+
+     1280px -> 15.2px    1366px -> 15.4px
+     1600px -> 16.0px    1920px -> 16.8px    2560px+ -> 17.5px (teto)
+
+   O piso de 14px protege a legibilidade: nenhuma tela desce abaixo dele.
+   ============================================================ */
 html {
+  font-size: clamp(14px, 12px + 0.25vw, 17.5px);
   background-color: #070b12;
   overscroll-behavior-x: none;
+}
+
+/*
+  Altura também pesa: notebooks 1366x768 e 1440x900 têm largura razoável mas
+  pouca altura, e é aí que o conteúdo é cortado. Um degrau a menos devolve
+  linhas visíveis sem mexer na proporção.
+*/
+@media (max-height: 820px) and (min-width: 1024px) {
+  html { font-size: clamp(13.5px, 11px + 0.22vw, 15.5px); }
+}
+
+/* Telas muito largas (ultrawide/4K): o teto evita texto gigante. */
+@media (min-width: 2400px) {
+  html { font-size: 17.5px; }
+}
+
+/*
+  O cardápio público tem tipografia própria, toda em px e dirigida pelo tema da
+  pizzaria. Ancorar o rem ali dobraria a escala (rem do painel + clamp do tema),
+  então ele fica fora desta régua.
+*/
+.cdp-root { font-size: 16px; }
+
+/* Respeita quem aumentou a fonte do sistema/navegador por acessibilidade. */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
 }
 html, body, #root {
   width: 100%; max-width: 100%; min-width: 0; overflow-x: hidden;
