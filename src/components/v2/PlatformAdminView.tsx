@@ -1560,86 +1560,235 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
   const [data, setData] = useState<AlertasResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [apenasAbertos, setApenasAbertos] = useState(true);
+  const [busca, setBusca] = useState("");
 
-  // Lista padrão de demonstração idêntica à imagem
+  // Lista padrão de demonstração (usada apenas se a API estiver indisponível)
   const [alertasDemo, setAlertasDemo] = useState([
-    { id: "1", tipo: "fatura_vencida", detalhe: 'Teste grátis de "Forneria"...', pizzaria_nome: "Forneria", hora: "29/05, 14:00", nivel: "warning" },
-    { id: "2", tipo: "fatura_vencida", detalhe: 'Fatura da assinatura de "Castro"...', pizzaria_nome: "Castro", hora: "13/06, 04:16", nivel: "warning" },
-    { id: "3", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:32", nivel: "error" },
-    { id: "4", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:00", nivel: "error" },
-    { id: "5", tipo: "suspensao_indevida", detalhe: 'Pizzaria Palazzo suspensa...', pizzaria_nome: "Pizzaria Palazzo", hora: "11/06, 10:20", nivel: "error" },
-    { id: "6", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Pizzaria Palazzo"...', pizzaria_nome: "Pizzaria Palazzo", hora: "10/06, 11:50", nivel: "error" },
-    { id: "7", tipo: "suspensao_indevida", detalhe: '"Castro" suspensa automaticamente...', pizzaria_nome: "Castro", hora: "09/06, 18:00", nivel: "error" },
-    { id: "8", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "07/06, 12:16", nivel: "error" },
-    { id: "9", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "03/06, 09:30", nivel: "error" },
+    { id: "1", tipo: "fatura_vencida", detalhe: 'Teste grátis de "Forneria"...', pizzaria_nome: "Forneria", hora: "29/05, 14:00", nivel: "warning", resolvido: false },
+    { id: "2", tipo: "fatura_vencida", detalhe: 'Fatura da assinatura de "Castro"...', pizzaria_nome: "Castro", hora: "13/06, 04:16", nivel: "warning", resolvido: false },
+    { id: "3", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:32", nivel: "error", resolvido: false },
+    { id: "4", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:00", nivel: "error", resolvido: false },
+    { id: "5", tipo: "suspensao_indevida", detalhe: 'Pizzaria Palazzo suspensa...', pizzaria_nome: "Pizzaria Palazzo", hora: "11/06, 10:20", nivel: "error", resolvido: false },
+    { id: "6", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Pizzaria Palazzo"...', pizzaria_nome: "Pizzaria Palazzo", hora: "10/06, 11:50", nivel: "error", resolvido: false },
+    { id: "7", tipo: "suspensao_indevida", detalhe: '"Castro" suspensa automaticamente...', pizzaria_nome: "Castro", hora: "09/06, 18:00", nivel: "error", resolvido: false },
+    { id: "8", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "07/06, 12:16", nivel: "error", resolvido: false },
+    { id: "9", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "03/06, 09:30", nivel: "error", resolvido: false },
   ]);
 
   async function load() {
+    setLoading(true);
     try {
-      const res = await adminApi.alertas(true);
-      if (res && res.alertas && res.alertas.length > 0) {
+      const res = await adminApi.alertas(apenasAbertos, 150);
+      if (res && Array.isArray(res.alertas) && res.alertas.length > 0) {
         setData(res);
-        onCountChange?.(res.abertos || res.alertas.length);
+        onCountChange?.(res.abertos ?? res.alertas.filter((a: any) => !a.resolvido).length);
       } else {
-        onCountChange?.(27);
+        setData(res || null);
+        onCountChange?.(res?.abertos ?? alertasDemo.length);
       }
     } catch {
-      onCountChange?.(27);
+      onCountChange?.(alertasDemo.length);
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [apenasAbertos]);
+
+  // Lista a exibir: usa dados reais da API quando disponíveis, senão usa demo
+  const alertasList: any[] = (data?.alertas && data.alertas.length > 0) ? data.alertas : (data ? [] : alertasDemo);
+  const totalAbertos = data?.abertos ?? (data?.alertas ? data.alertas.filter((a: any) => !a.resolvido).length : alertasDemo.length);
 
   async function resolver(id: string) {
     setBusy(id);
     try {
       await adminApi.resolverAlerta(id);
-      setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
-      onCountChange?.(Math.max(0, alertasDemo.length - 1));
+      if (data?.alertas && data.alertas.length > 0) {
+        setData((prev) => prev ? {
+          ...prev,
+          alertas: apenasAbertos
+            ? prev.alertas.filter((a: any) => a.id !== id)
+            : prev.alertas.map((a: any) => a.id === id ? { ...a, resolvido: true } : a),
+          abertos: Math.max(0, (prev.abertos || 1) - 1),
+        } : prev);
+      } else {
+        setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
+      }
+      onCountChange?.(Math.max(0, totalAbertos - 1));
     } catch {
-      setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
+      if (data?.alertas && data.alertas.length > 0) {
+        setData((prev) => prev ? { ...prev, alertas: prev.alertas.filter((a: any) => a.id !== id) } : prev);
+      } else {
+        setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
+      }
     } finally {
       setBusy(null);
     }
   }
 
+  function formatAlertaHora(hora?: string, createdAt?: string | null) {
+    if (hora) return hora;
+    if (!createdAt) return "";
+    try {
+      const d = new Date(createdAt);
+      if (isNaN(d.getTime())) return createdAt;
+      return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    } catch {
+      return createdAt;
+    }
+  }
+
+  function getTipoLabel(tipo: string) {
+    const map: Record<string, string> = {
+      preco_suspeito: "Preço Suspeito",
+      falha_envio: "Falha Envio",
+      falha_ia: "Falha IA",
+      falha_pagamento: "Falha Pagamento",
+      fatura_vencida: "Fatura Vencida",
+      whatsapp_desconectado: "WhatsApp Off",
+      suspensao_indevida: "Suspensão",
+      assinatura_vencida: "Assinatura Vencida",
+    };
+    return map[tipo] || tipo.replace(/_/g, " ");
+  }
+
+  const alertasFiltrados = alertasList.filter((a: any) => {
+    if (!busca) return true;
+    const termo = busca.toLowerCase();
+    return (
+      (a.detalhe && a.detalhe.toLowerCase().includes(termo)) ||
+      (a.pizzaria_nome && a.pizzaria_nome.toLowerCase().includes(termo)) ||
+      (a.tipo && a.tipo.toLowerCase().includes(termo))
+    );
+  });
+
   return (
-    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm space-y-3">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-white">Alertas</h3>
-        <span className="text-xs font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 rounded-full">
-          27 aberto(s)
-        </span>
-      </div>
-
-      <div className="divide-y divide-[#1e293b]/60 max-h-[380px] overflow-y-auto space-y-1">
-        {alertasDemo.map((a) => (
-          <div key={a.id} className="pt-2.5 pb-2 flex items-center justify-between gap-3 text-xs">
-            <div className="min-w-0 flex items-center gap-2">
-              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md shrink-0 uppercase ${
-                a.nivel === "warning" ? "bg-amber-500/15 text-amber-400 border border-amber-500/30" : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
-              }`}>
-                {a.tipo}
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm space-y-4">
+      {/* Top bar do card: Título, contador, filtros e busca */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-[#1e293b]">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 grid place-items-center shrink-0">
+            <ShieldAlert className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white">Central de Alertas</h3>
+              <span className="text-xs font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 rounded-full">
+                {totalAbertos} aberto(s)
               </span>
-              <div className="min-w-0">
-                <p className="text-white truncate max-w-[150px] font-medium">{a.detalhe}</p>
-                <p className="text-[10px] text-slate-500 truncate">{a.pizzaria_nome} • {a.hora}</p>
-              </div>
             </div>
+            <p className="text-xs text-slate-400">Total de {alertasList.length} alerta(s) listado(s)</p>
+          </div>
+        </div>
 
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Busca */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+            <input
+              type="text"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Filtrar alertas..."
+              className="bg-[#161f30] border border-[#1e293b] text-xs text-white placeholder:text-slate-500 rounded-xl pl-8 pr-3 py-1.5 outline-none focus:border-orange-500 w-48 md:w-56"
+            />
+          </div>
+
+          {/* Toggle Apenas Abertos / Todos */}
+          <div className="flex bg-[#161f30] p-0.5 rounded-xl border border-[#1e293b] text-xs">
             <button
               type="button"
-              onClick={() => resolver(a.id)}
-              disabled={busy === a.id}
-              className="px-2.5 py-1 text-xs font-semibold text-slate-300 hover:text-white bg-[#161f30] hover:bg-[#1e293b] border border-[#1e293b] rounded-lg transition-colors shrink-0 disabled:opacity-50"
+              onClick={() => setApenasAbertos(true)}
+              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                apenasAbertos ? "bg-orange-500 text-white shadow-sm" : "text-slate-400 hover:text-white"
+              }`}
             >
-              Resolver
+              Abertos
+            </button>
+            <button
+              type="button"
+              onClick={() => setApenasAbertos(false)}
+              className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                !apenasAbertos ? "bg-orange-500 text-white shadow-sm" : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Todos
             </button>
           </div>
-        ))}
+
+          {/* Botão Atualizar */}
+          <button
+            type="button"
+            onClick={load}
+            disabled={loading}
+            className="p-2 text-slate-400 hover:text-white bg-[#161f30] hover:bg-[#1e293b] border border-[#1e293b] rounded-xl transition-colors disabled:opacity-50 shrink-0"
+            title="Atualizar alertas"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
+
+      {/* Lista de Alertas */}
+      {loading ? (
+        <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
+          <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
+          <p className="text-xs">Carregando todos os alertas...</p>
+        </div>
+      ) : alertasFiltrados.length === 0 ? (
+        <div className="py-10 text-center space-y-1">
+          <p className="text-xs text-slate-400 font-medium">
+            {busca ? "Nenhum alerta corresponde à busca." : "Nenhum alerta pendente no momento. 🎉"}
+          </p>
+          <p className="text-[11px] text-slate-500">Tudo funcionando normalmente na plataforma.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-[#1e293b]/70">
+          {alertasFiltrados.map((a: any) => {
+            const isWarning = a.nivel === "warning";
+            const horaFormatada = formatAlertaHora(a.hora, a.created_at);
+
+            return (
+              <div key={a.id} className="py-3 flex items-center justify-between gap-4 text-xs hover:bg-[#161f30]/30 px-2 rounded-xl transition-colors">
+                <div className="min-w-0 flex items-center gap-3">
+                  <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md shrink-0 uppercase tracking-wide ${
+                    isWarning
+                      ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                      : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                  }`}>
+                    {getTipoLabel(a.tipo)}
+                  </span>
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-white font-medium text-xs break-words">{a.detalhe}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {a.pizzaria_nome ? <strong className="text-slate-400 font-semibold">{a.pizzaria_nome}</strong> : "Sistema"}
+                      {horaFormatada ? ` • ${horaFormatada}` : ""}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  {a.resolvido ? (
+                    <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                      Resolvido
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => resolver(a.id)}
+                      disabled={busy === a.id}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-[#161f30] hover:bg-[#1e293b] border border-[#1e293b] rounded-xl transition-colors shrink-0 disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {busy === a.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Resolver"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

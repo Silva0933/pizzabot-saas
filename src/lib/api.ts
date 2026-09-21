@@ -908,7 +908,7 @@ export interface AlertasResp { alertas: AlertaItem[]; abertos: number; }
 
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
-  alertas: (apenasAbertos = true) => api.get<AlertasResp>(`/admin/alertas?apenas_abertos=${apenasAbertos}`),
+  alertas: (apenasAbertos = true, limit = 100) => api.get<AlertasResp>(`/admin/alertas?apenas_abertos=${apenasAbertos}&limit=${limit}`),
   resolverAlerta: (id: string) => api.patch<{ ok: boolean }>(`/admin/alertas/${id}/resolver`, {}),
   alterarPlano: (pizzariaId: string, plano: string) =>
     api.patch<{ ok: boolean; plano: string; vence_em?: string | null }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
