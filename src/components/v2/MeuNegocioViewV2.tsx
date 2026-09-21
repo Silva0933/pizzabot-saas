@@ -232,10 +232,15 @@ function ConfigGeral({
               <Field label="NOME DA PIZZARIA *" required>
                 <input value={form.nome ?? ""} onChange={(e) => setField("nome", e.target.value)} className={inputCls}/>
               </Field>
-              <Field label="TELEFONE ADMIN (WHATSAPP DO DONO)">
-                <input value={form.telefone_admin ?? ""} onChange={(e) => setField("telefone_admin", e.target.value)} className={inputCls}/>
+              <Field label="WHATSAPP DE ATENDIMENTO (BOTÃO DO CARDÁPIO DIGITAL)">
+                <input value={form.telefone_contato ?? ""} onChange={(e) => setField("telefone_contato", e.target.value)}
+                  placeholder="Ex: 11999999999" className={inputCls}/>
               </Field>
             </div>
+            <Field label="TELEFONE ADMIN (WHATSAPP PESSOAL DO DONO)" full>
+              <input value={form.telefone_admin ?? ""} onChange={(e) => setField("telefone_admin", e.target.value)}
+                placeholder="Ex: 11999999999" className={inputCls}/>
+            </Field>
             <Field label="ENDEREÇO" full>
               <input value={form.endereco ?? ""} onChange={(e) => setField("endereco", e.target.value)} className={inputCls}/>
             </Field>
