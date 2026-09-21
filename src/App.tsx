@@ -155,6 +155,37 @@ function AdminApp() {
   const [openPaymentDirectly, setOpenPaymentDirectly] = useState(false);
   const [openCardapioNovo, setOpenCardapioNovo] = useState(false);
 
+  /*
+   * O painel abria no meio (ou no fim) da pagina: o navegador restaura sozinho a
+   * posicao de scroll anterior ao recarregar, e nada aqui desfazia isso. Como a
+   * navegacao troca a view no lugar (sem mudar de rota), o scroll antigo tambem
+   * sobrevivia a troca de aba.
+   */
+  useEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      window.history.scrollRestoration = "manual";
+    }
+  }, []);
+
+  // Toda troca de aba comeca do topo, como numa navegacao de pagina de verdade.
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [nav]);
+
+  /*
+   * Assinatura suspensa: o backend passou a responder 402 nas rotas de operacao
+   * (pedidos, cardapio, agente...) e a manter aberta so a de assinatura. Quando
+   * isso acontece, levamos a pessoa direto pra tela de pagamento — que e a saida
+   * da suspensao — em vez de deixar cada tela falhando sozinha.
+   */
+  useEffect(() => {
+    function aoSuspender() {
+      setNav((atual) => (atual === "assinatura" ? atual : "assinatura"));
+    }
+    window.addEventListener("pizzabot:assinatura-suspensa", aoSuspender);
+    return () => window.removeEventListener("pizzabot:assinatura-suspensa", aoSuspender);
+  }, []);
+
   function handleMenuClick() {
     setNav("cardapio");
     setOpenCardapioNovo(true);

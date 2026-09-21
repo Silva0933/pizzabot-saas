@@ -65,7 +65,19 @@ async function request<T = any>(path: string, init: RequestInit = {}): Promise<T
     }
     let body: any = null;
     try { body = await res.json(); } catch { body = await res.text(); }
-    throw new ApiError(res.status, body?.detail || res.statusText, body);
+
+    /*
+     * 402 = assinatura suspensa (inadimplencia ou trial vencido). O backend
+     * barra a operacao mas mantem abertas as rotas de assinatura, entao aqui so
+     * avisamos a aplicacao pra levar o usuario ate a tela de pagamento em vez de
+     * mostrar um erro solto em cada tela.
+     */
+    if (res.status === 402 && typeof window !== "undefined") {
+      const motivo = body?.detail?.motivo || "inadimplencia";
+      window.dispatchEvent(new CustomEvent("pizzabot:assinatura-suspensa", { detail: { motivo } }));
+    }
+
+    throw new ApiError(res.status, body?.detail?.mensagem || body?.detail || res.statusText, body);
   }
 
   if (res.status === 204) return undefined as T;

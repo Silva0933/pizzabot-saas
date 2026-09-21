@@ -53,11 +53,19 @@ def _pizzaria(plano="pro", vence_delta_dias=None, trial_delta_dias=None):
     return p
 
 
-def _roda_dunning(monkeypatch, pizzarias, ja_alertado=False):
-    """Executa _verificar_assinaturas_async com DB e alertas mockados."""
+def _roda_dunning(monkeypatch, pizzarias, ja_alertado=False, billing_ok=True):
+    """Executa _verificar_assinaturas_async com DB e alertas mockados.
+
+    `billing_ok` espelha ASAAS_PLATFORM_API_KEY estar configurada: sem gateway a
+    suspensao automatica fica DESLIGADA de proposito (ninguem conseguiria pagar
+    pra sair dela).
+    """
     import app.db as app_db
     import app.services.alertas as alertas_mod
+    import app.services.billing_plataforma as billing_mod
     from app.workers import periodic
+
+    monkeypatch.setattr(billing_mod, "billing_configurado", lambda: billing_ok)
 
     res = MagicMock()
     res.scalars.return_value.all.return_value = pizzarias
@@ -123,8 +131,28 @@ class TestDunning:
     def test_em_dia_nao_alerta(self, monkeypatch):
         p = _pizzaria(vence_delta_dias=20)
         out, alerta, _ = _roda_dunning(monkeypatch, [p])
-        assert out == {"ok": True, "avisos": 0, "suspensas": 0}
+        assert out["ok"] is True and out["avisos"] == 0 and out["suspensas"] == 0
         alerta.assert_not_awaited()
+
+    def test_sem_gateway_nao_suspende_ninguem(self, monkeypatch):
+        """Sem ASAAS_PLATFORM_API_KEY ninguem consegue pagar.
+
+        Suspender nesse estado trancaria todas as pizzarias para fora sem saida,
+        inclusive as que queriam pagar. Entao a suspensao fica desligada e o
+        operador e alertado.
+        """
+        from app.services.billing_plataforma import GRACE_DAYS
+
+        trial = _pizzaria(plano="trial", trial_delta_dias=-1)
+        devedora = _pizzaria(vence_delta_dias=-(GRACE_DAYS + 1))
+        out, alerta, _ = _roda_dunning(monkeypatch, [trial, devedora], billing_ok=False)
+
+        assert out["suspensas"] == 0
+        assert trial.suspensa is False
+        assert devedora.suspensa is False
+        assert out["pode_suspender"] is False
+        tipos = [c.kwargs.get("tipo") for c in alerta.await_args_list]
+        assert "billing_nao_configurado" in tipos
 
     def test_nao_duplica_alerta_no_mesmo_dia(self, monkeypatch):
         p = _pizzaria(vence_delta_dias=1)

@@ -131,12 +131,16 @@ async def _verificar_assinaturas_async() -> dict:
     from app.db import AsyncSessionLocal, engine
     from app.models import Pizzaria
     from app.services.alertas import registrar_alerta
-    from app.services.billing_plataforma import GRACE_DAYS
+    from app.services.billing_plataforma import GRACE_DAYS, billing_configurado
 
     avisos = 0
     suspensas = 0
     try:
         agora = datetime.now(timezone.utc)
+        # Sem gateway configurado ninguem consegue pagar. Suspender nesse estado
+        # tranca todas as pizzarias para fora sem saida — inclusive as que
+        # queriam pagar. Entao avisamos o operador e NAO suspendemos ninguem.
+        pode_suspender = billing_configurado()
         async with AsyncSessionLocal() as db:
             pizzarias = (await db.execute(
                 select(Pizzaria).where(Pizzaria.suspensa.is_(False))
@@ -145,7 +149,7 @@ async def _verificar_assinaturas_async() -> dict:
             for pizz in pizzarias:
                 # --- Trial expirado → suspende ---
                 if (pizz.plano or "") == "trial":
-                    if pizz.trial_fim and pizz.trial_fim < agora:
+                    if pizz.trial_fim and pizz.trial_fim < agora and pode_suspender:
                         pizz.suspensa = True
                         pizz.suspensa_motivo = "trial_expirado"
                         suspensas += 1
@@ -163,7 +167,7 @@ async def _verificar_assinaturas_async() -> dict:
                 dias = (pizz.plano_vence_em - agora).days
 
                 # --- Atraso além da carência → suspende (inadimplência) ---
-                if pizz.plano_vence_em + timedelta(days=GRACE_DAYS) < agora:
+                if pizz.plano_vence_em + timedelta(days=GRACE_DAYS) < agora and pode_suspender:
                     pizz.suspensa = True
                     pizz.suspensa_motivo = "inadimplencia"
                     suspensas += 1
@@ -196,8 +200,18 @@ async def _verificar_assinaturas_async() -> dict:
                             ),
                         )
 
+            if not pode_suspender:
+                await registrar_alerta(
+                    db, tipo="billing_nao_configurado", nivel="error",
+                    detalhe=(
+                        "ASAAS_PLATFORM_API_KEY nao esta configurada: nenhuma pizzaria "
+                        "pode assinar nem pagar. A suspensao automatica esta DESLIGADA "
+                        "para nao trancar todo mundo sem saida. Configure a chave."
+                    ),
+                )
+
             await db.commit()
-        return {"ok": True, "avisos": avisos, "suspensas": suspensas}
+        return {"ok": True, "avisos": avisos, "suspensas": suspensas, "pode_suspender": pode_suspender}
     except Exception as e:  # noqa: BLE001
         log.exception("Falha no dunning de assinaturas: %s", e)
         return {"ok": False, "erro": str(e)}
