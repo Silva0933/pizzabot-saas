@@ -1152,6 +1152,7 @@ export interface MenuPizzaria {
   tempo_retirada_min: number | null;
   tempo_retirada_max: number | null;
   aberto: boolean;
+  aberto_manual?: boolean | null;
 }
 
 export type TemaCardapioModelo = "brasa" | "trattoria" | "metropole";
@@ -1342,6 +1343,23 @@ export const menuApi = {
       throw new ApiError(res.status, b?.detail || 'Cardápio não encontrado', b);
     }
     return res.json();
+  },
+  getStatus: async (slug: string): Promise<{ aberto: boolean; aberto_manual?: boolean | null; telefone_contato?: string | null; horario_funcionamento?: Record<string, any> }> => {
+    try {
+      const res = await fetch(`${API_BASE}/menu/${slug}/status`, { method: 'GET' });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // continua para o fallback
+    }
+    const full = await menuApi.getBySlug(slug);
+    return {
+      aberto: Boolean(full.pizzaria.aberto),
+      aberto_manual: (full.pizzaria as any).aberto_manual ?? null,
+      telefone_contato: full.pizzaria.telefone_contato || null,
+      horario_funcionamento: full.pizzaria.horario_funcionamento || {},
+    };
   },
   submitOrder: async (slug: string, data: PedidoDigitalPayload, idempotencyKey: string, customerToken?: string | null): Promise<PedidoDigitalResponse> => {
     const res = await fetch(`${API_BASE}/menu/${slug}/pedido`, {

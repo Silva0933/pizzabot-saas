@@ -21,6 +21,7 @@ import {
   ClienteConta,
   ClientePedidoConta,
 } from "../../lib/api";
+import { calcEstaAberto, getTextoProximaAbertura } from "../../lib/businessHours";
 import "../../styles/cardapio-publico.css";
 
 // ============================================
@@ -101,6 +102,103 @@ function mapEmbedUrl(pizzaria: MenuPizzaria) {
 
   query ||= pizzaria.endereco || pizzaria.nome;
   return `https://www.google.com/maps?q=${encodeURIComponent(query)}&z=16&output=embed`;
+}
+
+function fmt(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Monta o link wa.me a partir do telefone de contato (normaliza DDI 55). */
+function waLink(tel?: string | null): string {
+  const d = (tel || "").replace(/\D/g, "");
+  if (!d) return "";
+  const full = d.startsWith("55") ? d : (d.length === 10 || d.length === 11 ? "55" + d : d);
+  return `https://wa.me/${full}`;
+}
+
+/** Monta mensagem formatada para envio do pedido em andamento pelo WhatsApp caso a loja feche. */
+function buildWhatsAppOrderMessage({
+  pizzariaNome,
+  cart,
+  total,
+  checkoutForm,
+  taxaEntrega,
+  cupomAplicado,
+  descontoEstimado,
+}: {
+  pizzariaNome: string;
+  cart: CartItem[];
+  total: number;
+  checkoutForm: {
+    nome: string;
+    telefone: string;
+    tipo: "delivery" | "retirada";
+    rua: string;
+    numero: string;
+    bairro: string;
+    referencia: string;
+    pagamento: string;
+    observacoes: string;
+  };
+  taxaEntrega: number;
+  cupomAplicado?: string | null;
+  descontoEstimado?: number;
+}): string {
+  const linhas: string[] = [];
+  linhas.push(`🍕 *PEDIDO EM ANDAMENTO — ${pizzariaNome.toUpperCase()}*`);
+  linhas.push(`_Olá! Meu pedido estava em andamento no cardápio digital quando a loja encerrou o horário. Gostaria de finalizar por aqui com a equipe:_`);
+  linhas.push("");
+
+  if (checkoutForm.nome.trim()) {
+    linhas.push(`👤 *Cliente:* ${checkoutForm.nome.trim()}`);
+  }
+  if (checkoutForm.telefone.trim()) {
+    linhas.push(`📱 *WhatsApp:* ${checkoutForm.telefone.trim()}`);
+  }
+
+  linhas.push(`🛵 *Tipo:* ${checkoutForm.tipo === "delivery" ? "Entrega (Delivery)" : "Retirada no Balcão"}`);
+
+  if (checkoutForm.tipo === "delivery" && checkoutForm.rua.trim()) {
+    let end = checkoutForm.rua.trim();
+    if (checkoutForm.numero.trim()) end += `, ${checkoutForm.numero.trim()}`;
+    if (checkoutForm.bairro.trim()) end += ` - ${checkoutForm.bairro.trim()}`;
+    if (checkoutForm.referencia.trim()) end += ` (Ref: ${checkoutForm.referencia.trim()})`;
+    linhas.push(`📍 *Endereço:* ${end}`);
+  }
+
+  if (checkoutForm.pagamento) {
+    const pagMap: Record<string, string> = { pix: "Pix", cartao: "Cartão", dinheiro: "Dinheiro" };
+    linhas.push(`💳 *Forma de Pagamento:* ${pagMap[checkoutForm.pagamento] || checkoutForm.pagamento}`);
+  }
+
+  linhas.push("");
+  linhas.push(`📋 *ITENS DO PEDIDO:*`);
+  cart.forEach((item) => {
+    const nomeTamanho = item.tamanho ? `${item.nome} (${item.tamanho})` : item.nome;
+    linhas.push(`• ${item.quantidade}x ${nomeTamanho} — ${fmt(item.preco * item.quantidade)}`);
+    if (item.adicionais && item.adicionais.length > 0) {
+      linhas.push(`   + Adicionais: ${item.adicionais.join(", ")}`);
+    }
+    if (item.observacao && item.observacao.trim()) {
+      linhas.push(`   _Obs: ${item.observacao.trim()}_`);
+    }
+  });
+
+  linhas.push("");
+  if (checkoutForm.tipo === "delivery" && taxaEntrega > 0) {
+    linhas.push(`🚚 *Taxa de entrega:* ${fmt(taxaEntrega)}`);
+  }
+  if (cupomAplicado && (descontoEstimado || 0) > 0) {
+    linhas.push(`🎟️ *Cupom (${cupomAplicado}):* -${fmt(descontoEstimado || 0)}`);
+  }
+  linhas.push(`💰 *TOTAL:* *${fmt(total)}*`);
+
+  if (checkoutForm.observacoes && checkoutForm.observacoes.trim()) {
+    linhas.push("");
+    linhas.push(`📝 *Observações:* ${checkoutForm.observacoes.trim()}`);
+  }
+
+  return linhas.join("\n");
 }
 
 export function CardapioPublico({ slug }: { slug: string }) {
@@ -215,7 +313,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [modalAdicionais, setModalAdicionais] = useState<string[]>([]);
   const [modalQtd, setModalQtd] = useState(1);
 
-  // ---- Load ----
+  // ---- Load & Sincronização em tempo real do status da loja ----
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -224,15 +322,62 @@ export function CardapioPublico({ slug }: { slug: string }) {
       .catch((e: ApiError) => { if (active) setError(e.message || "Cardápio não encontrado"); })
       .finally(() => { if (active) setLoading(false); });
 
-    // Atualiza o aviso quando o proprietário abre/fecha a loja no painel.
+    // 1. Polling leve de status a cada 12 segundos (detecta alteração imediata feita no painel)
+    const statusTimer = window.setInterval(() => {
+      menuApi.getStatus(slug)
+        .then((st) => {
+          if (!active) return;
+          setData((prev) => {
+            if (!prev) return prev;
+            const mudouAberto = prev.pizzaria.aberto !== st.aberto;
+            const mudouManual = (prev.pizzaria as any).aberto_manual !== st.aberto_manual;
+            const mudouTel = Boolean(st.telefone_contato && prev.pizzaria.telefone_contato !== st.telefone_contato);
+            if (!mudouAberto && !mudouManual && !mudouTel) return prev;
+            return {
+              ...prev,
+              pizzaria: {
+                ...prev.pizzaria,
+                aberto: st.aberto,
+                aberto_manual: st.aberto_manual ?? null,
+                telefone_contato: st.telefone_contato || prev.pizzaria.telefone_contato,
+                horario_funcionamento: st.horario_funcionamento || prev.pizzaria.horario_funcionamento,
+              },
+            };
+          });
+        })
+        .catch(() => { /* mantém estado em falhas transitórias */ });
+    }, 12_000);
+
+    // 2. Avaliação de relógio a cada 5 segundos (detecta fechamento programado no segundo exato)
+    const clockTimer = window.setInterval(() => {
+      if (!active) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const calc = calcEstaAberto(prev.pizzaria.horario_funcionamento, (prev.pizzaria as any).aberto_manual);
+        if (calc !== prev.pizzaria.aberto) {
+          return {
+            ...prev,
+            pizzaria: {
+              ...prev.pizzaria,
+              aberto: calc,
+            },
+          };
+        }
+        return prev;
+      });
+    }, 5_000);
+
+    // 3. Atualização do cardápio completo a cada 60 segundos
     const refreshTimer = window.setInterval(() => {
       menuApi.getBySlug(slug)
         .then((menu) => { if (active) setData(menu); })
         .catch(() => { /* mantém a última versão válida em falhas transitórias */ });
-    }, 30_000);
+    }, 60_000);
 
     return () => {
       active = false;
+      window.clearInterval(statusTimer);
+      window.clearInterval(clockTimer);
       window.clearInterval(refreshTimer);
     };
   }, [slug]);
@@ -340,6 +485,30 @@ export function CardapioPublico({ slug }: { slug: string }) {
     return Math.min(cartTotal, Math.max(0, bruto));
   }, [cartTotal, cupomSelecionado]);
   const totalEstimado = Math.max(0, cartTotal - descontoEstimado) + taxaEntrega;
+
+  const proximaAberturaTexto = useMemo(() => {
+    if (!data) return null;
+    return getTextoProximaAbertura(data.pizzaria.horario_funcionamento);
+  }, [data?.pizzaria.horario_funcionamento]);
+
+  const whatsappOrderUrl = useMemo(() => {
+    if (!data || cart.length === 0) {
+      return waLink(data?.pizzaria.telefone_contato);
+    }
+    const msg = buildWhatsAppOrderMessage({
+      pizzariaNome: data.pizzaria.nome,
+      cart,
+      total: totalEstimado,
+      checkoutForm,
+      taxaEntrega,
+      cupomAplicado,
+      descontoEstimado,
+    });
+    const tel = data.pizzaria.telefone_contato;
+    const baseWa = waLink(tel);
+    if (!baseWa) return "";
+    return `${baseWa}?text=${encodeURIComponent(msg)}`;
+  }, [data, cart, totalEstimado, checkoutForm, taxaEntrega, cupomAplicado, descontoEstimado]);
 
   useEffect(() => {
     if (!trackingOpen || !tracking || !trackingForm.numero || !trackingForm.telefone) return;
@@ -625,7 +794,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   async function submitPedido() {
     if (!data) return;
     if (!data.pizzaria.aberto) {
-      setSubmitError("A pizzaria está fechada no momento e não está recebendo novos pedidos.");
+      setSubmitError("A loja encerrou o horário de funcionamento para pedidos pelo cardápio. Finalize seu pedido em andamento pelo WhatsApp no botão abaixo.");
       return;
     }
     setSubmitting(true);
@@ -679,7 +848,13 @@ export function CardapioPublico({ slug }: { slug: string }) {
       setCart([]);
       checkoutRequestKeyRef.current = null;
     } catch (e: any) {
-      setSubmitError(e.message || "Erro ao enviar pedido");
+      const msg = e.message || "Erro ao enviar pedido";
+      if (msg.toLowerCase().includes("fechada") || msg.toLowerCase().includes("horário") || msg.toLowerCase().includes("horario")) {
+        setData(prev => prev ? { ...prev, pizzaria: { ...prev.pizzaria, aberto: false } } : prev);
+        setSubmitError("A loja fechou para novos pedidos. Como você já estava com o pedido em andamento, utilize o botão abaixo para finalizar diretamente pelo nosso WhatsApp!");
+      } else {
+        setSubmitError(msg);
+      }
     }
     setSubmitting(false);
   }
@@ -1051,17 +1226,36 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
               {submitError && <div className="cdp-error-inline">⚠️ {submitError}</div>}
 
-              <button
-                className="cdp-btn-primary cdp-btn-lg cdp-btn-submit"
-                disabled={!pizz.aberto || submitting || !checkoutForm.nome || !telValido || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
-                onClick={submitPedido}
-              >
-                {submitting ? (
-                  <span className="cdp-btn-loading">
-                    <span className="cdp-mini-spinner" /> Enviando...
-                  </span>
-                ) : `✅ Confirmar Pedido • ${fmt(totalEstimado)}`}
-              </button>
+              {!pizz.aberto ? (
+                <div className="cdp-closed-order-box">
+                  <div className="cdp-closed-order-badge">⚠️ Loja Fechada</div>
+                  <h3 className="cdp-closed-order-title">O horário de funcionamento encerrou</h3>
+                  <p className="cdp-closed-order-desc">
+                    Como você já estava montando seu pedido, envie todos os detalhes diretamente para nosso WhatsApp para verificarmos se ainda é possível atender:
+                  </p>
+                  <a
+                    href={whatsappOrderUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cdp-btn-whatsapp-order"
+                  >
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+                    <span>Finalizar Pedido pelo WhatsApp • {fmt(totalEstimado)}</span>
+                  </a>
+                </div>
+              ) : (
+                <button
+                  className="cdp-btn-primary cdp-btn-lg cdp-btn-submit"
+                  disabled={submitting || !checkoutForm.nome || !telValido || !checkoutForm.pagamento || (checkoutForm.tipo === "delivery" && !checkoutForm.rua)}
+                  onClick={submitPedido}
+                >
+                  {submitting ? (
+                    <span className="cdp-btn-loading">
+                      <span className="cdp-mini-spinner" /> Enviando...
+                    </span>
+                  ) : `✅ Confirmar Pedido • ${fmt(totalEstimado)}`}
+                </button>
+              )}
             </div>
           </>
 
@@ -1144,9 +1338,26 @@ export function CardapioPublico({ slug }: { slug: string }) {
                   </div>
 
                   <div className="cdp-cart-cta">
-                    <button className="cdp-btn-primary cdp-btn-lg" disabled={!pizz.aberto} onClick={() => setStep("checkout")}>
-                      {pizz.aberto ? `Continuar • ${fmt(cartTotal)}` : "Loja fechada"}
-                    </button>
+                    {!pizz.aberto ? (
+                      <div className="cdp-closed-order-box cdp-closed-order-box-cart">
+                        <p className="cdp-closed-order-cart-notice">
+                          ⚠️ <strong>A loja fechou para novos pedidos pelo cardápio.</strong> Como você já tem itens na sacola, finalize diretamente pelo WhatsApp!
+                        </p>
+                        <a
+                          href={whatsappOrderUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="cdp-btn-whatsapp-order"
+                        >
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+                          <span>Enviar pedido pelo WhatsApp ({fmt(cartTotal)})</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <button className="cdp-btn-primary cdp-btn-lg" onClick={() => setStep("checkout")}>
+                        Continuar • {fmt(cartTotal)}
+                      </button>
+                    )}
                     <button className="cdp-cart-add-more" onClick={() => setStep("menu")}>
                       + Adicionar mais itens
                     </button>
@@ -1410,6 +1621,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
                       <span className={`cdp-status-dot ${pizz.aberto ? "open" : "closed"}`} />
                       {pizz.aberto ? "Aberto agora" : "Fechado"}
                     </span>
+                    {!pizz.aberto && proximaAberturaTexto && (
+                      <span className="cdp-proxima-abertura-pill">
+                        ⏰ {proximaAberturaTexto}
+                      </span>
+                    )}
                     {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
                       <span className="cdp-tempo-pill">
                         🕐 {pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min
@@ -1438,6 +1654,45 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 </div>
               </div>
             </header>
+
+            {!pizz.aberto && (
+              <div className={`cdp-closed-warning-banner ${cart.length > 0 ? "has-cart" : ""}`}>
+                <div className="cdp-closed-warning-left">
+                  <span className="cdp-closed-warning-icon">{cart.length > 0 ? "⚠️" : "🌙"}</span>
+                  <div className="cdp-closed-warning-text">
+                    <strong>
+                      {cart.length > 0
+                        ? "A loja fechou para novos pedidos pelo cardápio"
+                        : "Loja fechada no momento"}
+                    </strong>
+                    <span>
+                      {cart.length > 0
+                        ? `Você tem ${cartCount} ${cartCount === 1 ? "item" : "itens"} em andamento na sacola. Finalize seu pedido diretamente pelo WhatsApp!`
+                        : (proximaAberturaTexto || "Confira nosso cardápio e faça seu pedido quando a loja abrir.")}
+                    </span>
+                  </div>
+                </div>
+                {cart.length > 0 ? (
+                  <a
+                    href={whatsappOrderUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cdp-btn-wpp-direct"
+                  >
+                    📱 Enviar Pedido
+                  </a>
+                ) : waUrl ? (
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="cdp-btn-wpp-direct"
+                  >
+                    Falar no WhatsApp
+                  </a>
+                ) : null}
+              </div>
+            )}
 
             <section className="cdp-trust-strip" aria-label="Diferenciais">
               <div><span>◷</span><strong>{pizz.tempo_entrega_min && pizz.tempo_entrega_max ? `${pizz.tempo_entrega_min}–${pizz.tempo_entrega_max} min` : "Entrega rápida"}</strong><small>Tempo estimado</small></div>
@@ -1910,9 +2165,26 @@ export function CardapioPublico({ slug }: { slug: string }) {
                           <span>Subtotal</span>
                           <span className="cdp-sacola-subtotal-val">{fmt(cartTotal)}</span>
                         </div>
-                        <button className="cdp-btn-primary cdp-btn-lg" disabled={!pizz.aberto} onClick={() => { setSacolaOpen(false); setStep("checkout"); }}>
-                          {pizz.aberto ? `Continuar • ${fmt(cartTotal)}` : "Loja fechada"}
-                        </button>
+                        {!pizz.aberto ? (
+                          <div className="cdp-sacola-closed-notice">
+                            <p>
+                              ⚠️ <strong>Loja fechada para pedidos pelo cardápio.</strong> Como você já tem itens na sacola, finalize diretamente pelo nosso WhatsApp:
+                            </p>
+                            <a
+                              href={whatsappOrderUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="cdp-btn-whatsapp-order"
+                            >
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+                              <span>Pedir pelo WhatsApp • {fmt(cartTotal)}</span>
+                            </a>
+                          </div>
+                        ) : (
+                          <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setSacolaOpen(false); setStep("checkout"); }}>
+                            Continuar • {fmt(cartTotal)}
+                          </button>
+                        )}
                         <button className="cdp-sacola-add-more" onClick={() => setSacolaOpen(false)}>
                           + Adicionar mais itens
                         </button>
@@ -1956,20 +2228,6 @@ export function CardapioPublico({ slug }: { slug: string }) {
 }
 
 // ============================================
-// Helpers
-// ============================================
-function fmt(v: number): string {
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-/** Monta o link wa.me a partir do telefone de contato (normaliza DDI 55). */
-function waLink(tel?: string | null): string {
-  const d = (tel || "").replace(/\D/g, "");
-  if (!d) return "";
-  const full = d.startsWith("55") ? d : (d.length === 10 || d.length === 11 ? "55" + d : d);
-  return `https://wa.me/${full}`;
-}
-
 // Indicador de etapas: Sacola → Dados → Pronto
 const STEP_ORDER = ["carrinho", "checkout", "confirmacao"] as const;
 const STEP_LABELS: Record<string, string> = { carrinho: "Sacola", checkout: "Dados", confirmacao: "Pronto" };

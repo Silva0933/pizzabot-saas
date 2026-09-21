@@ -35,6 +35,7 @@ import {
   backendToOrder, backendToConversation,
   clearTokens, getToken, ApiError,
 } from "./lib/api";
+import { calcEstaAberto } from "./lib/businessHours";
 
 // ============================================
 // Sinal sonoro de pedidos (Web Audio API)
@@ -467,9 +468,35 @@ function AdminApp() {
 
   async function handleSetLojaStatus(status: boolean | null) {
     if (!pizzaria) return;
-    const updated = await pizzariasApi.update(pizzaria.id, { aberto_manual: status });
-    setPizzaria(updated);
+    const nextAberto = calcEstaAberto(pizzaria.horario_funcionamento, status);
+    setPizzaria({
+      ...pizzaria,
+      aberto_manual: status,
+      aberto_agora: nextAberto,
+    });
+    try {
+      const updated = await pizzariasApi.update(pizzaria.id, { aberto_manual: status });
+      setPizzaria(updated);
+    } catch (e) {
+      console.error("Erro ao atualizar status da loja:", e);
+    }
   }
+
+  // Recalcula o status da loja automaticamente conforme o relógio e os horários programados
+  useEffect(() => {
+    if (!pizzaria) return;
+    const interval = setInterval(() => {
+      setPizzaria((prev) => {
+        if (!prev) return prev;
+        const calc = calcEstaAberto(prev.horario_funcionamento, prev.aberto_manual);
+        if (calc !== prev.aberto_agora) {
+          return { ...prev, aberto_agora: calc };
+        }
+        return prev;
+      });
+    }, 10_000);
+    return () => clearInterval(interval);
+  }, [pizzaria?.id, pizzaria?.aberto_manual, pizzaria?.horario_funcionamento]);
 
   // ============================================
   // Render: bootstrap (loading)

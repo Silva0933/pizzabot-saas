@@ -78,6 +78,7 @@ class PizzariaPublica(BaseModel):
     tempo_retirada_min: int | None
     tempo_retirada_max: int | None
     aberto: bool
+    aberto_manual: bool | None = None
 
 
 class MenuResponse(BaseModel):
@@ -366,9 +367,28 @@ async def get_menu(
         tempo_retirada_min=pizz.tempo_retirada_min,
         tempo_retirada_max=pizz.tempo_retirada_max,
         aberto=_esta_aberto(pizz),
+        aberto_manual=getattr(pizz, "aberto_manual", None),
     )
 
     return MenuResponse(pizzaria=pizzaria_pub, produtos=produtos)
+
+
+@router.get("/{slug}/status")
+async def consultar_status_loja(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Consulta rápida e leve do status da loja (aberto/fechado)."""
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.slug == slug))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    aberto = _esta_aberto(pizz) and not getattr(pizz, "suspensa", False)
+    return {
+        "aberto": aberto,
+        "aberto_manual": getattr(pizz, "aberto_manual", None),
+        "telefone_contato": pizz.telefone_contato or pizz.telefone_admin,
+        "horario_funcionamento": pizz.horario_funcionamento or {},
+    }
 
 
 # ============================================
