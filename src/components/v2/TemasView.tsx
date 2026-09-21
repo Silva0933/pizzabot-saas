@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ExternalLink, Image, LayoutTemplate, Loader2, Megaphone, Palette, RotateCcw, Save, Type } from "lucide-react";
 import { PromocoesCardapioPanel } from "./PromocoesCardapioPanel";
 import {
@@ -56,6 +56,11 @@ const BODY_FONTS = (Object.keys(FONTES_TEXTO) as Array<keyof typeof FONTES_TEXTO
   css: FONTES_TEXTO[value].stack,
 }));
 
+/* Tamanhos da previa: o artboard de referencia e 1440x6400 no desktop e 390 no
+   celular; aqui basta uma janela alta o bastante pra mostrar hero + cardapio. */
+const LARGURA_PREVIA = { desktop: 1280, mobile: 390 } as const;
+const ALTURA_PREVIA = { desktop: 900, mobile: 780 } as const;
+
 const RADII: Record<TemaBordas, string> = {
   retas: BORDAS.retas.raio,
   suaves: BORDAS.suaves.raio,
@@ -71,12 +76,6 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const selected = TEMA_PRESETS.find((p) => p.id === config.modelo) || TEMA_PRESETS[0];
-  const titleFont = TITLE_FONTS.find((f) => f.value === config.fonte_titulo)?.css || TITLE_FONTS[0].css;
-  const bodyFont = BODY_FONTS.find((f) => f.value === config.fonte_texto)?.css || BODY_FONTS[0].css;
-  const tituloPartes = String(config.titulo || COPY_PADRAO.titulo).split("|");
-  const isLight = config.modelo === "trattoria";
-  const previewText = isLight ? "#2c1d17" : "#fff8ef";
-  const previewMuted = isLight ? "#766055" : "#afa6a0";
 
   const changed = useMemo(
     () => JSON.stringify(normalizarTema(pizzaria.tema_cardapio)) !== JSON.stringify(config) || (pizzaria.banner_url || "") !== bannerUrl.trim(),
@@ -87,6 +86,45 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
     setConfig((current) => ({ ...current, [key]: value }));
     setSaved(false);
   }
+
+  const [dispositivo, setDispositivo] = useState<"desktop" | "mobile">("desktop");
+  const caixaPreviaRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const [escala, setEscala] = useState(0.3);
+
+  /* A previa encolhe pra caber na coluna: mede a caixa e escala o iframe. */
+  useEffect(() => {
+    const caixa = caixaPreviaRef.current;
+    if (!caixa) return;
+    const medir = () => setEscala(caixa.clientWidth / LARGURA_PREVIA[dispositivo]);
+    medir();
+    const observador = new ResizeObserver(medir);
+    observador.observe(caixa);
+    return () => observador.disconnect();
+  }, [dispositivo]);
+
+  /** Manda pro iframe o tema (e o banner) ainda nao salvos. */
+  const enviarPrevia = useCallback(() => {
+    const janela = iframeRef.current?.contentWindow;
+    if (!janela) return;
+    janela.postMessage(
+      { tipo: "cdp-previa-tema", tema: config, banner: bannerUrl.trim() || null },
+      window.location.origin,
+    );
+  }, [config, bannerUrl]);
+
+  // Repinta a previa a cada tecla digitada / cor escolhida.
+  useEffect(() => { enviarPrevia(); }, [enviarPrevia]);
+
+  // O iframe pode ficar pronto antes deste componente: ele avisa, a gente responde.
+  useEffect(() => {
+    function aoAvisar(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      if ((e.data as { tipo?: string } | null)?.tipo === "cdp-previa-pronta") enviarPrevia();
+    }
+    window.addEventListener("message", aoAvisar);
+    return () => window.removeEventListener("message", aoAvisar);
+  }, [enviarPrevia]);
 
   function choosePreset(preset: Preset) {
     setConfig((current) => ({
@@ -222,10 +260,10 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             <h3 className="font-bold text-sm text-white mb-1">Cores avançadas</h3>
             <p className="text-xs text-slate-400 mb-4">Ajuste a superfície dos cartões, leitura dos textos e os botões de ação.</p>
             <div className="grid sm:grid-cols-2 gap-3">
-              <ColorField label="Superfície dos cartões" value={config.cor_superficie || "#15161f"} onChange={(v) => update("cor_superficie", v)} />
-              <ColorField label="Cor principal do texto" value={config.cor_texto || (isLight ? "#2c1d17" : "#f3f4f9")} onChange={(v) => update("cor_texto", v)} />
+              <ColorField label="Superfície dos cartões" value={config.cor_superficie || selected.config.cor_superficie} onChange={(v) => update("cor_superficie", v)} />
+              <ColorField label="Cor principal do texto" value={config.cor_texto || selected.config.cor_texto} onChange={(v) => update("cor_texto", v)} />
               <ColorField label="Fundo dos botões" value={config.cor_botao || config.cor_primaria || selected.config.cor_primaria} onChange={(v) => update("cor_botao", v)} />
-              <ColorField label="Texto dos botões" value={config.cor_botao_texto || "#ffffff"} onChange={(v) => update("cor_botao_texto", v)} />
+              <ColorField label="Texto dos botões" value={config.cor_botao_texto || selected.config.cor_botao_texto} onChange={(v) => update("cor_botao_texto", v)} />
               <ColorField label="Texto secundário" value={config.cor_texto_suave || selected.config.cor_texto_suave} onChange={(v) => update("cor_texto_suave", v)} />
               <ColorField label="Texto de apoio" value={config.cor_texto_apagado || selected.config.cor_texto_apagado} onChange={(v) => update("cor_texto_apagado", v)} />
               <ColorField label="Linhas e bordas" value={config.cor_borda || selected.config.cor_borda} onChange={(v) => update("cor_borda", v)} />
@@ -325,44 +363,56 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
         </div>
 
         <aside className="xl:sticky xl:top-24 rounded-2xl border border-[#1e293b] bg-[#111622] p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3 px-1">
+          <div className="flex items-center justify-between mb-3 px-1 gap-2">
             <strong className="text-sm font-bold text-white">Prévia da identidade</strong>
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">{selected.nome}</span>
-          </div>
-          <div className="overflow-hidden border border-white/10 shadow-2xl"
-            style={{
-              background: config.cor_fundo,
-              color: previewText,
-              borderRadius: RADII[config.bordas || "suaves"],
-              fontFamily: bodyFont,
-            }}>
-            <div className="h-7 flex items-center justify-center text-[8px] font-extrabold uppercase tracking-widest"
-              style={{ background: config.cor_primaria, color: isLight ? "#fff" : "#120b07" }}>Pedido direto · atendimento mais rápido</div>
-            <div className="h-10 px-4 flex items-center justify-between border-b border-current/10">
-              <strong className="text-[10px]">🍕 {pizzaria.nome}</strong>
-              <span className="text-[8px] px-2 py-1 border border-current/20" style={{ borderRadius: RADII[config.bordas || "suaves"] }}>Sacola 0</span>
-            </div>
-            <div className="min-h-[270px] p-6 flex items-end relative bg-cover bg-center"
-              style={{ backgroundImage: bannerUrl.trim() ? `linear-gradient(90deg, ${config.cor_fundo}f2 10%, ${config.cor_fundo}55), url(${bannerUrl.trim()})` : `linear-gradient(135deg, ${config.cor_fundo}, ${config.cor_secundaria}66)`, backgroundPosition: "right center" }}>
-              <div className="relative max-w-[330px]">
-                <p className="text-[8px] font-bold tracking-[.18em] mb-2" style={{ color: config.cor_primaria }}>{config.chamada}</p>
-                <h4 className="text-[36px] leading-[.9]" style={{ fontFamily: titleFont }}>
-                  {tituloPartes[0]}<br/><em className="not-italic" style={{ color: config.cor_primaria }}>{tituloPartes.slice(1).join(" ")}</em>
-                </h4>
-                <p className="text-[10px] leading-relaxed mt-3 max-w-[260px]" style={{ color: previewMuted }}>{config.descricao}</p>
-                <button type="button" className="mt-4 px-4 py-2 text-[9px] font-bold"
-                  style={{ background: config.cor_primaria, color: isLight ? "#fff" : "#130b06", borderRadius: RADII[config.bordas || "suaves"] }}>Ver cardápio →</button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 p-3">
-              {["Pizza da casa", "Combo especial"].map((name, i) => (
-                <div key={name} className="border border-current/10 p-2" style={{ borderRadius: RADII[config.bordas || "suaves"], background: isLight ? "#fffaf2" : "#ffffff08" }}>
-                  <div className="h-12 mb-2" style={{ borderRadius: RADII[config.bordas || "suaves"], background: `linear-gradient(135deg, ${config.cor_primaria}${i ? "55" : "99"}, ${config.cor_secundaria}88)` }} />
-                  <strong className="block text-[9px]">{name}</strong><span className="text-[8px]" style={{ color: config.cor_primaria }}>R$ {i ? "42,90" : "59,90"}</span>
-                </div>
+            <div className="flex items-center gap-1 rounded-lg border border-[#1e293b] bg-[#161f30] p-0.5">
+              {([["desktop", "Computador"], ["mobile", "Celular"]] as const).map(([id, rotulo]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setDispositivo(id)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-colors ${
+                    dispositivo === id ? "bg-orange-500 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {rotulo}
+                </button>
               ))}
             </div>
           </div>
+
+          {/* A previa e o cardapio de verdade num iframe, recebendo o tema ainda
+              nao salvo por postMessage. Um mockup paralelo divergiria da pagina
+              real a cada mudanca de layout. */}
+          <div
+            ref={caixaPreviaRef}
+            className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0b0f18]"
+            style={{ height: Math.round(ALTURA_PREVIA[dispositivo] * escala) }}
+          >
+            {pizzaria.slug ? (
+              <iframe
+                ref={iframeRef}
+                title="Prévia do cardápio"
+                src={`/m/${pizzaria.slug}`}
+                onLoad={enviarPrevia}
+                className="absolute top-0 left-0 origin-top-left border-0"
+                style={{
+                  width: LARGURA_PREVIA[dispositivo],
+                  height: ALTURA_PREVIA[dispositivo],
+                  transform: `scale(${escala})`,
+                }}
+              />
+            ) : (
+              <div className="h-full grid place-items-center p-6 text-center text-[11px] text-slate-400">
+                Defina o endereço (slug) do cardápio para ver a prévia.
+              </div>
+            )}
+          </div>
+
+          <p className="mt-2 text-[11px] text-slate-500">
+            É o cardápio real, com as mudanças que você ainda não salvou. Role dentro
+            da prévia para ver as outras seções.
+          </p>
         </aside>
       </div>
 

@@ -945,8 +945,33 @@ export function CardapioPublico({ slug }: { slug: string }) {
   // condicionais (loading/erro). Hook depois de um return condicional roda em
   // quantidade diferente entre renders e quebra a pagina com React #310.
   const [faqAberta, setFaqAberta] = useState<number | null>(0);
+  /*
+   * Previa ao vivo do painel: quando esta pagina roda dentro de um iframe na tela
+   * de Temas, o painel manda o tema ainda NAO salvo e a pagina se repinta na hora.
+   * E a propria pagina publica que aparece na previa — nada de um mockup paralelo
+   * que envelhece sozinho.
+   */
+  const [temaPreview, setTemaPreview] = useState<TemaCardapioConfig | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (window.parent === window) return; // so vale dentro do iframe
+    function aoReceber(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return; // so o proprio painel
+      const d = e.data as { tipo?: string; tema?: TemaCardapioConfig; banner?: string } | null;
+      if (d && d.tipo === "cdp-previa-tema") {
+        setTemaPreview(d.tema || {});
+        setBannerPreview(typeof d.banner === "string" ? d.banner : null);
+      }
+    }
+    window.addEventListener("message", aoReceber);
+    // Avisa que ja pode receber (o painel pode ter montado antes do iframe).
+    try {
+      window.parent.postMessage({ tipo: "cdp-previa-pronta" }, window.location.origin);
+    } catch { /* origem diferente: previa simplesmente nao liga */ }
+    return () => window.removeEventListener("message", aoReceber);
+  }, []);
   // Cada cardapio baixa so as duas familias do seu tema, nao as dez.
-  const fontesUrl = googleFontsUrl(resolverTema(data?.pizzaria.tema_cardapio));
+  const fontesUrl = googleFontsUrl(resolverTema(temaPreview ?? data?.pizzaria.tema_cardapio));
   useEffect(() => { carregarFontes(fontesUrl); }, [fontesUrl]);
 
   if (loading) return (
@@ -969,7 +994,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
   const pizz = data.pizzaria;
   const waUrl = waLink(pizz.telefone_contato);
-  const tema = resolverTema(pizz.tema_cardapio);
+  const tema = resolverTema(temaPreview ?? pizz.tema_cardapio);
   const linhasTitulo = linhasDoTitulo(tema.titulo || "");
   // Destaque do hero: o primeiro produto do cardapio (a ordem ja e a da pizzaria).
   const produtoDestaque = data.produtos.length > 0 ? data.produtos[0] : null;
@@ -1647,7 +1672,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
 
                 <div className="cdp-header-actions-r">
                   {tema.mostrar_acompanhamento !== false && (
-                    <button type="button" className="cdp-hbtn-r" onClick={abrirAcompanhamentoNaConta}>
+                    <button type="button" className="cdp-hbtn-r cdp-hbtn-track-r" onClick={abrirAcompanhamentoNaConta}>
                       <IcoAlvo />
                       <span className="cdp-hbtn-label-r">Acompanhar pedido</span>
                     </button>
@@ -1731,8 +1756,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
 
               <div className="cdp-hero-media-r">
-                {pizz.banner_url ? (
-                  <img src={pizz.banner_url} alt="" />
+                {(bannerPreview ?? pizz.banner_url) ? (
+                  <img src={(bannerPreview ?? pizz.banner_url) as string} alt="" />
                 ) : pizz.logo_url ? (
                   <img src={pizz.logo_url} alt={pizz.nome} />
                 ) : (

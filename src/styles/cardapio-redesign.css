@@ -280,8 +280,17 @@
   .cdp-couponbar-r { padding: 9px 44px; font-size: 13px; flex-wrap: wrap; gap: 8px; }
   .cdp-header-actions-r .cdp-hbtn-label-r { display: none; }
   .cdp-header-actions-r .cdp-hbtn-r { padding: 0 12px; }
+  /* No celular a marca cede: com 3 acoes a Sacola era empurrada pra fora da tela. */
+  .cdp-header-inner-r { gap: 12px; }
+  .cdp-brand-r { flex-shrink: 1; }
+  .cdp-brand-name-r { font-size: 17px; max-width: 38vw; }
+  .cdp-brand-sub-r { font-size: 11px; }
   .cdp-sec-head-r { flex-direction: column; align-items: flex-start; gap: 10px; }
   .cdp-hero-card-r { flex-wrap: wrap; gap: 12px; }
+}
+@media (max-width: 560px) {
+  /* Acompanhar pedido continua a um toque, dentro de Minha conta. */
+  .cdp-hbtn-track-r { display: none; }
 }
 @media (max-width: 520px) {
   .cdp-trust-r { grid-template-columns: 1fr; }
