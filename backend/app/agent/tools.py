@@ -19,11 +19,11 @@ from decimal import Decimal
 from typing import Any, Callable, Coroutine
 
 from google.genai import types
-from sqlalchemy import select, text
+from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import AgentContext
-from app.models import Cliente, Conversa, Pedido, Mensagem
+from app.models import Cliente, Conversa, Pedido, Mensagem, Produto
 
 log = logging.getLogger(__name__)
 
@@ -830,30 +830,50 @@ async def _calcular_pedido(
         # ---- Adicionais/bordas do item (preço somado, validado no backend) ----
         ad_nomes = it.get("adicionais") or it.get("extras")
         if ad_nomes and isinstance(ad_nomes, list):
-            # Busca os complementos válidos associados ao produto/sabores na tabela produto_complementos
-            comp_rows = []
-            if sabores and isinstance(sabores, list):
-                for sab in sabores:
-                    sab_clean, _ = _parse_nome_e_tamanho(sab)
-                    rows_s = (await db.execute(text(
-                        "SELECT c.nome, c.preco "
-                        "FROM public.complementos c "
-                        "JOIN public.produto_complementos pc ON pc.grupo_id = c.grupo_id "
-                        "JOIN public.produtos p ON p.id = pc.produto_id "
-                        "WHERE p.pizzaria_id = :pid AND p.nome ILIKE :nome AND c.disponivel = true"
-                    ), {"pid": str(ctx.pizzaria.id), "nome": sab_clean})).fetchall()
-                    comp_rows.extend(rows_s)
-            else:
-                nome_limpo, _ = _parse_nome_e_tamanho(nome_prod)
-                comp_rows = (await db.execute(text(
+            complementos_validos = []
+            nomes_para_buscar = [s for s in sabores] if (sabores and isinstance(sabores, list)) else [nome_prod]
+            for n in nomes_para_buscar:
+                n_clean, _ = _parse_nome_e_tamanho(n)
+                # 1) Complementos formais na tabela produto_complementos
+                rows_c = (await db.execute(text(
                     "SELECT c.nome, c.preco "
                     "FROM public.complementos c "
                     "JOIN public.produto_complementos pc ON pc.grupo_id = c.grupo_id "
                     "JOIN public.produtos p ON p.id = pc.produto_id "
                     "WHERE p.pizzaria_id = :pid AND p.nome ILIKE :nome AND c.disponivel = true"
-                ), {"pid": str(ctx.pizzaria.id), "nome": nome_limpo})).fetchall()
+                ), {"pid": str(ctx.pizzaria.id), "nome": n_clean})).fetchall()
+                for r in rows_c:
+                    complementos_validos.append({"nome": r[0], "preco": float(r[1])})
 
-            complementos_validos = [{"nome": r[0], "preco": float(r[1])} for r in comp_rows]
+                # 2) Opções unificadas no cadastro do produto (opcoes.adicionais)
+                prod_row = (await db.execute(
+                    select(Produto.opcoes).where(
+                        Produto.pizzaria_id == ctx.pizzaria.id,
+                        func.lower(Produto.nome) == n_clean.strip().lower(),
+                    )
+                )).scalar_one_or_none()
+                if not prod_row:
+                    prod_row = (await db.execute(
+                        select(Produto.opcoes).where(
+                            Produto.pizzaria_id == ctx.pizzaria.id,
+                            Produto.nome.ilike(f"%{n_clean.strip()}%"),
+                        ).limit(1)
+                    )).scalar_one_or_none()
+                if prod_row and isinstance(prod_row, dict):
+                    ads = prod_row.get("adicionais") or []
+                    if isinstance(ads, list):
+                        for a in ads:
+                            if isinstance(a, dict) and a.get("nome"):
+                                complementos_validos.append({"nome": a["nome"], "preco": float(a.get("preco") or 0)})
+                            elif isinstance(a, str) and a.strip():
+                                complementos_validos.append({"nome": a.strip(), "preco": 0.0})
+
+            # 3) Fallback legado da pizzaria (se nenhum específico foi cadastrado)
+            if not complementos_validos:
+                for a in (getattr(ctx.pizzaria, "adicionais", None) or []):
+                    if isinstance(a, dict) and a.get("nome"):
+                        complementos_validos.append({"nome": a["nome"], "preco": float(a.get("preco") or 0)})
+
             ad_preco, ad_fmt, faltantes = _resolver_adicionais(complementos_validos, [str(x) for x in ad_nomes])
             if faltantes:
                 return {
@@ -1374,6 +1394,10 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
             pass
         return {"ok": False, "motivo": "erro_gateway"}
 
+    # No checkout por link o pagamento ainda não existe (só a preferência), então
+    # cob.payment_id vem None de propósito — quem liga a notificação a este pedido
+    # é o external_reference, no webhook. Gravar o id da preferência aqui era o
+    # que fazia o pedido pago ficar 'pending' para sempre.
     ped.payment_id = cob.payment_id
     ped.link_pagamento = cob.link_pagamento
     ped.payment_status = "pending"
@@ -1606,7 +1630,11 @@ async def atualizar_pedido(
     resultado: dict[str, Any] = {"ok": True, "numero_pedido": ped.numero_pedido}
     metodo = _metodo_online(nova_forma_pagamento) if nova_forma_pagamento else None
     mudou_metodo = nova_forma_pagamento and (nova_forma_pagamento != forma_anterior)
-    if metodo and ped.payment_status != "approved" and (not ped.payment_id or mudou_metodo):
+    # "já tem cobrança" = tem pagamento OU link de checkout. No fluxo de cartão o
+    # payment_id só aparece quando o webhook chega, então olhar só pra ele faria
+    # a gente gerar uma cobrança nova a cada alteração do pedido.
+    ja_tem_cobranca = bool(ped.payment_id or ped.link_pagamento)
+    if metodo and ped.payment_status != "approved" and (not ja_tem_cobranca or mudou_metodo):
         resultado["pagamento"] = await _gerar_cobranca(ctx, db, ped, metodo)
     return resultado
 
@@ -1977,16 +2005,40 @@ async def consultar_taxa_entrega(ctx: AgentContext, db: AsyncSession, *, bairro:
 
 
 async def consultar_adicionais(ctx: AgentContext, db: AsyncSession, *, tipo: str | None = None) -> dict[str, Any]:
-    """Lista os adicionais/bordas cadastrados pela pizzaria (dados reais p/ ofertar)."""
-    lista = getattr(ctx.pizzaria, "adicionais", None) or []
+    """Lista os adicionais/bordas cadastrados para a pizzaria e seus produtos (dados reais p/ ofertar)."""
+    lista = list(getattr(ctx.pizzaria, "adicionais", None) or [])
+
+    # Adicionais unificados dos produtos ativos do cardápio
+    try:
+        rows_opc = (await db.execute(
+            select(Produto.opcoes).where(Produto.pizzaria_id == ctx.pizzaria.id, Produto.disponivel == True)  # noqa: E712
+        )).scalars().all()
+        for opc in rows_opc:
+            if isinstance(opc, dict):
+                prod_ads = opc.get("adicionais") or []
+                if isinstance(prod_ads, list):
+                    for a in prod_ads:
+                        if isinstance(a, dict) and a.get("nome"):
+                            lista.append(a)
+                        elif isinstance(a, str) and a.strip():
+                            t = "borda" if "borda" in a.lower() else "adicional"
+                            lista.append({"nome": a.strip(), "preco": 0.0, "tipo": t})
+    except Exception as e:
+        log.warning("Falha ao buscar adicionais dos produtos em consultar_adicionais: %s", e)
+
     alvo_tipo = _normalizar(tipo) if tipo else None
     items = []
+    vistos = set()
     for a in lista:
         if not isinstance(a, dict) or not a.get("nome"):
             continue
         t = (a.get("tipo") or "adicional")
         if alvo_tipo and _normalizar(t) != alvo_tipo:
             continue
+        chave = _normalizar(a["nome"])
+        if chave in vistos:
+            continue
+        vistos.add(chave)
         try:
             preco = float(a.get("preco") or 0)
         except (TypeError, ValueError):

@@ -272,9 +272,20 @@ async def evolution_webhook(
     # ---- Autenticação anti-spoofing (C1) ----
     # Se um token estiver configurado, a Evolution o devolve em ?token=... (foi
     # gravado na URL do webhook). Sem o token correto, rejeita silenciosamente.
+    #
+    # Aceita TANTO o token atual (painel admin) quanto o do .env: ao trocar o
+    # token, as instâncias já criadas seguem mandando o antigo na URL até o
+    # admin rodar "Reaplicar webhooks" — sem isso o atendimento pararia calado.
     from app.config import get_settings as _gs
-    _wh_token = _gs().evolution_webhook_token
-    if _wh_token and request.query_params.get("token") != _wh_token:
+    from app.services.evolution import evolution as _evo
+
+    try:
+        _cfg = await _evo.config_atual()   # cacheado ~60s, não bate no banco a cada msg
+        _tokens = {_cfg.get("webhook_token") or "", _gs().evolution_webhook_token or ""}
+    except Exception:  # noqa: BLE001
+        _tokens = {_gs().evolution_webhook_token or ""}
+    _tokens.discard("")
+    if _tokens and request.query_params.get("token") not in _tokens:
         log.warning("Webhook rejeitado: token inválido (instance=%s)", payload.instance)
         return {"ignored": "bad_token"}
 

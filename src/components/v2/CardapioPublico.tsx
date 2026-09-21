@@ -868,7 +868,22 @@ export function CardapioPublico({ slug }: { slug: string }) {
       const t = p.tamanhos.find(t => t.tamanho === modalTamanho);
       if (t) precoAt = Number(t.preco);
     }
-    const adsp = data.pizzaria.adicionais || [];
+    let adsp: Array<{ nome: string; preco: number; tipo?: string }> = [];
+    if (p.opcoes && Array.isArray((p.opcoes as any).adicionais) && (p.opcoes as any).adicionais.length > 0) {
+      adsp = ((p.opcoes as any).adicionais as any[]).map(item => {
+        if (typeof item === "string") {
+          return { nome: item, preco: 0, tipo: item.toLowerCase().includes("borda") ? "borda" : "adicional" };
+        }
+        return {
+          nome: String(item?.nome || "").trim(),
+          preco: Number(item?.preco) || 0,
+          tipo: item?.tipo || "adicional"
+        };
+      }).filter(it => it.nome.length > 0);
+    } else {
+      adsp = data.pizzaria.adicionais || [];
+    }
+
     let precoAds = 0;
     for (const a of modalAdicionais) {
       const info = adsp.find(ai => ai.nome === a);
@@ -1424,11 +1439,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 </div>
               )}
 
-              {/* Adicionais */}
-              {adicionaisDisp.length > 0 && (selectedProduto.categoria === "pizza" || selectedProduto.categoria === "lanche") && (
+              {/* Adicionais e Bordas */}
+              {adicionaisDisp.length > 0 && (
                 <div className="cdp-produto-section">
                   <div className="cdp-produto-section-header">
-                    <h3>Adicionais</h3>
+                    <h3>Adicionais & Bordas</h3>
                     <span className="cdp-badge cdp-badge-optional">Opcional</span>
                   </div>
                   <div className="cdp-adicionais-list">

@@ -15,7 +15,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 log = logging.getLogger(__name__)
 
-TIPOS = ("preco_suspeito", "falha_envio", "falha_ia", "falha_pagamento")
+TIPOS = (
+    "preco_suspeito", "falha_envio", "falha_ia", "falha_pagamento",
+    # Integração WhatsApp: instância de uma pizzaria caiu vs. a Evolution
+    # inteira fora do ar (esse é global — derruba TODAS as pizzarias).
+    "whatsapp_desconectado", "evolution_offline",
+)
 
 
 async def registrar_alerta(

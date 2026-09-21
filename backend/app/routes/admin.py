@@ -6,6 +6,7 @@ operacional das pizzarias (faturamento delas, pedidos, ticket, etc.).
 
 MRR = soma do preço mensal do plano de cada pizzaria ativa.
 """
+import logging
 import math
 from datetime import datetime, timedelta, timezone
 
@@ -15,15 +16,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel
 
+from app.config import get_settings
 from app.db import get_db
 from app.deps import require_platform_admin
 from app.models import Usuario
-from app.services.app_config import LLM_KEY, get_config, get_llm_config, set_config
+from app.services.app_config import (
+    EVOLUTION_KEY, LLM_KEY, get_config, get_evolution_config, get_llm_config, set_config,
+)
 from app.services.billing_plataforma import billing_configurado
 from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
-from app.services.secrets import decrypt_secret, encrypt_secret, mask_secret
+from app.services.secrets import decrypt_secret, encrypt_secret, looks_masked, mask_secret
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+log = logging.getLogger(__name__)
 
 import os
 
@@ -622,3 +628,199 @@ async def test_llm(
         raise
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "provider": provider, "model": model, "erro": str(e)[:400]}
+
+
+# ============================================
+# Evolution API (WhatsApp) — integração global da plataforma
+# ============================================
+class EvolutionConfigIn(BaseModel):
+    """
+    Config da Evolution. Campos vazios NÃO apagam o que já está salvo — só
+    `limpar_*` remove, para o painel poder mandar a máscara de volta sem risco.
+    """
+    base_url: str = ""
+    api_key: str = ""
+    webhook_token: str = ""
+    limpar_api_key: bool = False
+    limpar_webhook_token: bool = False
+
+
+def _webhook_url() -> str:
+    """URL que as instâncias apontam para receber as mensagens."""
+    return get_settings().public_base_url.rstrip("/") + "/webhook/evolution"
+
+
+@router.get("/evolution")
+async def get_evolution(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """
+    Config + status AO VIVO da Evolution, e o casamento entre as instâncias que
+    existem lá e as pizzarias cadastradas aqui.
+
+    O ping também alimenta a central de alertas (alerta na transição p/ offline).
+    """
+    from app.services.evolution import evolution
+    from app.services.evolution_health import checar_saude_evolution
+
+    cfg = await get_evolution_config(db)
+    raw = await get_config(db, EVOLUTION_KEY)
+
+    evolution.invalidate()  # garante que o ping use o que está salvo AGORA
+    saude = await checar_saude_evolution(db)
+    await db.commit()
+
+    # Instâncias na Evolution × pizzarias no banco: mostra órfãs dos dois lados.
+    instancias: list[dict] = []
+    if saude.get("ok"):
+        try:
+            instancias = await evolution.list_instances()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha ao listar instâncias da Evolution: %s", e)
+
+    rows = (await db.execute(text("""
+        SELECT id, nome, instancia, whatsapp_estado
+        FROM public.pizzarias
+        ORDER BY nome
+    """))).fetchall()
+    por_nome = {(i.get("nome") or "").lower(): i for i in instancias}
+    pizzarias = [
+        {
+            "id": str(r[0]),
+            "nome": r[1],
+            "instancia": r[2],
+            "estado_salvo": r[3],
+            "existe_na_evolution": bool(r[2]) and (r[2] or "").lower() in por_nome,
+            "estado_evolution": (por_nome.get((r[2] or "").lower()) or {}).get("estado"),
+        }
+        for r in rows
+    ]
+    usadas = {(r[2] or "").lower() for r in rows if r[2]}
+    orfas = [i for i in instancias if (i.get("nome") or "").lower() not in usadas]
+
+    return {
+        "base_url": cfg["base_url"],
+        # a chave nunca volta crua — só máscara + flag de configurada
+        "api_key_mascarada": _mask(raw.get("api_key") or _env_api_key()),
+        "api_key_configurada": bool(cfg["api_key"]),
+        "webhook_token_mascarado": _mask(raw.get("webhook_token") or _env_webhook_token()),
+        "webhook_token_configurado": bool(cfg["webhook_token"]),
+        "origem": cfg["origem"],
+        "configurada": cfg["configurada"],
+        "webhook_url": _webhook_url(),
+        "status": saude,
+        "instancias": instancias,
+        "instancias_orfas": orfas,
+        "pizzarias": pizzarias,
+    }
+
+
+def _env_api_key() -> str:
+    return get_settings().evolution_api_key or ""
+
+
+def _env_webhook_token() -> str:
+    return get_settings().evolution_webhook_token or ""
+
+
+@router.put("/evolution")
+async def put_evolution(
+    body: EvolutionConfigIn,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Salva a config da Evolution e já testa a conexão com o que foi salvo."""
+    from app.services.evolution import evolution
+    from app.services.evolution_health import checar_saude_evolution
+
+    raw = await get_config(db, EVOLUTION_KEY)
+
+    base_url = (body.base_url or "").strip().rstrip("/")
+    if base_url and not base_url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A URL precisa começar com http:// ou https:// "
+            "(ex.: https://evolution.seudominio.com).",
+        )
+
+    # Máscara de volta (o painel devolve "abcd••••wxyz") = "não mexi nessa chave".
+    api_key = raw.get("api_key") or ""
+    if body.limpar_api_key:
+        api_key = ""
+    elif body.api_key and body.api_key.strip() and not looks_masked(body.api_key):
+        api_key = encrypt_secret(body.api_key.strip())
+
+    webhook_token = raw.get("webhook_token") or ""
+    if body.limpar_webhook_token:
+        webhook_token = ""
+    elif body.webhook_token and body.webhook_token.strip() and not looks_masked(body.webhook_token):
+        webhook_token = encrypt_secret(body.webhook_token.strip())
+
+    await set_config(db, EVOLUTION_KEY, {
+        "base_url": base_url,
+        "api_key": api_key,
+        "webhook_token": webhook_token,
+    })
+
+    # Aplica na hora neste processo; worker/dispatcher pegam pelo TTL do cache.
+    evolution.invalidate()
+    saude = await checar_saude_evolution(db)
+    await db.commit()
+
+    cfg = await get_evolution_config(db)
+    return {
+        "ok": True,
+        "base_url": cfg["base_url"],
+        "configurada": cfg["configurada"],
+        "origem": cfg["origem"],
+        "status": saude,
+    }
+
+
+@router.post("/evolution/test")
+async def test_evolution(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Testa a conexão com a Evolution usando a config em vigor."""
+    from app.services.evolution import evolution
+    from app.services.evolution_health import checar_saude_evolution
+
+    evolution.invalidate()
+    saude = await checar_saude_evolution(db)
+    await db.commit()
+    return saude
+
+
+@router.post("/evolution/reaplicar-webhooks")
+async def reaplicar_webhooks(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """
+    Reaponta o webhook de TODAS as instâncias para a URL/token atuais.
+
+    Necessário depois de trocar o token do webhook ou o domínio público: as
+    instâncias já criadas continuam mandando a URL antiga até isso rodar.
+    """
+    from app.services.evolution import evolution
+
+    url = _webhook_url()
+    rows = (await db.execute(text("""
+        SELECT nome, instancia FROM public.pizzarias
+        WHERE instancia IS NOT NULL AND instancia <> ''
+        ORDER BY nome
+    """))).fetchall()
+
+    ok, falhas = 0, []
+    for nome, instancia in rows:
+        try:
+            await evolution.set_webhook(instancia=instancia, webhook_url=url)
+            ok += 1
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha ao reaplicar webhook de %s: %s", instancia, e)
+            falhas.append({"pizzaria": nome, "instancia": instancia, "erro": str(e)[:200]})
+
+    return {"ok": True, "webhook_url": url, "atualizadas": ok,
+            "total": len(rows), "falhas": falhas}

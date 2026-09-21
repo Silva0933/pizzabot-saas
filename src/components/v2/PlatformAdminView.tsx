@@ -23,11 +23,11 @@ import {
   Building2, User, Mail, Phone, MapPin, Smartphone, KeyRound, Eye, EyeOff, Wand2, Check,
   QrCode, Wifi, WifiOff, RefreshCw, CheckCircle2, Cpu, Zap, ChevronDown, Coins, Search, Activity,
   Bell, CreditCard, LayoutDashboard, UserPlus, FlaskConical, Package, Crown, Gem, ShieldAlert,
-  ArrowUpRight, FileText, CheckCircle, Network,
+  ArrowUpRight, FileText, CheckCircle, Network, Copy, Link2, ServerCog,
 } from "lucide-react";
 import {
   BackendPizzaria, pizzariasApi, adminApi, AdminOverview, AdminFaturaItem,
-  LLMConfig, LLMUsage, WhatsAppConnect, AlertasResp,
+  LLMConfig, LLMUsage, WhatsAppConnect, AlertasResp, EvolutionConfig,
 } from "../../lib/api";
 
 interface Props {
@@ -553,6 +553,9 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                 <h3 className="text-xs font-bold text-white">Serviços conectados</h3>
               </div>
 
+              {/* Evolution API: sem ela, NADA do WhatsApp funciona — por isso vem primeiro. */}
+              <EvolutionStatusLinha onGerenciar={() => goTo("ia")} />
+
               <div className="space-y-2.5">
                 <div>
                   <div className="flex justify-between text-[11px] mb-1">
@@ -903,6 +906,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                 </button>
               </div>
             </header>
+            <EvolutionConfigCard />
             <LLMConfigCard />
           </div>
         )}
@@ -1797,6 +1801,480 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
 // SUB-COMPONENTE: CONFIGURAÇÃO DE IA (LAYOUT 2 COLUNAS 1:1)
 // ====================================================================
 const CUSTOM_MODEL = "__custom__";
+
+/**
+ * Linha compacta de status da Evolution na Visão geral.
+ *
+ * A Evolution é o gargalo de TODO o produto: se ela cai, nenhuma pizzaria envia
+ * ou recebe mensagem e nenhum QR Code é gerado. Aqui o dono vê isso de relance.
+ */
+function EvolutionStatusLinha({ onGerenciar }: { onGerenciar: () => void }) {
+  const [cfg, setCfg] = useState<EvolutionConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let vivo = true;
+    adminApi.evolution()
+      .then((c) => { if (vivo) setCfg(c); })
+      .catch(() => { /* silencioso: o card da aba IA mostra o erro completo */ })
+      .finally(() => { if (vivo) setLoading(false); });
+    return () => { vivo = false; };
+  }, []);
+
+  const ok = cfg?.status?.ok;
+  const cor = loading ? "slate" : ok ? "emerald" : "rose";
+  const texto = loading
+    ? "verificando…"
+    : !cfg?.configurada
+      ? "não configurada"
+      : ok
+        ? `online${cfg.status.instancias != null ? ` · ${cfg.status.instancias} instância(s)` : ""}`
+        : "offline";
+
+  return (
+    <button
+      type="button"
+      onClick={onGerenciar}
+      className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+        cor === "emerald"
+          ? "bg-emerald-500/5 border-emerald-500/20 hover:bg-emerald-500/10"
+          : cor === "rose"
+            ? "bg-rose-500/5 border-rose-500/25 hover:bg-rose-500/10"
+            : "bg-[#161f30] border-[#1e293b]"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {loading
+            ? <Loader2 className="w-3.5 h-3.5 text-slate-400 animate-spin shrink-0" />
+            : ok
+              ? <Wifi className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              : <WifiOff className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+          <span className="text-[11px] font-semibold text-slate-200 truncate">Evolution API</span>
+        </div>
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+          cor === "emerald"
+            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+            : cor === "rose"
+              ? "bg-rose-500/15 text-rose-400 border-rose-500/30"
+              : "bg-slate-500/15 text-slate-400 border-slate-500/30"
+        }`}>
+          {texto}
+        </span>
+      </div>
+      {!loading && !ok && cfg?.status?.erro && (
+        <p className="text-[10px] text-rose-300/80 mt-1.5 line-clamp-2">{cfg.status.erro}</p>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Card de configuração da Evolution API (aba "IA e integrações").
+ *
+ * É aqui que o dono da plataforma aponta o PizzaBot para o servidor Evolution
+ * dele — sem isso nenhuma pizzaria consegue criar instância nem ler o QR Code.
+ * A config fica no banco (criptografada) e vence o .env; com os campos vazios,
+ * o sistema continua usando as variáveis de ambiente.
+ */
+function EvolutionConfigCard() {
+  const [cfg, setCfg] = useState<EvolutionConfig | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [resync, setResync] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const [baseUrl, setBaseUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [webhookToken, setWebhookToken] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [copiado, setCopiado] = useState(false);
+
+  function aplicar(c: EvolutionConfig) {
+    setCfg(c);
+    setBaseUrl(c.base_url || "");
+    // Mostra a máscara: reenviar a máscara significa "não mexi nessa chave".
+    setApiKey(c.api_key_mascarada || "");
+    setWebhookToken(c.webhook_token_mascarado || "");
+  }
+
+  function load() {
+    setLoading(true);
+    adminApi.evolution()
+      .then(aplicar)
+      .catch((e) => setMsg({ ok: false, text: e.message }))
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function salvar() {
+    setSaving(true);
+    setMsg(null);
+    try {
+      const r = await adminApi.salvarEvolution({
+        base_url: baseUrl.trim(),
+        api_key: apiKey,
+        webhook_token: webhookToken,
+      });
+      setMsg(r.status?.ok
+        ? { ok: true, text: `Salvo! Conectado em ${r.base_url}${r.status.instancias != null ? ` — ${r.status.instancias} instância(s) encontrada(s).` : "."}` }
+        : { ok: false, text: `Salvo, mas a conexão falhou: ${r.status?.erro || "erro desconhecido"}` });
+      load();
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+    setSaving(false);
+  }
+
+  async function testar() {
+    setTesting(true);
+    setMsg(null);
+    try {
+      const st = await adminApi.testarEvolution();
+      setMsg(st.ok
+        ? { ok: true, text: `Conexão OK${st.versao ? ` · Evolution v${st.versao}` : ""}${st.instancias != null ? ` · ${st.instancias} instância(s)` : ""}` }
+        : { ok: false, text: st.erro || "Não foi possível conectar." });
+      load();
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+    setTesting(false);
+  }
+
+  async function reaplicar() {
+    setResync(true);
+    setMsg(null);
+    try {
+      const r = await adminApi.reaplicarWebhooks();
+      setMsg({
+        ok: r.falhas.length === 0,
+        text: r.falhas.length === 0
+          ? `Webhook reaplicado em ${r.atualizadas}/${r.total} instância(s).`
+          : `${r.atualizadas}/${r.total} atualizadas. Falhou em: ${r.falhas.map((f) => f.pizzaria).join(", ")}`,
+      });
+    } catch (e: any) {
+      setMsg({ ok: false, text: e.message });
+    }
+    setResync(false);
+  }
+
+  function copiarWebhook() {
+    if (!cfg?.webhook_url) return;
+    navigator.clipboard?.writeText(cfg.webhook_url).then(() => {
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 1800);
+    }).catch(() => { /* clipboard bloqueado: o campo é selecionável mesmo assim */ });
+  }
+
+  const st = cfg?.status;
+  const online = !!st?.ok;
+
+  // Explicação em português do que fazer para cada motivo de falha.
+  const comoResolver: Record<string, string> = {
+    nao_configurada: "Preencha a URL do seu servidor Evolution e a chave global (AUTHENTICATION_API_KEY) abaixo e salve.",
+    inacessivel: "O servidor não respondeu. Verifique se o container da Evolution está de pé, se o domínio aponta para o IP certo e se a porta está publicada (80/443).",
+    chave_invalida: "A URL respondeu, mas a chave foi recusada. Copie de novo o AUTHENTICATION_API_KEY do seu servidor Evolution.",
+    erro: "A Evolution respondeu com erro. Veja o detalhe técnico abaixo.",
+  };
+
+  return (
+    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl overflow-hidden shadow-sm">
+      {/* Header */}
+      <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 md:p-5">
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 grid place-items-center shrink-0">
+            <ServerCog className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-base font-bold text-white">Evolution API (WhatsApp)</h3>
+            <p className="text-xs text-slate-400 truncate">
+              {loading ? "Carregando…" : cfg?.base_url || "Nenhum servidor configurado"}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {loading ? (
+            <span className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> verificando
+            </span>
+          ) : (
+            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
+              online
+                ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                : "bg-rose-500/15 text-rose-400 border-rose-500/30"
+            }`}>
+              {online ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              {online ? "Online" : "Offline"}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={testar}
+            disabled={testing || loading}
+            className="px-3 py-1.5 rounded-xl bg-[#161f30] text-slate-300 border border-[#1e293b] text-xs font-semibold hover:bg-[#1e293b] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Testar conexão
+          </button>
+        </div>
+      </div>
+
+      <div className="border-t border-[#1e293b] p-5 md:p-6 space-y-5 bg-[#0e131d]/60">
+        {/* Diagnóstico da falha — o que o admin precisa ler primeiro */}
+        {!loading && !online && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/5 p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <h4 className="text-xs font-bold text-rose-300">
+                O WhatsApp de todas as pizzarias está parado
+              </h4>
+            </div>
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              {comoResolver[st?.motivo || "erro"] || comoResolver.erro}
+            </p>
+            {st?.erro && (
+              <p className="text-[10px] text-rose-300/70 font-mono bg-[#0b0e14] border border-rose-500/20 rounded-lg px-2.5 py-2 break-all">
+                {st.erro}
+              </p>
+            )}
+          </div>
+        )}
+
+        {online && (
+          <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-3 flex items-center gap-2 flex-wrap">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span className="text-[11px] text-slate-300">
+              Servidor respondendo
+              {st?.versao ? ` · Evolution v${st.versao}` : ""}
+              {st?.instancias != null ? ` · ${st.instancias} instância(s) no servidor` : ""}.
+              As pizzarias já conseguem criar instância e ler o QR Code.
+            </span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* ---------- Credenciais ---------- */}
+          <div className="lg:col-span-7 bg-[#111622] border border-[#1e293b] rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <Network className="w-4 h-4 text-emerald-400" />
+              <h4 className="text-xs font-bold text-white">Conexão com o seu servidor</h4>
+            </div>
+
+            <label className="block">
+              <span className="text-[11px] text-slate-300 font-medium flex items-center gap-2">
+                URL do servidor Evolution *
+                <OrigemBadge origem={cfg?.origem?.base_url} />
+              </span>
+              <input
+                type="text"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://evolution.seudominio.com"
+                spellCheck={false}
+                className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white text-xs rounded-xl px-3 py-2 outline-none focus:border-emerald-500 font-mono"
+              />
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                Sem barra no final. Em produção prefira https — um endereço http pode ser bloqueado pelo navegador do painel.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="text-[11px] text-slate-300 font-medium flex items-center gap-2">
+                Chave global (AUTHENTICATION_API_KEY) *
+                <OrigemBadge origem={cfg?.origem?.api_key} />
+              </span>
+              <div className="mt-1 relative">
+                <input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="cole a chave do seu servidor Evolution"
+                  spellCheck={false}
+                  className="w-full bg-[#161f30] border border-[#1e293b] text-white text-xs rounded-xl px-3 py-2 pr-10 outline-none focus:border-emerald-500 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                É a chave que cria instâncias para os clientes. Deixe a máscara como está para não alterá-la.
+              </span>
+            </label>
+
+            <label className="block">
+              <span className="text-[11px] text-slate-300 font-medium flex items-center gap-2">
+                Token do webhook (opcional)
+                <OrigemBadge origem={cfg?.origem?.webhook_token} />
+              </span>
+              <input
+                type="text"
+                value={webhookToken}
+                onChange={(e) => setWebhookToken(e.target.value)}
+                placeholder="vazio = validação desligada"
+                spellCheck={false}
+                className="mt-1 w-full bg-[#161f30] border border-[#1e293b] text-white text-xs rounded-xl px-3 py-2 outline-none focus:border-emerald-500 font-mono"
+              />
+              <span className="text-[10px] text-slate-500 mt-1 block">
+                Protege o webhook contra chamadas forjadas. Ao trocar, clique em “Reaplicar webhooks”.
+              </span>
+            </label>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={salvar}
+                disabled={saving || loading}
+                className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                Salvar e testar
+              </button>
+              <button
+                type="button"
+                onClick={reaplicar}
+                disabled={resync || loading}
+                className="px-4 py-2 rounded-xl bg-[#161f30] text-slate-300 border border-[#1e293b] text-xs font-semibold hover:bg-[#1e293b] transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {resync ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+                Reaplicar webhooks
+              </button>
+            </div>
+
+            {msg && (
+              <div className={`text-[11px] rounded-xl px-3 py-2.5 border ${
+                msg.ok
+                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/25"
+                  : "bg-rose-500/10 text-rose-300 border-rose-500/25"
+              }`}>
+                {msg.text}
+              </div>
+            )}
+          </div>
+
+          {/* ---------- Webhook + instâncias ---------- */}
+          <div className="lg:col-span-5 space-y-4">
+            <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-4 h-4 text-sky-400" />
+                <h4 className="text-xs font-bold text-white">Webhook que as instâncias usam</h4>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-[10px] text-slate-300 bg-[#0b0e14] border border-[#1e293b] rounded-lg px-2.5 py-2 break-all font-mono">
+                  {cfg?.webhook_url || "—"}
+                </code>
+                <button
+                  type="button"
+                  onClick={copiarWebhook}
+                  title="Copiar"
+                  className="p-2 rounded-lg bg-[#161f30] border border-[#1e293b] text-slate-400 hover:text-white shrink-0"
+                >
+                  {copiado ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-500">
+                O PizzaBot configura essa URL sozinho em cada instância que cria. Ela vem de PUBLIC_BASE_URL.
+              </p>
+            </div>
+
+            {/* Instâncias × pizzarias: onde aparece "criei aqui mas não existe lá" */}
+            <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-orange-400" />
+                  <h4 className="text-xs font-bold text-white">Instâncias das pizzarias</h4>
+                </div>
+                <span className="text-[10px] text-slate-500">{cfg?.pizzarias?.length || 0} pizzaria(s)</span>
+              </div>
+
+              {loading ? (
+                <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> carregando…
+                </p>
+              ) : !cfg?.pizzarias?.length ? (
+                <p className="text-[11px] text-slate-500">Nenhuma pizzaria cadastrada ainda.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                  {cfg.pizzarias.map((pz) => {
+                    const conectada = pz.estado_evolution === "open";
+                    return (
+                      <div key={pz.id} className="flex items-center justify-between gap-2 text-[11px] bg-[#161f30] border border-[#1e293b] rounded-lg px-2.5 py-2">
+                        <div className="min-w-0">
+                          <p className="text-slate-200 font-medium truncate">{pz.nome}</p>
+                          <p className="text-[10px] text-slate-500 font-mono truncate">
+                            {pz.instancia || "sem instância"}
+                          </p>
+                        </div>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border shrink-0 ${
+                          !pz.instancia
+                            ? "bg-slate-500/15 text-slate-400 border-slate-500/30"
+                            : !online
+                              ? "bg-slate-500/15 text-slate-400 border-slate-500/30"
+                              : !pz.existe_na_evolution
+                                ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+                                : conectada
+                                  ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                  : "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                        }`}>
+                          {!pz.instancia
+                            ? "não criada"
+                            : !online
+                              ? "?"
+                              : !pz.existe_na_evolution
+                                ? "não existe lá"
+                                : conectada
+                                  ? "conectada"
+                                  : pz.estado_evolution || "desconectada"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {!!cfg?.instancias_orfas?.length && (
+                <div className="pt-2 border-t border-[#1e293b]">
+                  <p className="text-[10px] text-slate-400 mb-1.5">
+                    {cfg.instancias_orfas.length} instância(s) na Evolution sem pizzaria no PizzaBot:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {cfg.instancias_orfas.slice(0, 12).map((i) => (
+                      <span key={i.nome} className="text-[9px] font-mono text-slate-400 bg-[#161f30] border border-[#1e293b] rounded px-1.5 py-0.5">
+                        {i.nome}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Mostra se o valor em vigor veio do painel, do .env, ou se não existe. */
+function OrigemBadge({ origem }: { origem?: string }) {
+  if (!origem || origem === "banco") return null;
+  if (origem === "env") {
+    return (
+      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/25">
+        vindo do .env
+      </span>
+    );
+  }
+  return (
+    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-400 border border-rose-500/25">
+      não configurado
+    </span>
+  );
+}
 
 function LLMConfigCard() {
   const [open, setOpen] = useState(true);

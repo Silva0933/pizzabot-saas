@@ -344,16 +344,46 @@ async def _opcoes_upsell(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
 
     bordas: list[str] = []
     adicionais: list[str] = []
+    candidatos_adic: list[dict[str, Any]] = []
     adic_cfg = getattr(ctx.pizzaria, "adicionais", None)
     if isinstance(adic_cfg, list):
-        for a in adic_cfg:
-            if not isinstance(a, dict) or not a.get("nome"):
-                continue
-            tipo = (a.get("tipo") or "adicional").lower()
-            if "borda" in tipo and vendas.oferecer_borda:
-                bordas.append(a["nome"])
-            elif "borda" not in tipo and vendas.oferecer_adicional:
-                adicionais.append(a["nome"])
+        candidatos_adic.extend([a for a in adic_cfg if isinstance(a, dict)])
+
+    try:
+        from sqlalchemy import text as _text
+        rows_opc = (await db.execute(_text(
+            "SELECT opcoes FROM public.produtos "
+            "WHERE pizzaria_id = :pid AND disponivel = true"
+        ), {"pid": str(ctx.pizzaria.id)})).fetchall()
+        for r in rows_opc:
+            if r[0] and isinstance(r[0], dict):
+                p_ads = r[0].get("adicionais") or []
+                if isinstance(p_ads, list):
+                    for a in p_ads:
+                        if isinstance(a, dict) and a.get("nome"):
+                            candidatos_adic.append(a)
+                        elif isinstance(a, str) and a.strip():
+                            t = "borda" if "borda" in a.lower() else "adicional"
+                            candidatos_adic.append({"nome": a.strip(), "tipo": t})
+    except Exception as e:  # noqa: BLE001
+        log.debug("Falha ao consultar opcoes de produtos p/ upsell: %s", e)
+
+    bordas_vistas: set[str] = set()
+    adic_vistos: set[str] = set()
+    for a in candidatos_adic:
+        if not isinstance(a, dict) or not a.get("nome"):
+            continue
+        nome = str(a["nome"]).strip()
+        nome_lower = nome.lower()
+        tipo = (a.get("tipo") or "adicional").lower()
+        if ("borda" in tipo or "borda" in nome_lower) and vendas.oferecer_borda:
+            if nome_lower not in bordas_vistas:
+                bordas_vistas.add(nome_lower)
+                bordas.append(nome)
+        elif vendas.oferecer_adicional:
+            if nome_lower not in adic_vistos:
+                adic_vistos.add(nome_lower)
+                adicionais.append(nome)
 
     sobremesas: list[str] = []
     if vendas.oferecer_sobremesa:

@@ -31,9 +31,17 @@ PIX_EXPIRATION_MINUTES = 30
 
 @dataclass
 class CobrancaResult:
-    """Resultado da criação de uma cobrança."""
-    payment_id: str
+    """Resultado da criação de uma cobrança.
+
+    `payment_id` só vem preenchido quando a cobrança JÁ nasce como um pagamento
+    (Pix). No checkout por link o pagamento ainda não existe no momento da
+    criação — o que temos é `preference_id`, e o pagamento só é conhecido quando
+    o webhook chega. Misturar os dois era o que deixava o pedido pago como
+    'pending' para sempre.
+    """
+    payment_id: str | None
     link_pagamento: str
+    preference_id: str | None = None    # checkout por link (/checkout/preferences)
     qr_code: str | None = None          # Pix copia-e-cola
     qr_code_base64: str | None = None   # imagem PNG do QR (base64)
     expires_at: str | None = None
@@ -102,8 +110,14 @@ class MercadoPagoClient:
                 raise PagamentoError(f"MP {r.status_code}: {r.text[:200]}")
             data = r.json()
 
+        # ATENÇÃO: aqui `data["id"]` é o id da PREFERÊNCIA, não o de um pagamento
+        # — o pagamento só nasce quando o cliente paga no checkout. Guardamos em
+        # `preference_id` (e não em payment_id) justamente para o webhook não
+        # tentar casar um id de preferência com o id de pagamento que ele recebe.
+        # Quem liga os dois é o `external_reference`. Ver routes/webhook_pagamento.
         return CobrancaResult(
-            payment_id=str(data["id"]),
+            payment_id=None,
+            preference_id=str(data["id"]),
             link_pagamento=data.get("init_point") or data.get("sandbox_init_point", ""),
             metodo="link",
         )
@@ -174,6 +188,22 @@ class MercadoPagoClient:
             )
             if r.is_error:
                 raise PagamentoError(f"MP consulta {r.status_code}: {r.text[:200]}")
+            return r.json()
+
+    async def consultar_usuario(self) -> dict[str, Any]:
+        """Dados da conta dona do token (GET /users/me).
+
+        Usado para gravar `pizzarias.mp_user_id`: é o `user_id` que vem no corpo
+        da notificação do webhook, e sem ele não dá pra saber de qual pizzaria é
+        o pagamento antes de consultá-lo.
+        """
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get(
+                f"{self.BASE}/users/me",
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            if r.is_error:
+                raise PagamentoError(f"MP /users/me {r.status_code}: {r.text[:200]}")
             return r.json()
 
     @staticmethod

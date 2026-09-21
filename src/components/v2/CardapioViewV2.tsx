@@ -7,17 +7,204 @@ import React, { useEffect, useMemo, useState } from "react";
 import { 
   Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw, 
   UtensilsCrossed, ImageOff, FileText, Upload, Sparkles, Search, 
-  Check, Eye, EyeOff, LayoutGrid, Tag, SlidersHorizontal, Settings
+  Check, Eye, EyeOff, LayoutGrid, Tag, SlidersHorizontal, Settings,
+  Copy, CheckCircle2, Package
 } from "lucide-react";
 import { cardapioApi, BackendProduto, BackendPizzaria, pizzariasApi, CardapioArquivoInfo, ProdutoImport } from "../../lib/api";
 import { CardapioDigitalCard } from "./CardapioDigitalCard";
 
-interface Props {
-  pizzariaId: string;
-  pizzaria?: BackendPizzaria;
-  onPizzariaUpdated?: (p: BackendPizzaria) => void;
-  autoCreate?: boolean;
-  onAutoCreated?: () => void;
+export interface ProdutoAdicional {
+  nome: string;
+  preco: number;
+  tipo: "borda" | "adicional";
+}
+
+export function normalizeAdicionais(raw: any[]): ProdutoAdicional[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((item: any) => {
+    if (typeof item === "string") {
+      const isBorda = item.toLowerCase().includes("borda");
+      return {
+        nome: item.trim(),
+        preco: 0,
+        tipo: (isBorda ? "borda" : "adicional") as "borda" | "adicional",
+      };
+    }
+    return {
+      nome: String(item?.nome || "").trim(),
+      preco: Number(item?.preco) || 0,
+      tipo: (item?.tipo === "borda" ? "borda" : "adicional") as "borda" | "adicional",
+    };
+  }).filter((item) => item.nome.length > 0);
+}
+
+interface ProdutoAdicionaisEditorProps {
+  adicionais: any[];
+  onChange: (items: ProdutoAdicional[]) => void;
+  categoria?: string;
+  onReplicate?: () => void;
+  replicating?: boolean;
+  outrosCount?: number;
+}
+
+function ProdutoAdicionaisEditor({
+  adicionais,
+  onChange,
+  categoria = "pizza",
+  onReplicate,
+  replicating,
+  outrosCount = 0,
+}: ProdutoAdicionaisEditorProps) {
+  const lista = normalizeAdicionais(adicionais);
+
+  const updateItem = (index: number, patch: Partial<ProdutoAdicional>) => {
+    const updated = lista.map((it, idx) => (idx === index ? { ...it, ...patch } : it));
+    onChange(updated);
+  };
+
+  const removeItem = (index: number) => {
+    onChange(lista.filter((_, idx) => idx !== index));
+  };
+
+  const addItem = (item?: Partial<ProdutoAdicional>) => {
+    onChange([
+      ...lista,
+      {
+        nome: item?.nome || "",
+        preco: item?.preco ?? 0,
+        tipo: item?.tipo || (categoria === "pizza" ? "borda" : "adicional"),
+      },
+    ]);
+  };
+
+  const quickPresets: ProdutoAdicional[] = [
+    { nome: "Borda Catupiry", preco: 8, tipo: "borda" },
+    { nome: "Borda Cheddar", preco: 8, tipo: "borda" },
+    { nome: "Borda Chocolate", preco: 10, tipo: "borda" },
+    { nome: "Bacon Extra", preco: 5, tipo: "adicional" },
+    { nome: "Queijo Extra", preco: 5, tipo: "adicional" },
+  ];
+
+  return (
+    <div className="space-y-3.5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Adicionais e Bordas</h4>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Configure as opções e bordas aceitas para este produto com seus respectivos preços.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => addItem()}
+          className="text-xs px-3 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 hover:bg-orange-500/25 font-bold transition-all flex items-center gap-1.5 shadow-sm"
+        >
+          <Plus className="w-3.5 h-3.5" /> Adicionar Opção
+        </button>
+      </div>
+
+      {/* Sugestões rápidas de 1 clique */}
+      <div className="bg-[#161f30]/60 border border-[#1e293b] p-3 rounded-xl space-y-1.5">
+        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sugestões rápidas (1 clique):</span>
+        <div className="flex flex-wrap gap-1.5">
+          {quickPresets.map((preset) => {
+            const jaExiste = lista.some(
+              (it) => it.nome.toLowerCase() === preset.nome.toLowerCase()
+            );
+            return (
+              <button
+                key={preset.nome}
+                type="button"
+                disabled={jaExiste}
+                onClick={() => addItem(preset)}
+                className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1 transition ${
+                  jaExiste
+                    ? "bg-[#111622] text-slate-600 border-[#1e293b] cursor-not-allowed line-through"
+                    : "bg-[#111622] text-slate-300 border-[#1e293b] hover:border-orange-500/50 hover:text-white"
+                }`}
+              >
+                <span>+ {preset.nome}</span>
+                <span className="text-slate-500 text-[10px]">(R$ {preset.preco.toFixed(2)})</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Lista de itens */}
+      {lista.length === 0 ? (
+        <div className="p-6 text-center border border-dashed border-[#1e293b] bg-[#111622] rounded-xl">
+          <p className="text-xs text-slate-400">Nenhum adicional ou borda cadastrado para este produto.</p>
+          <p className="text-[11px] text-slate-500 mt-1">Clique acima em "Adicionar Opção" ou escolha uma das sugestões rápidas.</p>
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+          {lista.map((item, idx) => (
+            <div
+              key={idx}
+              className="flex items-center gap-2 bg-[#161f30] p-2.5 rounded-xl border border-[#1e293b] hover:border-slate-700 transition"
+            >
+              <input
+                type="text"
+                value={item.nome}
+                onChange={(e) => updateItem(idx, { nome: e.target.value })}
+                placeholder="Ex: Borda Catupiry, Bacon Extra"
+                className="flex-1 px-3 py-1.5 bg-[#111622] border border-[#1e293b] rounded-lg text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500"
+              />
+              <select
+                value={item.tipo || "borda"}
+                onChange={(e) => updateItem(idx, { tipo: e.target.value as any })}
+                className="w-28 px-2.5 py-1.5 bg-[#111622] border border-[#1e293b] rounded-lg text-xs text-slate-200 outline-none focus:border-orange-500"
+              >
+                <option value="borda">Borda</option>
+                <option value="adicional">Adicional</option>
+              </select>
+              <div className="relative w-28">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-bold">R$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={item.preco}
+                  onChange={(e) => updateItem(idx, { preco: Number(e.target.value) || 0 })}
+                  className="w-full pl-8 pr-2 py-1.5 bg-[#111622] border border-[#1e293b] rounded-lg text-xs text-white outline-none focus:border-orange-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeItem(idx)}
+                className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-950/40 rounded-lg transition"
+                title="Remover"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Ação em lote: Replicar para todos da mesma categoria */}
+      {onReplicate && outrosCount > 0 && (
+        <div className="mt-3 pt-3 border-t border-[#1e293b] flex items-center justify-between gap-3 bg-[#111622] p-3 rounded-xl border border-slate-800">
+          <div className="min-w-0">
+            <span className="text-xs font-bold text-white block">Replicar em lote</span>
+            <span className="text-[10px] text-slate-400 block truncate">
+              Copiar estes adicionais para os outros {outrosCount} produtos da categoria "{categoria}".
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onReplicate}
+            disabled={replicating}
+            className="px-3 py-1.5 text-xs font-bold bg-[#161f30] hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-xl transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+          >
+            {replicating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
+            Replicar para categoria
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const CATEGORIAS = ["pizza", "lanche", "bebida", "sobremesa", "outro"] as const;
@@ -116,6 +303,14 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
   );
 }
 
+interface Props {
+  pizzariaId: string;
+  pizzaria?: BackendPizzaria;
+  onPizzariaUpdated?: (p: BackendPizzaria) => void;
+  autoCreate?: boolean;
+  onAutoCreated?: () => void;
+}
+
 // =========================================================
 // Componente Principal: CardapioViewV2
 // =========================================================
@@ -158,6 +353,62 @@ export function CardapioViewV2({
   const [selectedCategory, setSelectedCategory] = useState<string>("todos");
   const [searchQuery, setSearchQuery] = useState("");
   const [loadingStatus, setLoadingStatus] = useState<Record<string, boolean>>({});
+
+  // Replicação em lote de adicionais para a categoria
+  const [replicating, setReplicating] = useState(false);
+  const [replicateSuccessMsg, setReplicateSuccessMsg] = useState<string | null>(null);
+
+  const outrosDaMesmaCategoriaCount = useMemo(() => {
+    if (!form.categoria) return 0;
+    return produtos.filter(
+      p => p.categoria === form.categoria && (!editing || p.id !== editing.id)
+    ).length;
+  }, [produtos, form.categoria, editing]);
+
+  async function handleReplicateCategoryAdicionais() {
+    const categoriaAlvo = form.categoria;
+    if (!categoriaAlvo) {
+      alert("Selecione uma categoria primeiro.");
+      return;
+    }
+    const currentAdicionais = normalizeAdicionais((form.opcoes as any)?.adicionais || []);
+    const outrosDaCategoria = produtos.filter(
+      p => p.categoria === categoriaAlvo && (!editing || p.id !== editing.id)
+    );
+
+    if (outrosDaCategoria.length === 0) {
+      alert(`Não há outros produtos na categoria "${categoriaAlvo}" para replicar.`);
+      return;
+    }
+
+    const confirmMsg = `Deseja replicar estes ${currentAdicionais.length} adicionais/bordas para todos os ${outrosDaCategoria.length} outros produtos da categoria "${categoriaAlvo}"?\n\nIsso atualizará a lista de opções de todos eles automaticamente.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setReplicating(true);
+    setReplicateSuccessMsg(null);
+    try {
+      await Promise.all(
+        outrosDaCategoria.map(p =>
+          cardapioApi.update(pizzariaId, p.id, {
+            ...p,
+            opcoes: {
+              ...(p.opcoes || {}),
+              adicionais: currentAdicionais,
+            },
+          })
+        )
+      );
+      setReplicateSuccessMsg(
+        `Sucesso! ${outrosDaCategoria.length} produtos da categoria "${categoriaAlvo}" agora compartilham os mesmos adicionais e bordas.`
+      );
+      await load();
+      setTimeout(() => setReplicateSuccessMsg(null), 6000);
+    } catch (err: any) {
+      alert("Erro ao replicar adicionais: " + (err.message || "Erro desconhecido"));
+    } finally {
+      setReplicating(false);
+    }
+  }
 
   // Categorias disponíveis no cardápio
   const categoriasDisponiveis = useMemo(() => {
@@ -227,7 +478,7 @@ export function CardapioViewV2({
       tags: p.tags || [],
       opcoes: {
         ...opcoes,
-        adicionais: (opcoes as any)?.adicionais || []
+        adicionais: normalizeAdicionais((opcoes as any)?.adicionais || [])
       },
       regras: {
         ...regras,
@@ -869,21 +1120,25 @@ export function CardapioViewV2({
               {activeTab === "adicionais" && (
                 <div className="space-y-4 animate-fadeIn">
                   
-                  {/* Seção Adicionais e Bordas */}
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Adicionais e Bordas</h4>
-                    <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
-                      Digite os adicionais ou complementos permitidos para este produto (Ex: Borda Catupiry, Massa Grossa, Bacon Extra). Aperte Enter para inserir.
-                    </p>
-                    <ChipsInput 
-                      value={(form.opcoes as any)?.adicionais || []}
-                      onChange={(val) => setForm({ 
-                        ...form, 
-                        opcoes: { ...(form.opcoes || {}), adicionais: val } 
-                      })}
-                      placeholder="Adicione um complemento e tecle Enter..."
-                    />
-                  </div>
+                  {/* Seção Adicionais e Bordas Unificada */}
+                  <ProdutoAdicionaisEditor
+                    adicionais={(form.opcoes as any)?.adicionais || []}
+                    categoria={form.categoria}
+                    onChange={(val) => setForm({
+                      ...form,
+                      opcoes: { ...(form.opcoes || {}), adicionais: val }
+                    })}
+                    onReplicate={handleReplicateCategoryAdicionais}
+                    replicating={replicating}
+                    outrosCount={outrosDaMesmaCategoriaCount}
+                  />
+
+                  {replicateSuccessMsg && (
+                    <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs shadow-sm animate-fadeIn">
+                      <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                      <span>{replicateSuccessMsg}</span>
+                    </div>
+                  )}
 
                   {/* Seção Regras Meia-Meia (Apenas para Categoria Pizza) */}
                   {form.categoria === "pizza" ? (

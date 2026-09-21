@@ -12,6 +12,9 @@ const API_BASE =
   (import.meta as any).env?.VITE_PIZZABOT_API_URL ||
   (typeof window !== "undefined" ? window.location.origin.replace(/:\d+$/, ":8000") : "");
 
+/** URL que a pizzaria precisa cadastrar como webhook no painel do Mercado Pago. */
+export const MP_WEBHOOK_URL = `${API_BASE}/webhook/mercadopago`;
+
 const TOKEN_KEY = "pizzabot:access_token";
 const REFRESH_KEY = "pizzabot:refresh_token";
 
@@ -148,6 +151,7 @@ export interface BackendPizzaria {
   gateway_pagamento: string;
   asaas_api_key: string | null;
   mp_access_token: string | null;
+  mp_webhook_secret?: string | null;
   modo_pagamento_online?: string | null;
   pix_manual_copia_cola?: string | null;
   pix_manual_titular?: string | null;
@@ -906,6 +910,53 @@ export interface AlertaItem {
 }
 export interface AlertasResp { alertas: AlertaItem[]; abertos: number; }
 
+// ---- Evolution API (integração global de WhatsApp da plataforma) ----
+export interface EvolutionStatus {
+  ok: boolean;
+  /** nao_configurada | inacessivel | chave_invalida | erro */
+  motivo?: string | null;
+  erro?: string | null;
+  base_url?: string | null;
+  instancias?: number | null;
+  versao?: string | null;
+  checado_em?: string;
+}
+export interface EvolutionInstancia {
+  nome: string | null;
+  estado: string | null;
+  numero: string | null;
+}
+export interface EvolutionPizzaria {
+  id: string;
+  nome: string;
+  instancia: string | null;
+  estado_salvo: string | null;
+  existe_na_evolution: boolean;
+  estado_evolution: string | null;
+}
+export interface EvolutionConfig {
+  base_url: string;
+  api_key_mascarada: string;
+  api_key_configurada: boolean;
+  webhook_token_mascarado: string;
+  webhook_token_configurado: boolean;
+  /** de onde veio cada campo: "banco" (painel), "env" (.env) ou "vazio" */
+  origem: { base_url: string; api_key: string; webhook_token: string };
+  configurada: boolean;
+  webhook_url: string;
+  status: EvolutionStatus;
+  instancias: EvolutionInstancia[];
+  instancias_orfas: EvolutionInstancia[];
+  pizzarias: EvolutionPizzaria[];
+}
+export interface EvolutionSalvarBody {
+  base_url: string;
+  api_key?: string;
+  webhook_token?: string;
+  limpar_api_key?: boolean;
+  limpar_webhook_token?: boolean;
+}
+
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
   alertas: (apenasAbertos = true, limit = 100) => api.get<AlertasResp>(`/admin/alertas?apenas_abertos=${apenasAbertos}&limit=${limit}`),
@@ -928,6 +979,14 @@ export const adminApi = {
   zerarLlmUsage: () => api.delete(`/admin/llm/usage`),
   faturas: (limit = 50) =>
     api.get<{ faturas: AdminFaturaItem[]; recebido_mes: number; pendentes: number; vencidas: number }>(`/admin/faturas?limit=${limit}`),
+  // --- Evolution API (WhatsApp) ---
+  evolution: () => api.get<EvolutionConfig>(`/admin/evolution`),
+  salvarEvolution: (body: EvolutionSalvarBody) =>
+    api.put<{ ok: boolean; base_url: string; configurada: boolean; status: EvolutionStatus }>(`/admin/evolution`, body),
+  testarEvolution: () => api.post<EvolutionStatus>(`/admin/evolution/test`, {}),
+  reaplicarWebhooks: () =>
+    api.post<{ ok: boolean; webhook_url: string; atualizadas: number; total: number; falhas: Array<{ pizzaria: string; instancia: string; erro: string }> }>(
+      `/admin/evolution/reaplicar-webhooks`, {}),
 };
 
 export interface AdminFaturaItem {
@@ -1339,7 +1398,7 @@ export const menuApi = {
   getBySlug: async (slug: string): Promise<MenuResponse> => {
     const res = await fetch(`${API_BASE}/menu/${slug}`, { method: 'GET' });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Cardápio não encontrado', b);
     }
     return res.json();
@@ -1372,7 +1431,7 @@ export const menuApi = {
       body: JSON.stringify(data),
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Erro ao enviar pedido', b);
     }
     return res.json();
@@ -1381,7 +1440,7 @@ export const menuApi = {
     const query = new URLSearchParams({ telefone });
     const res = await fetch(`${API_BASE}/menu/${slug}/pedido/${numero}/acompanhar?${query}`, { method: 'GET' });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Pedido nao encontrado', b);
     }
     return res.json();
@@ -1393,7 +1452,7 @@ export const menuApi = {
       body: JSON.stringify(data),
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Não foi possível criar sua conta', b);
     }
     return res.json();
@@ -1405,7 +1464,7 @@ export const menuApi = {
       body: JSON.stringify(data),
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Não foi possível entrar', b);
     }
     return res.json();
@@ -1415,10 +1474,10 @@ export const menuApi = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Sua sessão expirou', b);
     }
-    const data = await res.json();
+    const data: any = await res.json();
     return data.cliente;
   },
   updateCustomer: async (slug: string, token: string, data: {
@@ -1430,10 +1489,10 @@ export const menuApi = {
       body: JSON.stringify(data),
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || "Nao foi possivel salvar seus dados", b);
     }
-    const result = await res.json();
+    const result: any = await res.json();
     return result.cliente;
   },
 
@@ -1442,10 +1501,10 @@ export const menuApi = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Não foi possível carregar seus pedidos', b);
     }
-    const data = await res.json();
+    const data: any = await res.json();
     return data.pedidos || [];
   },
   repeatCustomerOrder: async (slug: string, token: string, orderId: string): Promise<ClienteRepetirPedido> => {
@@ -1453,7 +1512,7 @@ export const menuApi = {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const b = await res.json().catch(() => null);
+      const b: any = await res.json().catch(() => null);
       throw new ApiError(res.status, b?.detail || 'Não foi possível repetir este pedido', b);
     }
     return res.json();

@@ -123,6 +123,13 @@ class Pizzaria(Base):
     whatsapp_estado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     gateway_pagamento: Mapped[str] = mapped_column(String, default="mercadopago", nullable=False)
     mp_access_token: Mapped[str | None] = mapped_column(Text)
+    # Id da conta vendedora no Mercado Pago (GET /users/me). É o que liga o
+    # `user_id` da notificação do webhook à pizzaria dona da cobrança — sem isso
+    # não dá pra saber com qual token consultar o pagamento (multi-tenant).
+    mp_user_id: Mapped[str | None] = mapped_column(Text)
+    # Secret de assinatura do webhook. No MP ele é POR APLICAÇÃO, então cada
+    # pizzaria tem o seu; o MP_WEBHOOK_SECRET do .env é só fallback.
+    mp_webhook_secret: Mapped[str | None] = mapped_column(Text)
     asaas_api_key: Mapped[str | None] = mapped_column(Text)
     # Modo de pagamento na conversa: 'automatico' (gateway MP/Asaas — padrão),
     # 'manual' (Pix copia-e-cola próprio + conferência manual) ou 'desativado'

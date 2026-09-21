@@ -151,13 +151,32 @@ class ClienteContaAtualizarIn(BaseModel):
 # ============================================
 # Helper: recálculo de preços (anti-tampering)
 # ============================================
+def _obter_mapa_adicionais(prod: Any, adicionais_precos_globais: dict[str, Decimal]) -> dict[str, Decimal]:
+    """Combina os adicionais globais da pizzaria com os adicionais específicos
+    definidos nas opções do produto (campo 'opcoes.adicionais')."""
+    mapa = dict(adicionais_precos_globais)
+    if prod and isinstance(getattr(prod, "opcoes", None), dict):
+        prod_ads = prod.opcoes.get("adicionais") or []
+        if isinstance(prod_ads, list):
+            for a in prod_ads:
+                if isinstance(a, dict):
+                    nome = str(a.get("nome") or "").strip().lower()
+                    if nome:
+                        mapa[nome] = Decimal(str(a.get("preco") or 0))
+                elif isinstance(a, str):
+                    nome = a.strip().lower()
+                    if nome and nome not in mapa:
+                        mapa[nome] = Decimal("0")
+    return mapa
+
+
 def _recalcular_itens(
     itens: list["ItemPedidoIn"],
     produtos_map: dict[str, Any],
     adicionais_precos: dict[str, Decimal],
 ) -> tuple[list[dict[str, Any]], Decimal]:
     """Recalcula itens/subtotal usando SEMPRE o preço do cadastro (Produto +
-    tamanho + adicionais). O preço enviado pelo cliente é ignorado — isso impede
+    tamanho + adicionais do produto). O preço enviado pelo cliente é ignorado — isso impede
     adulteração de preço pelo checkout público. Levanta HTTP 400 em item inválido."""
     itens_json: list[dict[str, Any]] = []
     subtotal = Decimal("0")
@@ -177,9 +196,10 @@ def _recalcular_itens(
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Tamanho inválido para {prod.nome}.")
             preco_unit = Decimal(str(match.get("preco") or 0))
             tamanho_final = match.get("tamanho")
+        mapa_item = _obter_mapa_adicionais(prod, adicionais_precos)
         adicionais_validos: list[str] = []
         for a in (item.adicionais or []):
-            preco_a = adicionais_precos.get((a or "").strip().lower())
+            preco_a = mapa_item.get((a or "").strip().lower())
             if preco_a is not None:
                 adicionais_validos.append(a)
                 preco_unit += preco_a
@@ -346,6 +366,24 @@ async def get_menu(
         for p in produtos_db
     ]
 
+    # Unificação: agrega adicionais dos produtos com os da pizzaria para retrocompatibilidade
+    ads_agregados: list[dict[str, Any]] = list(pizz.adicionais or [])
+    nomes_vistos = {str(a.get("nome") or "").strip().lower() for a in ads_agregados if isinstance(a, dict)}
+    for p in produtos_db:
+        if isinstance(p.opcoes, dict):
+            p_ads = p.opcoes.get("adicionais") or []
+            if isinstance(p_ads, list):
+                for a in p_ads:
+                    if isinstance(a, dict) and a.get("nome"):
+                        nl = str(a["nome"]).strip().lower()
+                        if nl not in nomes_vistos:
+                            nomes_vistos.add(nl)
+                            ads_agregados.append({
+                                "nome": a["nome"],
+                                "preco": float(a.get("preco") or 0),
+                                "tipo": a.get("tipo") or "adicional",
+                            })
+
     pizzaria_pub = PizzariaPublica(
         nome=pizz.nome,
         slug=pizz.slug,
@@ -361,7 +399,7 @@ async def get_menu(
         taxa_entrega_info=pizz.taxa_entrega_info,
         taxa_entrega_fixa=float(pizz.taxa_entrega_fixa) if pizz.taxa_entrega_fixa else None,
         taxas_bairro=pizz.taxas_bairro or [],
-        adicionais=pizz.adicionais or [],
+        adicionais=ads_agregados,
         tempo_entrega_min=pizz.tempo_entrega_min,
         tempo_entrega_max=pizz.tempo_entrega_max,
         tempo_retirada_min=pizz.tempo_retirada_min,
@@ -926,8 +964,10 @@ async def atualizar_conta_cliente(
     cliente.conta_atualizada_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(cliente)
-def _pedido_conta(pedido: Pedido) -> dict[str, Any]:
     return {"cliente": _cliente_publico(cliente)}
+
+
+def _pedido_conta(pedido: Pedido) -> dict[str, Any]:
 
     labels = {
         "novo": "Recebido", "confirmado": "Confirmado", "no_forno": "Em preparo",
@@ -1016,12 +1056,13 @@ async def repetir_pedido_conta(
                 indisponiveis.append(nome_salvo or produto.nome)
                 continue
             preco = Decimal(str(tamanho_atual.get("preco") or 0))
+        mapa_item = _obter_mapa_adicionais(produto, adicionais_precos)
         adicionais = [
             nome for nome in (item.get("adicionais") or [])
-            if str(nome).strip().lower() in adicionais_precos
+            if str(nome).strip().lower() in mapa_item
         ]
         for adicional in adicionais:
-            preco += adicionais_precos[str(adicional).strip().lower()]
+            preco += mapa_item[str(adicional).strip().lower()]
         itens_disponiveis.append({
             "produto_id": str(produto.id),
             "nome": produto.nome,

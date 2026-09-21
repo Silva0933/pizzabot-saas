@@ -19,6 +19,12 @@ from app.services.secrets import decrypt_secret
 _settings = get_settings()
 
 LLM_KEY = "llm"
+# Config da Evolution API (URL base + apikey global + token do webhook),
+# editável pelo painel admin. Cai nas variáveis de ambiente quando vazia.
+EVOLUTION_KEY = "evolution"
+# Última saúde conhecida da Evolution (usado pelo monitor para alertar só na
+# TRANSIÇÃO online → offline, em vez de repetir alerta a cada 5 min).
+EVOLUTION_STATUS_KEY = "evolution_status"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS public.app_config (
@@ -303,3 +309,48 @@ def modelo_para_plano(cfg: dict[str, Any], plano: str | None) -> str:
     """Retorna o modelo configurado para o plano, ou o modelo global como padrão."""
     mp = cfg.get("modelos_plano") or {}
     return (mp.get((plano or "").lower()) or cfg.get("model") or "").strip() or cfg.get("model")
+
+
+# ============================================
+# Config da Evolution API (WhatsApp)
+# ============================================
+DEFAULT_EVOLUTION_CONFIG: dict[str, Any] = {
+    "base_url": "",
+    "api_key": "",
+    "webhook_token": "",
+}
+
+
+async def get_evolution_config(db: AsyncSession) -> dict[str, Any]:
+    """
+    Config da Evolution em uso (merge com as variáveis de ambiente).
+
+    Prioridade para cada campo:
+      1. Valor salvo no banco (painel admin → IA e integrações)
+      2. Variável de ambiente (EVOLUTION_BASE_URL / EVOLUTION_API_KEY / ...)
+      3. Vazio (integração desligada)
+
+    `origem` diz de onde veio cada campo — o painel mostra isso pro admin
+    entender se está editando o que realmente está valendo.
+    """
+    cfg = await get_config(db, EVOLUTION_KEY)
+
+    salvo_url = (cfg.get("base_url") or "").strip()
+    salvo_key = decrypt_secret(cfg.get("api_key") or "") or ""
+    salvo_token = decrypt_secret(cfg.get("webhook_token") or "") or ""
+
+    base_url = salvo_url or (_settings.evolution_base_url or "").strip()
+    api_key = salvo_key or (_settings.evolution_api_key or "")
+    webhook_token = salvo_token or (_settings.evolution_webhook_token or "")
+
+    return {
+        "base_url": base_url.rstrip("/"),
+        "api_key": api_key,
+        "webhook_token": webhook_token,
+        "origem": {
+            "base_url": "banco" if salvo_url else ("env" if base_url else "vazio"),
+            "api_key": "banco" if salvo_key else ("env" if api_key else "vazio"),
+            "webhook_token": "banco" if salvo_token else ("env" if webhook_token else "vazio"),
+        },
+        "configurada": bool(base_url and api_key),
+    }

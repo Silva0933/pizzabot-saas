@@ -27,7 +27,7 @@ function evoHeaders() {
   return { "Content-Type": "application/json", apikey: EVOLUTION_KEY };
 }
 
-async function safeJson(res: Response) {
+async function safeJson(res: Response): Promise<any> {
   try { return await res.json(); } catch { return {}; }
 }
 

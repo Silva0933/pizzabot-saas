@@ -1,5 +1,6 @@
 """Cliente HTTP da Evolution API (envio de mensagens WhatsApp)."""
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -9,9 +10,19 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 _settings = get_settings()
 
+# A config (URL/apikey) vem do painel admin (tabela app_config) com fallback nas
+# variáveis de ambiente. Cacheada por alguns segundos para não bater no banco a
+# cada mensagem enviada; o TTL faz o worker/dispatcher pegar uma troca de chave
+# sem precisar de restart (o processo da API invalida na hora, via `invalidate`).
+_CONFIG_TTL_S = 60.0
+
 
 class EvolutionError(Exception):
     pass
+
+
+class EvolutionNaoConfigurada(EvolutionError):
+    """Sem URL base ou apikey — a integração ainda não foi configurada."""
 
 
 def _only_digits(s: str) -> str:
@@ -27,11 +38,58 @@ class EvolutionClient:
     """
 
     def __init__(self) -> None:
-        self.base_url = _settings.evolution_base_url.rstrip("/")
-        self.api_key = _settings.evolution_api_key
+        self.base_url = (_settings.evolution_base_url or "").rstrip("/")
+        self.api_key = _settings.evolution_api_key or ""
+        self.webhook_token = _settings.evolution_webhook_token or ""
         self._client: httpx.AsyncClient | None = None
+        self._cfg_em: float = 0.0
+
+    # =========================
+    # Config dinâmica (painel admin → app_config, fallback no .env)
+    # =========================
+    async def _carregar_config(self) -> None:
+        """Relê a config do banco quando o cache expira. Best-effort: se o banco
+        estiver indisponível, mantém o que já estava valendo (ou o .env)."""
+        if self._cfg_em and (time.monotonic() - self._cfg_em) < _CONFIG_TTL_S:
+            return
+        base_url, api_key, webhook_token = self.base_url, self.api_key, self.webhook_token
+        try:
+            from app.db import AsyncSessionLocal
+            from app.services.app_config import get_evolution_config
+
+            async with AsyncSessionLocal() as db:
+                cfg = await get_evolution_config(db)
+            base_url = cfg["base_url"]
+            api_key = cfg["api_key"]
+            webhook_token = cfg["webhook_token"]
+        except Exception as e:  # noqa: BLE001
+            log.debug("Config da Evolution não lida do banco (usando atual): %s", e)
+
+        # URL ou chave mudou → derruba o client HTTP para recriar com o novo destino.
+        if base_url != self.base_url or api_key != self.api_key:
+            await self.close()
+        self.base_url, self.api_key, self.webhook_token = base_url, api_key, webhook_token
+        self._cfg_em = time.monotonic()
+
+    def invalidate(self) -> None:
+        """Força a releitura da config na próxima chamada (após salvar no painel)."""
+        self._cfg_em = 0.0
+
+    async def config_atual(self) -> dict[str, str]:
+        await self._carregar_config()
+        return {
+            "base_url": self.base_url,
+            "api_key": self.api_key,
+            "webhook_token": self.webhook_token,
+        }
 
     async def _http(self) -> httpx.AsyncClient:
+        await self._carregar_config()
+        if not self.base_url or not self.api_key:
+            raise EvolutionNaoConfigurada(
+                "Evolution API não configurada. Defina a URL e a chave em "
+                "Administração → IA e integrações → Evolution API."
+            )
         if self._client is None:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
@@ -44,6 +102,80 @@ class EvolutionClient:
         if self._client:
             await self._client.aclose()
             self._client = None
+
+    # =========================
+    # Saúde da integração (usada pelo painel admin e pelo monitor do Beat)
+    # =========================
+    async def health(self) -> dict[str, Any]:
+        """
+        Pinga a Evolution validando URL **e** apikey global. Nunca lança:
+        devolve {ok, erro, instancias, versao, base_url}.
+
+        `/instance/fetchInstances` exige a apikey global — é o teste que pega
+        tanto "servidor fora do ar" quanto "chave errada".
+        """
+        try:
+            c = await self._http()
+        except EvolutionNaoConfigurada as e:
+            return {"ok": False, "erro": str(e), "motivo": "nao_configurada",
+                    "base_url": self.base_url, "instancias": None}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erro": str(e)[:300], "motivo": "erro",
+                    "base_url": self.base_url, "instancias": None}
+
+        try:
+            r = await c.get("/instance/fetchInstances")
+        except httpx.HTTPError as e:
+            return {"ok": False, "motivo": "inacessivel", "base_url": self.base_url,
+                    "instancias": None,
+                    "erro": f"Não foi possível alcançar {self.base_url}: {type(e).__name__}: {e}"[:300]}
+
+        if r.status_code in (401, 403):
+            return {"ok": False, "motivo": "chave_invalida", "base_url": self.base_url,
+                    "instancias": None,
+                    "erro": f"A Evolution recusou a apikey (HTTP {r.status_code})."}
+        if r.is_error:
+            return {"ok": False, "motivo": "erro", "base_url": self.base_url,
+                    "instancias": None,
+                    "erro": f"HTTP {r.status_code}: {r.text[:200]}"}
+
+        try:
+            data = r.json()
+        except Exception:  # noqa: BLE001
+            data = []
+        itens = data if isinstance(data, list) else (data.get("instances") or [])
+        return {"ok": True, "erro": None, "motivo": None, "base_url": self.base_url,
+                "instancias": len(itens) if isinstance(itens, list) else None,
+                "versao": await self._versao(c)}
+
+    async def _versao(self, c: httpx.AsyncClient) -> str | None:
+        """Versão da Evolution (GET /) — informativo, nunca lança."""
+        try:
+            r = await c.get("/")
+            data = r.json() if not r.is_error else {}
+            if not isinstance(data, dict):
+                return None
+            return data.get("version") or (data.get("data") or {}).get("version")
+        except Exception:  # noqa: BLE001
+            return None
+
+    async def list_instances(self) -> list[dict[str, Any]]:
+        """Instâncias existentes na Evolution (nome + estado da conexão)."""
+        c = await self._http()
+        r = await c.get("/instance/fetchInstances")
+        data = self._unwrap(r)
+        itens = data if isinstance(data, list) else (data.get("instances") or [])
+        out: list[dict[str, Any]] = []
+        for it in itens if isinstance(itens, list) else []:
+            if not isinstance(it, dict):
+                continue
+            inst = it.get("instance") if isinstance(it.get("instance"), dict) else it
+            out.append({
+                "nome": inst.get("instanceName") or inst.get("name"),
+                "estado": inst.get("connectionStatus") or inst.get("state") or inst.get("status"),
+                "numero": inst.get("owner") or inst.get("number"),
+            })
+        return out
 
     # =========================
     # Gestão de instância (onboarding WhatsApp)
@@ -113,11 +245,10 @@ class EvolutionClient:
         r = await c.delete(f"/instance/delete/{instancia}")
         return self._unwrap(r)
 
-    @staticmethod
-    def _webhook_payload(url: str) -> dict[str, Any]:
+    def _webhook_payload(self, url: str) -> dict[str, Any]:
         # Anexa o token de segurança na URL (?token=...). A Evolution devolve a
         # URL exata configurada, então o backend valida esse token no webhook.
-        token = _settings.evolution_webhook_token
+        token = self.webhook_token
         if token and "token=" not in url:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}token={token}"

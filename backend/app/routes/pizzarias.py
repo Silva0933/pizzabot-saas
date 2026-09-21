@@ -56,6 +56,7 @@ class PizzariaPatch(BaseModel):
     gateway_pagamento: str | None = None
     asaas_api_key: str | None = None
     mp_access_token: str | None = None
+    mp_webhook_secret: str | None = None
     modo_pagamento_online: str | None = None
     pix_manual_copia_cola: str | None = None
     pix_manual_titular: str | None = None
@@ -98,6 +99,7 @@ class PizzariaOut(BaseModel):
     gateway_pagamento: str | None = None
     asaas_api_key: str | None = None
     mp_access_token: str | None = None
+    mp_webhook_secret: str | None = None
     modo_pagamento_online: str | None = None
     pix_manual_copia_cola: str | None = None
     pix_manual_titular: str | None = None
@@ -111,7 +113,7 @@ class PizzariaOut(BaseModel):
 
     model_config = {"from_attributes": True}
 
-    @field_serializer("asaas_api_key", "mp_access_token")
+    @field_serializer("asaas_api_key", "mp_access_token", "mp_webhook_secret")
     def _mask_secret_field(self, value: str | None, _info):
         return mask_secret(value)
 
@@ -416,11 +418,14 @@ async def update_pizzaria(
     if not pizz:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
     updates = body.model_dump(exclude_unset=True, exclude_none=False)
+    mp_token_novo: str | None = None
     for k, v in updates.items():
         if hasattr(pizz, k):
-            if k in ("asaas_api_key", "mp_access_token"):
+            if k in ("asaas_api_key", "mp_access_token", "mp_webhook_secret"):
                 if not v or looks_masked(v):
                     continue
+                if k == "mp_access_token":
+                    mp_token_novo = v
                 v = encrypt_secret(v)
             if k == "slug" and v:
                 # Valida slug informado manualmente: slugify + unicidade
@@ -431,6 +436,21 @@ async def update_pizzaria(
                 if dup:
                     raise HTTPException(status.HTTP_409_CONFLICT, f"O slug '{v}' já está em uso por outra pizzaria.")
             setattr(pizz, k, v)
+
+    # Token do MP novo → descobre e guarda o id da conta vendedora. É o que liga
+    # o `user_id` da notificação do webhook a esta pizzaria; sem ele, pagamento
+    # feito por link (cartão) não tem como ser confirmado automaticamente.
+    if mp_token_novo:
+        from app.services.pagamentos import MercadoPagoClient
+        try:
+            dados = await MercadoPagoClient(mp_token_novo).consultar_usuario()
+            pizz.mp_user_id = str(dados.get("id") or "") or None
+        except Exception as e:  # noqa: BLE001
+            # Não bloqueia o salvamento: o token pode estar certo e a API fora do ar.
+            # O webhook ainda tem o fallback de pizzaria única.
+            pizz.mp_user_id = None
+            log.warning("Não consegui obter o mp_user_id da pizzaria %s: %s", pizzaria_id, e)
+
     # Auto-gera slug se a pizzaria ainda não tem
     if not pizz.slug:
         pizz.slug = _slugify(pizz.nome)
@@ -578,10 +598,14 @@ async def whatsapp_conectar(
     if not pizz:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
 
-    if not _settings.evolution_base_url or not _settings.evolution_api_key:
+    from app.services.app_config import get_evolution_config
+
+    cfg_evo = await get_evolution_config(db)
+    if not cfg_evo["configurada"]:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Evolution API não configurada no servidor.",
+            "Evolution API não configurada. O administrador da plataforma precisa "
+            "informar a URL e a chave em Administração → IA e integrações.",
         )
 
     base = _slugify(body.instancia or pizz.instancia or pizz.nome)
@@ -607,6 +631,18 @@ async def whatsapp_conectar(
 
         state = await evolution.connection_state(instancia=instancia)
     except EvolutionError as e:
+        from app.services.alertas import registrar_alerta_seguro
+
+        await registrar_alerta_seguro(
+            tipo="evolution_offline",
+            detalhe=(
+                f"Falha ao conectar o WhatsApp de '{pizz.nome}' (instância "
+                f"{instancia}): a Evolution não respondeu. O QR Code não pôde ser "
+                f"gerado. Detalhe: {e}"
+            ),
+            pizzaria_id=pizz.id,
+            nivel="error",
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Evolution: {e}") from e
 
     # Persiste a instância na pizzaria.
@@ -663,6 +699,17 @@ async def whatsapp_qrcode(
         conn = await evolution.connect_instance(instancia=pizz.instancia)
         state = await evolution.connection_state(instancia=pizz.instancia)
     except EvolutionError as e:
+        from app.services.alertas import registrar_alerta_seguro
+
+        await registrar_alerta_seguro(
+            tipo="evolution_offline",
+            detalhe=(
+                f"Falha ao gerar o QR Code de '{pizz.nome}' (instância "
+                f"{pizz.instancia}): a Evolution não respondeu. Detalhe: {e}"
+            ),
+            pizzaria_id=pizz.id,
+            nivel="error",
+        )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Evolution: {e}") from e
     return {
         "instancia": pizz.instancia,

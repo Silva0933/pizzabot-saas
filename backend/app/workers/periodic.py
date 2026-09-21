@@ -5,6 +5,9 @@ Agendadas em `celery_app.conf.beat_schedule` e executadas pelo worker normal —
 o serviço com APP_ROLE=beat só dispara, quem processa é o worker.
 
 `verificar_conexoes_whatsapp`:
+  - Antes de tudo, pinga a PRÓPRIA Evolution (URL + apikey global) e alerta na
+    transição para offline — sem ela nenhuma pizzaria envia/recebe mensagem nem
+    gera QR Code, e essa falha não aparece em lugar nenhum sem este monitor.
   - Rede de segurança do evento CONNECTION_UPDATE do webhook: a cada 5 min
     consulta o estado real de cada instância na Evolution e corrige divergências
     (ex.: evento perdido durante um deploy). Alerta na TRANSIÇÃO para 'close'.
@@ -45,12 +48,25 @@ async def _verificar_conexoes_async() -> dict:
     from app.db import AsyncSessionLocal, engine
     from app.models import Pizzaria
     from app.services.evolution import evolution
+    from app.services.evolution_health import checar_saude_evolution
     from app.services.whatsapp_status import aplicar_estado_conexao
 
     verificadas = 0
     mudancas = 0
     try:
         async with AsyncSessionLocal() as db:
+            # Saúde da Evolution em si. Se ela está fora, consultar instância por
+            # instância só geraria ruído — alerta uma vez e encerra a rodada.
+            saude = await checar_saude_evolution(db)
+            await db.commit()
+            if not saude.get("ok"):
+                log.warning(
+                    "Evolution indisponível (%s): %s",
+                    saude.get("motivo"), saude.get("erro"),
+                )
+                return {"ok": False, "evolution": saude.get("motivo") or "erro",
+                        "verificadas": 0, "mudancas": 0}
+
             pizzarias = (await db.execute(
                 select(Pizzaria).where(
                     Pizzaria.instancia.is_not(None),

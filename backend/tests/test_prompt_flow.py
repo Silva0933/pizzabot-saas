@@ -378,10 +378,13 @@ class TestDebounceTyping:
         assert MAX_HOLD_SECONDS >= DEBOUNCE_SECONDS
 
     def test_evolution_assina_presence_update(self):
+        # _webhook_payload virou método de instância: o token do webhook agora
+        # vem da config em vigor (painel admin, com fallback no .env).
         from app.services.evolution import EvolutionClient
-        payload = EvolutionClient._webhook_payload("https://x/webhook/evolution")
+        payload = EvolutionClient()._webhook_payload("https://x/webhook/evolution")
         assert "PRESENCE_UPDATE" in payload["events"]
         assert "MESSAGES_UPSERT" in payload["events"]
+        assert "CONNECTION_UPDATE" in payload["events"]
 
 
 class TestFragmentacaoBaloes:

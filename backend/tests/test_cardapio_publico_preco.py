@@ -25,6 +25,7 @@ class FakeProduto:
     preco: float
     disponivel: bool = True
     tamanhos: list[dict[str, Any]] | None = field(default=None)
+    opcoes: dict[str, Any] | None = field(default=None)
 
 
 def _map(*prods: FakeProduto) -> dict[str, FakeProduto]:
@@ -61,6 +62,20 @@ class TestPrecoNaoConfiaNoCliente:
         itens_json, subtotal = _recalcular_itens(itens, _map(prod), adicionais)
         assert subtotal == Decimal("58")  # 50 + 8; o "fantasma" é descartado
         assert itens_json[0]["adicionais"] == ["Borda Catupiry"]
+
+    def test_adicionais_especificos_do_produto_opcoes(self):
+        prod = FakeProduto(
+            id="p1", nome="Pizza Especial", preco=60,
+            opcoes={"adicionais": [{"nome": "Borda Cheddar", "preco": 12, "tipo": "borda"}]}
+        )
+        itens = [ItemPedidoIn(
+            produto_id="p1", nome="Pizza Especial", quantidade=1, preco_unit=0,
+            adicionais=["Borda Cheddar"],
+        )]
+        # Sem adicionais globais no terceiro argumento, deve buscar do prod.opcoes
+        itens_json, subtotal = _recalcular_itens(itens, _map(prod), {})
+        assert subtotal == Decimal("72")
+        assert itens_json[0]["adicionais"] == ["Borda Cheddar"]
 
     def test_rejeita_produto_inexistente(self):
         itens = [ItemPedidoIn(produto_id="nao-existe", nome="x", quantidade=1, preco_unit=0)]

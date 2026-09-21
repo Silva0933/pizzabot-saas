@@ -16,6 +16,7 @@ import {
 import { AttendantPage } from "../AttendantPage";
 import {
   BackendPizzaria, BackendPedido, pizzariasApi, pedidosApi, conversasApi, WhatsAppConnect,
+  MP_WEBHOOK_URL,
 } from "../../lib/api";
 
 export type NegocioTab = "atendente" | "geral";
@@ -317,23 +318,15 @@ function ConfigGeral({
           </div>
         </ConfigAccordion>
 
-        {/* Adicionais e pagamentos */}
+        {/* Meios de Pagamento e Cobrança */}
         <ConfigAccordion
           id="secao-cardapio-pagamentos"
           icon={<CreditCard className="w-4 h-4" />}
-          title="Adicionais e pagamentos"
-          description="Bordas recheadas, adicionais, Pix e gateway de cobrança."
+          title="Meios de Pagamento & Cobrança"
+          description="Pix próprio, cartões e gateway de cobrança online."
           defaultOpen={openPayment}
         >
           <div className="space-y-3">
-            <Card icon={<Package className="w-4 h-4" />} title="Adicionais & Bordas" accent="violet">
-              <p className="text-xs text-slate-400 mb-2">Bordas recheadas e extras que a atendente pode oferecer. Aplicam-se a qualquer pizza.</p>
-              <AdicionaisEditor
-                adicionais={(form.adicionais as any) || []}
-                onChange={(a) => setField("adicionais", a as any)}
-              />
-            </Card>
-
             <div id="secao-meios-recebimento">
               <Card icon={<CreditCard className="w-4 h-4" />} title="Meios de Recebimento" accent="violet">
                 <div className="space-y-3">
@@ -361,6 +354,31 @@ function ConfigGeral({
                       <Field label="Asaas API key" full>
                         <input type="password" value={form.asaas_api_key ?? ""} onChange={(e) => setField("asaas_api_key", e.target.value)} className={inputCls}/>
                       </Field>
+                      {(form.gateway_pagamento ?? "mercadopago") === "mercadopago" && (
+                        <>
+                          <Field label="MP assinatura secreta do webhook (opcional)" full>
+                            <input type="password" value={form.mp_webhook_secret ?? ""}
+                              onChange={(e) => setField("mp_webhook_secret", e.target.value)}
+                              placeholder="Cole a chave secreta gerada no painel do Mercado Pago"
+                              className={inputCls}/>
+                          </Field>
+                          <div className="md:col-span-2 text-xs text-slate-400 space-y-1">
+                            <p>
+                              A confirmação automática do pedido já funciona só com o token — a URL de
+                              aviso vai junto em cada cobrança. Cadastrar o webhook no Mercado Pago é
+                              opcional e serve para gerar a chave secreta acima, que permite verificar
+                              que a notificação veio mesmo deles.
+                            </p>
+                            <p>
+                              Em <strong>Suas integrações → sua aplicação → Webhooks</strong>, use esta
+                              URL e marque o evento <strong>Pagamentos</strong>:
+                            </p>
+                            <code className="block bg-slate-800/60 rounded px-2 py-1 break-all text-slate-200">
+                              {MP_WEBHOOK_URL}
+                            </code>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
 
@@ -893,52 +911,6 @@ const ACCENTS: Record<string, string> = {
   sky: "bg-sky-500/15 border border-sky-500/30 text-sky-400",
   amber: "bg-amber-500/15 border border-amber-500/30 text-amber-400",
 };
-
-type Adicional = { nome: string; preco: number; tipo?: string };
-
-function AdicionaisEditor({ adicionais, onChange }: { adicionais: Adicional[]; onChange: (a: Adicional[]) => void }) {
-  const lista = Array.isArray(adicionais) ? adicionais : [];
-  function update(i: number, patch: Partial<Adicional>) {
-    onChange(lista.map((t, idx) => (idx === i ? { ...t, ...patch } : t)));
-  }
-  function add() { onChange([...lista, { nome: "", preco: 0, tipo: "borda" }]); }
-  function remove(i: number) { onChange(lista.filter((_, idx) => idx !== i)); }
-
-  return (
-    <div className="space-y-2.5">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400 font-semibold">Lista</span>
-        <button type="button" onClick={add}
-          className="text-xs px-3 py-1.5 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 font-semibold transition-colors">
-          + Adicional
-        </button>
-      </div>
-      {lista.length === 0 && <p className="text-xs text-slate-500 italic">Nenhum adicional. A atendente não vai oferecer bordas/extras.</p>}
-      {lista.map((t, i) => (
-        <div key={i} className="flex gap-2 items-center">
-          <input value={t.nome} placeholder="Ex: Borda Catupiry"
-            onChange={(e) => update(i, { nome: e.target.value })}
-            className={inputCls + " flex-1"}/>
-          <select value={t.tipo || "borda"} onChange={(e) => update(i, { tipo: e.target.value })}
-            className={inputCls + " w-28"}>
-            <option value="borda">Borda</option>
-            <option value="adicional">Adicional</option>
-          </select>
-          <div className="relative w-28">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">R$</span>
-            <input type="number" step="0.01" min="0" value={t.preco}
-              onChange={(e) => update(i, { preco: Number(e.target.value) })}
-              className={inputCls + " pl-8"}/>
-          </div>
-          <button type="button" onClick={() => remove(i)}
-            className="p-2 text-slate-500 hover:text-red-400 transition-colors" title="Remover">
-            <Trash2 className="w-4 h-4"/>
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 type TaxaBairro = { bairro: string; taxa: number };
 
