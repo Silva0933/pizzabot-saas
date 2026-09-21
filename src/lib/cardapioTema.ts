@@ -17,14 +17,18 @@ import type { TemaCardapioConfig, TemaCardapioModelo } from "./api";
 
 // ============================================================
 // Tipografia
+//
+// `escala` compensa a largura da familia no titulo do hero: o desenho de
+// referencia calibrou 112px numa CONDENSADA, e uma fonte de largura normal no
+// mesmo corpo estoura a coluna e quebra o titulo em quatro linhas.
 // ============================================================
 export const FONTES_TITULO = {
-  big_shoulders: { label: "Big Shoulders", stack: "'Big Shoulders Display','Big Shoulders',Impact,'Arial Narrow',sans-serif", google: "Big+Shoulders+Display:wght@700;800;900" },
-  anton: { label: "Anton", stack: "'Anton',Impact,sans-serif", google: "Anton" },
-  bebas: { label: "Bebas Neue", stack: "'Bebas Neue',Impact,sans-serif", google: "Bebas+Neue" },
-  playfair: { label: "Playfair Display", stack: "'Playfair Display',Georgia,serif", google: "Playfair+Display:wght@600;700;800;900" },
-  outfit: { label: "Outfit", stack: "'Outfit',system-ui,sans-serif", google: "Outfit:wght@600;700;800;900" },
-  archivo: { label: "Archivo Black", stack: "'Archivo Black',Impact,sans-serif", google: "Archivo+Black" },
+  big_shoulders: { escala: 1, label: "Big Shoulders", stack: "'Big Shoulders Display','Big Shoulders',Impact,'Arial Narrow',sans-serif", google: "Big+Shoulders+Display:wght@700;800;900" },
+  anton: { escala: 0.92, label: "Anton", stack: "'Anton',Impact,sans-serif", google: "Anton" },
+  bebas: { escala: 1, label: "Bebas Neue", stack: "'Bebas Neue',Impact,sans-serif", google: "Bebas+Neue" },
+  playfair: { escala: 0.68, label: "Playfair Display", stack: "'Playfair Display',Georgia,serif", google: "Playfair+Display:wght@600;700;800;900" },
+  outfit: { escala: 0.66, label: "Outfit", stack: "'Outfit',system-ui,sans-serif", google: "Outfit:wght@600;700;800;900" },
+  archivo: { escala: 0.64, label: "Archivo Black", stack: "'Archivo Black',Impact,sans-serif", google: "Archivo+Black" },
 } as const;
 
 export const FONTES_TEXTO = {
@@ -349,6 +353,7 @@ export function temaParaCssVars(tema: ReturnType<typeof resolverTema>): CSSPrope
     "--theme-display": titulo.stack,
     "--theme-body": texto.stack,
     "--display-transform": tema.titulo_caixa_alta ? "uppercase" : "none",
+    "--display-scale": String(titulo.escala ?? 1),
     // Raios
     "--radius": raio,
     "--radius-sm": `calc(${raio} * 0.7)`,

@@ -12,7 +12,11 @@
   border-bottom: 1px solid var(--line);
   padding-bottom: 12px; margin-bottom: 18px;
 }
-.cdp-cathead-title-r { margin: 0; font-size: clamp(28px, 3.4vw, 48px); line-height: 1; color: var(--text); }
+.cdp-cathead-title-r {
+  margin: 0;
+  font-size: calc(clamp(28px, 3.4vw, 48px) * var(--display-scale, 1));
+  line-height: 1; color: var(--text);
+}
 .cdp-cathead-count-r { font-size: 14px; color: var(--text3); white-space: nowrap; }
 
 /* ---------- Carrossel de destaques ---------- */

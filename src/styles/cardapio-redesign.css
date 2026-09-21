@@ -124,7 +124,13 @@
   font-size: 14px; font-weight: 700; letter-spacing: 0.14em;
   text-transform: uppercase; color: var(--accent2); margin: 0;
 }
-.cdp-hero-title-r { margin: 0; font-size: clamp(42px, 6.4vw, 112px); color: var(--text); }
+/* O corpo do titulo acompanha a largura da familia (--display-scale): 112px foi
+   calibrado numa condensada e estoura a coluna numa fonte de largura normal. */
+.cdp-hero-title-r {
+  margin: 0;
+  font-size: calc(clamp(42px, 6.4vw, 112px) * var(--display-scale, 1));
+  color: var(--text);
+}
 .cdp-hero-desc-r { margin: 0; font-size: 20px; line-height: 1.5; color: var(--text2); max-width: 470px; }
 .cdp-hero-ctas-r { display: flex; gap: 12px; flex-wrap: wrap; }
 .cdp-cta-primary-r {
@@ -208,7 +214,11 @@
 /* ---------- Cabeçalhos de seção ---------- */
 .cdp-sec-r { max-width: var(--max); margin: 0 auto; padding: 24px 40px 72px; }
 .cdp-sec-head-r { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
-.cdp-sec-title-r { margin: 0; font-size: clamp(30px, 3.6vw, 52px); color: var(--text); }
+.cdp-sec-title-r {
+  margin: 0;
+  font-size: calc(clamp(30px, 3.6vw, 52px) * var(--display-scale, 1));
+  color: var(--text);
+}
 .cdp-sec-sub-r { margin: 10px 0 0; font-size: 17px; color: var(--text2); }
 
 /* ---------- Passos ---------- */
