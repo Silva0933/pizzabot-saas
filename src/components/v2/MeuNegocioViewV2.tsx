@@ -312,18 +312,15 @@ function ConfigGeral({
           </div>
         </ConfigAccordion>
 
-        {/* Cardápio e pagamentos */}
+        {/* Adicionais e pagamentos */}
         <ConfigAccordion
           id="secao-cardapio-pagamentos"
           icon={<CreditCard className="w-4 h-4" />}
-          title="Cardápio e pagamentos"
-          description="Link público, adicionais, Pix e gateway de cobrança."
+          title="Adicionais e pagamentos"
+          description="Bordas recheadas, adicionais, Pix e gateway de cobrança."
           defaultOpen={openPayment}
         >
           <div className="space-y-3">
-            <h3 className="text-xs font-bold text-slate-300 ml-1">Cardápio & Pagamentos</h3>
-            <CardapioDigitalCard pizzaria={pizzaria} onUpdated={onUpdated} />
-            
             <Card icon={<Package className="w-4 h-4" />} title="Adicionais & Bordas" accent="violet">
               <p className="text-xs text-slate-400 mb-2">Bordas recheadas e extras que a atendente pode oferecer. Aplicam-se a qualquer pizza.</p>
               <AdicionaisEditor
@@ -522,111 +519,6 @@ function EntregadorAccessCard() {
       <p className="text-[11px] leading-snug text-slate-400">
         O acesso é individual e usa as credenciais criadas na aba <strong>Entregadores</strong>.
         Para testar sem sair do painel do dono, abra o link em uma janela anônima ou em outro dispositivo.
-      </p>
-    </div>
-  );
-}
-
-// ============================================
-// Card: Cardápio Digital (link público)
-// ============================================
-function CardapioDigitalCard({ pizzaria, onUpdated }: { pizzaria: BackendPizzaria; onUpdated: (p: BackendPizzaria) => void }) {
-  const slug = pizzaria.slug || "";
-  const [editing, setEditing] = useState(false);
-  const [newSlug, setNewSlug] = useState(slug);
-  const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const link = slug ? `${baseUrl}/m/${slug}` : "";
-
-  function copyLink() {
-    if (!link) return;
-    navigator.clipboard.writeText(link).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-
-  async function saveSlug() {
-    if (!newSlug.trim()) return;
-    setSaving(true);
-    setErr(null);
-    try {
-      const r = await pizzariasApi.update(pizzaria.id, { slug: newSlug.trim() } as any);
-      onUpdated(r);
-      setEditing(false);
-    } catch (e: any) {
-      setErr(e.message || "Erro ao salvar slug");
-    }
-    setSaving(false);
-  }
-
-  if (!slug) return (
-    <div className="rounded-2xl p-5 border border-dashed border-slate-800 bg-[#161f30]/40 flex items-center gap-4">
-      <div className="w-12 h-12 rounded-xl grid place-items-center bg-orange-500/10 border border-orange-500/30 text-orange-400 shrink-0">
-        <Store className="w-6 h-6" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-white">Cardápio Digital</p>
-        <p className="text-xs text-slate-400">Salve as alterações de nome para gerar o link do seu cardápio público.</p>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="rounded-2xl p-5 border border-orange-900/40 bg-[#161f30]/60 shadow-sm space-y-3.5">
-      <div className="flex items-center gap-4">
-        <div className="w-12 h-12 rounded-xl grid place-items-center bg-orange-500/10 border border-orange-500/30 text-orange-400 shrink-0">
-          <Store className="w-6 h-6" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-white">Cardápio Digital</p>
-          <p className="text-xs text-orange-300/80">Link público para seus clientes fazerem pedidos</p>
-        </div>
-      </div>
-
-      {/* Link e ações */}
-      <div className="bg-[#0b0e14] rounded-xl border border-slate-800 p-3 flex items-center gap-2">
-        <div className="flex-1 min-w-0 text-xs font-mono text-slate-300 truncate select-all">
-          {link}
-        </div>
-        <button onClick={copyLink} title="Copiar link"
-          className="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-500/15 border border-orange-500/30 text-orange-400 hover:bg-orange-500/25 transition-colors">
-          {copied ? "✓ Copiado!" : "📋 Copiar"}
-        </button>
-        <a href={`/m/${slug}`} target="_blank" rel="noopener noreferrer"
-          className="shrink-0 px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors">
-          Abrir ↗
-        </a>
-      </div>
-
-      {/* Editar slug */}
-      {editing ? (
-        <div className="flex gap-2 items-center">
-          <span className="text-xs text-slate-400 whitespace-nowrap">{baseUrl}/m/</span>
-          <input value={newSlug} onChange={e => setNewSlug(e.target.value)}
-            className="flex-1 px-3 py-1.5 bg-[#0b0e14] border border-slate-800 text-slate-100 rounded-lg text-sm focus:border-orange-500 outline-none"
-            placeholder="minha-pizzaria" />
-          <button onClick={saveSlug} disabled={saving}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-50">
-            {saving ? "..." : "Salvar"}
-          </button>
-          <button onClick={() => { setEditing(false); setErr(null); }}
-            className="text-xs text-slate-400 hover:text-slate-200">Cancelar</button>
-        </div>
-      ) : (
-        <button onClick={() => { setNewSlug(slug); setEditing(true); setErr(null); }}
-          className="text-xs text-orange-400 hover:text-orange-300 font-semibold inline-flex items-center gap-1">
-          ✏️ Editar link do cardápio
-        </button>
-      )}
-
-      {err && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">{err}</p>}
-
-      <p className="text-[11px] text-slate-400 leading-snug">
-        💡 Divulgue este link nos seus anúncios, Instagram e panfletos. Seus clientes podem pedir direto pelo celular sem instalar nada.
       </p>
     </div>
   );

@@ -663,6 +663,8 @@ function AdminApp() {
       {nav === "cardapio"  && (
         <CardapioViewV2
           pizzariaId={pizzaria.id}
+          pizzaria={pizzaria}
+          onPizzariaUpdated={setPizzaria}
           autoCreate={openCardapioNovo}
           onAutoCreated={() => setOpenCardapioNovo(false)}
         />

@@ -9,10 +9,13 @@ import {
   UtensilsCrossed, ImageOff, FileText, Upload, Sparkles, Search, 
   Check, Eye, EyeOff, LayoutGrid, Tag, SlidersHorizontal, Settings
 } from "lucide-react";
-import { cardapioApi, BackendProduto, CardapioArquivoInfo, ProdutoImport } from "../../lib/api";
+import { cardapioApi, BackendProduto, BackendPizzaria, pizzariasApi, CardapioArquivoInfo, ProdutoImport } from "../../lib/api";
+import { CardapioDigitalCard } from "./CardapioDigitalCard";
 
 interface Props {
   pizzariaId: string;
+  pizzaria?: BackendPizzaria;
+  onPizzariaUpdated?: (p: BackendPizzaria) => void;
   autoCreate?: boolean;
   onAutoCreated?: () => void;
 }
@@ -116,7 +119,28 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
 // =========================================================
 // Componente Principal: CardapioViewV2
 // =========================================================
-export function CardapioViewV2({ pizzariaId, autoCreate = false, onAutoCreated }: Props) {
+export function CardapioViewV2({
+  pizzariaId,
+  pizzaria,
+  onPizzariaUpdated,
+  autoCreate = false,
+  onAutoCreated,
+}: Props) {
+  const [internalPizzaria, setInternalPizzaria] = useState<BackendPizzaria | null>(pizzaria || null);
+
+  useEffect(() => {
+    if (pizzaria) {
+      setInternalPizzaria(pizzaria);
+    } else if (pizzariaId) {
+      pizzariasApi.get(pizzariaId).then(setInternalPizzaria).catch(() => {});
+    }
+  }, [pizzaria, pizzariaId]);
+
+  function handlePizzariaUpdated(p: BackendPizzaria) {
+    setInternalPizzaria(p);
+    onPizzariaUpdated?.(p);
+  }
+
   const [produtos, setProdutos] = useState<BackendProduto[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -357,6 +381,11 @@ export function CardapioViewV2({ pizzariaId, autoCreate = false, onAutoCreated }
           <AlertCircle className="w-4 h-4 shrink-0 text-red-400"/>
           <span className="font-medium">{err}</span>
         </div>
+      )}
+
+      {/* Cardápio Digital (link público para pedidos) */}
+      {internalPizzaria && (
+        <CardapioDigitalCard pizzaria={internalPizzaria} onUpdated={handlePizzariaUpdated} />
       )}
 
       {/* PDF/Imagem de cardápio */}
