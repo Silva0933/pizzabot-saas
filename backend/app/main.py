@@ -92,6 +92,14 @@ async def lifespan(app: FastAPI):
         log.info("Catalogo de planos carregado.")
     except Exception as e:  # noqa: BLE001
         log.warning("Falha ao carregar ajustes de plano: %s", e)
+    # Auditoria de prontidao: varios pontos do sistema sao fail-open pra nao
+    # travar o setup (webhook sem token aceita qualquer POST, gateway sem chave
+    # nao cobra). Em producao cada um e uma porta aberta que falha calada.
+    try:
+        from app.services.prontidao import registrar_prontidao
+        await registrar_prontidao()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha na auditoria de prontidao: %s", e)
     # Re-sincroniza o webhook das instâncias existentes para incluir o novo
     # evento PRESENCE_UPDATE ("digitando"). Best-effort, não bloqueia o boot.
     try:

@@ -170,6 +170,24 @@ async def platform_overview(
     }
 
 
+@router.get("/prontidao")
+async def prontidao_producao(
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """O que ainda falta configurar para rodar em produção com segurança."""
+    from app.services.prontidao import auditar
+
+    achados = auditar()
+    return {
+        "ok": not achados,
+        "criticos": sum(1 for a in achados if a.gravidade == "critico"),
+        "achados": [
+            {"chave": a.chave, "gravidade": a.gravidade, "titulo": a.titulo, "detalhe": a.detalhe}
+            for a in achados
+        ],
+    }
+
+
 @router.get("/planos")
 async def listar_planos(
     db: AsyncSession = Depends(get_db),
