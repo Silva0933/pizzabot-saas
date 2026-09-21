@@ -47,7 +47,12 @@
   max-width: var(--max); margin: 0 auto; padding: 0 40px;
   height: 72px; display: flex; align-items: center; gap: 28px;
 }
-.cdp-brand-r { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--text); }
+.cdp-brand-r {
+  display: flex; align-items: center; gap: 12px;
+  text-decoration: none; color: var(--text);
+  background: transparent; border: 0; cursor: pointer; font-family: inherit;
+  min-width: 0; flex-shrink: 0;
+}
 .cdp-brand-mark-r {
   width: 42px; height: 42px; border-radius: 12px; overflow: hidden;
   background: var(--accent); color: var(--button-text);
@@ -56,12 +61,20 @@
 }
 .cdp-brand-mark-r img { width: 100%; height: 100%; object-fit: cover; }
 .cdp-brand-text-r { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.cdp-brand-name-r { font-size: 24px; line-height: 1; font-weight: 800; }
-.cdp-brand-sub-r { font-size: 12px; color: var(--text3); font-weight: 600; }
+.cdp-brand-name-r {
+  font-size: 21px; line-height: 1; font-weight: 800;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 260px;
+}
+.cdp-brand-sub-r {
+  font-size: 12px; color: var(--text3); font-weight: 600;
+  white-space: nowrap;
+}
 .cdp-nav-r { display: flex; gap: 2px; }
 .cdp-nav-r a {
   padding: 10px 14px; border-radius: 10px; color: var(--text2);
   text-decoration: none; font-size: 15px; font-weight: 600;
+  white-space: nowrap;
   transition: color .16s, background .16s;
 }
 .cdp-nav-r a:hover { color: var(--text); background: var(--bg2); }
@@ -71,6 +84,7 @@
   border: 1px solid var(--line); background: transparent; color: var(--text2);
   display: flex; align-items: center; gap: 8px;
   font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit;
+  white-space: nowrap; flex-shrink: 0;
   transition: border-color .16s, color .16s;
 }
 .cdp-hbtn-r:hover { border-color: var(--accent); color: var(--text); }
@@ -80,6 +94,7 @@
   display: flex; align-items: center; gap: 10px;
   font-size: 15px; font-weight: 700; text-decoration: none;
   border: 0; cursor: pointer; font-family: inherit;
+  white-space: nowrap; flex-shrink: 0;
 }
 .cdp-hbag-count-r {
   min-width: 28px; height: 28px; padding: 0 6px; border-radius: 8px;
@@ -247,8 +262,10 @@
 }
 
 /* ---------- Responsivo ---------- */
-@media (max-width: 1080px) {
+@media (max-width: 1240px) {
   .cdp-nav-r { display: none; }
+}
+@media (max-width: 1080px) {
   .cdp-trust-r { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 0; }
   .cdp-trust-item-r:nth-child(2n) { border-right: 0; }
   .cdp-trust-item-r:nth-child(odd) { padding-left: 0; }

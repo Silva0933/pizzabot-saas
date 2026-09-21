@@ -181,6 +181,48 @@ export const TEMAS: Record<TemaCardapioModelo, { label: string; descricao: strin
 
 export const MODELO_PADRAO: TemaCardapioModelo = "brasa";
 
+/**
+ * Valores que a versao ANTERIOR gravava sozinha no tema.
+ *
+ * O `normalizarTema` antigo mesclava o preset dentro da config a cada salvamento,
+ * entao quase toda pizzaria tem esses valores no banco sem nunca ter escolhido
+ * nenhum deles. Tratar como personalizacao deixaria todo cardapio existente preso
+ * na paleta velha, sem nunca receber o tema novo. Entao valor identico ao preset
+ * antigo conta como "nao personalizado" e cede ao tema atual.
+ *
+ * Personalizacao de verdade (qualquer valor diferente destes) e sempre respeitada.
+ */
+const LEGADO: Record<TemaCardapioModelo, Record<string, string>> = {
+  brasa: {
+    fonte_titulo: "anton", fonte_texto: "inter", bordas: "suaves",
+    cor_primaria: "#f26b21", cor_secundaria: "#ff4d22", cor_fundo: "#090907",
+  },
+  trattoria: {
+    fonte_titulo: "playfair", fonte_texto: "nunito", bordas: "suaves",
+    cor_primaria: "#a52a2a", cor_secundaria: "#d39b45", cor_fundo: "#f5ecdf",
+  },
+  metropole: {
+    fonte_titulo: "outfit", fonte_texto: "montserrat", bordas: "arredondadas",
+    cor_primaria: "#b7f34a", cor_secundaria: "#7c5cff", cor_fundo: "#0b1020",
+  },
+};
+
+/** Textos que o codigo antigo tambem gravava sozinho. */
+const LEGADO_TEXTO: Record<string, string> = {
+  chamada: "FEITO NA HORA. DO SEU JEITO.",
+  titulo: "O SABOR QUE|ACENDE A FOME.",
+  descricao: "Escolha seus favoritos, personalize o pedido e receba tudo quentinho onde estiver.",
+};
+
+function ehLegado(modelo: TemaCardapioModelo, chave: string, valor: unknown): boolean {
+  if (typeof valor !== "string") return false;
+  const v = valor.trim().toLowerCase();
+  const doModelo = LEGADO[modelo]?.[chave];
+  if (doModelo && doModelo.toLowerCase() === v) return true;
+  const texto = LEGADO_TEXTO[chave];
+  return !!texto && texto.toLowerCase() === v;
+}
+
 // ============================================================
 // Resolução
 // ============================================================
@@ -192,22 +234,26 @@ export function resolverTema(bruto?: TemaCardapioConfig | null): Required<Tokens
     salvo.modelo && TEMAS[salvo.modelo] ? salvo.modelo : MODELO_PADRAO;
   const base = TEMAS[modelo].tokens;
 
-  // Só sobrescreve com o que foi realmente preenchido: string vazia no painel
-  // significa "volta pro padrão do tema", não "deixa em branco".
-  const usar = <T,>(valor: T | undefined | null, padrao: T): T =>
-    valor === undefined || valor === null || valor === "" ? padrao : valor;
+  // Só sobrescreve com o que foi realmente escolhido. String vazia no painel
+  // significa "volta pro padrão do tema", não "deixa em branco" — e valor herdado
+  // da versão anterior (ver LEGADO) também cede, porque ninguém o escolheu.
+  const usar = <T,>(valor: T | undefined | null, padrao: T, chave?: string): T => {
+    if (valor === undefined || valor === null || valor === "") return padrao;
+    if (chave && ehLegado(modelo, chave, valor)) return padrao;
+    return valor;
+  };
 
   return {
     ...COPY_PADRAO,
     ...base,
     ...salvo,
     modelo,
-    fonte_titulo: usar(salvo.fonte_titulo as FonteTituloId, base.fonte_titulo),
-    fonte_texto: usar(salvo.fonte_texto as FonteTextoId, base.fonte_texto),
+    fonte_titulo: usar(salvo.fonte_titulo as FonteTituloId, base.fonte_titulo, "fonte_titulo"),
+    fonte_texto: usar(salvo.fonte_texto as FonteTextoId, base.fonte_texto, "fonte_texto"),
     titulo_caixa_alta: usar(salvo.titulo_caixa_alta, base.titulo_caixa_alta),
-    cor_primaria: usar(salvo.cor_primaria, base.cor_primaria),
-    cor_secundaria: usar(salvo.cor_secundaria, base.cor_secundaria),
-    cor_fundo: usar(salvo.cor_fundo, base.cor_fundo),
+    cor_primaria: usar(salvo.cor_primaria, base.cor_primaria, "cor_primaria"),
+    cor_secundaria: usar(salvo.cor_secundaria, base.cor_secundaria, "cor_secundaria"),
+    cor_fundo: usar(salvo.cor_fundo, base.cor_fundo, "cor_fundo"),
     cor_superficie: usar(salvo.cor_superficie, base.cor_superficie),
     cor_superficie_alta: usar(salvo.cor_superficie_alta, base.cor_superficie_alta),
     cor_borda: usar(salvo.cor_borda, base.cor_borda),
@@ -216,11 +262,11 @@ export function resolverTema(bruto?: TemaCardapioConfig | null): Required<Tokens
     cor_texto_apagado: usar(salvo.cor_texto_apagado, base.cor_texto_apagado),
     cor_botao: usar(salvo.cor_botao, salvo.cor_primaria || base.cor_botao),
     cor_botao_texto: usar(salvo.cor_botao_texto, base.cor_botao_texto),
-    bordas: usar(salvo.bordas as keyof typeof BORDAS, base.bordas),
+    bordas: usar(salvo.bordas as keyof typeof BORDAS, base.bordas, "bordas"),
     // Copy: cada campo cai no padrão quando vazio.
-    chamada: usar(salvo.chamada, COPY_PADRAO.chamada),
-    titulo: usar(salvo.titulo, COPY_PADRAO.titulo),
-    descricao: usar(salvo.descricao, COPY_PADRAO.descricao),
+    chamada: usar(salvo.chamada, COPY_PADRAO.chamada, "chamada"),
+    titulo: usar(salvo.titulo, COPY_PADRAO.titulo, "titulo"),
+    descricao: usar(salvo.descricao, COPY_PADRAO.descricao, "descricao"),
     cta_primario: usar(salvo.cta_primario, COPY_PADRAO.cta_primario),
     cta_secundario: usar(salvo.cta_secundario, COPY_PADRAO.cta_secundario),
     destaques_titulo: usar(salvo.destaques_titulo, COPY_PADRAO.destaques_titulo),

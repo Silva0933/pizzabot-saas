@@ -941,6 +941,14 @@ export function CardapioPublico({ slug }: { slug: string }) {
   // ============================================
   // Renders
   // ============================================
+  // ATENCAO: hooks daqui pra cima, porque logo abaixo comecam os returns
+  // condicionais (loading/erro). Hook depois de um return condicional roda em
+  // quantidade diferente entre renders e quebra a pagina com React #310.
+  const [faqAberta, setFaqAberta] = useState<number | null>(0);
+  // Cada cardapio baixa so as duas familias do seu tema, nao as dez.
+  const fontesUrl = googleFontsUrl(resolverTema(data?.pizzaria.tema_cardapio));
+  useEffect(() => { carregarFontes(fontesUrl); }, [fontesUrl]);
+
   if (loading) return (
     <div className="cdp-loading">
       <div className="cdp-spinner-wrap">
@@ -963,12 +971,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const waUrl = waLink(pizz.telefone_contato);
   const tema = resolverTema(pizz.tema_cardapio);
   const linhasTitulo = linhasDoTitulo(tema.titulo || "");
-  // Cada cardapio baixa so as duas familias do seu tema, nao as dez.
-  const fontesUrl = googleFontsUrl(tema);
-  useEffect(() => { carregarFontes(fontesUrl); }, [fontesUrl]);
   // Destaque do hero: o primeiro produto do cardapio (a ordem ja e a da pizzaria).
   const produtoDestaque = data.produtos.length > 0 ? data.produtos[0] : null;
-  const [faqAberta, setFaqAberta] = useState<number | null>(0);
   const themeStyle = temaParaCssVars(tema);
   const embedMapUrl = mapEmbedUrl(pizz);
   const trackingSteps = tracking ? (

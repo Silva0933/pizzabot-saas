@@ -19,6 +19,7 @@
 .cdp-feat-track-r {
   display: flex; gap: 14px; overflow-x: auto;
   padding-bottom: 4px; scroll-snap-type: x mandatory;
+  align-items: flex-start;
   scrollbar-width: none;
 }
 .cdp-feat-track-r::-webkit-scrollbar { display: none; }
