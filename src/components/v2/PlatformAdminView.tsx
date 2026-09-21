@@ -59,7 +59,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   const [days, setDays] = useState(30);
   const [ov, setOv] = useState<AdminOverview | null>(null);
   const [loadingOv, setLoadingOv] = useState(true);
-  const [activeNav, setActiveNav] = useState<"visao_geral" | "assinaturas" | "alertas" | "ia" | "pizzarias">("visao_geral");
+  const [activeNav, setActiveNav] = useState<"visao_geral" | "assinaturas" | "alertas" | "ia">("visao_geral");
 
   // Modais de Pizzaria
   const [creating, setCreating] = useState(false);
@@ -226,13 +226,8 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
     return !termo || (p.nome + " " + p.plano + " " + (p.instancia || "")).toLocaleLowerCase("pt-BR").includes(termo);
   });
 
-  function scrollToSection(id: string, navKey: typeof activeNav) {
-    setActiveNav(navKey);
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
+  // Navegação por abas — apenas muda o estado ativo
+  function goTo(navKey: typeof activeNav) { setActiveNav(navKey); }
 
   // Dados calculados para os 4 planos
   const planosCatalogo = useMemo(() => {
@@ -295,11 +290,11 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
             </div>
           </div>
 
-          {/* Menu Vertical de Navegação */}
+          {/* Menu Vertical de Navegação — Abas */}
           <nav className="space-y-1.5">
             <button
               type="button"
-              onClick={() => scrollToSection("visao-geral", "visao_geral")}
+              onClick={() => goTo("visao_geral")}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeNav === "visao_geral"
                   ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
@@ -312,7 +307,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 
             <button
               type="button"
-              onClick={() => scrollToSection("secao-assinaturas", "assinaturas")}
+              onClick={() => goTo("assinaturas")}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeNav === "assinaturas"
                   ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
@@ -325,7 +320,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 
             <button
               type="button"
-              onClick={() => scrollToSection("secao-alertas", "alertas")}
+              onClick={() => goTo("alertas")}
               className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeNav === "alertas"
                   ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
@@ -343,7 +338,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 
             <button
               type="button"
-              onClick={() => scrollToSection("secao-ia", "ia")}
+              onClick={() => goTo("ia")}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeNav === "ia"
                   ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
@@ -352,19 +347,6 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
             >
               <Sparkles className="w-4 h-4 shrink-0" />
               <span>IA e integrações</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => scrollToSection("secao-pizzarias", "pizzarias")}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                activeNav === "pizzarias"
-                  ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-[#161f30]/60"
-              }`}
-            >
-              <Store className="w-4 h-4 shrink-0" />
-              <span>Pizzarias</span>
             </button>
           </nav>
         </div>
@@ -378,9 +360,15 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
       {/* ======================================================== */}
       {/* ÁREA PRINCIPAL DE CONTEÚDO                               */}
       {/* ======================================================== */}
-      <main className="flex-1 min-w-0 p-4 md:p-6 lg:p-8 space-y-6 overflow-y-auto">
+      <main className="flex-1 min-w-0 p-4 md:p-6 lg:p-8 overflow-y-auto">
+
+        {/* ============================================================ */}
+        {/* ABA: VISÃO GERAL                                             */}
+        {/* ============================================================ */}
+        {activeNav === "visao_geral" && (
+          <div className="space-y-6">
         {/* Topbar: Título da Página + Filtro de Período + Usuário + Sair */}
-        <header id="visao-geral" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
           <div>
             <h2 className="text-xl font-bold text-white tracking-tight">Visão geral</h2>
             <p className="text-xs text-slate-400 mt-0.5">Desempenho consolidado de todas as pizzarias.</p>
@@ -422,12 +410,12 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
           </div>
         </header>
 
-        {err && (
-          <div className="flex items-center gap-2.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-xl text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{err}</span>
-          </div>
-        )}
+            {err && (
+              <div className="flex items-center gap-2.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-xl text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{err}</span>
+              </div>
+            )}
 
         {/* ======================================================== */}
         {/* ROW 1: 4 KPIS DE FATURAMENTO E ASSINANTES                */}
@@ -489,6 +477,7 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
         {/* ======================================================== */}
         {/* ROW 2: GRÁFICOS & SERVIÇOS CONECTADOS                    */}
         {/* ======================================================== */}
+
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* Coluna Esquerda (~65%): Novas assinaturas */}
           <div className="lg:col-span-8 bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm">
@@ -662,216 +651,264 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
             })}
           </div>
         </section>
+        </div>
+        )}
 
-        {/* ======================================================== */}
-        {/* ROW 4: CENTRAL DE ASSINATURAS & FATURAS + ALERTAS        */}
-        {/* ======================================================== */}
-        <section className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          {/* Esquerda (~65%): Central de assinaturas */}
-          <div id="secao-assinaturas" className="lg:col-span-8">
-            <AssinaturasCard catalogo={ov?.catalogo ?? []} />
-          </div>
-
-          {/* Direita (~35%): Faturas da plataforma + Alertas */}
-          <div className="lg:col-span-4 space-y-4">
-            <FaturasCard />
-            <div id="secao-alertas">
-              <AlertasCard onCountChange={setAlertCount} />
-            </div>
-          </div>
-        </section>
-
-        {/* ======================================================== */}
-        {/* ROW 5: CONFIGURAÇÃO DE IA (ACORDEÃO COMPLETO)            */}
-        {/* ======================================================== */}
-        <section id="secao-ia">
-          <LLMConfigCard />
-        </section>
-
-        {/* ======================================================== */}
-        {/* ROW 6: TABELA DE PIZZARIAS (GESTÃO)                      */}
-        {/* ======================================================== */}
-        <section id="secao-pizzarias" className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 grid place-items-center shrink-0">
-                <Store className="w-5 h-5" />
-              </div>
+        {/* ============================================================ */}
+        {/* ABA: ASSINATURAS (Central + Faturas + Pizzarias)              */}
+        {/* ============================================================ */}
+        {activeNav === "assinaturas" && (
+          <div className="space-y-6">
+            {/* Header da aba */}
+            <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#1e293b]">
               <div>
-                <h3 className="text-sm font-bold text-white">Pizzarias</h3>
-                <p className="text-xs text-slate-400">Empresas cadastradas, integrações e acessos.</p>
+                <h2 className="text-xl font-bold text-white tracking-tight">Assinaturas</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Gerencie recorrências, pizzarias e faturas da plataforma.</p>
               </div>
-            </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-slate-300 hidden sm:inline px-2">{userName || "Jailson"}</span>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#161f30] transition-colors border border-transparent hover:border-[#1e293b]"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sair</span>
+                </button>
+              </div>
+            </header>
 
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  value={pizzaSearch}
-                  onChange={(e) => setPizzaSearch(e.target.value)}
-                  placeholder="Buscar por nome, plano ou instância..."
-                  className="bg-[#161f30] border border-[#1e293b] text-xs text-white placeholder:text-slate-500 rounded-xl pl-9 pr-3 py-2 outline-none focus:border-orange-500 w-56 md:w-64"
-                />
+            {err && (
+              <div className="flex items-center gap-2.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-4 py-3 rounded-xl text-xs">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{err}</span>
+              </div>
+            )}
+
+            {/* Central de Assinaturas (largura total) */}
+            <AssinaturasCard catalogo={ov?.catalogo ?? []} />
+
+            {/* Faturas da plataforma */}
+            <FaturasCard />
+
+            {/* ======================================================== */}
+            {/* PIZZARIAS (integrada à aba de Assinaturas)                */}
+            {/* ======================================================== */}
+            <section className="bg-[#111622] border border-[#1e293b] rounded-2xl p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 grid place-items-center shrink-0">
+                    <Store className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Pizzarias</h3>
+                    <p className="text-xs text-slate-400">Empresas cadastradas, integrações e acessos.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                    <input
+                      type="text"
+                      value={pizzaSearch}
+                      onChange={(e) => setPizzaSearch(e.target.value)}
+                      placeholder="Buscar por nome, plano ou instância..."
+                      className="bg-[#161f30] border border-[#1e293b] text-xs text-white placeholder:text-slate-500 rounded-xl pl-9 pr-3 py-2 outline-none focus:border-orange-500 w-56 md:w-64"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={startCreate}
+                    className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-lg shadow-orange-500/20 shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Nova pizzaria</span>
+                  </button>
+                </div>
               </div>
 
-              <button
-                type="button"
-                onClick={startCreate}
-                className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition-colors shadow-lg shadow-orange-500/20 shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Nova pizzaria</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Tabela de Pizzarias */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-[#1e293b] text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                  <th className="py-2.5 px-3">PIZZARIA</th>
-                  <th className="py-2.5 px-3">PLANO</th>
-                  <th className="py-2.5 px-3">RECEITA/MÊS</th>
-                  <th className="py-2.5 px-3 text-center">PRODUTOS</th>
-                  <th className="py-2.5 px-3 text-center">CONVERSAS</th>
-                  <th className="py-2.5 px-3 text-center">BOT</th>
-                  <th className="py-2.5 px-3 text-center">FSM</th>
-                  <th className="py-2.5 px-3 text-right">AÇÕES</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1e293b]/60">
-                {pizzariasFiltradas.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="text-center py-8 text-slate-500">
-                      Nenhuma pizzaria encontrada.
-                    </td>
-                  </tr>
-                ) : (
-                  pizzariasFiltradas.map((p) => {
-                    const a = assinaturaById(p.id);
-                    const precoMensal = a ? a.preco_mensal : (p.plano === "pro" ? 197 : p.plano === "basico" ? 97 : 0);
-                    const prods = a?.uso?.produtos ?? (p.id ? 0 : 0);
-                    const convs = a?.uso?.conversas ?? (p.id ? 0 : 0);
-
-                    return (
-                      <tr key={p.id} className="hover:bg-[#161f30]/40 transition-colors">
-                        {/* Nome da Pizzaria */}
-                        <td className="py-3 px-3 font-semibold text-white truncate max-w-[200px]">
-                          {p.nome}
-                        </td>
-
-                        {/* Dropdown Plano */}
-                        <td className="py-3 px-3">
-                          <select
-                            value={p.plano}
-                            disabled={busyId === p.id}
-                            onChange={(e) => changePlan(p, e.target.value)}
-                            className="bg-[#161f30] border border-[#1e293b] text-slate-200 text-xs rounded-lg py-1 px-2 outline-none cursor-pointer disabled:opacity-50"
-                          >
-                            {(ov?.catalogo ?? [
-                              { id: "trial", nome: "Teste grátis" },
-                              { id: "basico", nome: "Básico" },
-                              { id: "pro", nome: "Pro" },
-                              { id: "premium", nome: "Premium" },
-                            ]).map((c) => (
-                              <option key={c.id} value={c.id}>{c.nome}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* Receita/mês */}
-                        <td className="py-3 px-3 font-medium text-slate-300">
-                          {brl(precoMensal)}/mês
-                        </td>
-
-                        {/* Produtos */}
-                        <td className="py-3 px-3 text-center text-slate-300">
-                          {prods}
-                        </td>
-
-                        {/* Conversas */}
-                        <td className="py-3 px-3 text-center text-slate-300">
-                          {convs}
-                        </td>
-
-                        {/* Bot Toggle */}
-                        <td className="py-3 px-3 text-center">
-                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                            p.bot_ativo_global ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-[#161f30] text-slate-400 border border-[#1e293b]"
-                          }`}>
-                            <Power className="w-2.5 h-2.5" />
-                            {p.bot_ativo_global ? "Bot on" : "Bot off"}
-                          </span>
-                        </td>
-
-                        {/* Pipeline FSM */}
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            type="button"
-                            disabled={busyId === p.id}
-                            onClick={() => togglePipeline(p)}
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
-                              p.pipeline_fsm ? "bg-purple-600 text-white" : "bg-[#161f30] text-slate-400 border border-[#1e293b]"
-                            }`}
-                          >
-                            FSM {p.pipeline_fsm ? "ON" : "off"}
-                          </button>
-                        </td>
-
-                        {/* Ações */}
-                        <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openWhatsApp(p)}
-                              className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                              title="Conectar WhatsApp"
-                            >
-                              <QrCode className="w-3.5 h-3.5" />
-                              <span>WhatsApp</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => onEnter(p)}
-                              className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                              title="Entrar na pizzaria"
-                            >
-                              <LogIn className="w-3.5 h-3.5" />
-                              <span>Entrar</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => startEdit(p)}
-                              className="p-1.5 text-slate-400 hover:text-white hover:bg-[#1e293b] rounded-lg transition-colors"
-                              title="Editar"
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => remove(p)}
-                              disabled={busyId === p.id}
-                              className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-50"
-                              title="Remover"
-                            >
-                              {busyId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                            </button>
-                          </div>
+              {/* Tabela de Pizzarias */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-[#1e293b] text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                      <th className="py-2.5 px-3">PIZZARIA</th>
+                      <th className="py-2.5 px-3">PLANO</th>
+                      <th className="py-2.5 px-3">RECEITA/MÊS</th>
+                      <th className="py-2.5 px-3 text-center">PRODUTOS</th>
+                      <th className="py-2.5 px-3 text-center">CONVERSAS</th>
+                      <th className="py-2.5 px-3 text-center">BOT</th>
+                      <th className="py-2.5 px-3 text-center">FSM</th>
+                      <th className="py-2.5 px-3 text-right">AÇÕES</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#1e293b]/60">
+                    {pizzariasFiltradas.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center py-8 text-slate-500">
+                          Nenhuma pizzaria encontrada.
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ) : (
+                      pizzariasFiltradas.map((p) => {
+                        const a = assinaturaById(p.id);
+                        const precoMensal = a ? a.preco_mensal : (p.plano === "pro" ? 197 : p.plano === "basico" ? 97 : 0);
+                        const prods = a?.uso?.produtos ?? (p.id ? 0 : 0);
+                        const convs = a?.uso?.conversas ?? (p.id ? 0 : 0);
+
+                        return (
+                          <tr key={p.id} className="hover:bg-[#161f30]/40 transition-colors">
+                            <td className="py-3 px-3 font-semibold text-white truncate max-w-[200px]">
+                              {p.nome}
+                            </td>
+                            <td className="py-3 px-3">
+                              <select
+                                value={p.plano}
+                                disabled={busyId === p.id}
+                                onChange={(e) => changePlan(p, e.target.value)}
+                                className="bg-[#161f30] border border-[#1e293b] text-slate-200 text-xs rounded-lg py-1 px-2 outline-none cursor-pointer disabled:opacity-50"
+                              >
+                                {(ov?.catalogo ?? [
+                                  { id: "trial", nome: "Teste grátis" },
+                                  { id: "basico", nome: "Básico" },
+                                  { id: "pro", nome: "Pro" },
+                                  { id: "premium", nome: "Premium" },
+                                ]).map((c) => (
+                                  <option key={c.id} value={c.id}>{c.nome}</option>
+                                ))}
+                              </select>
+                            </td>
+                            <td className="py-3 px-3 font-medium text-slate-300">
+                              {brl(precoMensal)}/mês
+                            </td>
+                            <td className="py-3 px-3 text-center text-slate-300">{prods}</td>
+                            <td className="py-3 px-3 text-center text-slate-300">{convs}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                                p.bot_ativo_global ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-[#161f30] text-slate-400 border border-[#1e293b]"
+                              }`}>
+                                <Power className="w-2.5 h-2.5" />
+                                {p.bot_ativo_global ? "Bot on" : "Bot off"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                type="button"
+                                disabled={busyId === p.id}
+                                onClick={() => togglePipeline(p)}
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors cursor-pointer disabled:opacity-50 ${
+                                  p.pipeline_fsm ? "bg-purple-600 text-white" : "bg-[#161f30] text-slate-400 border border-[#1e293b]"
+                                }`}
+                              >
+                                FSM {p.pipeline_fsm ? "ON" : "off"}
+                              </button>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => openWhatsApp(p)}
+                                  className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                                  title="Conectar WhatsApp"
+                                >
+                                  <QrCode className="w-3.5 h-3.5" />
+                                  <span>WhatsApp</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onEnter(p)}
+                                  className="bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 border border-orange-500/30 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                                  title="Entrar na pizzaria"
+                                >
+                                  <LogIn className="w-3.5 h-3.5" />
+                                  <span>Entrar</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => startEdit(p)}
+                                  className="p-1.5 text-slate-400 hover:text-white hover:bg-[#1e293b] rounded-lg transition-colors"
+                                  title="Editar"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => remove(p)}
+                                  disabled={busyId === p.id}
+                                  className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-50"
+                                  title="Remover"
+                                >
+                                  {busyId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
-        </section>
+        )}
+
+        {/* ============================================================ */}
+        {/* ABA: ALERTAS                                                  */}
+        {/* ============================================================ */}
+        {activeNav === "alertas" && (
+          <div className="space-y-6">
+            <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#1e293b]">
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">Alertas</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Eventos críticos e notificações da plataforma.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-slate-300 hidden sm:inline px-2">{userName || "Jailson"}</span>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#161f30] transition-colors border border-transparent hover:border-[#1e293b]"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sair</span>
+                </button>
+              </div>
+            </header>
+            <AlertasCard onCountChange={setAlertCount} />
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* ABA: IA E INTEGRAÇÕES                                         */}
+        {/* ============================================================ */}
+        {activeNav === "ia" && (
+          <div className="space-y-6">
+            <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#1e293b]">
+              <div>
+                <h2 className="text-xl font-bold text-white tracking-tight">IA e integrações</h2>
+                <p className="text-xs text-slate-400 mt-0.5">Configure modelos, provedores e chaves de API.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-medium text-slate-300 hidden sm:inline px-2">{userName || "Jailson"}</span>
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-[#161f30] transition-colors border border-transparent hover:border-[#1e293b]"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sair</span>
+                </button>
+              </div>
+            </header>
+            <LLMConfigCard />
+          </div>
+        )}
+
       </main>
+
 
       {/* ======================================================== */}
       {/* MODAL: CRIAR / EDITAR PIZZARIA                           */}
