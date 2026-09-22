@@ -870,7 +870,48 @@ async def processar(
 
             # Pendência: item não encontrado / falta tamanho / taxa não cadastrada.
             decisao["acao"] = "pendencia"
-            decisao["fatos"].append(f"O sistema precisa resolver: {calc.get('erro')}")
+
+            # "Não encontrei" e "está indisponível" dizem coisas opostas ao cliente:
+            # a primeira sugere que ele errou o nome, a segunda que o item acabou.
+            # TODA consulta ao catálogo filtra `disponivel = true`, então um sabor
+            # desligado no painel chega aqui indistinguível de um que nunca existiu
+            # — e o cliente que pediu exatamente aquele item ouve que não existe.
+            # Uma busca extra SEM o filtro separa os dois casos.
+            indisponivel: str | None = None
+            if prod_inv:
+                try:
+                    import unicodedata as _ud_ind
+
+                    from sqlalchemy import text as _text_ind
+
+                    def _norm_ind(x: object) -> str:
+                        s = "".join(
+                            c for c in _ud_ind.normalize("NFD", str(x).strip().lower())
+                            if _ud_ind.category(c) != "Mn"
+                        )
+                        return _re.sub(r"\s+", " ", s)
+
+                    rows_ind = (await db.execute(_text_ind(
+                        "SELECT nome FROM public.produtos "
+                        "WHERE pizzaria_id = :pid AND disponivel = false"
+                    ), {"pid": str(ctx.pizzaria.id)})).fetchall()
+                    alvo_ind = _norm_ind(prod_inv)
+                    for (nome_ind,) in rows_ind:
+                        if nome_ind and _norm_ind(nome_ind) == alvo_ind:
+                            indisponivel = nome_ind
+                            break
+                except Exception:  # noqa: BLE001
+                    # Best-effort: se a checagem falhar, cai na mensagem genérica.
+                    indisponivel = None
+
+            if indisponivel:
+                decisao["fatos"].append(
+                    f"'{indisponivel}' ESTÁ NO CARDÁPIO mas está INDISPONÍVEL agora. "
+                    f"Avise que acabou/está fora no momento — NÃO diga que não existe "
+                    f"nem que não encontrou — e ofereça alternativas."
+                )
+            else:
+                decisao["fatos"].append(f"O sistema precisa resolver: {calc.get('erro')}")
             decisao["proxima_pergunta"] = "Resolva a pendência acima com o cliente (ex.: peça o tamanho, ou avise que não temos o item)."
             estado["etapa"] = "COLETA_ITENS"
 
