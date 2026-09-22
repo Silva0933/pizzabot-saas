@@ -69,7 +69,21 @@ def openai_tools() -> list[dict[str, Any]]:
 
 
 def _base_and_headers(provider: str, api_key: str) -> tuple[str, dict[str, str]]:
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    # Header HTTP só aceita ASCII. Uma chave com caractere invisível (colada com
+    # formatação, aspas tipográficas, ou a própria máscara "••••" da tela) explode
+    # no httpx como "'ascii' codec can't encode characters in position N" — erro
+    # que não diz ao admin nem que o problema é a chave, nem o que fazer.
+    chave = (api_key or "").strip()
+    try:
+        chave.encode("ascii")
+    except UnicodeEncodeError as e:
+        raise RuntimeError(
+            f"A chave do {provider} tem caracteres inválidos (não-ASCII) na posição "
+            f"{e.start}-{e.end}. Se a tela mostrava a chave mascarada, recopie a "
+            f"chave original do painel do provedor e cole por inteiro."
+        ) from e
+
+    headers = {"Authorization": f"Bearer {chave}", "Content-Type": "application/json"}
     if provider == "openrouter":
         headers["HTTP-Referer"] = "https://pizzabot.secretariaai.eu.cc"
         headers["X-Title"] = "PizzaBot"

@@ -844,9 +844,13 @@ async def put_llm(
 
     raw = await get_config(db, LLM_KEY)
     keys = {**{"gemini": "", "openai": "", "openrouter": ""}, **(raw.get("keys") or {})}
-    # Só atualiza chaves enviadas não-vazias (mantém as já salvas).
+    # Só atualiza chaves enviadas não-vazias (mantém as já salvas). Máscara de
+    # volta = "não mexi nessa chave", mesmo contrato do gateway e da Evolution.
+    # Sem esse guard a tela devolvia "sk-o••••cdef" e nós salvávamos ISSO como
+    # chave: o erro só aparecia na primeira chamada, como um UnicodeEncodeError
+    # cru ('ascii' codec...), porque o • não cabe num header HTTP.
     for k, v in (body.keys or {}).items():
-        if k in keys and v and v.strip():
+        if k in keys and v and v.strip() and not looks_masked(v):
             keys[k] = encrypt_secret(v.strip())
 
     # Modelo por plano: mantém só entradas válidas (plano conhecido + modelo não-vazio).
