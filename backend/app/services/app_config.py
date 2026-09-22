@@ -25,6 +25,10 @@ EVOLUTION_KEY = "evolution"
 # Última saúde conhecida da Evolution (usado pelo monitor para alertar só na
 # TRANSIÇÃO online → offline, em vez de repetir alerta a cada 5 min).
 EVOLUTION_STATUS_KEY = "evolution_status"
+# Gateway de cobrança da PLATAFORMA (Asaas que cobra as pizzarias), editável
+# pelo painel admin. Cai nas variáveis de ambiente quando vazio — igual à
+# Evolution e ao LLM.
+BILLING_KEY = "billing"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS public.app_config (
@@ -353,4 +357,47 @@ async def get_evolution_config(db: AsyncSession) -> dict[str, Any]:
             "webhook_token": "banco" if salvo_token else ("env" if webhook_token else "vazio"),
         },
         "configurada": bool(base_url and api_key),
+    }
+
+
+BILLING_PADRAO = {
+    "api_key": "",
+    "webhook_token": "",
+    "base_url": "",
+}
+
+
+async def get_billing_config(db: AsyncSession) -> dict[str, Any]:
+    """
+    Config do Asaas da plataforma em uso (merge com as variáveis de ambiente).
+
+    Prioridade por campo:
+      1. Valor salvo no banco (painel admin → Planos → Gateway de cobrança)
+      2. Variável de ambiente (ASAAS_PLATFORM_*)
+      3. Vazio (cobrança desligada — nenhuma pizzaria assina nem paga)
+
+    `origem` diz de onde veio cada campo, pro admin saber se está editando o
+    que realmente está valendo.
+    """
+    cfg = await get_config(db, BILLING_KEY)
+
+    salvo_key = decrypt_secret(cfg.get("api_key") or "") or ""
+    salvo_token = decrypt_secret(cfg.get("webhook_token") or "") or ""
+    salvo_url = (cfg.get("base_url") or "").strip()
+
+    api_key = salvo_key or (_settings.asaas_platform_api_key or "").strip()
+    webhook_token = salvo_token or (_settings.asaas_platform_webhook_token or "").strip()
+    base_url = salvo_url or (_settings.asaas_platform_base_url or "https://api.asaas.com/v3").strip()
+
+    return {
+        "api_key": api_key,
+        "webhook_token": webhook_token,
+        "base_url": base_url.rstrip("/"),
+        "origem": {
+            "api_key": "banco" if salvo_key else ("env" if api_key else "vazio"),
+            "webhook_token": "banco" if salvo_token else ("env" if webhook_token else "vazio"),
+            "base_url": "banco" if salvo_url else "env",
+        },
+        # Só a chave decide: sem ela não existe cobrança.
+        "configurada": bool(api_key),
     }

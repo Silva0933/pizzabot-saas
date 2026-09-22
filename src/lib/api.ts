@@ -993,6 +993,33 @@ export interface PlanoPatch {
   limites?: Partial<PlanoAdmin["limites"]>;
 }
 
+export interface BillingConfigResp {
+  api_key_mascarada: string;
+  api_key_configurada: boolean;
+  webhook_token_mascarado: string;
+  webhook_token_configurado: boolean;
+  base_url: string;
+  /** De onde veio cada campo: salvo no painel, variavel de ambiente ou vazio. */
+  origem: { api_key: string; webhook_token: string; base_url: string };
+  configurada: boolean;
+  webhook_url: string;
+  sugestoes_base_url: string[];
+}
+
+export interface BillingTeste {
+  ok: boolean;
+  erro?: string;
+  conta?: { nome: string; email: string; cpf_cnpj: string; sandbox: boolean };
+}
+
+export interface BillingConfigIn {
+  api_key?: string;
+  webhook_token?: string;
+  base_url?: string;
+  limpar_api_key?: boolean;
+  limpar_webhook_token?: boolean;
+}
+
 export const adminApi = {
   overview: (days = 30) => api.get<AdminOverview>(`/admin/overview?days=${days}`),
   alertas: (apenasAbertos = true, limit = 100) => api.get<AlertasResp>(`/admin/alertas?apenas_abertos=${apenasAbertos}&limit=${limit}`),
@@ -1001,6 +1028,10 @@ export const adminApi = {
     api.patch<{ ok: boolean; plano: string; vence_em?: string | null }>(`/admin/pizzarias/${pizzariaId}/plano`, { plano }),
   assinaturas: () => api.get<AssinaturasResp>(`/admin/assinaturas`),
   planos: () => api.get<PlanosResp>(`/admin/planos`),
+  billing: () => api.get<BillingConfigResp>(`/admin/billing`),
+  salvarBilling: (body: BillingConfigIn) =>
+    api.put<{ ok: boolean; configurada: boolean; teste: BillingTeste }>(`/admin/billing`, body),
+  testarBilling: () => api.post<BillingTeste>(`/admin/billing/test`, {}),
   salvarPlano: (planoId: string, patch: PlanoPatch) =>
     api.put<{ ok: boolean; planos: PlanoAdmin[] }>(`/admin/planos/${planoId}`, patch),
   renovar: (pizzariaId: string) =>

@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { Check, Loader2, RotateCcw, Save } from "lucide-react";
 import { adminApi, PlanoAdmin, PlanoPatch, PlanosResp } from "../../lib/api";
+import { GatewayCobrancaPanel } from "./GatewayCobrancaPanel";
 
 const LIMITES: Array<{ chave: keyof PlanoAdmin["limites"]; rotulo: string; ajuda?: string }> = [
   { chave: "produtos", rotulo: "Produtos no cardápio" },
@@ -99,6 +100,9 @@ export function PlanosAdminPanel() {
 
   return (
     <div className="space-y-4">
+      {/* Primeiro o gateway: plano bem configurado nao cobra nada sem ele. */}
+      <GatewayCobrancaPanel />
+
       <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-4">
         <h2 className="text-sm font-bold text-white">Planos e limites</h2>
         <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">

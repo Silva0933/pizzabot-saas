@@ -79,6 +79,10 @@ startup para os pontos *fail-open*:
 | `ASAAS_PLATFORM_API_KEY` | Ninguém assina nem paga |
 | `MP_WEBHOOK_SECRET` | Notificação do MP não é verificada (mitigado: o pedido é consultado na API antes de aplicar) |
 
+> As três variáveis do Asaas da plataforma são editáveis em **Administração →
+> Planos → Gateway de cobrança**, e o valor salvo lá tem prioridade sobre o
+> ambiente. A auditoria considera as duas origens.
+
 ### Verificado e correto
 
 - **SQL injection**: nenhuma. O único f-string em SQL usa nomes de tabela literais.
@@ -123,7 +127,9 @@ vale revisitar o caminho específico.
 
 ## 5. Antes de abrir para clientes
 
-1. Preencher as 4 variáveis da seção 3 e conferir em `GET /admin/prontidao`.
+1. Configurar o gateway em **Planos → Gateway de cobrança** (o botão
+   *Salvar e testar* valida a chave contra o Asaas) e conferir as pendências em
+   `GET /admin/prontidao`.
 2. `CORS_ORIGINS` com o domínio real do painel, sem localhost.
 3. Rodar `python scripts/backfill_mp_user_id.py` (confirmação de pagamento por cartão).
 4. Fazer um ciclo completo em homologação: signup → trial → assinar → pagar →

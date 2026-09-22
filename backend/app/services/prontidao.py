@@ -33,8 +33,13 @@ def _vazio(valor: str | None) -> bool:
     return not (valor or "").strip()
 
 
-def auditar() -> list[Achado]:
-    """Lista o que está faltando para rodar em produção com segurança."""
+def auditar(billing: dict | None = None) -> list[Achado]:
+    """Lista o que está faltando para rodar em produção com segurança.
+
+    `billing` é a config já resolvida do gateway (banco + ambiente). Sem ela a
+    auditoria olharia só o ambiente e acusaria falta de algo que o admin já
+    salvou pelo painel.
+    """
     s = get_settings()
     achados: list[Achado] = []
 
@@ -47,7 +52,11 @@ def auditar() -> list[Achado]:
             "registrar pedido.",
         ))
 
-    if _vazio(s.asaas_platform_webhook_token):
+    billing = billing or {}
+    token_cobranca = billing.get("webhook_token") if billing else s.asaas_platform_webhook_token
+    chave_cobranca = billing.get("api_key") if billing else s.asaas_platform_api_key
+
+    if _vazio(token_cobranca):
         achados.append(Achado(
             "ASAAS_PLATFORM_WEBHOOK_TOKEN", "critico",
             "Webhook de cobrança da plataforma sem token",
@@ -55,7 +64,7 @@ def auditar() -> list[Achado]:
             "forjar 'pagamento confirmado' e renovar assinatura sem pagar.",
         ))
 
-    if _vazio(s.asaas_platform_api_key):
+    if _vazio(chave_cobranca):
         achados.append(Achado(
             "ASAAS_PLATFORM_API_KEY", "critico",
             "Gateway de assinatura não configurado",
@@ -94,7 +103,14 @@ def auditar() -> list[Achado]:
 
 async def registrar_prontidao() -> list[Achado]:
     """Audita e publica os achados como alerta no painel admin."""
-    achados = auditar()
+    billing = None
+    try:
+        from app.services.billing_plataforma import carregar_config
+        billing = await carregar_config()
+    except Exception as e:  # noqa: BLE001
+        log.debug("Prontidão sem config de cobrança do banco: %s", e)
+
+    achados = auditar(billing)
     if not achados:
         log.info("Prontidão: nenhuma pendência de configuração.")
         return achados

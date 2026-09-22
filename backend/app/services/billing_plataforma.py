@@ -19,6 +19,7 @@ O plano contratado viaja no externalReference da subscription no formato
 confirma (trial não ganha cota cheia antes de pagar).
 """
 import logging
+import time
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any
@@ -44,22 +45,73 @@ class BillingError(Exception):
     pass
 
 
+# Config do gateway em cache no processo. Igual à Evolution: o admin edita no
+# painel, o processo que salvou aplica na hora e os outros (worker, beat,
+# dispatcher) pegam pelo TTL. Sem cache, cada cobrança bateria no banco.
+_CONFIG_TTL_S = 60.0
+_cfg: dict[str, Any] | None = None
+_cfg_em: float = 0.0
+
+
+def _cfg_valida() -> bool:
+    return _cfg is not None and (time.monotonic() - _cfg_em) < _CONFIG_TTL_S
+
+
+def invalidar_config() -> None:
+    """Força a releitura na próxima chamada (usado logo após salvar no painel)."""
+    global _cfg, _cfg_em
+    _cfg, _cfg_em = None, 0.0
+
+
+def aplicar_config(dados: dict[str, Any]) -> None:
+    """Guarda no cache a config já resolvida (banco + env)."""
+    global _cfg, _cfg_em
+    _cfg, _cfg_em = dados, time.monotonic()
+
+
+async def carregar_config(db: AsyncSession | None = None) -> dict[str, Any]:
+    """Lê a config do gateway (banco com fallback no ambiente) e cacheia."""
+    from app.services.app_config import get_billing_config
+
+    if db is not None:
+        aplicar_config(await get_billing_config(db))
+    else:
+        from app.db import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as sessao:
+            aplicar_config(await get_billing_config(sessao))
+    return _cfg or {}
+
+
+def config_em_cache() -> dict[str, Any]:
+    """Config conhecida por este processo; cai no ambiente se ainda não carregou."""
+    if _cfg_valida():
+        return _cfg or {}
+    return {
+        "api_key": (_settings.asaas_platform_api_key or "").strip(),
+        "webhook_token": (_settings.asaas_platform_webhook_token or "").strip(),
+        "base_url": (_settings.asaas_platform_base_url or "https://api.asaas.com/v3").strip(),
+    }
+
+
 def billing_configurado() -> bool:
-    return bool((_settings.asaas_platform_api_key or "").strip())
+    return bool((config_em_cache().get("api_key") or "").strip())
 
 
 # ============================================
 # Cliente HTTP do Asaas da plataforma
 # ============================================
 class PlatformAsaasClient:
-    def __init__(self) -> None:
-        key = (_settings.asaas_platform_api_key or "").strip()
+    def __init__(self, cfg: dict[str, Any] | None = None) -> None:
+        dados = cfg or config_em_cache()
+        key = (dados.get("api_key") or "").strip()
         if not key:
             raise BillingError(
-                "Cobrança da plataforma não configurada (ASAAS_PLATFORM_API_KEY)."
+                "Cobrança da plataforma não configurada. Defina a chave em "
+                "Administração → Planos → Gateway de cobrança."
             )
         self.key = key
-        self.base = (_settings.asaas_platform_base_url or "https://api.asaas.com/v3").rstrip("/")
+        self.base = (dados.get("base_url") or "https://api.asaas.com/v3").rstrip("/")
 
     async def _req(self, method: str, path: str, json: dict | None = None) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=15.0) as c:
@@ -73,6 +125,21 @@ class PlatformAsaasClient:
                 return r.json()
             except Exception:  # noqa: BLE001
                 return {}
+
+    async def conta(self) -> dict[str, Any]:
+        """Dados da conta dona da chave — usado para validar a configuração.
+
+        Chave salva que não funciona é pior que chave faltando: o admin acha que
+        está tudo certo até a primeira assinatura falhar na frente do cliente.
+        """
+        dados = await self._req("GET", "/myAccount/commercialInfo")
+        return {
+            "nome": dados.get("name") or dados.get("companyName") or "",
+            "email": dados.get("email") or "",
+            "cpf_cnpj": dados.get("cpfCnpj") or "",
+            # api-sandbox na URL denuncia que é ambiente de testes.
+            "sandbox": "sandbox" in self.base,
+        }
 
     async def criar_cliente(self, *, nome: str, email: str, cpf_cnpj: str) -> str:
         data = await self._req("POST", "/customers", {
@@ -142,8 +209,9 @@ async def ativar_assinatura(db: AsyncSession, pizz: Pizzaria, plano: str) -> dic
     from app.services.plans import carregar_planos
     try:
         await carregar_planos(db)
+        await carregar_config(db)
     except Exception as e:  # noqa: BLE001
-        log.warning("Nao consegui recarregar os planos; usando o cache: %s", e)
+        log.warning("Nao consegui recarregar planos/gateway; usando o cache: %s", e)
     email = (pizz.cobranca_email or "").strip()
     cpf_cnpj = "".join(ch for ch in (pizz.cobranca_cpf_cnpj or "") if ch.isdigit())
     if not email or len(cpf_cnpj) not in (11, 14):

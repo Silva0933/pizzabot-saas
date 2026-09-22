@@ -95,6 +95,13 @@ async def lifespan(app: FastAPI):
     # Auditoria de prontidao: varios pontos do sistema sao fail-open pra nao
     # travar o setup (webhook sem token aceita qualquer POST, gateway sem chave
     # nao cobra). Em producao cada um e uma porta aberta que falha calada.
+    # Gateway de cobranca: config do painel (com fallback no ambiente) no cache
+    # deste processo, igual aos planos.
+    try:
+        from app.services.billing_plataforma import carregar_config
+        await carregar_config()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao carregar a config do gateway de cobranca: %s", e)
     try:
         from app.services.prontidao import registrar_prontidao
         await registrar_prontidao()

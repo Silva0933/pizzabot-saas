@@ -327,7 +327,12 @@ async def webhook_asaas_plataforma(
       PAYMENT_OVERDUE            → fatura vencida + alerta no admin
     """
     # Autenticação: token configurado no Asaas (Webhooks → Token de autenticação).
-    token = (_settings.asaas_platform_webhook_token or "").strip()
+    # Vem do painel (Administração → Planos → Gateway) com fallback no ambiente.
+    from app.services.billing_plataforma import carregar_config
+    try:
+        token = ((await carregar_config(db)).get("webhook_token") or "").strip()
+    except Exception:  # noqa: BLE001
+        token = (_settings.asaas_platform_webhook_token or "").strip()
     if token and asaas_access_token != token:
         log.warning("Webhook plataforma rejeitado: token inválido")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido")

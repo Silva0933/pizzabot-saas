@@ -170,6 +170,138 @@ async def platform_overview(
     }
 
 
+class BillingConfigIn(BaseModel):
+    """
+    Gateway de cobrança da plataforma (Asaas que cobra as pizzarias).
+
+    Campo vazio NÃO apaga o que está salvo — só `limpar_*` remove. Assim o
+    painel pode devolver a máscara ("abcd••••wxyz") sem risco de zerar a chave.
+    """
+    api_key: str = ""
+    webhook_token: str = ""
+    base_url: str = ""
+    limpar_api_key: bool = False
+    limpar_webhook_token: bool = False
+
+
+def _webhook_plataforma_url() -> str:
+    base = (get_settings().public_base_url or "").rstrip("/")
+    return f"{base}/webhook/asaas-plataforma"
+
+
+@router.get("/billing")
+async def get_billing(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Config do gateway que cobra as assinaturas das pizzarias."""
+    from app.services.app_config import BILLING_KEY, get_billing_config
+
+    cfg = await get_billing_config(db)
+    raw = await get_config(db, BILLING_KEY)
+
+    return {
+        "api_key_mascarada": _mask(decrypt_secret(raw.get("api_key") or "") or cfg["api_key"]),
+        "api_key_configurada": bool(cfg["api_key"]),
+        "webhook_token_mascarado": _mask(
+            decrypt_secret(raw.get("webhook_token") or "") or cfg["webhook_token"]
+        ),
+        "webhook_token_configurado": bool(cfg["webhook_token"]),
+        "base_url": cfg["base_url"],
+        "origem": cfg["origem"],
+        "configurada": cfg["configurada"],
+        "webhook_url": _webhook_plataforma_url(),
+        # Sandbox e produção têm URLs diferentes; mostrar ajuda a não errar.
+        "sugestoes_base_url": [
+            "https://api.asaas.com/v3",
+            "https://api-sandbox.asaas.com/v3",
+        ],
+    }
+
+
+@router.put("/billing")
+async def put_billing(
+    body: BillingConfigIn,
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Salva a config do gateway e já testa a chave contra o Asaas."""
+    from app.services.app_config import BILLING_KEY, get_billing_config
+    from app.services.billing_plataforma import (
+        BillingError, PlatformAsaasClient, aplicar_config, invalidar_config,
+    )
+
+    raw = await get_config(db, BILLING_KEY)
+
+    base_url = (body.base_url or "").strip().rstrip("/")
+    if base_url and not base_url.startswith(("http://", "https://")):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A URL precisa começar com http:// ou https:// "
+            "(ex.: https://api.asaas.com/v3).",
+        )
+
+    # Máscara de volta = "não mexi nessa chave".
+    api_key = raw.get("api_key") or ""
+    if body.limpar_api_key:
+        api_key = ""
+    elif body.api_key and body.api_key.strip() and not looks_masked(body.api_key):
+        api_key = encrypt_secret(body.api_key.strip())
+
+    webhook_token = raw.get("webhook_token") or ""
+    if body.limpar_webhook_token:
+        webhook_token = ""
+    elif body.webhook_token and body.webhook_token.strip() and not looks_masked(body.webhook_token):
+        webhook_token = encrypt_secret(body.webhook_token.strip())
+
+    await set_config(db, BILLING_KEY, {
+        "api_key": api_key,
+        "webhook_token": webhook_token,
+        "base_url": base_url,
+    })
+
+    # Aplica neste processo agora; worker/beat/dispatcher pegam pelo TTL.
+    invalidar_config()
+    cfg = await get_billing_config(db)
+    aplicar_config(cfg)
+
+    # Testa de verdade: chave salva que não funciona é pior que chave faltando,
+    # porque o admin acha que está tudo certo até a primeira assinatura falhar.
+    teste: dict = {"ok": False, "erro": "Sem chave configurada."}
+    if cfg["configurada"]:
+        try:
+            dados = await PlatformAsaasClient(cfg).conta()
+            teste = {"ok": True, "conta": dados}
+        except BillingError as e:
+            teste = {"ok": False, "erro": str(e)}
+        except Exception as e:  # noqa: BLE001
+            teste = {"ok": False, "erro": f"Falha ao falar com o Asaas: {e}"}
+
+    log.info("Gateway de cobrança salvo pelo admin (configurada=%s, teste=%s)",
+             cfg["configurada"], teste["ok"])
+    return {"ok": True, "configurada": cfg["configurada"], "origem": cfg["origem"], "teste": teste}
+
+
+@router.post("/billing/test")
+async def test_billing(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Testa a chave atual contra o Asaas, sem salvar nada."""
+    from app.services.app_config import get_billing_config
+    from app.services.billing_plataforma import BillingError, PlatformAsaasClient
+
+    cfg = await get_billing_config(db)
+    if not cfg["configurada"]:
+        return {"ok": False, "erro": "Nenhuma chave configurada."}
+    try:
+        return {"ok": True, "conta": await PlatformAsaasClient(cfg).conta()}
+    except BillingError as e:
+        return {"ok": False, "erro": str(e)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "erro": f"Falha ao falar com o Asaas: {e}"}
+
+
 @router.get("/prontidao")
 async def prontidao_producao(
     _: Usuario = Depends(require_platform_admin),
