@@ -211,6 +211,26 @@ class PlatformAsaasClient:
     async def cancelar_assinatura(self, subscription_id: str) -> None:
         await self._req("DELETE", f"/subscriptions/{subscription_id}")
 
+    async def listar_assinaturas(self, *, status: str | None = None) -> list[dict[str, Any]]:
+        """Assinaturas da conta da plataforma, paginando até o fim.
+
+        Usada pela reconciliação: é a única forma de descobrir uma assinatura que
+        ficou órfã, já que quando a pizzaria some o subscription_id some junto.
+        """
+        itens: list[dict[str, Any]] = []
+        offset, limite = 0, 100  # 100 é o teto aceito pelo Asaas
+        while True:
+            query = f"?offset={offset}&limit={limite}" + (f"&status={status}" if status else "")
+            data = await self._req("GET", f"/subscriptions{query}")
+            itens.extend(data.get("data") or [])
+            if not data.get("hasMore"):
+                break
+            offset += limite
+            if offset >= 10_000:  # trava: hasMore que nunca zera não vira loop infinito
+                log.warning("listar_assinaturas: parei em %s itens (hasMore ainda true)", offset)
+                break
+        return itens
+
     async def pagamentos_da_assinatura(self, subscription_id: str) -> list[dict[str, Any]]:
         data = await self._req("GET", f"/subscriptions/{subscription_id}/payments")
         return data.get("data") or []

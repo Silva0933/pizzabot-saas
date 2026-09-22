@@ -63,4 +63,11 @@ celery_app.conf.beat_schedule = {
         "task": "pizzabot.monitorar_fila_dispatcher",
         "schedule": 120.0,  # a cada 2 min — alerta de saturação do dispatcher
     },
+    "reconciliar-assinaturas-asaas": {
+        "task": "pizzabot.reconciliar_assinaturas_asaas",
+        # Diário às 03:30, fora do horário comercial: varre o Asaas atrás de
+        # assinaturas cuja pizzaria não existe mais e cancela antes da próxima
+        # cobrança. Diário basta — a cobrança é mensal.
+        "schedule": crontab(hour=3, minute=30),
+    },
 }

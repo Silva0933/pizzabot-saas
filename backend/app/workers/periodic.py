@@ -17,6 +17,12 @@ o serviço com APP_ROLE=beat só dispara, quem processa é o worker.
   - Suspende automaticamente após GRACE_DAYS de atraso (inadimplência) e
     trials expirados. A REATIVAÇÃO é automática via webhook de pagamento
     (services/billing_plataforma.aplicar_pagamento_plataforma).
+
+`reconciliar_assinaturas_asaas` (diário):
+  - Varre as assinaturas ATIVAS no Asaas e cancela as que apontam (pelo
+    externalReference) para uma pizzaria que não existe mais. É a rede que pega
+    o que o `delete_pizzaria` não alcança: assinaturas anteriores à correção,
+    exclusões forçadas e mexidas manuais no painel do Asaas.
 """
 import asyncio
 import logging
@@ -277,3 +283,118 @@ async def _avaliar_fila_dispatcher(r) -> dict:
             due, pel, _ALERT_DUE, _ALERT_PEL, _ALERT_STREAK,
         )
     return {"due": due, "pel": pel, "saturado": True, "streak": streak, "alerta": alerta}
+
+
+# --- Reconciliação de assinaturas órfãs no Asaas (diária) -------------------
+# Rede de segurança do `delete_pizzaria`: ele cancela a assinatura antes de apagar
+# a pizzaria, mas isso não alcança (a) assinaturas criadas antes dessa correção,
+# (b) exclusões feitas com ?forcar=true e (c) qualquer divergência causada por
+# mexida manual no painel do Asaas. Sem isto, uma assinatura órfã cobra em
+# silêncio para sempre — o subscription_id some junto com a linha da pizzaria,
+# então o único jeito de reencontrá-la é varrer o lado do Asaas.
+_RECON_MAX = int(os.getenv("BILLING_RECON_MAX") or 5)   # teto de cancelamentos por rodada
+_RECON_CANCELAR = (os.getenv("BILLING_RECON_CANCELAR") or "true").lower() != "false"
+
+
+@celery_app.task(name="pizzabot.reconciliar_assinaturas_asaas")
+def reconciliar_assinaturas_asaas() -> dict:
+    return asyncio.run(_reconciliar_assinaturas_asaas_async())
+
+
+async def _reconciliar_assinaturas_asaas_async() -> dict:
+    import uuid as _uuid
+
+    from sqlalchemy import text
+
+    from app.db import AsyncSessionLocal
+    from app.services.alertas import registrar_alerta
+    from app.services.billing_plataforma import (
+        BillingError,
+        PlatformAsaasClient,
+        billing_configurado,
+        parse_ext_ref,
+    )
+
+    if not billing_configurado():
+        # Sem gateway não há o que reconciliar, e alertar todo dia por isso só
+        # geraria ruído: a ausência de chave já aparece na tela de Planos.
+        return {"ok": False, "motivo": "gateway de cobrança não configurado"}
+
+    try:
+        assinaturas = await PlatformAsaasClient().listar_assinaturas(status="ACTIVE")
+    except BillingError as e:
+        log.warning("reconciliação: não consegui listar assinaturas no Asaas: %s", e)
+        return {"ok": False, "motivo": str(e)}
+
+    async with AsyncSessionLocal() as db:
+        conhecidas = {
+            str(r[0]) for r in (await db.execute(text("SELECT id FROM public.pizzarias"))).all()
+        }
+
+        # Guarda-chuva: zero pizzarias com assinaturas ativas lá fora é sintoma de
+        # query/banco quebrado, não de realidade. Cancelar em massa aqui seria
+        # catastrófico, então preferimos não agir e gritar.
+        if not conhecidas and assinaturas:
+            await registrar_alerta(
+                db, tipo="billing_reconciliacao", nivel="error",
+                detalhe=(f"Abortei a reconciliação: o Asaas tem {len(assinaturas)} assinatura(s) "
+                         f"ativa(s) e o banco não retornou NENHUMA pizzaria. Suspeita de falha "
+                         f"de leitura — nada foi cancelado."),
+            )
+            await db.commit()
+            return {"ok": False, "motivo": "banco sem pizzarias; reconciliação abortada"}
+
+        orfas = []
+        for assin in assinaturas:
+            pid, _plano = parse_ext_ref(assin.get("externalReference"))
+            if not pid:
+                continue  # sem referência: não foi esta plataforma que criou — não é nossa
+            try:
+                _uuid.UUID(pid)
+            except (ValueError, AttributeError, TypeError):
+                continue  # referência que não é UUID nosso: idem, não tocar
+            if pid not in conhecidas:
+                orfas.append((assin, pid))
+
+        if not orfas:
+            return {"ok": True, "ativas": len(assinaturas), "orfas": 0}
+
+        # Muitas órfãs de uma vez = bug, não estado legítimo. Alerta e não cancela.
+        if len(orfas) > _RECON_MAX:
+            await registrar_alerta(
+                db, tipo="billing_reconciliacao", nivel="error",
+                detalhe=(f"{len(orfas)} assinaturas órfãs no Asaas (teto por rodada: {_RECON_MAX}). "
+                         f"Nada foi cancelado — isso é volume de bug, não de operação normal. "
+                         f"IDs: {', '.join(a.get('id', '?') for a, _ in orfas[:20])}"),
+            )
+            await db.commit()
+            return {"ok": False, "ativas": len(assinaturas), "orfas": len(orfas), "acao": "abortado"}
+
+        canceladas, falhas = [], []
+        for assin, pid in orfas:
+            sub_id = assin.get("id") or "?"
+            resumo = (f"assinatura {sub_id} (R$ {assin.get('value')}, {assin.get('cycle')}, "
+                      f"próx. {assin.get('nextDueDate')}) aponta para a pizzaria {pid}, "
+                      f"que não existe mais")
+            if not _RECON_CANCELAR:
+                await registrar_alerta(db, tipo="billing_reconciliacao", nivel="warning",
+                                       detalhe=f"Órfã detectada (modo só-alerta): {resumo}.")
+                continue
+            try:
+                await PlatformAsaasClient().cancelar_assinatura(sub_id)
+                canceladas.append(sub_id)
+                await registrar_alerta(
+                    db, tipo="billing_reconciliacao", nivel="warning",
+                    detalhe=f"Cancelei automaticamente no Asaas: {resumo}.",
+                )
+            except BillingError as e:
+                falhas.append(sub_id)
+                await registrar_alerta(
+                    db, tipo="billing_reconciliacao", nivel="error",
+                    detalhe=f"NÃO consegui cancelar: {resumo}. Erro: {e}. Cancele no painel do Asaas.",
+                )
+
+        await db.commit()
+
+    return {"ok": True, "ativas": len(assinaturas), "orfas": len(orfas),
+            "canceladas": canceladas, "falhas": falhas}
