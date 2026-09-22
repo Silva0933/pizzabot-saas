@@ -95,6 +95,15 @@ async def lifespan(app: FastAPI):
     # Auditoria de prontidao: varios pontos do sistema sao fail-open pra nao
     # travar o setup (webhook sem token aceita qualquer POST, gateway sem chave
     # nao cobra). Em producao cada um e uma porta aberta que falha calada.
+    # Pizzaria criada pelo cadastro publico nascia sem slug e, com isso, sem
+    # cardapio digital (/m/<slug> devolvia 404). O codigo ja foi corrigido; isto
+    # conserta quem ja existe. Idempotente: so toca em quem esta sem slug.
+    try:
+        from app.services.backfill_slug import preencher_slugs_faltantes
+        await preencher_slugs_faltantes()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao preencher slugs faltantes: %s", e)
+
     # Gateway de cobranca: config do painel (com fallback no ambiente) no cache
     # deste processo, igual aos planos.
     try:

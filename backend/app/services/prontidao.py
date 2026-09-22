@@ -83,14 +83,33 @@ def auditar(billing: dict | None = None) -> list[Achado]:
 
     if s.is_production:
         origens = s.cors_origins_list
-        ruins = [o for o in origens if "localhost" in o or "127.0.0.1" in o or o == "*"]
-        if ruins:
+
+        # Curinga continua crítico: com allow_credentials o navegador REJEITA a
+        # combinação, então o painel simplesmente para de falar com a API.
+        if any(o == "*" for o in origens):
             achados.append(Achado(
                 "CORS_ORIGINS", "critico",
-                "CORS liberado para origem de desenvolvimento",
-                f"Em produção com allow_credentials, {ruins} permite que uma página "
-                "local leia respostas autenticadas da API.",
+                "CORS com curinga (*) e credenciais",
+                "O navegador recusa '*' junto com allow_credentials: o painel para "
+                "de conseguir chamar a API. Liste os domínios explicitamente.",
             ))
+
+        # Origem de desenvolvimento é sujeira, não porta escancarada: o login usa
+        # token Bearer no localStorage, que é isolado por origem. Uma página em
+        # localhost não consegue ler o token do domínio do painel, então alcança
+        # só o que já é público. Vira crítico no dia em que a sessão virar cookie.
+        dev = [o for o in origens if "localhost" in o or "127.0.0.1" in o]
+        if dev:
+            achados.append(Achado(
+                "CORS_ORIGINS", "atencao",
+                "CORS aceitando origem de desenvolvimento",
+                f"Em produção, {dev} continua liberado. Hoje o alcance é pequeno "
+                "porque a sessão é um token Bearer no localStorage, isolado por "
+                "origem — uma página local não consegue lê-lo. Ainda assim é uma "
+                "porta sem motivo, e passa a valer de verdade se a sessão virar "
+                "cookie. Deixe só o domínio do painel.",
+            ))
+
         if not origens:
             achados.append(Achado(
                 "CORS_ORIGINS", "atencao",

@@ -138,14 +138,31 @@ class TestProntidao:
         monkeypatch.setattr(p, "get_settings", lambda: self._settings(mp_webhook_secret=""))
         assert p.auditar()[0].gravidade == "atencao"
 
-    def test_cors_de_desenvolvimento_em_producao_e_critico(self, monkeypatch):
+    def test_cors_de_desenvolvimento_em_producao_e_atencao(self, monkeypatch):
+        """
+        Nao e critico porque a sessao e token Bearer no localStorage, isolado por
+        origem: uma pagina em localhost nao consegue ler o token do painel e so
+        alcanca o que ja e publico. Vira critico se a sessao virar cookie.
+        """
         import app.services.prontidao as p
         monkeypatch.setattr(
             p, "get_settings",
             lambda: self._settings(is_production=True, cors_origins_list=["http://localhost:5173"]),
         )
         achados = p.auditar()
-        assert any(a.chave == "CORS_ORIGINS" and a.gravidade == "critico" for a in achados)
+        cors = [a for a in achados if a.chave == "CORS_ORIGINS"]
+        assert len(cors) == 1
+        assert cors[0].gravidade == "atencao"
+
+    def test_curinga_em_producao_continua_critico(self, monkeypatch):
+        """'*' com allow_credentials o navegador recusa: o painel para de funcionar."""
+        import app.services.prontidao as p
+        monkeypatch.setattr(
+            p, "get_settings",
+            lambda: self._settings(is_production=True, cors_origins_list=["*"]),
+        )
+        cors = [a for a in p.auditar() if a.chave == "CORS_ORIGINS"]
+        assert cors[0].gravidade == "critico"
 
     def test_cors_de_desenvolvimento_fora_de_producao_e_ok(self, monkeypatch):
         import app.services.prontidao as p

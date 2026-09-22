@@ -1,6 +1,7 @@
 """CRUD básico de pizzarias (suficiente para testar a Fase 2)."""
 import logging
 import re
+import unicodedata
 import uuid
 from datetime import date, datetime, timedelta
 
@@ -155,14 +156,7 @@ async def create_pizzaria(
     db.add(pizz)
     await db.flush()
 
-    # Garante slug único
-    if not pizz.slug:
-        pizz.slug = _slugify(pizz.nome)
-    existing = (await db.execute(
-        select(Pizzaria.id).where(Pizzaria.slug == pizz.slug, Pizzaria.id != pizz.id)
-    )).scalar_one_or_none()
-    if existing:
-        pizz.slug = f"{pizz.slug}-{uuid.uuid4().hex[:6]}"
+    pizz.slug = await slug_unico(db, pizz.nome, pizz.id)
     await db.flush()
 
     if body.owner_email:
@@ -451,14 +445,9 @@ async def update_pizzaria(
             pizz.mp_user_id = None
             log.warning("Não consegui obter o mp_user_id da pizzaria %s: %s", pizzaria_id, e)
 
-    # Auto-gera slug se a pizzaria ainda não tem
+    # Rede de segurança: pizzaria antiga sem slug ganha um ao salvar qualquer campo.
     if not pizz.slug:
-        pizz.slug = _slugify(pizz.nome)
-        dup = (await db.execute(
-            select(Pizzaria.id).where(Pizzaria.slug == pizz.slug, Pizzaria.id != pizzaria_id)
-        )).scalar_one_or_none()
-        if dup:
-            pizz.slug = f"{pizz.slug}-{uuid.uuid4().hex[:6]}"
+        pizz.slug = await slug_unico(db, pizz.nome, pizzaria_id)
     await db.commit()
     await db.refresh(pizz)
     return pizz
@@ -546,8 +535,35 @@ class WhatsAppStatusOut(BaseModel):
 
 
 def _slugify(s: str) -> str:
-    s = re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
-    return s or "pizzaria"
+    """Nome da casa → slug de URL.
+
+    Acento vira a letra base, não traço: antes "Pizzaria Açaí" virava
+    `pizzaria-a-a`, um endereço que ninguém digita nem reconhece.
+    """
+    base = unicodedata.normalize("NFKD", s or "")
+    base = "".join(c for c in base if not unicodedata.combining(c))
+    base = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
+    return base or "pizzaria"
+
+
+async def slug_unico(db: AsyncSession, nome: str, self_id: uuid.UUID) -> str:
+    """Slug livre para esta pizzaria (a coluna tem unique).
+
+    Único ponto que gera slug no sistema. Estava duplicado entre a criação pelo
+    admin e o PATCH, e o cadastro público simplesmente não gerava — toda
+    pizzaria que entrou por lá ficou sem cardápio, com 404 no /m/<slug>.
+    """
+    base = _slugify(nome)
+    for i in range(100):
+        candidato = base if i == 0 else f"{base}-{i}"
+        existe = (
+            await db.execute(
+                select(Pizzaria.id).where(Pizzaria.slug == candidato, Pizzaria.id != self_id)
+            )
+        ).scalar_one_or_none()
+        if not existe:
+            return candidato
+    return f"{base}-{uuid.uuid4().hex[:6]}"
 
 
 async def _unique_instancia(db: AsyncSession, base: str, self_id: uuid.UUID) -> str:

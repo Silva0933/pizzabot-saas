@@ -180,7 +180,7 @@ async def signup(body: SignupIn, request: Request, db: AsyncSession = Depends(ge
     from datetime import timedelta
 
     from app.models import EquipePizzaria, Pizzaria
-    from app.routes.pizzarias import _slugify, _unique_instancia
+    from app.routes.pizzarias import _slugify, _unique_instancia, slug_unico
 
     # Anti-abuso: 3 cadastros por hora por IP (Redis, fail-open).
     if not await allow(f"signup:{client_ip(request)}", max_hits=3, window_seconds=3600):
@@ -219,6 +219,8 @@ async def signup(body: SignupIn, request: Request, db: AsyncSession = Depends(ge
     db.add(pizz)
     await db.flush()
     pizz.instancia = await _unique_instancia(db, _slugify(pizz.nome), pizz.id)
+    # Sem slug a pizzaria nasce SEM cardapio digital: /m/<slug> devolve 404.
+    pizz.slug = await slug_unico(db, pizz.nome, pizz.id)
 
     db.add(EquipePizzaria(
         pizzaria_id=pizz.id,

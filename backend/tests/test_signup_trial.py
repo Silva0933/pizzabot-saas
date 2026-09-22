@@ -12,6 +12,7 @@ Travam:
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -159,3 +160,108 @@ class TestDunning:
         out, alerta, _ = _roda_dunning(monkeypatch, [p], ja_alertado=True)
         assert out["avisos"] == 0
         alerta.assert_not_awaited()
+
+
+class TestSlugNoCadastro:
+    """
+    O cadastro publico criava a pizzaria sem slug. Como o cardapio digital vive
+    em /m/<slug>, toda pizzaria que entrou por ali nascia SEM cardapio — a rota
+    devolvia 404 e so funcionava quem tinha sido criada pelo admin.
+    """
+
+    def test_slugify_troca_acento_pela_letra_base(self):
+        from app.routes.pizzarias import _slugify
+
+        # Antes virava "pizzaria-a-a": endereco que ninguem digita.
+        assert _slugify("Pizzaria Açaí") == "pizzaria-acai"
+        assert _slugify("Forno & Lenha") == "forno-lenha"
+        assert _slugify("  São João  ") == "sao-joao"
+        assert _slugify("Pizzaria   do   Zé") == "pizzaria-do-ze"
+
+    def test_slugify_nunca_devolve_vazio(self):
+        from app.routes.pizzarias import _slugify
+
+        assert _slugify("") == "pizzaria"
+        assert _slugify("!!!") == "pizzaria"
+        assert _slugify(None) == "pizzaria"
+
+    def test_slug_unico_usa_o_nome_quando_esta_livre(self):
+        import uuid as _uuid
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.routes.pizzarias import slug_unico
+
+        res = MagicMock()
+        res.scalar_one_or_none.return_value = None  # ninguem usa
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=res)
+
+        assert asyncio.run(slug_unico(db, "Fornalha Burger", _uuid.uuid4())) == "fornalha-burger"
+
+    def test_slug_unico_acrescenta_sufixo_quando_ocupado(self):
+        import uuid as _uuid
+        from unittest.mock import AsyncMock, MagicMock
+
+        from app.routes.pizzarias import slug_unico
+
+        ocupado, livre = MagicMock(), MagicMock()
+        ocupado.scalar_one_or_none.return_value = _uuid.uuid4()
+        livre.scalar_one_or_none.return_value = None
+        db = MagicMock()
+        db.execute = AsyncMock(side_effect=[ocupado, livre])
+
+        assert asyncio.run(slug_unico(db, "Fornalha", _uuid.uuid4())) == "fornalha-1"
+
+
+class TestBackfillSlug:
+    """Conserta quem ja nasceu sem slug (e por isso sem cardapio digital)."""
+
+    def _db(self, pizzarias, livres=True):
+        from unittest.mock import AsyncMock, MagicMock
+
+        lista = MagicMock()
+        lista.scalars.return_value.all.return_value = pizzarias
+        checagem = MagicMock()
+        checagem.scalar_one_or_none.return_value = None if livres else uuid.uuid4()
+
+        db = MagicMock()
+        chamadas = {"n": 0}
+
+        async def execute(*_a, **_k):
+            chamadas["n"] += 1
+            return lista if chamadas["n"] == 1 else checagem
+
+        db.execute = execute
+        db.flush = AsyncMock()
+        db.commit = AsyncMock()
+        return db
+
+    def _rodar(self, monkeypatch, db):
+        import app.db as app_db
+        from app.services import backfill_slug
+
+        class _Ctx:
+            async def __aenter__(self):
+                return db
+            async def __aexit__(self, *a):
+                return False
+
+        monkeypatch.setattr(app_db, "AsyncSessionLocal", lambda: _Ctx())
+        return asyncio.run(backfill_slug.preencher_slugs_faltantes())
+
+    def test_preenche_quem_esta_sem(self, monkeypatch):
+        p = MagicMock()
+        p.id, p.nome, p.slug = uuid.uuid4(), "Pizzaria do Zé", None
+        assert self._rodar(monkeypatch, self._db([p])) == 1
+        assert p.slug == "pizzaria-do-ze"
+
+    def test_nao_faz_nada_quando_todos_tem_slug(self, monkeypatch):
+        db = self._db([])
+        assert self._rodar(monkeypatch, db) == 0
+        db.commit.assert_not_awaited()
+
+    def test_string_vazia_conta_como_sem_slug(self, monkeypatch):
+        p = MagicMock()
+        p.id, p.nome, p.slug = uuid.uuid4(), "Forno & Lenha", ""
+        assert self._rodar(monkeypatch, self._db([p])) == 1
+        assert p.slug == "forno-lenha"
