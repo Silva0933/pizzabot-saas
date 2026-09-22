@@ -312,21 +312,32 @@ async def _reconciliar_assinaturas_asaas_async() -> dict:
         BillingError,
         PlatformAsaasClient,
         billing_configurado,
+        carregar_config,
         parse_ext_ref,
     )
 
-    if not billing_configurado():
-        # Sem gateway não há o que reconciliar, e alertar todo dia por isso só
-        # geraria ruído: a ausência de chave já aparece na tela de Planos.
-        return {"ok": False, "motivo": "gateway de cobrança não configurado"}
-
-    try:
-        assinaturas = await PlatformAsaasClient().listar_assinaturas(status="ACTIVE")
-    except BillingError as e:
-        log.warning("reconciliação: não consegui listar assinaturas no Asaas: %s", e)
-        return {"ok": False, "motivo": str(e)}
-
     async with AsyncSessionLocal() as db:
+        # Cada processo tem o SEU cache de config em memoria, e quem o preenche no
+        # startup e o app/main.py — que so roda na API. Sem esta linha, o worker
+        # cai no fallback de ambiente (que pode nao ter a chave, ja que ela costuma
+        # ser definida so no servico da API) e a reconciliacao sairia calada toda
+        # noite: exatamente a falha silenciosa que esta task existe para evitar.
+        try:
+            await carregar_config(db)
+        except Exception as e:  # noqa: BLE001
+            log.warning("reconciliação: não recarreguei a config do gateway: %s", e)
+
+        if not billing_configurado():
+            # Sem gateway não há o que reconciliar, e alertar todo dia por isso só
+            # geraria ruído: a ausência de chave já aparece na tela de Planos.
+            return {"ok": False, "motivo": "gateway de cobrança não configurado"}
+
+        try:
+            assinaturas = await PlatformAsaasClient().listar_assinaturas(status="ACTIVE")
+        except BillingError as e:
+            log.warning("reconciliação: não consegui listar assinaturas no Asaas: %s", e)
+            return {"ok": False, "motivo": str(e)}
+
         conhecidas = {
             str(r[0]) for r in (await db.execute(text("SELECT id FROM public.pizzarias"))).all()
         }

@@ -85,13 +85,16 @@ def cenario(monkeypatch):
         cliente = MagicMock()
         cliente.listar_assinaturas = AsyncMock(return_value=assinaturas)
         cliente.cancelar_assinatura = cancelar
+        carregar = AsyncMock()
 
         monkeypatch.setattr(billing_mod, "billing_configurado", lambda: configurado)
+        monkeypatch.setattr(billing_mod, "carregar_config", carregar)
         monkeypatch.setattr(billing_mod, "PlatformAsaasClient", lambda *a, **k: cliente)
         monkeypatch.setattr(alertas_mod, "registrar_alerta", AsyncMock())
         monkeypatch.setattr(db_mod, "AsyncSessionLocal", _FakeSessionMaker(_FakeDB(ids_no_banco)))
 
         resultado = asyncio.run(_reconciliar_assinaturas_asaas_async())
+        rodar.carregar_config = carregar
         return resultado, cancelar
 
     return rodar
@@ -185,6 +188,16 @@ class TestTravas:
         cancelar.assert_not_awaited()
         assert resultado["ok"] is False
         assert "não configurado" in resultado["motivo"]
+
+    def test_recarrega_a_config_do_banco_antes_de_checar_o_gateway(self, cenario):
+        """Regressao: cada processo tem o seu cache de config, e so o app/main.py
+        (que roda apenas na API) o preenche no startup. Sem recarregar do banco
+        aqui, o worker cai no fallback de ambiente — que pode nao ter a chave — e
+        a task sai calada toda noite sem nunca reconciliar nada."""
+        resultado, _ = cenario(
+            [_assinatura("sub_orfa", f"{uuid.uuid4()}|basico")], ids_no_banco=[str(uuid.uuid4())]
+        )
+        cenario.carregar_config.assert_awaited_once()
 
     def test_modo_so_alerta_nao_cancela(self, cenario, monkeypatch):
         import app.workers.periodic as periodic_mod
