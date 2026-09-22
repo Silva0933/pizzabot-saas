@@ -344,8 +344,11 @@ async def webhook_asaas_plataforma(
     payment = body.get("payment") or {}
     log.info("Asaas plataforma webhook: event=%s payment=%s", evento, payment.get("id"))
 
-    if evento not in ("PAYMENT_CREATED", "PAYMENT_RECEIVED", "PAYMENT_CONFIRMED",
-                      "PAYMENT_OVERDUE", "PAYMENT_UPDATED"):
+    # Mesma lista que usamos para CADASTRAR o webhook no Asaas. Estava duplicada:
+    # acrescentar um evento no cadastro sem acrescentar aqui faria o Asaas mandar
+    # algo que a gente descarta calado.
+    from app.services.billing_plataforma import PlatformAsaasClient
+    if evento not in PlatformAsaasClient.EVENTOS_ASSINATURA:
         return {"ignored": evento or "no_event"}
     if not payment.get("id"):
         return {"ignored": "no_payment"}

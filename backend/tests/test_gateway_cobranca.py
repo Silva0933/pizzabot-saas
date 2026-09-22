@@ -148,3 +148,52 @@ class TestProntidaoUsaOBanco:
         chaves = [a.chave for a in p.auditar({"api_key": "", "webhook_token": ""})]
         assert "ASAAS_PLATFORM_API_KEY" in chaves
         assert "ASAAS_PLATFORM_WEBHOOK_TOKEN" in chaves
+
+
+class TestWebhookNoAsaas:
+    """
+    Sem webhook cadastrado a assinatura funciona pela metade: a pizzaria paga, o
+    Asaas confirma, e a plataforma nunca fica sabendo — o plano nao renova e ela
+    segue suspensa. Era o unico passo que continuava manual.
+    """
+
+    def test_eventos_cobrem_o_que_o_handler_trata(self):
+        """Cadastrar evento que ninguem trata (ou o contrario) falha calado."""
+        from app.services.billing_plataforma import PlatformAsaasClient
+
+        assert set(PlatformAsaasClient.EVENTOS_ASSINATURA) == {
+            "PAYMENT_CREATED", "PAYMENT_UPDATED",
+            "PAYMENT_CONFIRMED", "PAYMENT_RECEIVED", "PAYMENT_OVERDUE",
+        }
+
+    def test_payload_do_cadastro_segue_a_spec(self):
+        from unittest.mock import AsyncMock
+
+        from app.services.billing_plataforma import PlatformAsaasClient
+
+        c = PlatformAsaasClient({"api_key": "k", "base_url": "https://api-sandbox.asaas.com/v3"})
+        c._req = AsyncMock(return_value={"id": "wh_1"})
+        asyncio.run(c.criar_webhook(
+            url="https://api.exemplo.com/webhook/asaas-plataforma",
+            auth_token="t" * 40,
+            email="admin@exemplo.com",
+        ))
+
+        metodo, caminho = c._req.await_args.args[0], c._req.await_args.args[1]
+        corpo = c._req.await_args.args[2]
+        assert (metodo, caminho) == ("POST", "/webhooks")
+        assert corpo["apiVersion"] == 3
+        assert corpo["enabled"] is True
+        assert corpo["interrupted"] is False
+        # SEQUENTIALLY importa: PAYMENT_CREATED precisa chegar antes do RECEIVED,
+        # senao confirmamos pagamento de uma fatura ainda nao registrada.
+        assert corpo["sendType"] == "SEQUENTIALLY"
+        assert corpo["events"] == PlatformAsaasClient.EVENTOS_ASSINATURA
+
+    def test_token_gerado_atende_a_exigencia_do_asaas(self):
+        """O Asaas exige 32-255 caracteres, sem espaco."""
+        import secrets
+
+        token = secrets.token_urlsafe(32)
+        assert 32 <= len(token) <= 255
+        assert " " not in token

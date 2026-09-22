@@ -163,6 +163,51 @@ class PlatformAsaasClient:
             "externalReference": external_reference,
         })
 
+    # ---- Webhooks (cadastro automático) ----
+    #
+    # Sem webhook cadastrado no Asaas a assinatura "funciona" pela metade: a
+    # pizzaria paga, o Asaas confirma, e a plataforma nunca fica sabendo — o
+    # plano não renova e ela continua suspensa. Era o elo que faltava, e era
+    # manual.
+
+    # Eventos que o nosso /webhook/asaas-plataforma sabe tratar. Cadastrar só
+    # estes é recomendação do próprio Asaas (evita processamento à toa).
+    EVENTOS_ASSINATURA = [
+        "PAYMENT_CREATED",
+        "PAYMENT_UPDATED",
+        "PAYMENT_CONFIRMED",
+        "PAYMENT_RECEIVED",
+        "PAYMENT_OVERDUE",
+    ]
+
+    async def listar_webhooks(self) -> list[dict[str, Any]]:
+        data = await self._req("GET", "/webhooks")
+        return data.get("data") or []
+
+    async def criar_webhook(self, *, url: str, auth_token: str, email: str) -> dict[str, Any]:
+        """Cadastra o webhook da plataforma no Asaas.
+
+        `authToken` chega em toda notificação no header `asaas-access-token`, que
+        é o que a nossa rota confere. O Asaas só devolve esse valor NA CRIAÇÃO,
+        então quem chama tem que guardá-lo junto.
+        """
+        return await self._req("POST", "/webhooks", {
+            "name": "PizzaBot — assinaturas",
+            "url": url,
+            "email": email,
+            "enabled": True,
+            "interrupted": False,
+            "apiVersion": 3,
+            "authToken": auth_token,
+            # Ordem importa: PAYMENT_CREATED antes de PAYMENT_RECEIVED evita
+            # confirmar um pagamento cuja fatura ainda não foi registrada.
+            "sendType": "SEQUENTIALLY",
+            "events": self.EVENTOS_ASSINATURA,
+        })
+
+    async def remover_webhook(self, webhook_id: str) -> None:
+        await self._req("DELETE", f"/webhooks/{webhook_id}")
+
     async def cancelar_assinatura(self, subscription_id: str) -> None:
         await self._req("DELETE", f"/subscriptions/{subscription_id}")
 

@@ -302,6 +302,120 @@ async def test_billing(
         return {"ok": False, "erro": f"Falha ao falar com o Asaas: {e}"}
 
 
+@router.post("/billing/webhook")
+async def cadastrar_webhook_billing(
+    db: AsyncSession = Depends(get_db),
+    admin: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Cadastra (ou reaproveita) o webhook da plataforma no Asaas.
+
+    Sem isto a assinatura funciona pela metade: a pizzaria paga, o Asaas
+    confirma, e a plataforma nunca fica sabendo — o plano não renova e ela
+    continua suspensa. Era o unico passo manual que sobrava.
+
+    O `authToken` e gerado aqui e salvo do nosso lado, porque o Asaas so devolve
+    esse valor no momento da criacao.
+    """
+    import secrets
+
+    from app.services.app_config import BILLING_KEY, get_billing_config
+    from app.services.billing_plataforma import (
+        BillingError, PlatformAsaasClient, aplicar_config, invalidar_config,
+    )
+
+    cfg = await get_billing_config(db)
+    if not cfg["configurada"]:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "Configure a chave de API antes de cadastrar o webhook.",
+        )
+
+    url = _webhook_plataforma_url()
+    if not url.startswith("https://"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"A URL do webhook precisa ser https pública (atual: {url}). "
+            "Confira PUBLIC_BASE_URL.",
+        )
+
+    client = PlatformAsaasClient(cfg)
+    try:
+        existentes = await client.listar_webhooks()
+    except BillingError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+
+    ja = next((w for w in existentes if (w.get("url") or "").rstrip("/") == url.rstrip("/")), None)
+    if ja:
+        return {
+            "ok": True,
+            "ja_existia": True,
+            "webhook": {"id": ja.get("id"), "url": ja.get("url"), "enabled": ja.get("enabled")},
+            "aviso": (
+                "Já havia um webhook com esta URL. Não recriei para não perder a fila "
+                "de eventos. Se o token não confere, remova no Asaas e cadastre de novo."
+            ),
+        }
+
+    # 32–255 caracteres, sem espaço e sem sequência simples (exigência do Asaas).
+    token = secrets.token_urlsafe(32)
+    try:
+        criado = await client.criar_webhook(url=url, auth_token=token, email=admin.email)
+    except BillingError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+
+    # Guarda o token do nosso lado ANTES de responder: o Asaas não devolve de novo.
+    raw = await get_config(db, BILLING_KEY)
+    raw["webhook_token"] = encrypt_secret(token)
+    await set_config(db, BILLING_KEY, raw)
+    invalidar_config()
+    aplicar_config(await get_billing_config(db))
+
+    log.info("Webhook da plataforma cadastrado no Asaas: %s", criado.get("id"))
+    return {
+        "ok": True,
+        "ja_existia": False,
+        "webhook": {"id": criado.get("id"), "url": criado.get("url"), "enabled": criado.get("enabled")},
+        "eventos": PlatformAsaasClient.EVENTOS_ASSINATURA,
+    }
+
+
+@router.get("/billing/webhook")
+async def status_webhook_billing(
+    db: AsyncSession = Depends(get_db),
+    _: Usuario = Depends(require_platform_admin),
+) -> dict:
+    """Diz se o webhook da plataforma já está cadastrado no Asaas."""
+    from app.services.app_config import get_billing_config
+    from app.services.billing_plataforma import BillingError, PlatformAsaasClient
+
+    cfg = await get_billing_config(db)
+    url = _webhook_plataforma_url()
+    if not cfg["configurada"]:
+        return {"configurada": False, "cadastrado": False, "url": url}
+
+    try:
+        webhooks = await PlatformAsaasClient(cfg).listar_webhooks()
+    except BillingError as e:
+        return {"configurada": True, "cadastrado": False, "url": url, "erro": str(e)}
+
+    nosso = next((w for w in webhooks if (w.get("url") or "").rstrip("/") == url.rstrip("/")), None)
+    return {
+        "configurada": True,
+        "cadastrado": bool(nosso),
+        "url": url,
+        "webhook": (
+            {
+                "id": nosso.get("id"),
+                "enabled": nosso.get("enabled"),
+                "interrupted": nosso.get("interrupted"),
+                "events": nosso.get("events") or [],
+            }
+            if nosso else None
+        ),
+        "total_no_asaas": len(webhooks),
+    }
+
+
 @router.get("/prontidao")
 async def prontidao_producao(
     _: Usuario = Depends(require_platform_admin),

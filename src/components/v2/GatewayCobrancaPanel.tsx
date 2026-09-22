@@ -9,8 +9,8 @@
  * significa "não mexi", e salvar já testa a chave de verdade.
  */
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Copy, KeyRound, Loader2, Save, Wifi } from "lucide-react";
-import { adminApi, BillingConfigResp, BillingTeste } from "../../lib/api";
+import { AlertTriangle, Check, Copy, KeyRound, Link2, Loader2, Save, Wifi } from "lucide-react";
+import { adminApi, BillingConfigResp, BillingTeste, BillingWebhookStatus } from "../../lib/api";
 
 export function GatewayCobrancaPanel() {
   const [cfg, setCfg] = useState<BillingConfigResp | null>(null);
@@ -22,6 +22,8 @@ export function GatewayCobrancaPanel() {
   const [teste, setTeste] = useState<BillingTeste | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [webhook, setWebhook] = useState<BillingWebhookStatus | null>(null);
+  const [cadastrandoWebhook, setCadastrandoWebhook] = useState(false);
 
   async function carregar() {
     const d = await adminApi.billing();
@@ -29,6 +31,25 @@ export function GatewayCobrancaPanel() {
     setApiKey(d.api_key_mascarada);
     setWebhookToken(d.webhook_token_mascarado);
     setBaseUrl(d.base_url);
+    // Consulta o Asaas de verdade: ter o token salvo aqui nao significa que o
+    // webhook esta cadastrado la — e sem ele o pagamento nunca volta.
+    if (d.configurada) {
+      try { setWebhook(await adminApi.statusWebhookBilling()); } catch { setWebhook(null); }
+    }
+  }
+
+  async function cadastrarWebhook() {
+    setCadastrandoWebhook(true);
+    setErro(null);
+    try {
+      const r = await adminApi.cadastrarWebhookBilling();
+      if (r.aviso) setErro(r.aviso);
+      await carregar();
+    } catch (e: any) {
+      setErro(e?.message || "Não consegui cadastrar o webhook no Asaas.");
+    } finally {
+      setCadastrandoWebhook(false);
+    }
   }
 
   useEffect(() => {
@@ -154,9 +175,33 @@ export function GatewayCobrancaPanel() {
       </label>
 
       <div>
-        <span className="block text-[11px] font-semibold text-slate-400 mb-1">
-          URL para cadastrar no Asaas (Webhooks)
+        <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-1">
+          Webhook no Asaas
+          {cfg.configurada && webhook && (
+            <span className={webhook.cadastrado ? "text-[9px] text-emerald-400 font-normal" : "text-[9px] text-amber-400 font-normal"}>
+              {webhook.cadastrado ? "cadastrado" : "NÃO cadastrado"}
+            </span>
+          )}
         </span>
+
+        {cfg.configurada && webhook && !webhook.cadastrado && (
+          <div className="mb-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2.5 text-[11px] text-amber-300">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              Sem webhook a assinatura funciona pela metade: a pizzaria paga, o Asaas confirma,
+              e a plataforma <strong>não fica sabendo</strong> — o plano não renova e ela continua
+              suspensa.
+            </span>
+          </div>
+        )}
+
+        {webhook?.cadastrado && webhook.webhook?.interrupted && (
+          <div className="mb-2 rounded-xl border border-red-500/30 bg-red-950/40 px-3 py-2.5 text-[11px] text-red-300">
+            A fila deste webhook está <strong>interrompida</strong> no Asaas — normalmente porque a
+            nossa API respondeu erro várias vezes. Reative no painel do Asaas.
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <code className="flex-1 px-3 py-2 rounded-lg bg-[#161f30] border border-[#1e293b] text-[11px] text-slate-200 break-all">
             {cfg.webhook_url}
@@ -176,6 +221,22 @@ export function GatewayCobrancaPanel() {
             {copiado ? "Copiado" : "Copiar"}
           </button>
         </div>
+
+        {cfg.configurada && !webhook?.cadastrado && (
+          <button
+            type="button"
+            onClick={cadastrarWebhook}
+            disabled={cadastrandoWebhook}
+            className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-orange-500/40 bg-orange-500/10 text-[11px] font-bold text-orange-300 hover:bg-orange-500/20 disabled:opacity-40"
+          >
+            {cadastrandoWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
+            Cadastrar webhook no Asaas automaticamente
+          </button>
+        )}
+        <span className="block mt-1 text-[10px] text-slate-500">
+          O cadastro automático gera o token de autenticação e já o guarda aqui — o Asaas só
+          mostra esse valor uma vez.
+        </span>
       </div>
 
       {teste && (

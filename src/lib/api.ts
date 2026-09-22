@@ -1006,6 +1006,24 @@ export interface BillingConfigResp {
   sugestoes_base_url: string[];
 }
 
+export interface BillingWebhookStatus {
+  configurada: boolean;
+  /** true = o Asaas ja tem um webhook apontando pra nossa URL. */
+  cadastrado: boolean;
+  url: string;
+  erro?: string;
+  webhook?: { id: string; enabled: boolean; interrupted: boolean; events: string[] } | null;
+  total_no_asaas?: number;
+}
+
+export interface BillingWebhookResp {
+  ok: boolean;
+  ja_existia: boolean;
+  webhook: { id: string; url: string; enabled: boolean };
+  eventos?: string[];
+  aviso?: string;
+}
+
 export interface BillingTeste {
   ok: boolean;
   erro?: string;
@@ -1032,6 +1050,8 @@ export const adminApi = {
   salvarBilling: (body: BillingConfigIn) =>
     api.put<{ ok: boolean; configurada: boolean; teste: BillingTeste }>(`/admin/billing`, body),
   testarBilling: () => api.post<BillingTeste>(`/admin/billing/test`, {}),
+  statusWebhookBilling: () => api.get<BillingWebhookStatus>(`/admin/billing/webhook`),
+  cadastrarWebhookBilling: () => api.post<BillingWebhookResp>(`/admin/billing/webhook`, {}),
   salvarPlano: (planoId: string, patch: PlanoPatch) =>
     api.put<{ ok: boolean; planos: PlanoAdmin[] }>(`/admin/planos/${planoId}`, patch),
   renovar: (pizzariaId: string) =>
