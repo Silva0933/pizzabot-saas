@@ -190,7 +190,11 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
   }, [qrPizz, qrConnected]);
 
   async function remove(p: BackendPizzaria) {
-    if (!confirm(`Remover a pizzaria "${p.nome}"? Isso apaga equipe, cardápio e pedidos dela. Esta ação é irreversível.`)) return;
+    if (!confirm(
+      `Remover a pizzaria "${p.nome}"? Isso apaga equipe, cardápio e pedidos dela, ` +
+      `cancela a assinatura no Asaas e exclui os logins que ficarem sem nenhuma ` +
+      `pizzaria. Esta ação é irreversível.`
+    )) return;
     setBusyId(p.id);
     setErr(null);
     try {
