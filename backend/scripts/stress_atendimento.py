@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import time
 import sys
 import unicodedata
 import uuid
@@ -35,6 +36,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Acima disto o cliente já está esperando demais, e o FSM tem teto de 15s antes de
+# cair no agente legado (que não conhece o estado do pedido).
+LIMITE_SEGUNDOS = 8.0
+
+# Pedaços do prompt interno que NUNCA podem chegar ao cliente. Vazou em produção:
+# "use EXATAMENTE esse nome de bairro".
+VAZAMENTOS = ["exatamente esse", "nunca repita", "sua tarefa", "[quebra]",
+              "backend", "o sistema fez", "dados calculados"]
 
 
 def _norm(s: str | None) -> str:
@@ -124,7 +134,8 @@ ROTEIROS: list[Roteiro] = [
             Turno("oi"),
             Turno("quero uma calabresa grande"),
             Turno("é pra entrega", espera_intencao=["informar_entrega_retirada"]),
-            Turno("rua das flores 123, centro", espera_intencao=["informar_endereco"]),
+            Turno("rua das flores 123, centro", espera_intencao=["informar_endereco"],
+                  espera_algum=["r$", "gratis"]),
         ],
     ),
     Roteiro(
@@ -144,6 +155,17 @@ ROTEIROS: list[Roteiro] = [
             Turno("vcs abrem que horas?", espera_intencao=["duvida_geral", "conversa_fiada"]),
             Turno("kkkkk blz"),
             Turno("entao me ve uma calabresa grande", espera_intencao=["adicionar_item"]),
+        ],
+    ),
+    Roteiro(
+        "pergunta_no_meio",
+        "Dúvida no meio do pedido não pode virar 'cardápio enviado' (bug de produção)",
+        [
+            Turno("oi"),
+            Turno("sim"),
+            Turno("quero uma calabresa grande", espera_intencao=["adicionar_item"]),
+            Turno("bebidas tem disponivel", nao_pode=["cardapio enviado"]),
+            Turno("essa calabresa tem cebola?", nao_pode=["cardapio enviado"]),
         ],
     ),
 ]
@@ -174,7 +196,9 @@ async def roda_roteiro(pizzaria_id, roteiro: Roteiro, *, verbose: bool) -> dict:
 
         for i, turno in enumerate(roteiro.turnos, 1):
             try:
+                t0 = time.perf_counter()
                 res = await run_fsm_agent(db, pizzaria_id, telefone, turno.diz, simulation=True)
+                dt = time.perf_counter() - t0
             except Exception as e:  # noqa: BLE001
                 falhas.append(f"turno {i} ({turno.diz[:28]!r}): EXCEÇÃO {type(e).__name__}: {e}")
                 break
@@ -190,7 +214,7 @@ async def roda_roteiro(pizzaria_id, roteiro: Roteiro, *, verbose: bool) -> dict:
 
             if verbose:
                 print(f"    {i}. cliente: {turno.diz}")
-                print(f"       intent={intencao} decisao={tr.get('decision')} tools={res.tool_calls}")
+                print(f"       intent={intencao} decisao={tr.get('decision')} tools={res.tool_calls} ({dt:.1f}s)")
                 print(f"       bot: {texto[:100]!r}")
 
             n = _norm(texto)
@@ -199,6 +223,14 @@ async def roda_roteiro(pizzaria_id, roteiro: Roteiro, *, verbose: bool) -> dict:
             if anteriores and n and n == anteriores[-1]:
                 falhas.append(f"turno {i}: repetiu LITERALMENTE a resposta anterior ({texto[:45]!r})")
             anteriores.append(n)
+
+            if dt > LIMITE_SEGUNDOS:
+                falhas.append(f"turno {i}: LENTO {dt:.1f}s (limite {LIMITE_SEGUNDOS:.0f}s)")
+            for v in VAZAMENTOS:
+                if v in n:
+                    falhas.append(f"turno {i}: VAZOU instrução interna ({v!r})")
+            if tr.get("pipeline") == "legacy":
+                falhas.append(f"turno {i}: caiu no agente LEGADO (perde o estado do pedido)")
 
             # 2) Resposta vazia.
             if not n.strip():

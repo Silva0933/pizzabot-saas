@@ -738,6 +738,11 @@ async def processar(
             # Mensagem verbatim (backend) — a LLM não improvisa "te mostro os sabores
             # em texto" nem pergunta o sabor. Curta e objetiva, como pedido.
             decisao["mensagem_pronta"] = "Cardápio enviado aí em cima 👆 Assim que escolher, é só me falar! 😊"
+            # Carimba a ação dona desta mensagem: ramos seguintes podem trocar a ação
+            # (ex.: vira pedir_info porque o carrinho já tem item) sem saber que isto
+            # ficou aqui — e o cliente que perguntou "tem bebida?" ouvia "cardápio
+            # enviado". O pipeline descarta a mensagem se a ação final for outra.
+            decisao["mensagem_pronta_acao"] = "cardapio"
 
     # Sugestão pendente: no turno anterior o bot ofereceu um item alternativo (ex.:
     # Coca no lugar da Fanta indisponível). Se o cliente confirmou agora ("pode ser",
@@ -1301,12 +1306,19 @@ async def processar(
             else "a forma de pagamento (pix, cartão ou dinheiro)"
         )
         if calc and calc.get("ok") and estado.get("tipo") == "delivery":
-            taxa_str = f"de R$ {taxa:.2f}".replace(".", ",") if taxa > 0 else "grátis"
-            decisao["proxima_pergunta"] = (
-                f"Informe ao cliente que a taxa de entrega para o bairro \"{bairro}\" é {taxa_str} "
-                f"— use EXATAMENTE esse nome de bairro (NUNCA repita a última mensagem do cliente "
-                f"como se fosse o lugar). Em seguida, pergunte SÓ {formas_txt}. Não repita o total."
+            # Valor e bairro saem PRONTOS do backend, como o resumo. Antes isto era
+            # uma instrução para a LLM ("informe a taxa... use EXATAMENTE esse nome de
+            # bairro, NUNCA repita...") e dava errado de dois jeitos em produção: o
+            # modelo copiava a meta-instrução para o cliente, e cortava o "R$" porque
+            # as regras gerais da voz proíbem citar valor. Valor é dado crítico.
+            taxa_str = f"R$ {taxa:.2f}".replace(".", ",") if taxa > 0 else "grátis"
+            opcoes = ("dinheiro ou cartão " + local) if modo_pag == "desativado" else "pix, cartão ou dinheiro"
+            frase_taxa = (
+                f"A entrega para *{bairro}* sai por {taxa_str} 🛵" if taxa > 0
+                else f"A entrega para *{bairro}* é grátis 🛵"
             )
+            decisao["mensagem_pronta"] = f"{frase_taxa} [QUEBRA] Como prefere pagar: {opcoes}?"
+            decisao["mensagem_pronta_acao"] = decisao.get("acao")
         else:
             decisao["proxima_pergunta"] = f"Pergunte SÓ {formas_txt}. Não repita o total."
         return {"decisao": decisao, "estado": estado}

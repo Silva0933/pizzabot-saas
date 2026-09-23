@@ -397,6 +397,12 @@ async def run_fsm_agent(
     voz_usage: dict = {}
     correcoes: dict[str, Any] = {}
     msg_pronta = decisao.get("mensagem_pronta")
+    dona = decisao.get("mensagem_pronta_acao")
+    if msg_pronta and dona and dona != decisao.get("acao"):
+        # Mensagem pronta de um ramo cuja ação foi sobrescrita depois: responder
+        # com ela seria responder a outra pergunta. Deixa a voz gerar a resposta.
+        log.info("Mensagem pronta de '%s' descartada: ação final é '%s'", dona, decisao.get("acao"))
+        msg_pronta = None
     if msg_pronta:
         # BLINDAGEM (Pilar 2): mensagens CRÍTICAS (resumo/fechamento) vêm prontas do
         # backend — não passam pela LLM, então os valores nunca divergem. Economiza
