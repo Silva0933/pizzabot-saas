@@ -28,7 +28,10 @@
 }
 .cdp-feat-track-r::-webkit-scrollbar { display: none; }
 .cdp-feat-card-r {
-  flex: 0 0 196px; scroll-snap-align: start;
+  /* min-width: 0 é o que faz o 196px valer de verdade. Sem ele o card não encolhe
+     abaixo do conteúdo, e o nome em nowrap ("Hambúrguer Gourmet") o alargava: a
+     imagem, quadrada, ficava maior e desalinhava a faixa inteira. */
+  flex: 0 0 196px; min-width: 0; scroll-snap-align: start;
   background: var(--bg2); border: 1px solid var(--line);
   border-radius: 20px; padding: 10px;
   display: flex; flex-direction: column; gap: 10px;

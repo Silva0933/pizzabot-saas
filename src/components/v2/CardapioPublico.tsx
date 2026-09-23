@@ -996,8 +996,21 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const waUrl = waLink(pizz.telefone_contato);
   const tema = resolverTema(temaPreview ?? pizz.tema_cardapio);
   const linhasTitulo = linhasDoTitulo(tema.titulo || "");
-  // Destaque do hero: o primeiro produto do cardapio (a ordem ja e a da pizzaria).
-  const produtoDestaque = data.produtos.length > 0 ? data.produtos[0] : null;
+  // Destaque do hero. Era simplesmente o primeiro produto da lista, e na Palazio o
+  // primeiro era uma Fanta sem foto: "Destaque da casa: Fanta 1L" em cima de um
+  // emoji. Agora prefere um prato principal com foto, na ordem da pizzaria; se
+  // não houver, qualquer um com foto; em último caso, o primeiro.
+  const ehPratoPrincipal = (p: { categoria?: string | null }) =>
+    !["bebida", "sobremesa"].includes((p.categoria || "").toLowerCase());
+  const produtoDestaque =
+    data.produtos.find((p) => p.imagem_url && ehPratoPrincipal(p)) ??
+    data.produtos.find((p) => p.imagem_url) ??
+    data.produtos[0] ??
+    null;
+  // Foto do topo: banner da pizzaria; sem banner, a foto do próprio destaque (que
+  // é o que está sendo anunciado ali embaixo); depois o logo; só então o emoji.
+  const heroImagem =
+    (bannerPreview ?? pizz.banner_url) || produtoDestaque?.imagem_url || pizz.logo_url || null;
   const themeStyle = temaParaCssVars(tema);
   const embedMapUrl = mapEmbedUrl(pizz);
   const trackingSteps = tracking ? (
@@ -1756,10 +1769,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
               </div>
 
               <div className="cdp-hero-media-r">
-                {(bannerPreview ?? pizz.banner_url) ? (
-                  <img src={(bannerPreview ?? pizz.banner_url) as string} alt="" />
-                ) : pizz.logo_url ? (
-                  <img src={pizz.logo_url} alt={pizz.nome} />
+                {heroImagem ? (
+                  <img src={heroImagem} alt="" fetchPriority="high" />
                 ) : (
                   <div className="cdp-hero-media-ph-r" aria-hidden="true">🍕</div>
                 )}

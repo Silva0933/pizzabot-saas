@@ -74,8 +74,21 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
 
   const modalOpen = creating || !!editingId;
 
-  // Alertas count para o badge da sidebar
-  const [alertCount, setAlertCount] = useState<number>(27);
+  // Alertas abertos para o badge da sidebar. Começava em 27 FIXO (sobra de mock) e
+  // só era corrigido quando a aba Alertas montava — em qualquer outra aba o painel
+  // mostrava um número inventado. Agora vem da API ao abrir o painel e a cada
+  // minuto; null = ainda não sabemos (badge escondido, em vez de um palpite).
+  const [alertCount, setAlertCount] = useState<number | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    const buscar = () =>
+      adminApi.alertas(true, 1)
+        .then((r) => { if (vivo) setAlertCount(r?.abertos ?? 0); })
+        .catch(() => { /* mantém o último valor conhecido */ });
+    buscar();
+    const t = setInterval(buscar, 60_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
 
   function genPassword() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
@@ -349,9 +362,11 @@ export function PlatformAdminView({ userName, pizzarias, onRefresh, onEnter, onL
                 <Bell className="w-4 h-4 shrink-0" />
                 <span>Alertas</span>
               </div>
-              <span className="bg-rose-500/20 text-rose-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-500/30">
-                {alertCount}
-              </span>
+              {alertCount !== null && alertCount > 0 && (
+                <span className="bg-rose-500/20 text-rose-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-rose-500/30">
+                  {alertCount}
+                </span>
+              )}
             </button>
 
             <button
@@ -1239,16 +1254,10 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
     } finally { setBusy(null); }
   }
 
-  // Fallback demo data para quando API não responder todas as pizzarias da imagem
-  const mockAssinaturas = [
-    { pizzaria_id: "1", nome: "Pizzaria Palazzo", plano: "pro", plano_nome: "Pro", preco_mensal: 197, vence_em: "2026-06-30", cobranca_email: "", ia_mensagens: 0, ia_limite: 300, ia_custo: 0, margem: 197, renovacao_automatica: false, suspensa: true, alerta: "vencida" },
-    { pizzaria_id: "2", nome: "Castro", plano: "basico", plano_nome: "Básico", preco_mensal: 97, vence_em: "2026-07-12", cobranca_email: "", ia_mensagens: 0, ia_limite: 100, ia_custo: 0, margem: 97, renovacao_automatica: true, suspensa: true, alerta: "vencida" },
-    { pizzaria_id: "3", nome: "Forneria", plano: "basico", plano_nome: "Teste grátis", preco_mensal: 0, vence_em: null, cobranca_email: "", ia_mensagens: 0, ia_limite: 20, ia_custo: 0, margem: 0, renovacao_automatica: false, suspensa: true, alerta: "sem_plano" },
-    { pizzaria_id: "4", nome: "Fornalha Burger & Pizza", plano: "basico", plano_nome: "Básico", preco_mensal: 97, vence_em: null, cobranca_email: "contato@fornalha.com", ia_mensagens: 0, ia_limite: 100, ia_custo: 0, margem: 97, renovacao_automatica: false, suspensa: false, alerta: null },
-    { pizzaria_id: "5", nome: "Equadapizza", plano: "basico", plano_nome: "Teste grátis", preco_mensal: 0, vence_em: null, cobranca_email: "", ia_mensagens: 0, ia_limite: 20, ia_custo: 0, margem: 0, renovacao_automatica: false, suspensa: false, alerta: "sem_plano" },
-  ];
-
-  const assinaturasList = data?.assinaturas && data.assinaturas.length > 0 ? data.assinaturas : mockAssinaturas;
+  // Havia aqui 5 pizzarias FALSAS (inclusive já apagadas, como Castro e Forneria)
+  // exibidas quando a API falhava ou vinha vazia — com os botões Suspender e
+  // +30d apontando para ids inventados. Lista vazia é lista vazia.
+  const assinaturasList: any[] = data?.assinaturas ?? [];
   const termo = busca.trim().toLocaleLowerCase("pt-BR");
   const filtradas = assinaturasList.filter((item: any) => {
     const texto = `${item.nome} ${item.plano_nome} ${item.cobranca_email || ""}`.toLocaleLowerCase("pt-BR");
@@ -1403,6 +1412,13 @@ function AssinaturasCard({ catalogo }: { catalogo: import("../../lib/api").PlanC
             </tr>
           </thead>
           <tbody className="divide-y divide-[#1e293b]/60">
+            {filtradas.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-8 text-center text-xs text-slate-500">
+                  {loading ? "Carregando assinaturas..." : data ? "Nenhuma assinatura encontrada." : "Não foi possível carregar as assinaturas."}
+                </td>
+              </tr>
+            )}
             {filtradas.map((item: any) => {
               const usagePct = item.ia_limite ? Math.min(100, Math.round((item.ia_mensagens / item.ia_limite) * 100)) : 0;
               return (
@@ -1587,32 +1603,21 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
   const [apenasAbertos, setApenasAbertos] = useState(true);
   const [busca, setBusca] = useState("");
 
-  // Lista padrão de demonstração (usada apenas se a API estiver indisponível)
-  const [alertasDemo, setAlertasDemo] = useState([
-    { id: "1", tipo: "fatura_vencida", detalhe: 'Teste grátis de "Forneria"...', pizzaria_nome: "Forneria", hora: "29/05, 14:00", nivel: "warning", resolvido: false },
-    { id: "2", tipo: "fatura_vencida", detalhe: 'Fatura da assinatura de "Castro"...', pizzaria_nome: "Castro", hora: "13/06, 04:16", nivel: "warning", resolvido: false },
-    { id: "3", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:32", nivel: "error", resolvido: false },
-    { id: "4", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Fornalha Burger & Pizza"...', pizzaria_nome: "Fornalha Burger & Pizza", hora: "11/06, 14:00", nivel: "error", resolvido: false },
-    { id: "5", tipo: "suspensao_indevida", detalhe: 'Pizzaria Palazzo suspensa...', pizzaria_nome: "Pizzaria Palazzo", hora: "11/06, 10:20", nivel: "error", resolvido: false },
-    { id: "6", tipo: "whatsapp_desconectado", detalhe: 'WhatsApp da pizzaria "Pizzaria Palazzo"...', pizzaria_nome: "Pizzaria Palazzo", hora: "10/06, 11:50", nivel: "error", resolvido: false },
-    { id: "7", tipo: "suspensao_indevida", detalhe: '"Castro" suspensa automaticamente...', pizzaria_nome: "Castro", hora: "09/06, 18:00", nivel: "error", resolvido: false },
-    { id: "8", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "07/06, 12:16", nivel: "error", resolvido: false },
-    { id: "9", tipo: "assinatura_vencida", detalhe: 'Assinatura de "Castro" VENCEU...', pizzaria_nome: "Castro", hora: "03/06, 09:30", nivel: "error", resolvido: false },
-  ]);
+  // Havia aqui uma lista de alertas de DEMONSTRAÇÃO, com nomes reais ("Castro
+  // suspensa automaticamente", "Fatura de Castro vencida"), exibida justamente
+  // quando a API falhava. Um painel de monitoramento que inventa alertas no dia em
+  // que algo quebra é pior que nenhum. Falha agora aparece como falha.
+  const [erro, setErro] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
     try {
       const res = await adminApi.alertas(apenasAbertos, 150);
-      if (res && Array.isArray(res.alertas) && res.alertas.length > 0) {
-        setData(res);
-        onCountChange?.(res.abertos ?? res.alertas.filter((a: any) => !a.resolvido).length);
-      } else {
-        setData(res || null);
-        onCountChange?.(res?.abertos ?? alertasDemo.length);
-      }
-    } catch {
-      onCountChange?.(alertasDemo.length);
+      setData(res);
+      setErro(null);
+      onCountChange?.(res?.abertos ?? (res?.alertas || []).filter((a: any) => !a.resolvido).length);
+    } catch (e: any) {
+      setErro(`Não foi possível carregar os alertas${e?.message ? `: ${e.message}` : ""}.`);
     } finally {
       setLoading(false);
     }
@@ -1620,32 +1625,26 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
 
   useEffect(() => { load(); }, [apenasAbertos]);
 
-  // Lista a exibir: usa dados reais da API quando disponíveis, senão usa demo
-  const alertasList: any[] = (data?.alertas && data.alertas.length > 0) ? data.alertas : (data ? [] : alertasDemo);
-  const totalAbertos = data?.abertos ?? (data?.alertas ? data.alertas.filter((a: any) => !a.resolvido).length : alertasDemo.length);
+  const alertasList: any[] = data?.alertas ?? [];
+  const totalAbertos = data?.abertos ?? alertasList.filter((a: any) => !a.resolvido).length;
 
   async function resolver(id: string) {
     setBusy(id);
     try {
       await adminApi.resolverAlerta(id);
-      if (data?.alertas && data.alertas.length > 0) {
-        setData((prev) => prev ? {
-          ...prev,
-          alertas: apenasAbertos
-            ? prev.alertas.filter((a: any) => a.id !== id)
-            : prev.alertas.map((a: any) => a.id === id ? { ...a, resolvido: true } : a),
-          abertos: Math.max(0, (prev.abertos || 1) - 1),
-        } : prev);
-      } else {
-        setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
-      }
+      setData((prev) => prev ? {
+        ...prev,
+        alertas: apenasAbertos
+          ? prev.alertas.filter((a: any) => a.id !== id)
+          : prev.alertas.map((a: any) => a.id === id ? { ...a, resolvido: true } : a),
+        abertos: Math.max(0, (prev.abertos || 1) - 1),
+      } : prev);
       onCountChange?.(Math.max(0, totalAbertos - 1));
-    } catch {
-      if (data?.alertas && data.alertas.length > 0) {
-        setData((prev) => prev ? { ...prev, alertas: prev.alertas.filter((a: any) => a.id !== id) } : prev);
-      } else {
-        setAlertasDemo((prev) => prev.filter((a) => a.id !== id));
-      }
+      setErro(null);
+    } catch (e: any) {
+      // Antes o alerta sumia da tela mesmo com a API recusando — o admin achava
+      // que tinha resolvido. Agora ele continua na lista e o erro é dito.
+      setErro(`Não foi possível resolver o alerta${e?.message ? `: ${e.message}` : ""}. Tente de novo.`);
     } finally {
       setBusy(null);
     }
@@ -1703,6 +1702,7 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
               </span>
             </div>
             <p className="text-xs text-slate-400">Total de {alertasList.length} alerta(s) listado(s)</p>
+            {erro && data && <p className="text-xs text-rose-400 mt-1">{erro}</p>}
           </div>
         </div>
 
@@ -1759,6 +1759,11 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
         <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
           <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
           <p className="text-xs">Carregando todos os alertas...</p>
+        </div>
+      ) : erro && !data ? (
+        <div className="py-10 text-center space-y-2">
+          <p className="text-xs text-rose-400 font-medium">{erro}</p>
+          <button type="button" onClick={load} className="text-[11px] text-orange-400 underline">Tentar de novo</button>
         </div>
       ) : alertasFiltrados.length === 0 ? (
         <div className="py-10 text-center space-y-1">
