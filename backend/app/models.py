@@ -62,6 +62,8 @@ class Pizzaria(Base):
     banner_url: Mapped[str | None] = mapped_column(Text)
     plano: Mapped[str] = mapped_column(String, default="basico", nullable=False)
     bot_ativo_global: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Sons de alerta de pedido no painel (chegada e fechamento). Migration 031.
+    alertas_sonoros: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     # NULL segue o horário; True/False força abertura/fechamento temporário.
     aberto_manual: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # Suspensão administrativa (ex.: inadimplência). Desliga TODO o atendimento

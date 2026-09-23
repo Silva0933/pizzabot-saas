@@ -765,6 +765,8 @@ async def _broadcast_novo_pedido(pizzaria_id: Any, pedido: "Pedido") -> None:
                     "numero_pedido": pedido.numero_pedido,
                     "status": pedido.status,
                     "origem": "cardapio_digital",
+                    # Pedido do cardápio já chega fechado pelo cliente.
+                    "fechado": True,
                 },
             },
         )

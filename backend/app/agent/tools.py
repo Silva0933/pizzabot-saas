@@ -1290,6 +1290,10 @@ async def registrar_pedido(
                 "numero_pedido": ped.numero_pedido,
                 "status_anterior": status_anterior,
                 "status_novo": ped.status,
+                # O cliente acabou de FECHAR o pedido (rascunho → registrado). O
+                # painel toca o segundo alerta só nesse evento; edições de um
+                # pedido já confirmado não tocam de novo.
+                "fechado": status_anterior != "confirmado",
             },
         },
     )

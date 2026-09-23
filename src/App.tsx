@@ -217,42 +217,74 @@ function AdminApp() {
     typeof Notification !== "undefined" ? Notification.permission : "denied",
   );
   const wsRef = useRef<WebSocket | null>(null);
-  const pendingOrderKeysRef = useRef<Set<string>>(new Set());
+  // Eventos de pedido que já tocaram (chegada:<id> / fechado:<id>). Nunca é
+  // limpo ao "atender" o alerta: é isso que impede o som de voltar a cada
+  // mensagem do cliente enquanto o rascunho do pedido é atualizado.
+  const alertedOrderKeysRef = useRef<Set<string>>(new Set());
+  const alertasSonorosRef = useRef(true);
+  alertasSonorosRef.current = pizzaria?.alertas_sonoros !== false;
   const desktopNotificationsRef = useRef<Notification[]>([]);
 
   const orderAlertStorageKey = pizzaria
     ? `pizzabot:pending-order-alert:${pizzaria.id}`
     : null;
+  const alertedOrdersStorageKey = pizzaria
+    ? `pizzabot:order-alerts-played:${pizzaria.id}`
+    : null;
+
+  /** Marca o evento como já alertado; devolve false se ele já tinha tocado. */
+  function markOrderAlerted(key: string): boolean {
+    const seen = alertedOrderKeysRef.current;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    // Guarda só os mais recentes: o Set preserva a ordem de inserção.
+    while (seen.size > 300) seen.delete(seen.values().next().value as string);
+    if (alertedOrdersStorageKey) {
+      try { localStorage.setItem(alertedOrdersStorageKey, JSON.stringify([...seen])); } catch { /* storage cheio/bloqueado */ }
+    }
+    return true;
+  }
 
   function acknowledgeOrderAlerts() {
     setPendingOrderAlerts(0);
-    pendingOrderKeysRef.current.clear();
     if (orderAlertStorageKey) localStorage.removeItem(orderAlertStorageKey);
     desktopNotificationsRef.current.forEach((notification) => notification.close());
     desktopNotificationsRef.current = [];
   }
 
-  function registerNewOrderAlert(ev: WsEvent) {
+  /**
+   * Alertas de pedido: toca UMA vez quando o pedido chega (1ª mensagem do
+   * cliente cria o rascunho) e UMA vez quando o cliente fecha o pedido.
+   * As sincronizações do rascunho a cada mensagem não tocam nada.
+   */
+  function handleOrderAlert(ev: WsEvent) {
     if (!pizzaria) return;
     const payload = ev.payload ?? {};
-    const stableId = payload.pedido_id || payload.numero_pedido;
-    const eventId = stableId || `${payload.telefone || "pedido"}-${Date.now()}`;
-    const key = `${pizzaria.id}:${eventId}`;
-    if (pendingOrderKeysRef.current.has(key)) return;
-    pendingOrderKeysRef.current.add(key);
+    // Sem id estável não há como deduplicar (evento legado só com telefone):
+    // o mesmo pedido chega de novo pelo evento com id, então é ignorado.
+    if (!payload.pedido_id) return;
+    const fechado = payload.fechado === true;
+    if (!fechado) {
+      if (ev.tipo !== "pedido.novo" || payload.em_construcao) return;
+      if (!markOrderAlerted(`chegada:${payload.pedido_id}`)) return;
+      if (alertasSonorosRef.current) playNotificationSound("novo");
+      return;
+    }
+    if (!markOrderAlerted(`fechado:${payload.pedido_id}`)) return;
+    if (alertasSonorosRef.current) playNotificationSound("novo");
+    const eventId = payload.pedido_id;
     setPendingOrderAlerts((current) => {
       const next = current + 1;
       if (orderAlertStorageKey) {
         localStorage.setItem(orderAlertStorageKey, JSON.stringify({
           count: next,
-          keys: [...pendingOrderKeysRef.current],
           updatedAt: Date.now(),
         }));
       }
       return next;
     });
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      const notification = new Notification("Novo pedido recebido", {
+      const notification = new Notification("Pedido fechado", {
         body: payload.numero_pedido
           ? `Pedido #${payload.numero_pedido} aguardando atendimento.`
           : "Há um novo pedido aguardando atendimento.",
@@ -289,8 +321,14 @@ function AdminApp() {
 
   // Recupera um alerta não atendido caso o painel seja recarregado.
   useEffect(() => {
-    pendingOrderKeysRef.current.clear();
     setPendingOrderAlerts(0);
+    alertedOrderKeysRef.current = new Set();
+    if (alertedOrdersStorageKey) {
+      try {
+        const played = JSON.parse(localStorage.getItem(alertedOrdersStorageKey) || "[]");
+        if (Array.isArray(played)) alertedOrderKeysRef.current = new Set(played.map(String));
+      } catch { /* histórico corrompido: começa vazio */ }
+    }
     desktopNotificationsRef.current.forEach((notification) => notification.close());
     desktopNotificationsRef.current = [];
     if (!orderAlertStorageKey) return;
@@ -298,7 +336,6 @@ function AdminApp() {
       const saved = JSON.parse(localStorage.getItem(orderAlertStorageKey) || "null");
       const isRecent = saved?.updatedAt && Date.now() - saved.updatedAt < 86_400_000;
       if (isRecent && saved.count > 0) {
-        pendingOrderKeysRef.current = new Set(saved.keys || []);
         setPendingOrderAlerts(saved.count);
       } else {
         localStorage.removeItem(orderAlertStorageKey);
@@ -307,14 +344,6 @@ function AdminApp() {
       localStorage.removeItem(orderAlertStorageKey);
     }
   }, [orderAlertStorageKey]);
-
-  // Repete o toque até o operador atender o alerta ou abrir uma conversa.
-  useEffect(() => {
-    if (pendingOrderAlerts <= 0) return;
-    playNotificationSound("novo");
-    const alarm = window.setInterval(() => playNotificationSound("novo"), 3000);
-    return () => window.clearInterval(alarm);
-  }, [pendingOrderAlerts]);
 
   // ============================================
   // Bootstrap (verifica token + busca user)
@@ -397,13 +426,9 @@ function AdminApp() {
     if (!pizzaria) return;
     const ws = connectWebSocket(pizzaria.id, (ev) => {
       setLiveEvent(ev);
-      // Novo pedido → inicia alerta persistente e atualiza a fila.
-      if (ev.tipo === "pedido.novo") {
-        registerNewOrderAlert(ev);
-        pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
-      } else if (ev.tipo === "pedido.atualizado") {
-        const statusNovo = ev.payload?.status_novo;
-        if (statusNovo === "novo") registerNewOrderAlert(ev);
+      // Pedido chegou/fechou → alerta sonoro (uma vez por evento) e atualiza a fila.
+      if (ev.tipo === "pedido.novo" || ev.tipo === "pedido.atualizado") {
+        handleOrderAlert(ev);
         pedidosApi.list(pizzaria.id).then((p) => setOrders(p.map(backendToOrder))).catch(() => {});
       } else if (ev.tipo === "pedidos.limpos") {
         setOrders([]);

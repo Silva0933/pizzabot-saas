@@ -11,7 +11,7 @@ import {
   Bot, Settings as SettingsIcon, Sparkles, Save, Loader2,
   Store, Smartphone, CreditCard, Clock, X, QrCode, CheckCircle2,
   RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
-  Bike, ChevronDown, Copy, ExternalLink,
+  Bike, ChevronDown, Copy, ExternalLink, Volume2,
 } from "lucide-react";
 import { AttendantPage } from "../AttendantPage";
 import {
@@ -314,6 +314,20 @@ function ConfigGeral({
                   Bot ativo globalmente
                 </label>
               </div>
+            </Card>
+
+            <Card icon={<Volume2 className="w-4 h-4" />} title="Alertas sonoros de pedidos" accent="amber">
+              <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
+                <input type="checkbox" checked={form.alertas_sonoros ?? true}
+                  onChange={(e) => setField("alertas_sonoros", e.target.checked)}
+                  className="w-4 h-4 mt-0.5 accent-orange-500 rounded"/>
+                <span>
+                  Tocar som no painel quando um cliente começar um pedido e quando ele fechar o pedido
+                  <span className="block text-slate-500 mt-1">
+                    Desligado, os pedidos continuam chegando normalmente, só sem o som.
+                  </span>
+                </span>
+              </label>
             </Card>
           </div>
         </ConfigAccordion>

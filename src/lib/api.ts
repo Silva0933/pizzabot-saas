@@ -147,6 +147,7 @@ export interface BackendPizzaria {
   whatsapp_estado?: string | null; // 'open' | 'connecting' | 'close'
   plano: string;
   bot_ativo_global: boolean;
+  alertas_sonoros?: boolean;
   aberto_manual?: boolean | null;
   aberto_agora?: boolean;
   endereco: string | null;

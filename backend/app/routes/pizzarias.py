@@ -48,6 +48,7 @@ class PizzariaPatch(BaseModel):
     logo_url: str | None = None
     banner_url: str | None = None
     bot_ativo_global: bool | None = None
+    alertas_sonoros: bool | None = None
     aberto_manual: bool | None = None
     horario_funcionamento: dict | None = None
     tema_cardapio: dict | None = None
@@ -79,6 +80,7 @@ class PizzariaOut(BaseModel):
     whatsapp_estado: str | None = None
     plano: str
     bot_ativo_global: bool
+    alertas_sonoros: bool = True
     aberto_manual: bool | None = None
     aberto_agora: bool = True
     suspensa: bool = False
@@ -415,6 +417,8 @@ async def update_pizzaria(
     mp_token_novo: str | None = None
     for k, v in updates.items():
         if hasattr(pizz, k):
+            if k == "alertas_sonoros" and v is None:
+                continue  # coluna NOT NULL: null não significa nada aqui
             if k in ("asaas_api_key", "mp_access_token", "mp_webhook_secret"):
                 if not v or looks_masked(v):
                     continue
