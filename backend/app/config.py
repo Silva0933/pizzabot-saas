@@ -69,7 +69,17 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        origens = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+        if self.is_production:
+            # Em produção, origem de desenvolvimento não tem motivo para existir, e
+            # a variável de ambiente já veio com "http://localhost:5173" herdado do
+            # setup local. Filtrar aqui torna isso impossível de reintroduzir por
+            # engano — em vez de depender de alguém lembrar de limpar a variável.
+            origens = [
+                o for o in origens
+                if not any(h in o for h in ("localhost", "127.0.0.1", "0.0.0.0"))
+            ]
+        return origens
 
     @property
     def is_production(self) -> bool:

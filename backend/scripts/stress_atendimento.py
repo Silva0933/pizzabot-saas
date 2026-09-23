@@ -158,6 +158,14 @@ ROTEIROS: list[Roteiro] = [
         ],
     ),
     Roteiro(
+        "aceita_oferta",
+        "Lado POSITIVO do 'sim': logo após a oferta, 'sim' TEM que mandar o cardápio",
+        [
+            Turno("oi", espera_intencao=["saudacao"]),
+            Turno("sim", espera_intencao=["pedir_cardapio"], espera_tool=["cardapio"]),
+        ],
+    ),
+    Roteiro(
         "pergunta_no_meio",
         "Dúvida no meio do pedido não pode virar 'cardápio enviado' (bug de produção)",
         [

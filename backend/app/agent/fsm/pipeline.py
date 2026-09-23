@@ -45,6 +45,10 @@ def _parece_comprovante(user_input: str) -> bool:
 # conteúdo extra ("sim, mas sem cebola") segue para a NLU LLM normal.
 _PONTUACAO_FINAL_RE = re.compile(r"[\s!.,…~?]+$")
 
+# A mensagem enviada ofereceu o cardápio? ("Gostaria de ver o cardápio?",
+# "Quer que eu te mande o menu?"). Usado junto de "?" no texto.
+_OFERTA_CARDAPIO_RE = re.compile(r"\b(card[aá]pio|menu)\b", re.IGNORECASE)
+
 # Saudação pura no início da conversa (sem pedido junto).
 _SAUDACAO_PURA_RE = re.compile(
     r"^\s*(oi+|ol[aá]+|opa|eae|eai|e a[ií]|al[oô]|bom dia|boa tarde|boa noite)$",
@@ -445,6 +449,16 @@ async def run_fsm_agent(
         except Exception as e:  # noqa: BLE001
             log.debug("Guard FSM falhou (texto segue como veio): %s", e)
     texto = texto.replace(QUEBRA, "\n\n")
+
+    # Qual pergunta ficou aberta? Decide pelo que o cliente LEU, não pelo ramo que
+    # rodou: a voz às vezes oferece o cardápio de improviso ("quer que eu te mande
+    # o cardápio?") em ramos que não sabem disso. Se a mensagem enviada perguntou
+    # sobre o cardápio, o "sim" seguinte é sobre ele; se não, não é.
+    estado["cardapio_ofertado"] = bool(
+        not estado.get("cardapio_enviado")
+        and "?" in texto
+        and _OFERTA_CARDAPIO_RE.search(texto)
+    )
 
     # Registra uso/custo — alimenta o limite por plano (C2) e o dashboard de
     # custo (C3). NLU e voz são registradas separadas (modelos podem diferir);

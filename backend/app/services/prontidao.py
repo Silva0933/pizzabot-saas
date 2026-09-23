@@ -130,31 +130,53 @@ async def registrar_prontidao() -> list[Achado]:
         log.debug("Prontidão sem config de cobrança do banco: %s", e)
 
     achados = auditar(billing)
-    if not achados:
-        log.info("Prontidão: nenhuma pendência de configuração.")
-        return achados
 
     for a in achados:
         nivel = log.error if a.gravidade == "critico" else log.warning
         nivel("PRONTIDÃO [%s] %s — %s: %s", a.gravidade.upper(), a.chave, a.titulo, a.detalhe)
+    if not achados:
+        log.info("Prontidão: nenhuma pendência de configuração.")
 
+    # Este código roda em TODO startup — e são 4 serviços, a cada deploy. Antes
+    # cada um gravava um alerta novo: em um dia viraram 16 cópias idênticas, e
+    # alerta repetido é alerta que ninguém mais lê. Agora existe no máximo UM
+    # alerta de prontidão aberto, refletindo o estado atual: igual ao aberto →
+    # não grava; diferente → fecha o antigo e abre o novo; sem pendência → fecha.
     criticos = [a for a in achados if a.gravidade == "critico"]
+    detalhe = (
+        (
+            f"{len(achados)} pendência(s) de configuração"
+            + (f", {len(criticos)} crítica(s)" if criticos else "")
+            + ": "
+            + "; ".join(f"{a.chave} — {a.titulo}" for a in achados)
+        )
+        if achados else ""
+    )
     try:
+        from sqlalchemy import text
+
         from app.db import AsyncSessionLocal
         from app.services.alertas import registrar_alerta
 
         async with AsyncSessionLocal() as db:
-            await registrar_alerta(
-                db,
-                tipo="prontidao_producao",
-                nivel="error" if criticos else "warning",
-                detalhe=(
-                    f"{len(achados)} pendência(s) de configuração"
-                    + (f", {len(criticos)} crítica(s)" if criticos else "")
-                    + ": "
-                    + "; ".join(f"{a.chave} — {a.titulo}" for a in achados)
-                ),
-            )
+            abertos = (await db.execute(text(
+                "SELECT detalhe FROM public.plataforma_alertas "
+                "WHERE tipo = 'prontidao_producao' AND resolvido = false"
+            ))).scalars().all()
+            if achados and list(abertos) == [detalhe[:1000]]:
+                return achados  # já existe exatamente este alerta aberto
+            if abertos:
+                await db.execute(text(
+                    "UPDATE public.plataforma_alertas SET resolvido = true "
+                    "WHERE tipo = 'prontidao_producao' AND resolvido = false"
+                ))
+            if achados:
+                await registrar_alerta(
+                    db,
+                    tipo="prontidao_producao",
+                    nivel="error" if criticos else "warning",
+                    detalhe=detalhe,
+                )
             await db.commit()
     except Exception as e:  # noqa: BLE001
         log.warning("Não consegui registrar o alerta de prontidão: %s", e)

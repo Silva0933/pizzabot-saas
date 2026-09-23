@@ -559,6 +559,14 @@ async def processar(
     intencao = nlu.get("intencao")
     dados = nlu.get("dados") or {}
 
+    # A oferta do cardápio vale SÓ para a resposta imediatamente seguinte. Antes o
+    # flag ligava na saudação e nunca desligava: um "é isso mesmo" dez mensagens
+    # depois, com o carrinho vazio, era lido como "sim, manda o cardápio". Aqui ele
+    # é consumido; o pipeline o religa no fim do turno se a mensagem que o cliente
+    # acabou de receber perguntou de novo sobre o cardápio.
+    oferta_cardapio_aberta = bool(estado.get("cardapio_ofertado"))
+    estado["cardapio_ofertado"] = False
+
     decisao: dict[str, Any] = {
         "acao": "conversar", "fatos": [], "proxima_pergunta": None,
         "enviar_cardapio": False, "dados": {},
@@ -706,7 +714,7 @@ async def processar(
     # Também dispara quando ACABAMOS de oferecer o cardápio na saudação e o cliente
     # confirmou ("sim", "quero", "pode") — aí mandamos o arquivo na hora.
     confirmou_ver_cardapio = (
-        bool(estado.get("cardapio_ofertado"))
+        oferta_cardapio_aberta
         and not estado.get("cardapio_enviado")
         and not estado["carrinho"]
         and not dados.get("produtos")  # "quero uma calabresa" NÃO é pedir o cardápio
