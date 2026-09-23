@@ -242,7 +242,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
               <SelectField label="Estilo dos cartões" value={config.estilo_cartoes || "elevado"} onChange={(v) => update("estilo_cartoes", v as TemaEstiloCartoes)} options={[
                 { value: "elevado", label: "Elevado — com profundidade" }, { value: "minimal", label: "Minimalista — discreto" }, { value: "contornado", label: "Contornado — marcante" },
               ]} />
-              <SelectField label="Estilo dos botões" value={config.estilo_botao || "gradiente"} onChange={(v) => update("estilo_botao", v as TemaEstiloBotao)} options={[
+              <SelectField label="Estilo dos botões" value={config.estilo_botao || "solido"} onChange={(v) => update("estilo_botao", v as TemaEstiloBotao)} options={[
                 { value: "gradiente", label: "Gradiente — mais vibrante" }, { value: "solido", label: "Sólido — cor única" },
               ]} />
             </div>

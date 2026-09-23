@@ -58,7 +58,8 @@ export const BORDAS = {
 export const COPY_PADRAO = {
   barra_cupom_ativa: true,
   barra_cupom_texto: "15% OFF em pedidos acima de R$ 30 com o cupom",
-  chamada: "Feito na hora. Do seu jeito.",
+  // Sem chamada por padrao: o design de referencia abre direto no titulo.
+  chamada: "",
   titulo: "O sabor que|acende a fome.",
   descricao:
     "Feito na hora e do seu jeito. Escolha seus favoritos, personalize o pedido e receba tudo quentinho onde estiver.",
@@ -72,12 +73,12 @@ export const COPY_PADRAO = {
     { icone: "sacola", titulo: "Retirada disponível", descricao: "Prático do início ao fim" },
   ],
   promocoes_titulo: "Aproveite antes que acabe",
-  promocoes_subtitulo: "Ofertas da semana, enquanto durarem.",
+  promocoes_subtitulo: "Campanhas preparadas especialmente para você.",
   passos_titulo: "Seu pedido em 3 passos",
   passos: [
-    { titulo: "Escolha", descricao: "Monte sua sacola com o que der vontade." },
-    { titulo: "Personalize", descricao: "Ajuste tamanhos, adicionais e observações." },
-    { titulo: "Receba", descricao: "Acompanhe o preparo até chegar na sua porta." },
+    { titulo: "Escolha", descricao: "Navegue pelas categorias e encontre seus favoritos." },
+    { titulo: "Personalize", descricao: "Defina tamanho, adicionais e observações." },
+    { titulo: "Receba", descricao: "Informe o endereço ou escolha retirada no local." },
   ],
   localizacao_titulo: "Nossa localização",
   faq_titulo: "Dúvidas frequentes",
@@ -87,7 +88,7 @@ export const COPY_PADRAO = {
     { pergunta: "Quais formas de pagamento vocês aceitam?", resposta: "Pix, cartão e dinheiro. Você escolhe na hora de fechar o pedido." },
     { pergunta: "Posso personalizar meu pedido?", resposta: "Pode. Cada item tem tamanhos, adicionais e um campo de observações para você escrever do seu jeito." },
   ],
-  rodape_frase: "Feito na hora, entregue quentinho.",
+  rodape_frase: "Feito com carinho, entregue com sabor.",
 } as const;
 
 // ============================================================
@@ -214,6 +215,8 @@ const LEGADO: Record<TemaCardapioModelo, Record<string, string>> = {
 /** Textos que o codigo antigo tambem gravava sozinho. */
 const LEGADO_TEXTO: Record<string, string> = {
   chamada: "FEITO NA HORA. DO SEU JEITO.",
+  promocoes_subtitulo: "Ofertas da semana, enquanto durarem.",
+  rodape_frase: "Feito na hora, entregue quentinho.",
   titulo: "O SABOR QUE|ACENDE A FOME.",
   descricao: "Escolha seus favoritos, personalize o pedido e receba tudo quentinho onde estiver.",
 };
@@ -275,11 +278,11 @@ export function resolverTema(bruto?: TemaCardapioConfig | null): Required<Tokens
     cta_secundario: usar(salvo.cta_secundario, COPY_PADRAO.cta_secundario),
     destaques_titulo: usar(salvo.destaques_titulo, COPY_PADRAO.destaques_titulo),
     promocoes_titulo: usar(salvo.promocoes_titulo, COPY_PADRAO.promocoes_titulo),
-    promocoes_subtitulo: usar(salvo.promocoes_subtitulo, COPY_PADRAO.promocoes_subtitulo),
+    promocoes_subtitulo: usar(salvo.promocoes_subtitulo, COPY_PADRAO.promocoes_subtitulo, "promocoes_subtitulo"),
     passos_titulo: usar(salvo.passos_titulo, COPY_PADRAO.passos_titulo),
     localizacao_titulo: usar(salvo.localizacao_titulo, COPY_PADRAO.localizacao_titulo),
     faq_titulo: usar(salvo.faq_titulo, COPY_PADRAO.faq_titulo),
-    rodape_frase: usar(salvo.rodape_frase, COPY_PADRAO.rodape_frase),
+    rodape_frase: usar(salvo.rodape_frase, COPY_PADRAO.rodape_frase, "rodape_frase"),
     barra_cupom_texto: usar(salvo.barra_cupom_texto, COPY_PADRAO.barra_cupom_texto),
     barra_cupom_ativa: usar(salvo.barra_cupom_ativa, COPY_PADRAO.barra_cupom_ativa),
     // Listas: só troca se a pizzaria montou a dela (lista vazia = usa o padrão).
@@ -311,6 +314,32 @@ function escurecer(hex: string, fator: number): string {
   return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/** Luminancia relativa (WCAG) de um #RRGGBB; 0 = preto, 1 = branco. */
+function luminancia(hex: string): number {
+  const limpo = String(hex || "").replace("#", "").trim();
+  const cheio = limpo.length === 3 ? limpo.split("").map((c) => c + c).join("") : limpo;
+  const n = Number.parseInt(cheio.slice(0, 6), 16);
+  if (!Number.isFinite(n)) return 0;
+  const canal = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * canal((n >> 16) & 255) + 0.7152 * canal((n >> 8) & 255) + 0.0722 * canal(n & 255);
+}
+
+/**
+ * Texto legivel sobre um fundo colorido: o escuro ou o claro, o que der mais
+ * contraste. O cupom amarelo do Brasa pede texto escuro; o violeta do
+ * Metropole, claro — fixar um dos dois quebra o outro tema.
+ */
+function textoSobre(fundo: string): string {
+  const escuro = "#1A0D05";
+  const l = luminancia(fundo);
+  const contrasteEscuro = (l + 0.05) / (luminancia(escuro) + 0.05);
+  const contrasteClaro = 1.05 / (l + 0.05);
+  return contrasteEscuro >= contrasteClaro ? escuro : "#FFFFFF";
+}
+
 /**
  * Tokens → CSS custom properties consumidas por `.cdp-root`.
  *
@@ -323,6 +352,10 @@ export function temaParaCssVars(tema: ReturnType<typeof resolverTema>): CSSPrope
   const texto = FONTES_TEXTO[tema.fonte_texto as FonteTextoId] ?? FONTES_TEXTO.figtree;
   const raio = BORDAS[tema.bordas as keyof typeof BORDAS]?.raio ?? BORDAS.suaves.raio;
   const acento = tema.cor_primaria;
+  const fundoEscuro = luminancia(tema.cor_fundo) < 0.2;
+  // O design foi desenhado com cantos "suaves"; os outros formatos escalam
+  // todos os raios da pagina juntos (--rk), sem mexer nas pilulas.
+  const escalaRaio = tema.bordas === "retas" ? 0.3 : tema.bordas === "arredondadas" ? 1.3 : 1;
 
   return {
     // Superficies
@@ -359,6 +392,16 @@ export function temaParaCssVars(tema: ReturnType<typeof resolverTema>): CSSPrope
     "--radius-sm": `calc(${raio} * 0.7)`,
     "--radius-xs": `calc(${raio} * 0.5)`,
     "--theme-radius": raio,
+    "--rk": String(escalaRaio),
+    // Texto sobre as cores de marca (barra de cupom, cartoes de promocao)
+    "--on-accent": textoSobre(acento),
+    "--on-accent2": textoSobre(tema.cor_secundaria),
+    // Estado da loja: verde/vermelho que funcionam no fundo do tema
+    "--ok": fundoEscuro ? "#6EE7A0" : "#15803D",
+    "--ok-dot": fundoEscuro ? "#4ADE80" : "#16A34A",
+    "--bad": fundoEscuro ? "#FCA5A5" : "#B91C1C",
+    "--bad-dot": fundoEscuro ? "#F87171" : "#DC2626",
+    "--display-lh": tema.titulo_caixa_alta ? "0.88" : "1",
   } as CSSProperties;
 }
 

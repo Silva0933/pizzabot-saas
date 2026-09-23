@@ -25,8 +25,9 @@ import { calcEstaAberto, getTextoProximaAbertura } from "../../lib/businessHours
 import "../../styles/cardapio-publico.css";
 import "../../styles/cardapio-redesign.css";
 import "../../styles/cardapio-cards.css";
+import "../../styles/cardapio-fornalha.css";
 import {
-  resolverTema, temaParaCssVars, googleFontsUrl, carregarFontes, linhasDoTitulo,
+  resolverTema, temaParaCssVars, googleFontsUrl, carregarFontes, linhasDoTitulo, COPY_PADRAO,
 } from "../../lib/cardapioTema";
 
 // ============================================
@@ -53,9 +54,6 @@ const CAT_EMOJI: Record<string, string> = {
   pizza: "🍕", lanche: "🍔", bebida: "🥤", sobremesa: "🍰", outro: "🍽️",
 };
 
-const CAT_COLOR: Record<string, string> = {
-  pizza: "#f97316", lanche: "#eab308", bebida: "#3b82f6", sobremesa: "#ec4899", outro: "#8b5cf6", todos: "#f97316",
-};
 
 // Tema, fontes e copy padrao vivem em lib/cardapioTema.ts — a mesma fonte de
 // verdade que o editor do painel usa, para preview e producao nao divergirem.
@@ -63,28 +61,6 @@ const CAT_COLOR: Record<string, string> = {
 // ============================================
 // Componente Principal
 // ============================================
-function mapEmbedUrl(pizzaria: MenuPizzaria) {
-  const rawUrl = pizzaria.endereco_maps_url || "";
-  const coords = rawUrl.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/)
-    || rawUrl.match(/[?&](?:q|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-  let query = coords ? `${coords[1]},${coords[2]}` : "";
-
-  if (!query && rawUrl) {
-    try {
-      const parsed = new URL(rawUrl);
-      const urlQuery = parsed.searchParams.get("query") || parsed.searchParams.get("q");
-      const placePath = parsed.pathname.match(/\/place\/([^/]+)/);
-      query = urlQuery
-        || (placePath ? decodeURIComponent(placePath[1].replace(/\+/g, " ")) : "");
-    } catch {
-      // Links curtos ou incompletos usam o endereco cadastrado como alternativa.
-    }
-  }
-
-  query ||= pizzaria.endereco || pizzaria.nome;
-  return `https://www.google.com/maps?q=${encodeURIComponent(query)}&z=16&output=embed`;
-}
-
 function fmt(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
@@ -128,6 +104,81 @@ const IcoMaisFino = ({ s = 16 }: { s?: number }) => (
 const IcoMenos = ({ s = 16 }: { s?: number }) => (
   <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M5 12h14" /></svg>
 );
+const IcoBusca = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+);
+const IcoMenu = ({ s = 22 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+);
+const IcoRota = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2.2}><circle cx="6" cy="19" r="2" /><circle cx="18" cy="5" r="2" /><path d="M8 19h8a3 3 0 0 0 0-6H8a3 3 0 0 1 0-6h8" /></svg>
+);
+const IcoCopiar = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2.2}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5.5A1.5 1.5 0 0 1 6.5 4H15" /></svg>
+);
+const IcoCheck = ({ s = 18 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2.4}><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+);
+const IcoWhats = ({ s = 16 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1.1-4A8 8 0 1 1 20 12z" /></svg>
+);
+const IcoWhatsFlutuante = ({ s = 26 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M20 12a8 8 0 0 1-11.8 7L4 20l1.1-4A8 8 0 1 1 20 12z" /><path d="M9 9.5c.3 2 1.8 3.8 4 4.6" /></svg>
+);
+/** Fatia de pizza: marca da loja quando ela ainda não subiu um logo. */
+const IcoFatia = ({ s = 24 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={2}><path d="M3.5 5.5c5.5-2.6 11.5-2.6 17 0L12 21.5z" /><path d="M5.2 8.6c4.4-1.8 9.2-1.8 13.6 0" /><circle cx="10.6" cy="11.6" r="1.1" /><circle cx="13.6" cy="14.4" r="1" /></svg>
+);
+/** Prato vazio: ocupa o lugar da foto de produto que ainda não tem imagem. */
+const IcoPrato = ({ s = 32 }: { s?: number }) => (
+  <svg width={s} height={s} {...svgBase} strokeWidth={1.6}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /></svg>
+);
+
+/** Foto do produto, ou o placeholder neutro do design quando não há imagem. */
+function Foto({ src, alt, className = "", eager = false }: { src?: string | null; alt: string; className?: string; eager?: boolean }) {
+  return (
+    <div className={`fx-ph ${className}`} role={src ? undefined : "img"} aria-label={src ? undefined : `Sem foto: ${alt}`}>
+      {src ? <img src={src} alt={alt} loading={eager ? "eager" : "lazy"} /> : <IcoPrato />}
+    </div>
+  );
+}
+
+/** Nome da seção do cardápio: as categorias chegam no singular ("pizza"). */
+const TITULO_CATEGORIA: Record<string, string> = {
+  pizza: "Pizzas", lanche: "Lanches", bebida: "Bebidas", sobremesa: "Sobremesas", outro: "Outros",
+};
+function tituloCategoria(cat: string): string {
+  return TITULO_CATEGORIA[cat] || cat.charAt(0).toUpperCase() + cat.slice(1);
+}
+
+/** Tira acentos e caixa para a busca achar "pao" em "Pão". */
+function normalizarBusca(t: string): string {
+  return t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/** "(11) 99999-2026" a partir de qualquer formato salvo no cadastro. */
+function formatarTelefone(tel?: string | null): string {
+  let d = (tel || "").replace(/\D/g, "");
+  if (d.startsWith("55") && d.length > 11) d = d.slice(2);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return tel || "";
+}
+
+/**
+ * Quebra o endereço em rua/bairro e cidade/UF, como o cartão de endereço do
+ * design mostra. Sem o padrão "Cidade - UF" no fim, fica tudo numa linha.
+ */
+function dividirEndereco(endereco?: string | null): [string, string] {
+  const texto = (endereco || "").trim();
+  const m = texto.match(/,\s*([^,]+?\s[–-]\s[A-Za-z]{2}\b.*)$/);
+  if (!m || m.index === undefined) return [texto, ""];
+  return [texto.slice(0, m.index).trim(), m[1].trim()];
+}
+
+function rotuloDesconto(c: CupomCardapio): string {
+  return c.tipo === "percentual" ? `${Number(c.valor)}% OFF` : `${fmt(Number(c.valor))} OFF`;
+}
 
 /** Icone da faixa de diferenciais, escolhido pelo nome salvo no tema. */
 function IconeDiferencial({ nome }: { nome?: string }) {
@@ -251,10 +302,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduto, setSelectedProduto] = useState<MenuProduto | null>(null);
   const [cartPulse, setCartPulse] = useState(false);
-  const [sacolaOpen, setSacolaOpen] = useState(false);
+  // Sacola do celular (painel que abre da barra de baixo) e menu do header.
+  const [bagOpen, setBagOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   // Seletor rápido de tamanho ao clicar no "+" (sem entrar no produto).
   const [quickPick, setQuickPick] = useState<MenuProduto | null>(null);
-  const cartTargetRef = useRef<HTMLButtonElement>(null);
   const checkoutRequestKeyRef = useRef<string | null>(null);
 
   // Carrinho
@@ -584,12 +636,13 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }
   function animateProductToCart(origin: HTMLElement, produto: MenuProduto) {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const target = cartTargetRef.current;
+    // A sacola do header existe em duas versões (desktop e celular); o alvo é
+    // a que está visível.
+    const target = Array.from(document.querySelectorAll<HTMLElement>(".fx-bag-target"))
+      .find((el) => el.offsetParent !== null);
     if (!target) return;
-    const card = origin.closest(".cdp-card-r, .cdp-feat-card-r");
-    const visual = card?.querySelector(
-      ".cdp-card-img-r, .cdp-card-ph-r, .cdp-feat-img-r, .cdp-feat-ph-r"
-    ) as HTMLElement | null;
+    const card = origin.closest(".fx-card, .fx-feat-card, .fx-hero-media");
+    const visual = card?.querySelector(".fx-ph, img") as HTMLElement | null;
     const sourceRect = (visual || origin).getBoundingClientRect();
     const targetRect = target.getBoundingClientRect();
     const flyer = document.createElement("div");
@@ -625,6 +678,20 @@ export function CardapioPublico({ slug }: { slug: string }) {
       const newQty = Math.max(0, i.quantidade + delta);
       return newQty === 0 ? null! : { ...i, quantidade: newQty };
     }).filter(Boolean));
+  }
+
+  /**
+   * Leva à sacola. No desktop ela é o painel fixo ao lado do cardápio; no
+   * celular, a barra de baixo abre o painel. O atraso deixa o React montar o
+   * menu quando a chamada vem de outra etapa (voltar do checkout, recompra).
+   */
+  function abrirSacola() {
+    setBagOpen(true);
+    window.setTimeout(() => {
+      const alvo = Array.from(document.querySelectorAll<HTMLElement>(".fx-bag-anchor"))
+        .find((el) => el.offsetParent !== null);
+      alvo?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60);
   }
   function aplicarCupom(codigo = cupomInput) {
     const normalizado = codigo.trim().toUpperCase();
@@ -763,7 +830,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
       setCartPulse(true);
       window.setTimeout(() => setCartPulse(false), 700);
       setAccountOpen(false);
-      setSacolaOpen(true);
+      abrirSacola();
     } catch (error: any) {
       setAccountError(error.message || "Não foi possível repetir este pedido.");
     } finally {
@@ -1012,7 +1079,6 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const heroImagem =
     (bannerPreview ?? pizz.banner_url) || produtoDestaque?.imagem_url || pizz.logo_url || null;
   const themeStyle = temaParaCssVars(tema);
-  const embedMapUrl = mapEmbedUrl(pizz);
   const trackingSteps = tracking ? (
     tracking.tipo === "delivery"
       ? [
@@ -1030,6 +1096,185 @@ export function CardapioPublico({ slug }: { slug: string }) {
         ]
   ) : [];
   const trackingIndex = tracking ? Math.max(0, trackingSteps.findIndex((item) => item.key === tracking.status)) : 0;
+
+  // ---- Dados do layout do cardápio (design de referência) ----
+  /** Rola até uma seção da página e fecha o menu do celular. */
+  const irPara = (id: string) => (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    setMenuOpen(false);
+    if (id === "inicio") window.scrollTo({ top: 0, behavior: "smooth" });
+    else document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+  };
+  const busca = normalizarBusca(searchQuery.trim());
+  const combinaBusca = (p: MenuProduto) =>
+    !busca || normalizarBusca(`${p.nome} ${p.descricao || ""}`).includes(busca);
+  // Mesmo com uma categoria escolhida o cardápio segue em seções, como no
+  // design; a busca filtra dentro delas e some com as que ficam vazias.
+  const secoes = categorias
+    .filter((c) => c !== "todos" && (selectedCat === "todos" || selectedCat === c))
+    .map((c) => ({
+      id: c,
+      titulo: tituloCategoria(c),
+      itens: data.produtos.filter((p) => (p.categoria || "outro") === c && combinaBusca(p)),
+    }))
+    .filter((s) => s.itens.length > 0);
+  const contagemCategoria = (c: string) =>
+    c === "todos" ? data.produtos.length : data.produtos.filter((p) => (p.categoria || "outro") === c).length;
+  const mostrarDestaques = selectedCat === "todos" && !busca && data.produtos.length > 3;
+  // Destaques com foto primeiro: um card de destaque sem foto não destaca nada.
+  const destaques = [
+    ...data.produtos.filter((p) => p.imagem_url),
+    ...data.produtos.filter((p) => !p.imagem_url),
+  ].slice(0, 8);
+
+  const tempoEntrega = pizz.tempo_entrega_min && pizz.tempo_entrega_max
+    ? `${pizz.tempo_entrega_min}–${pizz.tempo_entrega_max} min`
+    : null;
+  // O primeiro diferencial padrão traz "30–45 min" escrito; com o tempo real
+  // cadastrado, mostra o real em vez do número de exemplo.
+  const diferenciais = (tema.diferenciais || []).slice(0, 4).map((d) =>
+    d.icone === "relogio" && d.titulo === "30–45 min" && tempoEntrega ? { ...d, titulo: tempoEntrega } : d,
+  );
+
+  // Cupom: a barra e o cartão de promoção anunciam o primeiro cupom ativo; a
+  // sacola acompanha o que a pessoa aplicou (ou esse mesmo, se nenhum).
+  const cupomBarra = cuponsAtivos[0] ?? null;
+  const minimoDoCupom = (c: CupomCardapio) => Number(c.pedido_minimo || 0);
+  const textoBarra = cupomBarra
+    ? (tema.barra_cupom_texto && tema.barra_cupom_texto !== COPY_PADRAO.barra_cupom_texto
+      ? tema.barra_cupom_texto
+      : `${rotuloDesconto(cupomBarra)} ${minimoDoCupom(cupomBarra) > 0 ? `em pedidos acima de ${fmt(minimoDoCupom(cupomBarra))}` : "no seu pedido"} com o cupom`)
+    : "";
+  const cupomAlvo = cupomSelecionado ?? cupomBarra;
+  const cupomNaSacola = !!cupomSelecionado && descontoEstimado > 0;
+  const faltaParaCupom = cupomAlvo ? Math.max(0, minimoDoCupom(cupomAlvo) - cartTotal) : 0;
+  const progressoCupom = cupomAlvo && minimoDoCupom(cupomAlvo) > 0
+    ? Math.min(100, Math.round((cartTotal / minimoDoCupom(cupomAlvo)) * 100))
+    : 100;
+
+  async function copiarCupom(codigo: string) {
+    const normalizado = codigo.trim().toUpperCase();
+    setCupomInput(normalizado);
+    setCupomAplicado(normalizado);
+    try { await navigator.clipboard.writeText(normalizado); } catch { /* aplica mesmo sem área de transferência */ }
+    setTopOfferCopied(true);
+    window.setTimeout(() => setTopOfferCopied(false), 1800);
+  }
+
+  const temPromocoes = campanhasAtivas.length > 0 || cuponsAtivos.length > 0;
+  const temLocal = !!(pizz.endereco || pizz.endereco_maps_url);
+  const temFaq = (tema.faq || []).length > 0;
+  const rotaUrl = pizz.endereco
+    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pizz.endereco)}`
+    : pizz.endereco_maps_url || "";
+  const mapaUrl = pizz.endereco_maps_url
+    || (pizz.endereco ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pizz.endereco)}` : "");
+  const [enderecoLinha1, enderecoLinha2] = dividirEndereco(pizz.endereco);
+  const ruaNoMapa = (pizz.endereco || "").split(",")[0].trim().slice(0, 22);
+  const nomeNoMapa = pizz.nome.length > 28 ? `${pizz.nome.slice(0, 27)}…` : pizz.nome;
+  const telefoneExibido = formatarTelefone(pizz.telefone_contato);
+  const fotosProdutos = data.produtos.filter((p) => p.imagem_url).map((p) => p.imagem_url as string);
+  const campanhaPrincipal = campanhasAtivas[0] ?? null;
+  const fotosCampanha = campanhaPrincipal
+    ? [campanhaPrincipal.imagem_url, ...fotosProdutos].filter((f): f is string => !!f).slice(0, 3)
+    : [];
+
+  function finalizarPedido() {
+    setBagOpen(false);
+    setStep("checkout");
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+
+  function aoEscolherCampanha(campanha: CampanhaCardapio) {
+    if (campanha.cupom_codigo) {
+      setCupomInput(campanha.cupom_codigo);
+      setCupomAplicado(campanha.cupom_codigo.toUpperCase());
+    }
+    document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  /** Conteúdo da sacola: o mesmo no painel lateral (desktop) e no da barra de baixo (celular). */
+  function renderSacola() {
+    const entrega = checkoutForm.tipo === "delivery";
+    const notaModo = entrega
+      ? (tempoEntrega ? `Entrega estimada em ${tempoEntrega}.` : "Você informa o endereço ao finalizar.")
+      : (pizz.endereco ? `Retire em ${pizz.endereco}.` : "Retire no balcão da loja.");
+    return (
+      <>
+        <div className="fx-bag-head">
+          <h2 className="fx-bag-title fx-disp">Sua sacola</h2>
+          <span className="fx-bag-count">{cartCount === 0 ? "vazia" : `${cartCount} ${cartCount === 1 ? "item" : "itens"}`}</span>
+        </div>
+        <div className="fx-seg">
+          <button type="button" aria-pressed={entrega} onClick={() => setCheckoutForm((f) => ({ ...f, tipo: "delivery" }))}>Entrega</button>
+          <button type="button" aria-pressed={!entrega} onClick={() => setCheckoutForm((f) => ({ ...f, tipo: "retirada" }))}>Retirada</button>
+        </div>
+        <p className="fx-mode-note">{notaModo}</p>
+
+        {cartCount === 0 ? (
+          <div className="fx-bag-empty">
+            <p className="fx-bag-empty-title">Sua sacola está vazia</p>
+            <p className="fx-bag-empty-sub">Toque no + de qualquer item para começar.</p>
+          </div>
+        ) : (
+          <>
+            <div className="fx-lines">
+              {cart.map((item) => (
+                <div className="fx-line" key={item.id}>
+                  <Foto src={item.imgUrl} alt={item.nome} />
+                  <div className="fx-line-body">
+                    <span className="fx-line-name fx-clamp1">{item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}</span>
+                    {item.adicionais.length > 0 && <span className="fx-line-extra fx-clamp1">+ {item.adicionais.join(", ")}</span>}
+                    <span className="fx-line-total fx-num">{fmt(item.preco * item.quantidade)}</span>
+                  </div>
+                  <div className="fx-stepper">
+                    <button type="button" aria-label={`Tirar um ${item.nome}`} onClick={() => updateCartQty(item.id, -1)}><IcoMenos s={14} /></button>
+                    <span>{item.quantidade}</span>
+                    <button type="button" aria-label={`Mais um ${item.nome}`} disabled={!pizz.aberto} onClick={() => updateCartQty(item.id, 1)}><IcoMaisFino s={14} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {cupomAlvo && (cupomNaSacola ? (
+              <div className="fx-cup-ok"><IcoCheck />Cupom {cupomAlvo.codigo.toUpperCase()} aplicado: {rotuloDesconto(cupomAlvo)}</div>
+            ) : faltaParaCupom > 0.004 ? (
+              <div className="fx-cup-wait">
+                <span>Faltam {fmt(faltaParaCupom)} para liberar {rotuloDesconto(cupomAlvo)} com {cupomAlvo.codigo.toUpperCase()}</span>
+                <div className="fx-progress"><div style={{ width: `${progressoCupom}%` }} /></div>
+              </div>
+            ) : (
+              <div className="fx-cup-wait">
+                <span>Seu pedido já pode usar {rotuloDesconto(cupomAlvo)} com {cupomAlvo.codigo.toUpperCase()}</span>
+                <button type="button" className="fx-cup-apply" onClick={() => aplicarCupom(cupomAlvo.codigo)}>Aplicar cupom</button>
+              </div>
+            ))}
+
+            <div className="fx-totals fx-num">
+              <div className="fx-trow"><span>Subtotal</span><span>{fmt(cartTotal)}</span></div>
+              {descontoEstimado > 0 && cupomSelecionado && (
+                <div className="fx-trow is-disc"><span>Desconto {cupomSelecionado.codigo.toUpperCase()}</span><span>− {fmt(descontoEstimado)}</span></div>
+              )}
+              {entrega && taxaEntrega > 0 && (
+                <div className="fx-trow"><span>{pizz.taxas_bairro?.length ? "Entrega (estimada)" : "Taxa de entrega"}</span><span>{fmt(taxaEntrega)}</span></div>
+              )}
+              <div className="fx-trow is-total"><span>Total</span><span>{fmt(totalEstimado)}</span></div>
+            </div>
+          </>
+        )}
+
+        {!pizz.aberto && cartCount > 0 && whatsappOrderUrl ? (
+          <a className="fx-finish fx-pri" href={whatsappOrderUrl} target="_blank" rel="noopener noreferrer">
+            <IcoWhats s={18} />Enviar pelo WhatsApp
+          </a>
+        ) : (
+          <button type="button" className="fx-finish fx-pri" disabled={cartCount === 0 || !pizz.aberto} onClick={finalizarPedido}>
+            {pizz.aberto ? "Finalizar pedido" : "Loja fechada"}
+          </button>
+        )}
+      </>
+    );
+  }
 
 
   // Card de produto reutilizado pela grade plana e pelas seções por categoria.
@@ -1065,41 +1310,36 @@ export function CardapioPublico({ slug }: { slug: string }) {
     const mostrarPilula = qtd > 0 && !temVariacao && pizz.aberto;
 
     return (
-      <article key={p.id} className="cdp-card-r" onClick={() => openProduto(p)} role="button" tabIndex={0}
+      <article key={p.id} className="fx-card" onClick={() => openProduto(p)} role="button" tabIndex={0}
+        aria-label={`${p.nome}, ${temVariacao ? "a partir de " : ""}${fmt(preco)}`}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProduto(p); } }}>
-        <div className="cdp-card-body-r">
-          <h3 className="cdp-card-name-r">{p.nome}</h3>
-          {p.descricao && <p className="cdp-card-desc-r">{p.descricao}</p>}
-          <div className="cdp-card-priceline-r">
-            {temVariacao && <span className="cdp-card-from-r">a partir de</span>}
-            <span className="cdp-card-price-r">{fmt(preco)}</span>
+        <div className="fx-card-body">
+          <h3 className="fx-card-name">{p.nome}</h3>
+          {p.descricao && <p className="fx-card-desc fx-clamp2">{p.descricao}</p>}
+          <div className="fx-card-priceline">
+            {temVariacao && <span className="fx-card-from">a partir de</span>}
+            <span className="fx-card-price fx-num">{fmt(preco)}</span>
           </div>
         </div>
 
-        <div className="cdp-card-media-r">
-          {p.imagem_url ? (
-            <img src={p.imagem_url} alt={p.nome} className="cdp-card-img-r" loading="lazy" />
-          ) : (
-            <div className="cdp-card-ph-r" aria-hidden="true">{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</div>
-          )}
-
+        <div className="fx-card-media">
+          <Foto src={p.imagem_url} alt={p.nome} />
           {mostrarPilula ? (
-            <div className="cdp-card-qty-r" onClick={(e) => e.stopPropagation()}>
-              <button type="button" className="cdp-card-qty-btn-r" aria-label={`Tirar um ${p.nome}`}
+            <div className="fx-card-qty" onClick={(e) => e.stopPropagation()}>
+              <button type="button" aria-label={`Tirar um ${p.nome}`}
                 onClick={(e) => { e.stopPropagation(); tirarUmDoProduto(p); }}>
-                <IcoMenos />
+                <IcoMenos s={16} />
               </button>
-              <span className="cdp-card-qty-num-r">{qtd}</span>
-              <button type="button" className="cdp-card-qty-btn-r" aria-label={`Mais um ${p.nome}`}
-                onClick={(e) => handleQuickAdd(e, p)}>
-                <IcoMaisFino />
+              <span>{qtd}</span>
+              <button type="button" aria-label={`Mais um ${p.nome}`} onClick={(e) => handleQuickAdd(e, p)}>
+                <IcoMaisFino s={16} />
               </button>
             </div>
           ) : (
-            <button type="button" className="cdp-card-add-r" disabled={!pizz.aberto}
+            <button type="button" className="fx-card-add fx-pri" disabled={!pizz.aberto}
               aria-label={pizz.aberto ? `Adicionar ${p.nome}` : "Loja fechada"}
               onClick={(e) => handleQuickAdd(e, p)}>
-              {pizz.aberto ? <IcoMais /> : <IcoMenos />}
+              <IcoMais />
             </button>
           )}
         </div>
@@ -1108,7 +1348,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }
 
   return (
-    <div className={`cdp-root cdp-theme-${tema.modelo || "brasa"} cdp-radius-${tema.bordas || "suaves"} cdp-cards-${tema.estilo_cartoes || "elevado"} cdp-btn-${tema.estilo_botao || "gradiente"}`} style={themeStyle}>
+    <div className={`cdp-root cdp-theme-${tema.modelo || "brasa"} cdp-radius-${tema.bordas || "suaves"} cdp-cards-${tema.estilo_cartoes || "elevado"} cdp-btn-${tema.estilo_botao || "solido"}`} style={themeStyle}>
       <div className="cdp-wrapper">
 
         {/* ===== CONFIRMAÇÃO ===== */}
@@ -1157,7 +1397,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
           /* ===== CHECKOUT ===== */
           <>
             <div className="cdp-topbar">
-              <button className="cdp-topbar-back" onClick={() => { setStep("menu"); setSacolaOpen(true); }}>
+              <button className="cdp-topbar-back" onClick={() => { setStep("menu"); abrirSacola(); }}>
                 <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M19 12H5M5 12l7 7M5 12l7-7"/></svg>
               </button>
               <h2 className="cdp-topbar-title">Finalizar Pedido</h2>
@@ -1616,526 +1856,504 @@ export function CardapioPublico({ slug }: { slug: string }) {
           </>
 
         ) : (
-          /* ===== MENU PRINCIPAL ===== */
-          <>
-            {/* Banner hero da pizzaria */}
-            {topOfferVisible && tema.barra_cupom_ativa !== false && (
-              <div className="cdp-offerbar">
-                <div className="cdp-offerbar-content">
-                  {cuponsAtivos[0] ? (
-                    <>
-                      <span className="cdp-offerbar-message">
-                        {tema.barra_cupom_texto || `Oferta especial: ${cuponsAtivos[0].descricao || (cuponsAtivos[0].tipo === "percentual" ? `${cuponsAtivos[0].valor}% OFF` : `${fmt(cuponsAtivos[0].valor)} OFF`)}`}
-                      </span>
-                      <strong className="cdp-offerbar-code">com <b>{cuponsAtivos[0].codigo}</b></strong>
-                      <button
-                        className="cdp-offerbar-copy"
-                        type="button"
-                        onClick={async () => {
-                          const codigo = cuponsAtivos[0].codigo.toUpperCase();
-                          setCupomInput(codigo);
-                          setCupomAplicado(codigo);
-                          try { await navigator.clipboard.writeText(codigo); } catch { /* Mantém a aplicação do cupom mesmo sem acesso à área de transferência. */ }
-                          setTopOfferCopied(true);
-                          window.setTimeout(() => setTopOfferCopied(false), 1800);
-                        }}
-                      >
-                        {topOfferCopied ? "Copiado!" : "Copiar cupom"}
-                      </button>
-                    </>
-                  ) : (
-                    <span className="cdp-offerbar-message">Peça direto pelo cardápio e acompanhe tudo em tempo real</span>
-                  )}
-                </div>
-                <button className="cdp-offerbar-close" type="button" onClick={() => setTopOfferVisible(false)} aria-label="Fechar aviso">×</button>
+          /* ===== MENU PRINCIPAL (layout do design de referência) ===== */
+          <div className="fx" id="inicio">
+            {/* Barra de cupom: só existe quando há cupom ativo pra anunciar. */}
+            {topOfferVisible && tema.barra_cupom_ativa !== false && cupomBarra && (
+              <div className="fx-bar">
+                <span className="fx-bar-msg">{textoBarra} <span className="fx-bar-code">{cupomBarra.codigo.toUpperCase()}</span></span>
+                <button type="button" className="fx-bar-copy" onClick={() => copiarCupom(cupomBarra.codigo)}>
+                  {topOfferCopied ? "Copiado" : "Copiar cupom"}
+                </button>
+                <button type="button" className="fx-bar-close" aria-label="Fechar aviso" onClick={() => setTopOfferVisible(false)}>
+                  <IcoFechar />
+                </button>
               </div>
             )}
 
-            {/* Header fixo: marca, navegacao e acoes. O estado da loja fica na
-                segunda linha da marca porque os chips do hero saem de vista ao rolar. */}
-            <header className="cdp-header-r">
-              <div className="cdp-header-inner-r">
-                <button type="button" className="cdp-brand-r"
-                  onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                  aria-label={`${pizz.nome} — voltar ao início`}>
-                  <span className="cdp-brand-mark-r">
-                    {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
+            {/* Header fixo. O estado da loja fica na segunda linha da marca porque
+                os chips do hero saem de vista ao rolar. */}
+            <header className="fx-header">
+              <div className="fx-wrap fx-header-in">
+                <a href="#inicio" className="fx-brand" onClick={irPara("inicio")} aria-label={`${pizz.nome} — voltar ao início`}>
+                  <span className="fx-brand-mark">
+                    {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <IcoFatia />}
                   </span>
-                  <span className="cdp-brand-text-r">
-                    <span className="cdp-brand-name-r cdp-display">{pizz.nome}</span>
-                    <span className="cdp-brand-sub-r" style={{ color: pizz.aberto ? "var(--green)" : "var(--red)" }}>
+                  <span className="fx-brand-text">
+                    <span className="fx-brand-name fx-disp">{pizz.nome}</span>
+                    <span className={`fx-brand-sub ${pizz.aberto ? "is-open" : "is-closed"}`}>
                       {pizz.aberto ? "Aberto agora" : "Fechado agora"}
                     </span>
                   </span>
-                </button>
+                </a>
 
-                <nav className="cdp-nav-r" aria-label="Navegação do cardápio">
-                  <a href="#inicio" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Início</a>
-                  <a href="#cardapio" onClick={(e) => { e.preventDefault(); document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" }); }}>Cardápio</a>
-                  {campanhasAtivas.length > 0 && (
-                    <a href="#promocoes" onClick={(e) => { e.preventDefault(); document.getElementById("promocoes")?.scrollIntoView({ behavior: "smooth" }); }}>Promoções</a>
-                  )}
-                  {pizz.endereco_maps_url && (
-                    <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">Nossa localização</a>
-                  )}
-                  {(tema.faq || []).length > 0 && (
-                    <a href="#duvidas" onClick={(e) => { e.preventDefault(); document.getElementById("duvidas")?.scrollIntoView({ behavior: "smooth" }); }}>Dúvidas</a>
-                  )}
+                <nav className="fx-nav fx-only-desk" aria-label="Principal">
+                  <a href="#inicio" onClick={irPara("inicio")}>Início</a>
+                  <a href="#cardapio" onClick={irPara("cardapio")}>Cardápio</a>
+                  {temPromocoes && <a href="#promocoes" onClick={irPara("promocoes")}>Promoções</a>}
+                  {temLocal && <a href="#localizacao" onClick={irPara("localizacao")}>Nossa localização</a>}
+                  {temFaq && <a href="#duvidas" onClick={irPara("duvidas")}>Dúvidas</a>}
                 </nav>
 
-                <div className="cdp-header-actions-r">
+                <div className="fx-actions">
                   {tema.mostrar_acompanhamento !== false && (
-                    <button type="button" className="cdp-hbtn-r cdp-hbtn-track-r" onClick={abrirAcompanhamentoNaConta}>
-                      <IcoAlvo />
-                      <span className="cdp-hbtn-label-r">Acompanhar pedido</span>
+                    <button type="button" className="fx-hbtn fx-only-desk" onClick={abrirAcompanhamentoNaConta}>
+                      <IcoAlvo /><span className="fx-hbtn-label">Acompanhar pedido</span>
                     </button>
                   )}
-                  <button type="button" className="cdp-hbtn-r" onClick={() => setAccountOpen(true)}
+                  <button type="button" className="fx-hbtn fx-only-desk" onClick={() => setAccountOpen(true)}
                     aria-label={customer ? `Abrir conta de ${customer.nome}` : "Minha conta"}>
-                    <IcoUsuario />
-                    <span className="cdp-hbtn-label-r">{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
+                    <IcoUsuario /><span className="fx-hbtn-label">{customer ? customer.nome.split(" ")[0] : "Minha conta"}</span>
                   </button>
-                  <button type="button" className="cdp-hbag-r" onClick={() => setSacolaOpen(true)}>
-                    <IcoSacola s={18} />
-                    Sacola
-                    <span className="cdp-hbag-count-r">{cartCount}</span>
+                  <button type="button" className={`fx-hbag fx-pri fx-only-desk fx-bag-target ${cartPulse ? "is-pulse" : ""}`} onClick={abrirSacola}>
+                    <IcoSacola s={18} />Sacola<span className="fx-hbag-count">{cartCount}</span>
+                  </button>
+
+                  <button type="button" className="fx-ibtn fx-only-mob" onClick={() => setAccountOpen(true)}
+                    aria-label={customer ? `Abrir conta de ${customer.nome}` : "Minha conta"}>
+                    <IcoUsuario s={22} />
+                  </button>
+                  <button type="button" className={`fx-ibtn fx-pri fx-only-mob fx-bag-target ${cartPulse ? "is-pulse" : ""}`}
+                    onClick={abrirSacola} aria-label={`Sacola, ${cartCount} ${cartCount === 1 ? "item" : "itens"}`}>
+                    <IcoSacola s={20} />
+                    <span className="fx-ibag-badge">{cartCount}</span>
+                  </button>
+                  <button type="button" className="fx-ibtn fx-only-mob" aria-label="Abrir menu" aria-expanded={menuOpen}
+                    onClick={() => setMenuOpen((v) => !v)}>
+                    {menuOpen ? <IcoFechar s={22} /> : <IcoMenu />}
                   </button>
                 </div>
               </div>
+
+              {menuOpen && (
+                <nav className="fx-mnav fx-only-mob" aria-label="Principal">
+                  <a href="#inicio" onClick={irPara("inicio")}>Início</a>
+                  <a href="#cardapio" onClick={irPara("cardapio")}>Cardápio</a>
+                  {temPromocoes && <a href="#promocoes" onClick={irPara("promocoes")}>Promoções</a>}
+                  {temLocal && <a href="#localizacao" onClick={irPara("localizacao")}>Nossa localização</a>}
+                  {temFaq && <a href="#duvidas" onClick={irPara("duvidas")}>Dúvidas</a>}
+                  <div className="fx-mnav-actions">
+                    {tema.mostrar_acompanhamento !== false && (
+                      <button type="button" onClick={() => { setMenuOpen(false); abrirAcompanhamentoNaConta(); }}><IcoAlvo s={16} />Acompanhar pedido</button>
+                    )}
+                    <button type="button" onClick={() => { setMenuOpen(false); setAccountOpen(true); }}><IcoUsuario s={16} />Minha conta</button>
+                  </div>
+                </nav>
+              )}
             </header>
 
-            {!pizz.aberto && (
-              <div className="cdp-closed-notice" role="status">
-                <span>🔒</span>
-                <div>
-                  <strong>Pedidos pausados no momento</strong>
-                  <small>Você pode consultar o cardápio, mas novos pedidos estão temporariamente bloqueados.</small>
-                </div>
-              </div>
-            )}
-
-            {/* Hero: chips de estado, titulo de display, CTAs e foto com card de destaque. */}
-            <header className="cdp-hero-r">
-              <div className="cdp-hero-col-r">
-                <div className="cdp-chips-r">
-                  <span className={`cdp-chip-r ${pizz.aberto ? "cdp-chip-open-r" : "cdp-chip-closed-r"}`}>
-                    <span className="cdp-chip-dot-r" />
-                    {pizz.aberto ? "Aberto agora" : "Fechado"}
+            {/* Hero: chips de estado, título, CTAs e foto com o destaque da casa. */}
+            <section className="fx-wrap fx-hero" aria-label="Apresentação">
+              <div className="fx-hero-col">
+                <div className="fx-chips">
+                  <span className={`fx-chip ${pizz.aberto ? "is-open" : "is-closed"}`}>
+                    <span className="fx-dot" />{pizz.aberto ? "Aberto agora" : "Fechado agora"}
                   </span>
-                  {!pizz.aberto && proximaAberturaTexto && (
-                    <span className="cdp-chip-r">{proximaAberturaTexto}</span>
+                  {!pizz.aberto && proximaAberturaTexto && <span className="fx-chip">{proximaAberturaTexto}</span>}
+                  {tempoEntrega && (
+                    <span className="fx-chip"><IcoRelogio /><span className="fx-only-desk">Entrega em {tempoEntrega}</span><span className="fx-only-mob">{tempoEntrega}</span></span>
                   )}
-                  {pizz.tempo_entrega_min && pizz.tempo_entrega_max && (
-                    <span className="cdp-chip-r">
-                      <IcoRelogio />
-                      Entrega em {pizz.tempo_entrega_min}–{pizz.tempo_entrega_max} min
-                    </span>
-                  )}
-                  <span className="cdp-chip-r"><IcoSacola />Retirada disponível</span>
+                  <span className="fx-chip"><span className="fx-only-desk"><IcoSacola /></span>Retirada disponível</span>
                 </div>
 
-                {tema.chamada && <p className="cdp-hero-eyebrow-r">{tema.chamada}</p>}
+                {tema.chamada && <p className="fx-eyebrow">{tema.chamada}</p>}
 
-                <h1 className="cdp-hero-title-r cdp-display">
+                <h1 className="fx-hero-title fx-disp">
                   {linhasTitulo.map((linha, i) => (
-                    <React.Fragment key={i}>
-                      {i > 0 && <br />}
-                      {linha}
-                    </React.Fragment>
+                    <React.Fragment key={i}>{i > 0 && " "}{linha}</React.Fragment>
                   ))}
                 </h1>
 
-                <p className="cdp-hero-desc-r">{tema.descricao}</p>
+                <p className="fx-hero-desc">{tema.descricao}</p>
 
-                <div className="cdp-hero-ctas-r">
-                  <button
-                    type="button"
-                    className="cdp-cta-primary-r"
-                    onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}
-                  >
-                    {tema.cta_primario}
-                  </button>
-                  {pizz.endereco_maps_url && (
-                    <a className="cdp-cta-ghost-r" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer">
-                      <IcoPin />
-                      {tema.cta_secundario}
+                <div className="fx-ctas">
+                  <a href="#cardapio" className="fx-cta fx-pri" onClick={irPara("cardapio")}>{tema.cta_primario}</a>
+                  {temLocal && (
+                    <a href="#localizacao" className="fx-cta fx-ghost" onClick={irPara("localizacao")}>
+                      <span className="fx-only-desk"><IcoPin s={18} /></span>{tema.cta_secundario}
                     </a>
                   )}
                 </div>
 
-                {pizz.endereco && (
-                  <p className="cdp-hero-addr-r"><IcoPin />{pizz.endereco}</p>
-                )}
+                {pizz.endereco && <p className="fx-addr"><IcoPin />{pizz.endereco}</p>}
               </div>
 
-              <div className="cdp-hero-media-r">
-                {heroImagem ? (
-                  <img src={heroImagem} alt="" fetchPriority="high" />
-                ) : (
-                  <div className="cdp-hero-media-ph-r" aria-hidden="true">🍕</div>
-                )}
+              <div className="fx-hero-media">
+                {heroImagem ? <img src={heroImagem} alt="" fetchPriority="high" /> : <Foto alt={pizz.nome} />}
                 {produtoDestaque && (
-                  <div className="cdp-hero-card-r">
-                    <div className="cdp-hero-card-body-r">
-                      <span className="cdp-hero-card-label-r">Destaque da casa</span>
-                      <span className="cdp-hero-card-name-r">{produtoDestaque.nome}</span>
-                      {produtoDestaque.descricao && (
-                        <span className="cdp-hero-card-desc-r">{produtoDestaque.descricao}</span>
-                      )}
+                  <div className="fx-hero-card">
+                    <div className="fx-hero-card-body">
+                      <span className="fx-hero-card-label">Destaque da casa</span>
+                      <span className="fx-hero-card-name fx-clamp1">{produtoDestaque.nome}</span>
+                      {produtoDestaque.descricao && <span className="fx-hero-card-desc fx-clamp1">{produtoDestaque.descricao}</span>}
+                      <span className="fx-hero-card-price-m fx-num">{fmt(precoDe(produtoDestaque))}</span>
                     </div>
-                    <span className="cdp-hero-card-price-r">{fmt(precoDe(produtoDestaque))}</span>
-                    <button
-                      type="button"
-                      className="cdp-hero-card-add-r"
-                      onClick={() => openProduto(produtoDestaque)}
-                      aria-label={`Adicionar ${produtoDestaque.nome} à sacola`}
-                    >
-                      <IcoMais />
-                      Adicionar
+                    <span className="fx-hero-card-price fx-num">{fmt(precoDe(produtoDestaque))}</span>
+                    <button type="button" className="fx-hero-add fx-pri" disabled={!pizz.aberto}
+                      onClick={(e) => handleQuickAdd(e, produtoDestaque)}
+                      aria-label={`Adicionar ${produtoDestaque.nome} à sacola`}>
+                      <IcoMais />Adicionar
                     </button>
                   </div>
                 )}
               </div>
-            </header>
+            </section>
 
             {!pizz.aberto && (
-              <div className={`cdp-closed-warning-banner ${cart.length > 0 ? "has-cart" : ""}`}>
-                <div className="cdp-closed-warning-left">
-                  <span className="cdp-closed-warning-icon">{cart.length > 0 ? "⚠️" : "🌙"}</span>
-                  <div className="cdp-closed-warning-text">
-                    <strong>
-                      {cart.length > 0
-                        ? "A loja fechou para novos pedidos pelo cardápio"
-                        : "Loja fechada no momento"}
-                    </strong>
+              <div className="fx-wrap">
+                <div className="fx-closed" role="status">
+                  <div className="fx-closed-text">
+                    <strong>{cart.length > 0 ? "A loja fechou para novos pedidos pelo cardápio" : "Loja fechada no momento"}</strong>
                     <span>
                       {cart.length > 0
-                        ? `Você tem ${cartCount} ${cartCount === 1 ? "item" : "itens"} em andamento na sacola. Finalize seu pedido diretamente pelo WhatsApp!`
-                        : (proximaAberturaTexto || "Confira nosso cardápio e faça seu pedido quando a loja abrir.")}
+                        ? `Você tem ${cartCount} ${cartCount === 1 ? "item" : "itens"} na sacola. Finalize o pedido pelo WhatsApp.`
+                        : (proximaAberturaTexto || "Você pode consultar o cardápio e pedir quando a loja abrir.")}
                     </span>
                   </div>
+                  {(cart.length > 0 ? whatsappOrderUrl : waUrl) && (
+                    <a className="fx-wa-btn fx-pri" href={cart.length > 0 ? whatsappOrderUrl : waUrl} target="_blank" rel="noopener noreferrer">
+                      <IcoWhats s={18} />{cart.length > 0 ? "Enviar pedido" : "Falar no WhatsApp"}
+                    </a>
+                  )}
                 </div>
-                {cart.length > 0 ? (
-                  <a
-                    href={whatsappOrderUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="cdp-btn-wpp-direct"
-                  >
-                    📱 Enviar Pedido
-                  </a>
-                ) : waUrl ? (
-                  <a
-                    href={waUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="cdp-btn-wpp-direct"
-                  >
-                    Falar no WhatsApp
-                  </a>
-                ) : null}
               </div>
             )}
 
-            {/* Diferenciais: 4 blocos, todos editaveis no painel. */}
-            <div className="cdp-wrap-r">
-              <ul className="cdp-trust-r">
-                {(tema.diferenciais || []).slice(0, 4).map((d, i) => (
-                  <li className="cdp-trust-item-r" key={i}>
-                    <span className="cdp-trust-icon-r"><IconeDiferencial nome={d.icone} /></span>
-                    <span className="cdp-trust-text-r">
-                      <span className="cdp-trust-title-r">{d.titulo}</span>
-                      {d.descricao && <span className="cdp-trust-desc-r">{d.descricao}</span>}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Diferenciais: 4 blocos, editáveis no painel. */}
+            {diferenciais.length > 0 && (
+              <div className="fx-wrap fx-trust-wrap">
+                <ul className="fx-trust">
+                  {diferenciais.map((d, i) => (
+                    <li key={i}>
+                      <span className="fx-trust-ico"><IconeDiferencial nome={d.icone} /></span>
+                      <span className="fx-trust-text">
+                        <span className="fx-trust-title">{d.titulo}</span>
+                        {d.descricao && <span className="fx-trust-desc">{d.descricao}</span>}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-            {/* ===== LAYOUT BODY (sidebar + main) ===== */}
-            <div className="cdp-menu-body" id="cardapio">
-
-              {/* Sidebar esquerda (desktop) / inline (mobile) */}
-              <aside className="cdp-sidebar">
-                {/* Busca */}
-                <div className="cdp-search-wrap cdp-search-sidebar">
-                  <span className="cdp-search-icon">
-                    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                  </span>
-                  <input
-                    type="text"
-                    placeholder="Buscar no cardápio..."
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="cdp-search"
-                  />
+            <section id="cardapio" className="fx-wrap fx-menu" aria-label="Cardápio">
+              <div className="fx-toolbar">
+                <div className="fx-search">
+                  <IcoBusca />
+                  <label htmlFor="fx-busca" className="fx-sr">Buscar no cardápio</label>
+                  <input id="fx-busca" type="search" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Buscar no cardápio" autoComplete="off" />
                   {searchQuery && (
-                    <button className="cdp-search-clear" onClick={() => setSearchQuery("")}>✕</button>
+                    <button type="button" className="fx-search-clear" aria-label="Limpar busca" onClick={() => setSearchQuery("")}><IcoFechar s={16} /></button>
                   )}
                 </div>
-
-                {/* Categorias */}
-                <nav className="cdp-cats">
-                  {categorias.map(cat => (
-                    <button
-                      key={cat}
-                      className={`cdp-cat-btn ${selectedCat === cat ? "active" : ""}`}
-                      onClick={() => setSelectedCat(cat)}
-                      style={selectedCat === cat ? { "--cat-color": CAT_COLOR[cat] || "#f97316" } as any : {}}
-                    >
-                      <span className="cdp-cat-emoji-wrap" style={{ background: selectedCat === cat ? (CAT_COLOR[cat] || "#f97316") + "33" : "transparent" }}>
-                        {CAT_EMOJI[cat] || "🍽️"}
-                      </span>
-                      <span>{cat === "todos" ? "Todos" : cat.charAt(0).toUpperCase() + cat.slice(1)}</span>
+                <div className="fx-cats fx-hscroll">
+                  {categorias.map((cat) => (
+                    <button key={cat} type="button" className="fx-cat" aria-pressed={selectedCat === cat} onClick={() => setSelectedCat(cat)}>
+                      {cat === "todos" ? "Todos" : tituloCategoria(cat)}
+                      <span className="fx-cat-n">{contagemCategoria(cat)}</span>
                     </button>
                   ))}
-                </nav>
+                </div>
+              </div>
 
-                {/* Botão de carrinho (desktop sidebar) */}
-                {cartCount > 0 && (
-                  <div className="cdp-sidebar-cart" onClick={() => setSacolaOpen(true)}>
-                    <div className="cdp-sidebar-cart-header">
-                      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                      <span>Seu pedido</span>
-                      <span className="cdp-sidebar-cart-count">{cartCount}</span>
-                    </div>
-                    {cart.slice(0, 3).map(item => (
-                      <div key={item.id} className="cdp-sidebar-cart-item">
-                        <span className="cdp-sidebar-cart-qty">{item.quantidade}×</span>
-                        <span className="cdp-sidebar-cart-name">{item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}</span>
-                        <span className="cdp-sidebar-cart-price">{fmt(item.preco * item.quantidade)}</span>
+              <div className="fx-menu-grid">
+                <div className="fx-menu-main">
+                  {mostrarDestaques && (
+                    <div className="fx-sec">
+                      <div className="fx-sec-head">
+                        <h2 className="fx-sec-title fx-disp">{tema.destaques_titulo}</h2>
+                        <span className="fx-sec-count">Os favoritos da casa</span>
                       </div>
-                    ))}
-                    {cart.length > 3 && (
-                      <p className="cdp-sidebar-cart-more">+{cart.length - 3} mais...</p>
-                    )}
-                    <div className="cdp-sidebar-cart-total">
-                      <span>Total</span>
-                      <span>{fmt(cartTotal)}</span>
-                    </div>
-                    <div className="cdp-sidebar-cart-btn">Ver pedido completo →</div>
-                  </div>
-                )}
-              </aside>
-
-              {/* Área principal de produtos */}
-              <main className="cdp-main-area">
-                {/* Faixa de destaques (só em "Todos", sem busca) */}
-                {selectedCat === "todos" && !searchQuery.trim() && data.produtos.length > 3 && (
-                  <div>
-                    <div className="cdp-cathead-r">
-                      <h2 className="cdp-cathead-title-r cdp-display">{tema.destaques_titulo}</h2>
-                      <span className="cdp-cathead-count-r">Os favoritos da casa</span>
-                    </div>
-                    <div className="cdp-feat-track-r">
-                      {data.produtos.slice(0, 8).map(p => (
-                        <article key={p.id} className="cdp-feat-card-r" role="button" tabIndex={0}
-                          onClick={() => openProduto(p)}
-                          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProduto(p); } }}>
-                          {p.imagem_url ? (
-                            <img src={p.imagem_url} alt={p.nome} className="cdp-feat-img-r" loading="lazy" />
-                          ) : (
-                            <div className="cdp-feat-ph-r" aria-hidden="true">{CAT_EMOJI[p.categoria || "outro"] || "🍽️"}</div>
-                          )}
-                          <div className="cdp-feat-foot-r">
-                            <div className="cdp-feat-info-r">
-                              <h3 className="cdp-feat-name-r">{p.nome}</h3>
-                              <span className="cdp-feat-price-r">{fmt(precoDe(p))}</span>
+                      <div className="fx-feat fx-hscroll">
+                        {destaques.map((p) => (
+                          <article key={p.id} className="fx-feat-card" role="button" tabIndex={0}
+                            aria-label={`${p.nome}, ${fmt(precoDe(p))}`}
+                            onClick={() => openProduto(p)}
+                            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openProduto(p); } }}>
+                            <Foto src={p.imagem_url} alt={p.nome} />
+                            <div className="fx-feat-foot">
+                              <div className="fx-feat-info">
+                                <h3 className="fx-feat-name fx-clamp1">{p.nome}</h3>
+                                <span className="fx-feat-price fx-num">{fmt(precoDe(p))}</span>
+                              </div>
+                              <button type="button" className="fx-round fx-pri" disabled={!pizz.aberto}
+                                aria-label={pizz.aberto ? `Adicionar ${p.nome}` : "Loja fechada"}
+                                onClick={(e) => handleQuickAdd(e, p)}>
+                                <IcoMais />
+                              </button>
                             </div>
-                            <button type="button" className="cdp-feat-add-r" disabled={!pizz.aberto}
-                              aria-label={pizz.aberto ? `Adicionar ${p.nome}` : "Loja fechada"}
-                              onClick={(e) => handleQuickAdd(e, p)}>
-                              {pizz.aberto ? <IcoMais /> : <IcoMenos />}
+                          </article>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {secoes.length === 0 ? (
+                    <div className="fx-empty">
+                      <p className="fx-empty-title">{busca ? `Nada encontrado para “${searchQuery.trim()}”` : "Nenhum produto nesta categoria"}</p>
+                      <p className="fx-empty-sub">Confira a grafia ou procure em outra categoria.</p>
+                      {busca && <button type="button" className="fx-ghost" onClick={() => setSearchQuery("")}>Limpar busca</button>}
+                    </div>
+                  ) : secoes.map((s) => (
+                    <div key={s.id} id={`cat-${s.id}`} className="fx-sec">
+                      <div className="fx-sec-head">
+                        <h2 className="fx-sec-title fx-disp">{s.titulo}</h2>
+                        <span className="fx-sec-count">{s.itens.length} {s.itens.length === 1 ? "item" : "itens"}</span>
+                      </div>
+                      <div className="fx-items">{s.itens.map(renderProduct)}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <aside id="sacola" className="fx-aside fx-only-desk fx-bag-anchor" aria-label="Sua sacola">
+                  <div className="fx-bag">{renderSacola()}</div>
+                  <div className="fx-info">
+                    <div className="fx-info-row">
+                      <span className={`fx-dot ${pizz.aberto ? "" : "is-closed"}`} />
+                      <span className={pizz.aberto ? "fx-info-open" : "fx-info-closed"}>{pizz.aberto ? "Aberto agora" : "Fechado agora"}</span>
+                      {tempoEntrega && <span>Entrega em {tempoEntrega}</span>}
+                    </div>
+                    {pizz.endereco && <div className="fx-info-row is-top"><IcoPin /><span>{enderecoLinha1 || pizz.endereco}</span></div>}
+                    {waUrl && <a href={waUrl} target="_blank" rel="noopener noreferrer"><IcoWhats />Pedir pelo WhatsApp</a>}
+                  </div>
+                </aside>
+              </div>
+
+              {/* Celular: barra fixa embaixo que abre a sacola. */}
+              {cartCount > 0 && (
+                <div className="fx-mbag fx-only-mob fx-bag-anchor">
+                  {bagOpen && <div className="fx-bag fx-mbag-panel">{renderSacola()}</div>}
+                  <button type="button" className="fx-mbag-bar fx-pri" aria-expanded={bagOpen} onClick={() => setBagOpen((v) => !v)}>
+                    <span className="fx-mbag-count">{cartCount}</span>
+                    <span className="fx-mbag-cta">{bagOpen ? "Fechar sacola" : "Ver sacola"}</span>
+                    <span className="fx-num">{fmt(totalEstimado)}</span>
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {temPromocoes && (
+              <section id="promocoes" className="fx-promo" aria-label="Promoções">
+                <div className="fx-wrap fx-promo-in">
+                  <div className="fx-promo-head">
+                    <h2 className="fx-promo-title fx-disp">{tema.promocoes_titulo}</h2>
+                    {tema.promocoes_subtitulo && <p className="fx-promo-sub">{tema.promocoes_subtitulo}</p>}
+                  </div>
+                  <div className={`fx-promo-grid ${campanhaPrincipal && cupomBarra ? "" : "is-single"}`}>
+                    {campanhaPrincipal && (
+                      <article className={`fx-camp ${fotosCampanha.length ? "" : "is-plain"}`}>
+                        <div className="fx-camp-body">
+                          <span className="fx-camp-tag">{campanhaPrincipal.etiqueta || "Oferta da semana"}</span>
+                          <h3 className="fx-camp-title fx-disp">{campanhaPrincipal.titulo}</h3>
+                          {campanhaPrincipal.subtitulo && <p className="fx-camp-text">{campanhaPrincipal.subtitulo}</p>}
+                          <button type="button" className="fx-camp-cta" onClick={() => aoEscolherCampanha(campanhaPrincipal)}>
+                            {campanhaPrincipal.cta_label || "Escolher meu favorito"}
+                          </button>
+                        </div>
+                        {fotosCampanha.length > 0 && (
+                          <div className="fx-collage" aria-hidden="true">
+                            {fotosCampanha.map((f, i) => <React.Fragment key={i}><Foto src={f} alt="" className={`c${i}`} /></React.Fragment>)}
+                          </div>
+                        )}
+                      </article>
+                    )}
+                    {cupomBarra && (
+                      <article className="fx-coupon">
+                        <div className="fx-coupon-top">
+                          <p className="fx-coupon-kicker">{cupomBarra.descricao || "Cupom de desconto"}</p>
+                          <p className="fx-coupon-big fx-disp">{rotuloDesconto(cupomBarra)}</p>
+                          <p className="fx-coupon-min">
+                            {minimoDoCupom(cupomBarra) > 0 ? `em pedidos acima de ${fmt(minimoDoCupom(cupomBarra))}` : "em qualquer pedido"}
+                          </p>
+                        </div>
+                        <div className="fx-coupon-foot">
+                          <span className="fx-coupon-notch l" />
+                          <span className="fx-coupon-notch r" />
+                          <span className="fx-coupon-code fx-disp">{cupomBarra.codigo.toUpperCase()}</span>
+                          <button type="button" className="fx-coupon-copy" onClick={() => copiarCupom(cupomBarra.codigo)}>
+                            <IcoCopiar />{topOfferCopied ? "Copiado" : "Copiar cupom"}
+                          </button>
+                        </div>
+                      </article>
+                    )}
+                  </div>
+                  {campanhasAtivas.length > 1 && (
+                    <div className="fx-camp-more">
+                      {campanhasAtivas.slice(1).map((c) => (
+                        <article key={c.id} className="fx-camp is-plain">
+                          <div className="fx-camp-body">
+                            {c.etiqueta && <span className="fx-camp-tag">{c.etiqueta}</span>}
+                            <h3 className="fx-camp-title fx-disp">{c.titulo}</h3>
+                            {c.subtitulo && <p className="fx-camp-text">{c.subtitulo}</p>}
+                            <button type="button" className="fx-camp-cta" onClick={() => aoEscolherCampanha(c)}>
+                              {c.cta_label || "Escolher agora"}
                             </button>
                           </div>
                         </article>
                       ))}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              </section>
+            )}
 
-                {produtosFiltrados.length === 0 ? (
-                  <div className="cdp-empty">
-                    <span>🔍</span>
-                    <p>Nenhum produto encontrado</p>
-                  </div>
-                ) : selectedCat === "todos" && !searchQuery.trim() ? (
-                  /* Menu completo, organizado em seções por categoria */
-                  <div className="cdp-menu-sections">
-                    {categorias.filter(c => c !== "todos").map(cat => {
-                      const itens = data.produtos.filter(p => (p.categoria || "outro") === cat);
-                      if (itens.length === 0) return null;
-                      return (
-                        <section key={cat} id={`cat-${cat}`} className="cdp-cat-section">
-                          <div className="cdp-cathead-r">
-                            <h2 className="cdp-cathead-title-r cdp-display">
-                              {cat === "outro" ? "Outros" : cat.charAt(0).toUpperCase() + cat.slice(1)}
-                            </h2>
-                            <span className="cdp-cathead-count-r">
-                              {itens.length} {itens.length === 1 ? "item" : "itens"}
-                            </span>
-                          </div>
-                          <div className="cdp-grid-r">{itens.map(renderProduct)}</div>
-                        </section>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="cdp-grid-r">{produtosFiltrados.map(renderProduct)}</div>
-                )}
-              </main>
-            </div>{/* fim cdp-menu-body */}
-
-            {campanhasAtivas.length > 0 && (
-              <section className="cdp-campaigns" id="promocoes">
-                <header><p>OFERTAS DA CASA</p><h2>{tema.promocoes_titulo}</h2><span>{tema.promocoes_subtitulo}</span></header>
-                <div className="cdp-campaign-grid">
-                  {campanhasAtivas.map((campanha, index) => (
-                    <article key={campanha.id} className={index === 0 ? "featured" : ""}>
-                      {campanha.imagem_url && <img src={campanha.imagem_url} alt="" loading="lazy" />}
-                      <div className="cdp-campaign-scrim" />
-                      <div className="cdp-campaign-content">
-                        <small>{campanha.etiqueta || "OFERTA"}</small>
-                        <h3>{campanha.titulo}</h3>
-                        {campanha.subtitulo && <p>{campanha.subtitulo}</p>}
-                        <button onClick={() => {
-                          if (campanha.cupom_codigo) {
-                            setCupomInput(campanha.cupom_codigo);
-                            setCupomAplicado(campanha.cupom_codigo.toUpperCase());
-                          }
-                          document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" });
-                        }}>{campanha.cta_label || "Escolher agora"} <span>→</span></button>
-                      </div>
-                    </article>
+            {(tema.passos || []).length > 0 && (
+              <section className="fx-wrap fx-steps" aria-label="Como pedir">
+                <div className="fx-steps-head">
+                  <h2 className="fx-h2 fx-disp">{tema.passos_titulo}</h2>
+                  <p>Simples como deve ser.</p>
+                </div>
+                <ol>
+                  {(tema.passos || []).map((passo, i) => (
+                    <li key={i}>
+                      <span className="fx-step-n fx-disp">{i + 1}</span>
+                      <span className="fx-step-body">
+                        <h3 className="fx-step-t">{passo.titulo}</h3>
+                        {passo.descricao && <p className="fx-step-d">{passo.descricao}</p>}
+                      </span>
+                    </li>
                   ))}
-                </div>
+                </ol>
               </section>
             )}
 
-            {campanhasAtivas.length === 0 && (
-              <section className="cdp-promo-band">
-                <div>
-                  <p>PEÇA DO SEU JEITO</p>
-                  <h2>SABOR DE VERDADE.<br/><em>SEM COMPLICAÇÃO.</em></h2>
-                  <span>Monte seu pedido, escolha entrega ou retirada e acompanhe tudo pelo cardápio.</span>
-                  <button className="cdp-hero-primary" onClick={() => document.getElementById("cardapio")?.scrollIntoView({ behavior: "smooth" })}>Escolher agora →</button>
-                </div>
-                <strong><small>PEDIDO</small><br/>DIRETO</strong>
-              </section>
-            )}
-
-            <section className="cdp-order-steps" id="como-pedir">
-              <header><p>SIMPLES COMO DEVE SER</p><h2>{tema.passos_titulo}</h2></header>
-              <div>
-                {(tema.passos || []).map((passo, i) => (
-                  <article key={i}>
-                    <small>{String(i + 1).padStart(2, "0")}</small>
-                    <h3>{passo.titulo}</h3>
-                    {passo.descricao && <p>{passo.descricao}</p>}
-                  </article>
-                ))}
-              </div>
-            </section>
-
-
-            {pizz.endereco_maps_url && (
-              <section className="cdp-location-section" id="localizacao">
-                <div className="cdp-location-copy">
-                  <p>VENHA NOS VISITAR</p>
-                  <h2>NOSSA<br/><em>LOCALIZAÇÃO</em></h2>
-                  <span>Abra a rota no Google Maps ou no aplicativo de navegação disponível no seu aparelho.</span>
-                  <div className="cdp-location-address">
-                    <svg width="21" height="21" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg>
-                    <div><small>ENDEREÇO</small><strong>{pizz.endereco || "Veja o endereço completo no mapa"}</strong></div>
+            {temLocal && (
+              <section id="localizacao" className="fx-wrap fx-loc-wrap" aria-label={tema.localizacao_titulo}>
+                <div className="fx-loc">
+                  <div className="fx-loc-copy">
+                    <h2 className="fx-loc-title fx-disp">{tema.localizacao_titulo}</h2>
+                    <p className="fx-loc-text">Abra a rota no Google Maps ou no aplicativo de navegação do seu celular.</p>
+                    {pizz.endereco && (
+                      <address className="fx-address">
+                        <span className="fx-address-ico"><IcoPin s={20} /></span>
+                        <span className="fx-address-text">
+                          <strong>{enderecoLinha1}</strong>
+                          {enderecoLinha2 && <span>{enderecoLinha2}</span>}
+                        </span>
+                      </address>
+                    )}
+                    <div className="fx-loc-btns">
+                      {rotaUrl && (
+                        <a className="fx-loc-btn fx-pri" href={rotaUrl} target="_blank" rel="noopener noreferrer"><IcoRota />Abrir rota</a>
+                      )}
+                      {mapaUrl && (
+                        <a className="fx-loc-btn fx-ghost" href={mapaUrl} target="_blank" rel="noopener noreferrer">Ver no mapa</a>
+                      )}
+                    </div>
                   </div>
-                  <a href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer" className="cdp-location-cta">
-                    <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 18 3 21l3-6 8-8a2.8 2.8 0 0 1 4 4l-9 7Z"/><path d="m14 7 4 4"/></svg>
-                    Abrir rota <span>→</span>
-                  </a>
-                </div>
-                <div className="cdp-location-visual">
-                  <iframe
-                    className="cdp-map-embed"
-                    src={embedMapUrl}
-                    title={`Mapa de ${pizz.nome}`}
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                  <div className="cdp-map-place-card">
-                    <span><svg width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></svg></span>
-                    <div><small>LOCAL NO MAPA</small><b>{pizz.nome}</b></div>
+                  <div className="fx-map">
+                    <svg viewBox="0 0 640 480" preserveAspectRatio="xMidYMid slice" role="img"
+                      aria-label={`Mapa ilustrativo com a posição de ${pizz.nome}`}>
+                      <rect className="m-base" width="640" height="480" />
+                      <rect className="m-park" x="392" y="96" width="92" height="118" rx="8" />
+                      <g className="m-road" strokeWidth="14" strokeLinecap="round">
+                        <path d="M-10 64 L650 52" /><path d="M-10 160 L650 150" /><path d="M-10 346 L650 356" />
+                        <path d="M-10 438 L650 446" /><path d="M72 -10 L64 490" /><path d="M176 -10 L170 490" />
+                        <path d="M280 -10 L284 490" /><path d="M516 -10 L524 490" /><path d="M600 -10 L610 490" />
+                      </g>
+                      <path className="m-main" d="M-10 254 L650 252" strokeWidth="20" strokeLinecap="round" />
+                      <path className="m-ave" d="M392 -10 L372 490" strokeWidth="26" strokeLinecap="round" />
+                      {ruaNoMapa && <text className="m-label" x="96" y="243" fontSize="13" fontWeight="700">{ruaNoMapa}</text>}
+                      <circle className="m-halo" cx="316" cy="253" r="54" opacity="0.12" />
+                      <circle className="m-halo" cx="316" cy="253" r="28" opacity="0.22" />
+                      <path className="m-pin" d="M316 262 C 302 246, 294 234, 294 222 a 22 22 0 0 1 44 0 C 338 234, 330 246, 316 262 Z" strokeWidth="3" />
+                      <circle className="m-pin-dot" cx="316" cy="222" r="7" />
+                      <g className="fx-only-desk-svg">
+                        <rect className="m-tag" x="344" y="268" width={Math.min(280, 36 + nomeNoMapa.length * 8.6)} height="46" rx="14" />
+                        <text className="m-tag-text" x="362" y="297" fontSize="15" fontWeight="800">{nomeNoMapa}</text>
+                      </g>
+                    </svg>
                   </div>
-                  <a className="cdp-map-open" href={pizz.endereco_maps_url} target="_blank" rel="noopener noreferrer" aria-label={`Abrir ${pizz.nome} no mapa`}>
-                    <span>Abrir no mapa</span><svg width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></svg>
-                  </a>
-                  <div className="cdp-map-grid" />
-                  <div className="cdp-map-route" />
-                  <div className="cdp-map-pin"><span>●</span><b>{pizz.nome}</b></div>
-                  <small>TOQUE EM “ABRIR ROTA” PARA NAVEGAR</small>
                 </div>
               </section>
             )}
-            {(tema.faq || []).length > 0 && (
-              <section className="cdp-sec-r" id="duvidas" aria-label="Dúvidas frequentes">
-                <div className="cdp-sec-head-r">
-                  <h2 className="cdp-sec-title-r cdp-display">{tema.faq_titulo}</h2>
+
+            {temFaq && (
+              <section id="duvidas" className="fx-wrap fx-faq" aria-label={tema.faq_titulo}>
+                <div className="fx-faq-head">
+                  <h2 className="fx-faq-title fx-disp">{tema.faq_titulo}</h2>
+                  {waUrl && <p className="fx-faq-text">Não encontrou o que procurava? Fale com a gente pelo WhatsApp.</p>}
+                  {waUrl && (
+                    <a className="fx-faq-wa fx-ghost fx-only-desk" href={waUrl} target="_blank" rel="noopener noreferrer">
+                      <IcoWhats s={18} />{telefoneExibido || "WhatsApp"}
+                    </a>
+                  )}
                 </div>
-                <div className="cdp-faq-r">
+                <div className="fx-faq-list">
                   {(tema.faq || []).map((item, i) => {
                     const aberta = faqAberta === i;
                     return (
-                      <div className="cdp-faq-item-r" key={i}>
-                        <h3 style={{ margin: 0 }}>
-                          <button
-                            type="button"
-                            className="cdp-faq-q-r"
-                            aria-expanded={aberta}
-                            onClick={() => setFaqAberta(aberta ? null : i)}
-                          >
+                      <div className="fx-faq-item" key={i}>
+                        <h3>
+                          <button type="button" className="fx-faq-q" aria-expanded={aberta} onClick={() => setFaqAberta(aberta ? null : i)}>
                             {item.pergunta}
-                            <span className="cdp-faq-icon-r">{aberta ? <IcoMenos /> : <IcoMaisFino />}</span>
+                            <span className="fx-faq-ico">{aberta ? <IcoMenos /> : <IcoMais s={16} />}</span>
                           </button>
                         </h3>
-                        {aberta && <p className="cdp-faq-a-r">{item.resposta}</p>}
+                        {aberta && <p className="fx-faq-a">{item.resposta}</p>}
                       </div>
                     );
                   })}
                 </div>
+                {waUrl && (
+                  <a className="fx-faq-wa fx-ghost fx-only-mob" href={waUrl} target="_blank" rel="noopener noreferrer">
+                    <IcoWhats s={18} />WhatsApp {telefoneExibido}
+                  </a>
+                )}
               </section>
             )}
 
-            <section className="cdp-business-info">
-              <div className="cdp-business-brand">
-                {pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <span>{CAT_EMOJI.pizza}</span>}
-                <div><strong>{pizz.nome}</strong><small>{tema.rodape_frase}</small></div>
+            <footer className="fx-footer">
+              <div className="fx-wrap fx-footer-grid">
+                <div className="fx-footer-brand">
+                  <div className="fx-footer-brand-row">
+                    <span className="fx-brand-mark">{pizz.logo_url ? <img src={pizz.logo_url} alt="" /> : <IcoFatia />}</span>
+                    <span className="fx-footer-name">{pizz.nome}</span>
+                  </div>
+                  {tema.rodape_frase && <p>{tema.rodape_frase}</p>}
+                </div>
+                <nav className="fx-footer-col fx-footer-nav" aria-label="Rodapé">
+                  <span className="fx-footer-h">Navegação</span>
+                  <a href="#inicio" onClick={irPara("inicio")}>Início</a>
+                  <a href="#cardapio" onClick={irPara("cardapio")}>Cardápio</a>
+                  {temPromocoes && <a href="#promocoes" onClick={irPara("promocoes")}>Promoções</a>}
+                  {temLocal && <a href="#localizacao" onClick={irPara("localizacao")}>Nossa localização</a>}
+                  {temFaq && <a href="#duvidas" onClick={irPara("duvidas")}>Dúvidas</a>}
+                </nav>
+                {pizz.endereco && (
+                  <div className="fx-footer-col">
+                    <span className="fx-footer-h">Onde estamos</span>
+                    <span className="v">{pizz.endereco}</span>
+                  </div>
+                )}
+                {(waUrl || pizz.instagram) && (
+                  <div className="fx-footer-col">
+                    <span className="fx-footer-h">Fale com a gente</span>
+                    {waUrl && <a href={waUrl} target="_blank" rel="noopener noreferrer">WhatsApp {telefoneExibido}</a>}
+                    {pizz.instagram && (
+                      <a href={`https://instagram.com/${pizz.instagram.replace(/^@/, "").replace(/^https?:\/\/(www\.)?instagram\.com\//, "")}`} target="_blank" rel="noopener noreferrer">
+                        Instagram {pizz.instagram.startsWith("@") ? pizz.instagram : `@${pizz.instagram.replace(/^https?:\/\/(www\.)?instagram\.com\//, "").replace(/\/$/, "")}`}
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
-              <div><small>ONDE ESTAMOS</small><strong>{pizz.endereco || "Consulte nossa área de atendimento"}</strong></div>
-              <div><small>FALE COM A GENTE</small><strong>{pizz.telefone_contato || "Atendimento pelo pedido online"}</strong></div>
-            </section>
-
-            <footer className="cdp-site-footer">
-              <span>© {new Date().getFullYear()} {pizz.nome}</span>
-              <span>Cardápio digital • PizzaBot</span>
+              <div className="fx-wrap">
+                <div className="fx-footer-bottom">
+                  <span>© {new Date().getFullYear()} {pizz.nome}</span>
+                  <span>Cardápio digital por PizzaBot</span>
+                </div>
+              </div>
             </footer>
 
-            <button
-              ref={cartTargetRef}
-              type="button"
-              className={`cdp-cart-float ${cartPulse ? "pulse" : ""} ${cartCount > 0 ? "has-items" : ""}`}
-              onClick={() => setSacolaOpen(true)}
-              aria-label={`Abrir sacola, ${cartCount} ${cartCount === 1 ? "item" : "itens"}`}
-              title="Abrir sacola"
-            >
-              <svg width="23" height="23" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M5 8h14l-1 13H6zM9 8V6a3 3 0 0 1 6 0v2"/></svg>
-              {cartCount > 0 && <b>{cartCount}</b>}
-              <small>Sacola</small>
-            </button>
-
             {waUrl && (
-              <a className="cdp-whatsapp-float" href={waUrl} target="_blank" rel="noopener noreferrer" aria-label="Falar no WhatsApp">
-                <svg width="25" height="25" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
+              <a className={`fx-wa-float ${cartCount > 0 ? "is-raised" : ""} ${bagOpen && cartCount > 0 ? "is-hidden-mob" : ""}`} href={waUrl} target="_blank" rel="noopener noreferrer" aria-label="Falar no WhatsApp">
+                <IcoWhatsFlutuante />
               </a>
             )}
+          </div>
+        )}
 
             {accountOpen && (
               <div className="cdp-account-overlay" onClick={() => setAccountOpen(false)}>
@@ -2286,105 +2504,6 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 </section>
               </div>
             )}
-            {/* Carrinho flutuante (mobile only) */}
-            {cartCount > 0 && (
-
-              <div className={`cdp-floating-cart ${cartPulse ? "pulse" : ""}`} onClick={() => setSacolaOpen(true)}>
-                <div className="cdp-floating-cart-left">
-                  <div className="cdp-floating-cart-badge">
-                    <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-                    <span className="cdp-floating-cart-count">{cartCount}</span>
-                  </div>
-                  <span className="cdp-floating-cart-label">Ver pedido</span>
-                </div>
-                <div className="cdp-floating-cart-right">
-                  <span className="cdp-floating-cart-total">{fmt(cartTotal)}</span>
-                  <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>
-                </div>
-              </div>
-            )}
-
-            {/* ===== SACOLA DESLIZANTE ===== */}
-            {sacolaOpen && (
-              <div className="cdp-sacola-overlay" onClick={() => setSacolaOpen(false)}>
-                <aside className="cdp-sacola" onClick={e => e.stopPropagation()}>
-                  <div className="cdp-sacola-head">
-                    <h2>🛍️ Minha sacola</h2>
-                    <button className="cdp-sacola-close" onClick={() => setSacolaOpen(false)}>✕</button>
-                  </div>
-
-                  {cart.length === 0 ? (
-                    <div className="cdp-sacola-empty">
-                      <span>🛒</span>
-                      <p>Sua sacola está vazia</p>
-                      <button className="cdp-btn-secondary" onClick={() => setSacolaOpen(false)}>Ver cardápio</button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="cdp-sacola-items">
-                        {cart.map(item => (
-                          <div key={item.id} className="cdp-sacola-item">
-                            {item.imgUrl
-                              ? <img src={item.imgUrl} alt={item.nome} className="cdp-sacola-item-img" />
-                              : <div className="cdp-sacola-item-ph">{CAT_EMOJI[selectedProduto?.categoria || "outro"] || "🍽️"}</div>}
-                            <div className="cdp-sacola-item-body">
-                              <div className="cdp-sacola-item-name">
-                                {item.nome}{item.tamanho ? ` (${item.tamanho})` : ""}
-                              </div>
-                              {item.adicionais.length > 0 && (
-                                <div className="cdp-sacola-item-extras">+ {item.adicionais.join(", ")}</div>
-                              )}
-                              <div className="cdp-qty-controls cdp-sacola-qty">
-                                <button onClick={() => updateCartQty(item.id, -1)}>−</button>
-                                <span>{item.quantidade}</span>
-                                <button onClick={() => updateCartQty(item.id, 1)}>+</button>
-                              </div>
-                            </div>
-                            <div className="cdp-sacola-item-right">
-                              <span className="cdp-sacola-item-price">{fmt(item.preco * item.quantidade)}</span>
-                              <button className="cdp-sacola-item-remove" onClick={() => removeFromCart(item.id)} aria-label="Remover">
-                                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="cdp-sacola-footer">
-                        <div className="cdp-sacola-subtotal">
-                          <span>Subtotal</span>
-                          <span className="cdp-sacola-subtotal-val">{fmt(cartTotal)}</span>
-                        </div>
-                        {!pizz.aberto ? (
-                          <div className="cdp-sacola-closed-notice">
-                            <p>
-                              ⚠️ <strong>Loja fechada para pedidos pelo cardápio.</strong> Como você já tem itens na sacola, finalize diretamente pelo nosso WhatsApp:
-                            </p>
-                            <a
-                              href={whatsappOrderUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="cdp-btn-whatsapp-order"
-                            >
-                              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.8 1-.2.2-.3.2-.6.1-1.7-.9-2.9-1.6-4-3.5-.3-.5.3-.5.8-1.6.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.5-.6-.5h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-.7 3.3.6 1.5 1.6 2.9 2.9 4.1 2 1.9 3.7 2.5 5.2 2.9 1.3.3 2.1.2 2.7-.1.4-.2 1.2-.9 1.4-1.4.2-.5.2-1 .1-1.1 0-.1-.2-.2-.5-.4zM12 2a10 10 0 0 0-8.6 15l-1.3 4.8 4.9-1.3A10 10 0 1 0 12 2z"/></svg>
-                              <span>Pedir pelo WhatsApp • {fmt(cartTotal)}</span>
-                            </a>
-                          </div>
-                        ) : (
-                          <button className="cdp-btn-primary cdp-btn-lg" onClick={() => { setSacolaOpen(false); setStep("checkout"); }}>
-                            Continuar • {fmt(cartTotal)}
-                          </button>
-                        )}
-                        <button className="cdp-sacola-add-more" onClick={() => setSacolaOpen(false)}>
-                          + Adicionar mais itens
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </aside>
-              </div>
-            )}
-
             {/* ===== SELETOR RÁPIDO DE TAMANHO (clique no "+") ===== */}
             {quickPick && (
               <div className="cdp-quickpick-overlay" onClick={() => setQuickPick(null)}>
@@ -2410,8 +2529,6 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 </div>
               </div>
             )}
-          </>
-        )}
       </div>
     </div>
   );
