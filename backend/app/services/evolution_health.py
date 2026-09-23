@@ -14,7 +14,7 @@ Chamado de:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,7 +66,7 @@ async def checar_saude_evolution(
         status = {"ok": False, "motivo": "erro", "erro": str(e)[:300],
                   "base_url": None, "instancias": None}
 
-    status["checado_em"] = datetime.now(timezone.utc).isoformat()
+    status["checado_em"] = datetime.now(UTC).isoformat()
 
     if not alertar:
         return status

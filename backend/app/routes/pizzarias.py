@@ -3,7 +3,7 @@ import logging
 import re
 import unicodedata
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_serializer
@@ -14,7 +14,7 @@ from app.auth import hash_password
 from app.config import get_settings
 from app.db import get_db
 from app.deps import current_user, membership, require_platform_admin
-from app.models import EquipePizzaria, Entregador, Pizzaria, Usuario
+from app.models import Entregador, EquipePizzaria, Pizzaria, Usuario
 from app.services.evolution import EvolutionError, evolution
 from app.services.secrets import encrypt_secret, looks_masked, mask_secret
 
@@ -263,8 +263,7 @@ class AssinaturaIn(BaseModel):
 
 
 def _status_assinatura(pizz: Pizzaria) -> str:
-    from datetime import timezone as _tz
-    agora = datetime.now(_tz.utc)
+    agora = datetime.now(UTC)
     if pizz.suspensa:
         return "suspensa"
     if (pizz.plano or "") == "trial":

@@ -27,6 +27,7 @@ o serviço com APP_ROLE=beat só dispara, quem processa é o worker.
 import asyncio
 import logging
 import os
+from datetime import UTC
 
 from app.workers.celery_app import celery_app
 
@@ -130,7 +131,7 @@ async def _ja_alertado_hoje(db, pizzaria_id, tipo: str) -> bool:
 
 
 async def _verificar_assinaturas_async() -> dict:
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from sqlalchemy import select
 
@@ -142,7 +143,7 @@ async def _verificar_assinaturas_async() -> dict:
     avisos = 0
     suspensas = 0
     try:
-        agora = datetime.now(timezone.utc)
+        agora = datetime.now(UTC)
         # Sem gateway configurado ninguem consegue pagar. Suspender nesse estado
         # tranca todas as pizzarias para fora sem saida — inclusive as que
         # queriam pagar. Entao avisamos o operador e NAO suspendemos ninguem.

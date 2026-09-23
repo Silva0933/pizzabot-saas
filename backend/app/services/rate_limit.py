@@ -5,7 +5,6 @@ Usado nas rotas públicas sensíveis a abuso (login: força bruta; signup: conta
 em massa). Fail-open: se o Redis estiver fora, NÃO bloqueia o usuário legítimo.
 """
 import logging
-
 import os
 
 from fastapi import Request

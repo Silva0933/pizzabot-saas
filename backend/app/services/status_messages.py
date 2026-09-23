@@ -8,7 +8,7 @@ Suporta placeholders no template:
   {numero_pedido}, {nome_cliente}, {valor_total}, {tempo_entrega}
 """
 import logging
-import uuid
+from datetime import UTC
 from typing import Any
 
 from sqlalchemy import select
@@ -77,8 +77,8 @@ async def enviar_pesquisa_nps(db: AsyncSession, pedido: Pedido) -> bool:
         log.exception("Falha ao enviar NPS: %s", e)
         return False
 
-    from datetime import datetime, timezone
-    pedido.nps_enviado_at = datetime.now(timezone.utc)
+    from datetime import datetime
+    pedido.nps_enviado_at = datetime.now(UTC)
 
     conv = (
         await db.execute(

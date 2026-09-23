@@ -11,7 +11,7 @@ status reaproveita `apply_status_change` de pedidos.py (mensagem ao cliente +
 broadcast). Sem aviso novo ao cliente — usa o "saiu para entrega" já existente.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -23,7 +23,6 @@ from app.db import get_db
 from app.deps import current_entregador, membership
 from app.models import Entregador, EquipePizzaria, Pedido, Pizzaria, Usuario
 from app.routes.pedidos import PedidoOut, _broadcast_atribuicao, apply_status_change
-from app.services.broadcaster import broadcaster
 
 # O entregador enxerga o pedido desde que seja atribuído a ele (status confirmado em
 # diante). "Minhas entregas" = atribuídos a ele e em qualquer status ativo (inclui
@@ -342,7 +341,7 @@ async def pegar_pedido(
         raise HTTPException(status.HTTP_409_CONFLICT, "Pedido já tem entregador.")
 
     p.entregador_id = ent.id
-    p.atribuido_em = datetime.now(timezone.utc)
+    p.atribuido_em = datetime.now(UTC)
     await db.commit()
     await db.refresh(p)
     await _broadcast_atribuicao(pizzaria_id, p)

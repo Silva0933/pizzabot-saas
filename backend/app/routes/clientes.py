@@ -1,6 +1,6 @@
 """Gestao das contas de consumidores pelo painel da pizzaria."""
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -117,7 +117,7 @@ async def redefinir_senha(
     cliente = await _conta_da_pizzaria(pizzaria_id, cliente_id, db)
     cliente.senha_hash = hash_password(body.nova_senha)
     cliente.conta_versao = int(cliente.conta_versao or 1) + 1
-    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    cliente.conta_atualizada_at = datetime.now(UTC)
     await db.commit()
     return {"ok": True, "mensagem": "Senha redefinida. As sessoes anteriores foram encerradas."}
 
@@ -145,6 +145,6 @@ async def excluir_conta(
     cliente.preferencias = None
     cliente.memoria_resumo = {}
     cliente.memoria_atualizada_at = None
-    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    cliente.conta_atualizada_at = datetime.now(UTC)
     await db.commit()
     return {"ok": True, "mensagem": "Conta excluida e dados pessoais removidos. Os pedidos foram preservados."}

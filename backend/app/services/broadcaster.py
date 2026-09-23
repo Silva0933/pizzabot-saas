@@ -79,7 +79,7 @@ class Broadcaster:
                     *[ws.send_text(data) for ws in conns],
                     return_exceptions=True,
                 )
-                for ws, r in zip(conns, results):
+                for ws, r in zip(conns, results, strict=False):
                     if isinstance(r, Exception):
                         await self.disconnect(pid, ws)
         except asyncio.CancelledError:

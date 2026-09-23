@@ -1,5 +1,5 @@
 """Endpoints de autenticação: login, refresh, register (apenas platform admin)."""
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr, Field
@@ -109,7 +109,7 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
     if not user or not verify_password(body.senha, user.senha_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Email ou senha inválidos")
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await db.commit()
 
     return TokenOut(
@@ -214,7 +214,7 @@ async def signup(body: SignupIn, request: Request, db: AsyncSession = Depends(ge
     pizz = Pizzaria(
         nome=body.nome_pizzaria.strip(),
         plano="trial",
-        trial_fim=datetime.now(timezone.utc) + timedelta(days=TRIAL_DIAS),
+        trial_fim=datetime.now(UTC) + timedelta(days=TRIAL_DIAS),
     )
     db.add(pizz)
     await db.flush()

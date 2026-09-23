@@ -137,6 +137,7 @@ async def extrair_produtos(
         if not key:
             raise RuntimeError("Chave do Gemini não configurada.")
         from google.genai import types
+
         from app.agent.llm import get_client
         client = get_client(key)
         parts: list[Any] = [_PROMPT]

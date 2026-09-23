@@ -180,7 +180,7 @@ async def _scheduler_loop() -> None:
             log.warning("Dispatcher scheduler: %s", e)
         try:
             await asyncio.wait_for(_stop.wait(), timeout=SCHEDULER_INTERVAL)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
 
 
@@ -202,7 +202,7 @@ async def _reclaim_loop(consumer: str, sem: asyncio.Semaphore) -> None:
         try:
             await asyncio.wait_for(_stop.wait(), timeout=RECLAIM_INTERVAL)
             break  # _stop setado
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         try:
             stale = await streams.claim_stale(consumer, RECLAIM_MIN_IDLE_MS, count=50)
@@ -223,7 +223,7 @@ async def _metrics_loop(sem: asyncio.Semaphore) -> None:
         try:
             await asyncio.wait_for(_stop.wait(), timeout=METRICS_INTERVAL)
             break  # _stop setado
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         try:
             due = await redis.zcard(streams.DUE_KEY)

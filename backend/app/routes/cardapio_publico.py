@@ -9,17 +9,16 @@ import asyncio
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
-from app.auth import create_access_token, decode_token, hash_password, verify_password
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
+from app.auth import create_access_token, decode_token, hash_password, verify_password
 from app.db import get_db
 from app.models import Cliente, Conversa, Mensagem, Pedido, Pizzaria, Produto
 from app.services.order_audit import registrar_evento_pedido
@@ -296,7 +295,7 @@ def _calcular_desconto(
     if validade:
         try:
             data_validade = datetime.fromisoformat(str(validade).replace("Z", "+00:00")).date()
-            if data_validade < datetime.now(timezone.utc).date():
+            if data_validade < datetime.now(UTC).date():
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "Este cupom expirou.")
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cupom com validade inválida.") from exc
@@ -868,7 +867,7 @@ async def cadastrar_conta_cliente(
     cliente.senha_hash = hash_password(body.senha)
     cliente.conta_ativa = True
     cliente.conta_versao = int(cliente.conta_versao or 1) + (1 if ja_possuia_credencial else 0)
-    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    cliente.conta_atualizada_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(cliente)
     return {"access_token": _token_conta(cliente, pizzaria), "token_type": "bearer", "cliente": _cliente_publico(cliente)}
@@ -895,7 +894,7 @@ async def entrar_conta_cliente(
         )).scalar_one_or_none()
     if not cliente or not cliente.senha_hash or not verify_password(body.senha, cliente.senha_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "E-mail ou senha incorretos.")
-    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    cliente.conta_atualizada_at = datetime.now(UTC)
     await db.commit()
     return {"access_token": _token_conta(cliente, pizzaria), "token_type": "bearer", "cliente": _cliente_publico(cliente)}
 
@@ -963,7 +962,7 @@ async def atualizar_conta_cliente(
     cliente.email = email
     cliente.endereco_dados = endereco
     cliente.endereco_padrao = endereco_padrao
-    cliente.conta_atualizada_at = datetime.now(timezone.utc)
+    cliente.conta_atualizada_at = datetime.now(UTC)
     await db.commit()
     await db.refresh(cliente)
     return {"cliente": _cliente_publico(cliente)}
@@ -1084,15 +1083,15 @@ async def _enviar_confirmacao_whatsapp(
     taxa_entrega: float,
 ) -> None:
     """Envia mensagem de confirmação do pedido digital no WhatsApp do cliente. Segura para background."""
-    from app.services.evolution import evolution
     from app.db import AsyncSessionLocal
-    
+    from app.services.evolution import evolution
+
     async with AsyncSessionLocal() as db:
         pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
         if not pizz or not pizz.instancia:
             log.info("Pizzaria %s sem instância WhatsApp — skip confirmação", pizzaria_id)
             return
-            
+
         pedido = (await db.execute(select(Pedido).where(Pedido.id == pedido_id))).scalar_one_or_none()
         if not pedido:
             return
@@ -1129,10 +1128,10 @@ async def _enviar_confirmacao_whatsapp(
 
     msg_parts = [
         f"🍕 *Pedido #{pedido.numero_pedido} recebido!*",
-        f"",
+        "",
         f"Olá, {primeiro_nome}! Seu pedido pelo cardápio digital foi recebido com sucesso. ✅",
-        f"",
-        f"📋 *Resumo:*",
+        "",
+        "📋 *Resumo:*",
         itens_texto,
     ]
 
@@ -1140,20 +1139,20 @@ async def _enviar_confirmacao_whatsapp(
         msg_parts.append(f"  🚚 Taxa de entrega — R$ {float(taxa_entrega):.2f}".replace(".", ","))
 
     msg_parts.extend([
-        f"",
+        "",
         f"💰 *Total: R$ {float(pedido.valor_total):.2f}*".replace(".", ","),
     ])
 
     if pedido.tipo == "delivery" and pedido.endereco_entrega:
         msg_parts.append(f"📍 *Entrega:* {pedido.endereco_entrega}")
     elif pedido.tipo == "retirada":
-        msg_parts.append(f"🏪 *Retirada no balcão*")
+        msg_parts.append("🏪 *Retirada no balcão*")
 
     msg_parts.extend([
         f"💳 *Pagamento:* {pedido.forma_pagamento}",
         f"⏰ *Previsão:* {tempo}",
-        f"",
-        f"Qualquer dúvida, é só responder aqui! 😊",
+        "",
+        "Qualquer dúvida, é só responder aqui! 😊",
     ])
 
     texto = "\n".join(msg_parts)
@@ -1195,7 +1194,7 @@ async def _enviar_confirmacao_whatsapp(
         )
         db.add(msg)
         conv.last_message = texto
-        conv.last_timestamp = datetime.now(timezone.utc)
+        conv.last_timestamp = datetime.now(UTC)
         await db.commit()
         await db.refresh(msg)
 

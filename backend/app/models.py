@@ -11,12 +11,10 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     Date,
     DateTime,
     Float,
     ForeignKey,
-    Index,
     Integer,
     Numeric,
     String,

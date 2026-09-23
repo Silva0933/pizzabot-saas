@@ -8,20 +8,24 @@ MRR = soma do preço mensal do plano de cada pizzaria ativa.
 """
 import logging
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.db import get_db
 from app.deps import require_platform_admin
 from app.models import Usuario
 from app.services.app_config import (
-    EVOLUTION_KEY, LLM_KEY, get_config, get_evolution_config, get_llm_config, set_config,
+    EVOLUTION_KEY,
+    LLM_KEY,
+    get_config,
+    get_evolution_config,
+    get_llm_config,
+    set_config,
 )
 from app.services.billing_plataforma import billing_configurado
 from app.services.plans import DEFAULT_PLAN, PLANS, plan_info, plans_catalog
@@ -71,7 +75,7 @@ async def platform_overview(
     _: Usuario = Depends(require_platform_admin),
 ) -> dict:
     """Visão de assinaturas e faturamento recorrente da plataforma."""
-    desde = datetime.now(timezone.utc) - timedelta(days=days)
+    desde = datetime.now(UTC) - timedelta(days=days)
     params = {"desde": desde}
 
     # --- Pizzarias com plano, status e uso ---
@@ -228,7 +232,10 @@ async def put_billing(
     """Salva a config do gateway e já testa a chave contra o Asaas."""
     from app.services.app_config import BILLING_KEY, get_billing_config
     from app.services.billing_plataforma import (
-        BillingError, PlatformAsaasClient, aplicar_config, invalidar_config,
+        BillingError,
+        PlatformAsaasClient,
+        aplicar_config,
+        invalidar_config,
     )
 
     raw = await get_config(db, BILLING_KEY)
@@ -320,7 +327,10 @@ async def cadastrar_webhook_billing(
 
     from app.services.app_config import BILLING_KEY, get_billing_config
     from app.services.billing_plataforma import (
-        BillingError, PlatformAsaasClient, aplicar_config, invalidar_config,
+        BillingError,
+        PlatformAsaasClient,
+        aplicar_config,
+        invalidar_config,
     )
 
     cfg = await get_billing_config(db)
@@ -595,7 +605,7 @@ async def listar_assinaturas(
     uso = await uso_mes_todas(db)
     atend = await conversas_atendidas_mes_todas(db)  # atendimentos (cota) por pizzaria
 
-    agora = datetime.now(timezone.utc)
+    agora = datetime.now(UTC)
     itens = []
     contagem = {"vence_amanha": 0, "vencida": 0, "suspensas": 0, "limite_ia": 0}
     tokens_total = 0
@@ -890,7 +900,7 @@ async def llm_usage(
     _: Usuario = Depends(require_platform_admin),
 ) -> dict:
     """Consumo de tokens da LLM: total, por pizzaria e por dia."""
-    desde = datetime.now(timezone.utc) - timedelta(days=days)
+    desde = datetime.now(UTC) - timedelta(days=days)
     p = {"desde": desde}
 
     try:

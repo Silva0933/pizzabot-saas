@@ -6,7 +6,7 @@ prompt nem transformar a memoria em historico bruto.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 MAX_FIELD_CHARS = 180
@@ -53,7 +53,7 @@ def build_memory_summary(
     if current.get("preferencias"):
         resumo.append(f"Preferencias: {current['preferencias']}")
     current["resumo_prompt"] = "; ".join(resumo)[:MAX_SUMMARY_CHARS]
-    current["updated_at"] = datetime.now(timezone.utc).isoformat()
+    current["updated_at"] = datetime.now(UTC).isoformat()
     return current
 
 

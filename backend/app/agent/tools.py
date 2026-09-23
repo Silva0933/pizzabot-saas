@@ -9,21 +9,22 @@ A tool registry mapeia name → (declaração, função).
 """
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from google.genai import types
-from sqlalchemy import select, text, func
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import AgentContext
-from app.models import Cliente, Conversa, Pedido, Mensagem, Produto
+from app.models import Cliente, Conversa, Mensagem, Pedido, Produto
 
 log = logging.getLogger(__name__)
 
@@ -1235,7 +1236,7 @@ async def registrar_pedido(
         ped.forma_pagamento = forma_pagamento
         ped.observacoes = observacoes
         ped.status = novo_status
-        ped.updated_at = datetime.now(timezone.utc)
+        ped.updated_at = datetime.now(UTC)
     else:
         status_anterior = None
         ped = Pedido(
@@ -1267,7 +1268,7 @@ async def registrar_pedido(
     else:
         cli.total_pedidos += 1
         cli.total_gasto = (cli.total_gasto or Decimal(0)) + valor_total_decimal
-    cli.ultima_visita = datetime.now(timezone.utc)
+    cli.ultima_visita = datetime.now(UTC)
 
     await db.flush()
     await db.refresh(ped)
@@ -1361,7 +1362,7 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
     """Núcleo da cobrança: chama o gateway, salva no pedido e envia o QR. Reutilizado."""
     from app.config import get_settings
     from app.services.evolution import evolution
-    from app.services.pagamentos import PagamentoError, gateway_for, MercadoPagoClient
+    from app.services.pagamentos import MercadoPagoClient, PagamentoError, gateway_for
 
     gw = gateway_for(ctx.pizzaria)
     if gw is None:
@@ -1660,7 +1661,7 @@ async def cancelar_pedido(
 
     old_status = ped.status
     ped.status = "cancelado"
-    ped.cancelado_at = datetime.now(timezone.utc)
+    ped.cancelado_at = datetime.now(UTC)
     ped.cancelamento_motivo = motivo_cancelamento
     await db.flush()
 
@@ -1819,7 +1820,7 @@ async def escalar_humano(
                     "telefone": ctx.telefone,
                     "conteudo": msg.conteudo,
                     "origem": "sistema",
-                    "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(timezone.utc).isoformat(),
+                    "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(UTC).isoformat(),
                 },
             },
         )
@@ -1868,7 +1869,7 @@ async def lembrar_cliente(
         endereco_padrao=endereco_padrao,
         preferencias=preferencias,
     )
-    cli.memoria_atualizada_at = datetime.now(timezone.utc)
+    cli.memoria_atualizada_at = datetime.now(UTC)
 
     await db.flush()
     return {"ok": True, "memoria": cli.memoria_resumo.get("resumo_prompt")}

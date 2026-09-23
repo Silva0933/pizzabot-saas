@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -166,7 +166,7 @@ async def run_agent(
             final_text = "Te mandei o cardápio aí em cima! 👆"
         elif not tool_calls_made:
             final_text = "Desculpa, não entendi 😅 Pode repetir, por favor?"
-        
+
         if final_text:
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
 
@@ -272,7 +272,7 @@ async def _run_openai_agent(
             final_text = "Te mandei o cardápio aí em cima! 👆"
         elif not tool_calls_made:
             final_text = "Desculpa, não entendi 😅 Pode repetir, por favor?"
-        
+
         if final_text:
             await append_turn(db, pizzaria_id, telefone, role="assistant", content=final_text)
 
@@ -307,6 +307,7 @@ async def process_and_reply(
     """
     # Carrega conversa e pizzaria
     from sqlalchemy import select
+
     from app.models import Pizzaria
 
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
@@ -414,7 +415,7 @@ async def process_and_reply(
                     run_fsm_agent(db, pizzaria_id, telefone, user_input),
                     timeout=FSM_TIMEOUT_SECONDS,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 log.warning(
                     "Pipeline FSM estourou o timeout de %.0fs, caindo p/ agente legado com limites reduzidos",
                     FSM_TIMEOUT_SECONDS,
@@ -443,7 +444,7 @@ async def process_and_reply(
             await db.rollback()
         except Exception as e_rb:  # noqa: BLE001
             log.debug("Falha no rollback pós-erro do agente: %s", e_rb)
-        
+
         # Carrega o estado FSM atual para enriquecer os logs e a mensagem interna
         estado_desc = "Desconhecido"
         carrinho_desc = "Vazio"
@@ -527,7 +528,7 @@ async def process_and_reply(
             conv.bot_ativo = False
             conv.status = "humano_necessario"
             conv.last_message = msg_fallback
-            conv.last_timestamp = datetime.now(timezone.utc)
+            conv.last_timestamp = datetime.now(UTC)
             await db.commit()
 
             # Broadcast para o painel de atendimento em tempo real
@@ -570,7 +571,7 @@ async def process_and_reply(
                         "telefone": telefone,
                         "conteudo": conteudo_sistema,
                         "origem": "sistema",
-                        "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(timezone.utc).isoformat(),
+                        "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(UTC).isoformat(),
                     },
                 },
             )
@@ -627,7 +628,7 @@ async def process_and_reply(
             conv.bot_ativo = False
             conv.status = "humano_necessario"
             conv.last_message = msg_fallback
-            conv.last_timestamp = datetime.now(timezone.utc)
+            conv.last_timestamp = datetime.now(UTC)
             await db.commit()
 
             await broadcaster.publish(
@@ -668,7 +669,7 @@ async def process_and_reply(
                         "telefone": telefone,
                         "conteudo": conteudo_sistema,
                         "origem": "sistema",
-                        "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(timezone.utc).isoformat(),
+                        "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(UTC).isoformat(),
                     },
                 },
             )
@@ -747,7 +748,7 @@ async def process_and_reply(
         )
         db.add(msg)
         conv.last_message = result.texto
-        conv.last_timestamp = datetime.now(timezone.utc)
+        conv.last_timestamp = datetime.now(UTC)
         # ---- Reset unread_count quando bot responde ----
         conv.unread_count = 0
         await db.commit()

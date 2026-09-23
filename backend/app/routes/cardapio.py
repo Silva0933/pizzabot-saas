@@ -113,7 +113,7 @@ async def update_produto(
     ).scalar_one_or_none()
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Produto não encontrado")
-    
+
     data = body.model_dump()
     if data.get("tamanhos") and (data.get("preco") is None or data.get("preco") <= 0):
         try:
@@ -183,7 +183,7 @@ async def reindex_embeddings(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Erro ao gerar embeddings: {e}") from e
 
     # Atualiza um por um via SQL puro (pgvector espera formato '[1.2, 3.4, ...]')
-    for p, v in zip(produtos, vecs):
+    for p, v in zip(produtos, vecs, strict=False):
         vec_str = "[" + ",".join(str(x) for x in v) + "]"
         await db.execute(
             text("UPDATE public.produtos SET embedding = CAST(:v AS vector) WHERE id = :id"),
@@ -356,7 +356,7 @@ async def importar_confirmar(
         nome = (p.nome or "").strip()
         tamanhos_list = p.tamanhos
         preco_calculado = Decimal(p.preco)
-        
+
         if tamanhos_list and preco_calculado <= 0:
             try:
                 precos_tamanhos = [Decimal(str(t.get("preco") or 0)) for t in tamanhos_list if t.get("preco")]

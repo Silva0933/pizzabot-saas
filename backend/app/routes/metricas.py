@@ -4,7 +4,7 @@ Métricas históricas para o dashboard "Análise" do painel.
 Endpoints agregam dados do Postgres usando window functions / group by por dia.
 """
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
@@ -33,7 +33,7 @@ async def metricas_periodo(
       - horarios_pico: [{ hora, pedidos }]
       - comparativo: % vs período anterior
     """
-    desde = datetime.now(timezone.utc) - timedelta(days=days)
+    desde = datetime.now(UTC) - timedelta(days=days)
     desde_anterior = desde - timedelta(days=days)
 
     params = {"pid": str(pizzaria_id), "desde": desde, "desde_ant": desde_anterior}

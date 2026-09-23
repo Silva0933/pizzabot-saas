@@ -10,6 +10,7 @@ Tasks Celery.
 import asyncio
 import logging
 import uuid
+from datetime import UTC
 
 from app.workers.celery_app import celery_app
 
@@ -108,15 +109,15 @@ def resgatar_carrinho(
 async def _resgatar_carrinho_async(
     pizzaria_id: uuid.UUID, telefone: str, delay_seconds: int | None = None
 ) -> dict:
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from sqlalchemy import select, text
 
     from app.agent.behavior import get_behavior, render_template
     from app.db import AsyncSessionLocal, engine
     from app.models import Conversa, Mensagem, PersonalidadeAtendente, Pizzaria
-    from app.services.business_hours import esta_aberto
     from app.services.broadcaster import broadcaster
+    from app.services.business_hours import esta_aberto
     from app.services.conversation_state import load_state, save_state
     from app.services.evolution import evolution
 
@@ -141,7 +142,7 @@ async def _resgatar_carrinho_async(
                 WHERE pizzaria_id = :pid AND telefone = :tel
             """), {"pid": str(pizzaria_id), "tel": telefone})).first()
             if row and row[0]:
-                idade = datetime.now(timezone.utc) - row[0]
+                idade = datetime.now(UTC) - row[0]
                 if idade < timedelta(seconds=max(effective_delay - 60, 0)):
                     return {"ok": False, "motivo": "conversa_ativa"}
 
@@ -200,7 +201,7 @@ async def _resgatar_carrinho_async(
                 )
                 db.add(msg)
                 conv.last_message = texto
-                conv.last_timestamp = datetime.now(timezone.utc)
+                conv.last_timestamp = datetime.now(UTC)
                 await db.commit()
                 await broadcaster.publish(pizzaria_id, {
                     "tipo": "mensagem.nova", "pizzaria_id": str(pizzaria_id),
@@ -231,15 +232,15 @@ async def _resgatar_carrinho_async(
 async def _lembrar_confirmacao_async(
     pizzaria_id: uuid.UUID, telefone: str, delay_seconds: int | None = None
 ) -> dict:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from sqlalchemy import select
 
     from app.agent.behavior import get_behavior, render_template
     from app.db import AsyncSessionLocal, engine
     from app.models import Conversa, Mensagem, PersonalidadeAtendente, Pizzaria
-    from app.services.business_hours import esta_aberto
     from app.services.broadcaster import broadcaster
+    from app.services.business_hours import esta_aberto
     from app.services.conversation_state import load_state, save_state
     from app.services.evolution import evolution
 
@@ -308,7 +309,7 @@ async def _lembrar_confirmacao_async(
                 )
                 db.add(msg)
                 conv.last_message = texto
-                conv.last_timestamp = datetime.now(timezone.utc)
+                conv.last_timestamp = datetime.now(UTC)
                 await db.commit()
                 await broadcaster.publish(pizzaria_id, {
                     "tipo": "mensagem.nova", "pizzaria_id": str(pizzaria_id),

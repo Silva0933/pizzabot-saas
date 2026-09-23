@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import logging
 from dataclasses import dataclass
+from datetime import UTC
 from decimal import Decimal
 from typing import Any, Literal
 
@@ -135,7 +136,7 @@ class MercadoPagoClient:
         """Cria um pagamento Pix e devolve o copia-e-cola + QR (base64)."""
         import re
         import uuid as _uuid
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         first_name = re.sub(r"[^a-zA-ZÀ-ɏ ]", "", (nome_cliente or "Cliente"))[:30].strip() or "Cliente"
         tel_digits = re.sub(r"\D", "", telefone or "")
@@ -151,7 +152,7 @@ class MercadoPagoClient:
             # campo o MP usa o padrão de 24h e o aviso de falha só chegaria no
             # dia seguinte. Ver PIX_EXPIRATION_MINUTES.
             "date_of_expiration": (
-                datetime.now(timezone.utc) + timedelta(minutes=PIX_EXPIRATION_MINUTES)
+                datetime.now(UTC) + timedelta(minutes=PIX_EXPIRATION_MINUTES)
             ).isoformat(timespec="milliseconds"),
         }
         if notification_url:

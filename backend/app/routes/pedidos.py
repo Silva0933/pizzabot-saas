@@ -7,7 +7,7 @@ Atualização de status dispara:
   - Evento de auditoria
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
@@ -147,7 +147,7 @@ async def apply_status_change(
     old_status = p.status
     p.status = novo_status
     if novo_status == "cancelado":
-        p.cancelado_at = datetime.now(timezone.utc)
+        p.cancelado_at = datetime.now(UTC)
         p.cancelamento_motivo = motivo
 
     registrar_evento_pedido(
@@ -174,6 +174,7 @@ async def apply_status_change(
     if novo_status == "a_caminho":
         try:
             import os
+
             from app.workers.tasks import enviar_nps
             delay = int(os.getenv("NPS_DELAY_SECONDS", "3000"))  # ~50 min
             enviar_nps.apply_async(args=[str(pizzaria_id), str(p.id)], countdown=delay)
@@ -292,7 +293,7 @@ async def sinalizar_problema(
     ator_id, ator_nome, ator_tipo = _ator(usuario, vinculo)
     p.em_problema = True
     p.problema_motivo = body.motivo.strip()
-    p.problema_aberto_em = datetime.now(timezone.utc)
+    p.problema_aberto_em = datetime.now(UTC)
     registrar_evento_pedido(db, p, tipo="problema_aberto", motivo=p.problema_motivo,
                             ator_id=ator_id, ator_nome=ator_nome, ator_tipo=ator_tipo)
     await db.commit()
@@ -425,7 +426,7 @@ async def atribuir_entregador(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
 
     p.entregador_id = ent.id
-    p.atribuido_em = datetime.now(timezone.utc)
+    p.atribuido_em = datetime.now(UTC)
     registrar_evento_pedido(db, p, tipo="entregador_atribuido",
                             detalhes={"entregador_id": str(ent.id), "entregador_nome": ent.nome})
     await db.commit()
@@ -536,7 +537,6 @@ async def rejeitar_pagamento(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
 
     old_payment = p.payment_status
-    old_status = p.status
     if old_payment == "approved":
         raise HTTPException(status.HTTP_409_CONFLICT, "Pagamento já aprovado; não pode ser rejeitado.")
 

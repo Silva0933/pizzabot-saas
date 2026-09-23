@@ -71,8 +71,9 @@ async def load_history(
     não houver entrada em agente_memoria. Isso facilita migração futura.
     """
     # Tenta primeiro o histórico do agente
-    from app.models import Base  # noqa: F401  para garantir import dos models
     from sqlalchemy import text
+
+    from app.models import Base  # noqa: F401  para garantir import dos models
 
     rows = (await db.execute(text(f"""
         SELECT role, content, tool_calls, tool_call_id

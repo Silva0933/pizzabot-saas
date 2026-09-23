@@ -1,5 +1,5 @@
 """Autenticação JWT + hashing bcrypt."""
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
@@ -32,7 +32,7 @@ def create_access_token(
     expires_minutes: int | None = None,
 ) -> str:
     """`subject` é normalmente o usuario_id (UUID)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     exp = now + timedelta(minutes=expires_minutes or _settings.jwt_access_token_ttl_minutes)
     payload: dict[str, Any] = {
         "sub": subject,
@@ -46,7 +46,7 @@ def create_access_token(
 
 
 def create_refresh_token(subject: str) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     exp = now + timedelta(days=_settings.jwt_refresh_token_ttl_days)
     payload = {
         "sub": subject,

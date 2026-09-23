@@ -21,7 +21,7 @@ confirma (trial não ganha cota cheia antes de pagar).
 import logging
 import time
 import uuid
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
@@ -389,9 +389,9 @@ async def upsert_fatura(db: AsyncSession, pizzaria_id: uuid.UUID, payment: dict[
         except ValueError:
             pass
     if fat.status == "paga" and not fat.pago_em:
-        fat.pago_em = datetime.now(timezone.utc)
+        fat.pago_em = datetime.now(UTC)
     fat.link_pagamento = payment.get("invoiceUrl") or fat.link_pagamento
-    fat.updated_at = datetime.now(timezone.utc)
+    fat.updated_at = datetime.now(UTC)
     await db.flush()
     return fatura_dict(fat)
 

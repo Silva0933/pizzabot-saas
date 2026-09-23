@@ -13,12 +13,11 @@ Fluxo:
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select, text
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -394,14 +393,15 @@ async def evolution_webhook(
 
     # Atualiza conversa
     conv.last_message = conteudo
-    conv.last_timestamp = datetime.now(timezone.utc)
+    conv.last_timestamp = datetime.now(UTC)
     conv.unread_count = (conv.unread_count or 0) + 1
     if push_name and not conv.cliente_nome:
         conv.cliente_nome = push_name
 
     # ---- Garante rascunho de pedido em 'Novos' se não houver pedido ativo ----
-    from app.models import Cliente, Pedido
     from decimal import Decimal
+
+    from app.models import Cliente, Pedido
 
     stmt_cli = select(Cliente).where(
         Cliente.pizzaria_id == pizz.id,

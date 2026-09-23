@@ -6,7 +6,7 @@ periódico do Beat (workers/periodic.py): persiste a mudança, avisa o painel
 em tempo real e alerta na transição para 'close'.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ async def aplicar_estado_conexao(db, pizz, estado: str) -> None:
 
     anterior = pizz.whatsapp_estado
     pizz.whatsapp_estado = estado
-    pizz.whatsapp_estado_em = datetime.now(timezone.utc)
+    pizz.whatsapp_estado_em = datetime.now(UTC)
 
     try:
         await broadcaster.publish(pizz.id, {

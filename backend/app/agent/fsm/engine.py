@@ -433,6 +433,7 @@ def _fatos_pizzaria(pizz) -> str:
 
 
 import re as _re
+from datetime import UTC
 
 _CONFIRMA_RE = _re.compile(
     r"^\s*(sim|claro|isso|isso ai|ok|okay|blz|beleza|pode|pode ser|pode fechar|"
@@ -488,7 +489,7 @@ async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dic
     então não cria pedido duplicado. Best-effort: nunca derruba o atendimento.
     """
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
         from decimal import Decimal
 
         from sqlalchemy import select
@@ -525,7 +526,7 @@ async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dic
             ped.forma_pagamento = estado["pagamento"]
         if estado.get("observacoes"):
             ped.observacoes = estado["observacoes"]
-        ped.updated_at = datetime.now(timezone.utc)
+        ped.updated_at = datetime.now(UTC)
         await db.flush()
 
         from app.services.broadcaster import broadcaster
@@ -552,8 +553,13 @@ async def processar(
 ) -> dict[str, Any]:
     """Executa um passo da FSM. Retorna a 'decisão' para a voz + estado atualizado."""
     from app.agent.tools import (
-        _calcular_pedido, atualizar_pedido, cancelar_pedido, enviar_cardapio_arquivo,
-        escalar_humano, registrar_avaliacao, registrar_pedido,
+        _calcular_pedido,
+        atualizar_pedido,
+        cancelar_pedido,
+        enviar_cardapio_arquivo,
+        escalar_humano,
+        registrar_avaliacao,
+        registrar_pedido,
     )
 
     intencao = nlu.get("intencao")
@@ -722,13 +728,11 @@ async def processar(
         and (_eh_confirmacao(intencao, user_input) or _afirmou_upsell(intencao, user_input))
     )
     if _quer_cardapio(intencao, user_input, dados) or confirmou_ver_cardapio:
-        enviou_agora = False
         if not estado.get("cardapio_enviado"):
             try:
                 r = await enviar_cardapio_arquivo(ctx, db)
                 if r.get("ok"):
                     estado["cardapio_enviado"] = True
-                    enviou_agora = True
                     try:
                         from app.services.conversation_state import save_state
                         await save_state(db, ctx.pizzaria.id, ctx.telefone, estado)

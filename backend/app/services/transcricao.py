@@ -47,6 +47,7 @@ async def _transcrever_gemini_nativo(key: str, model: str, raw: bytes, mimetype:
     if "gemini" not in gem_model.lower():
         gem_model = "gemini-2.5-flash"  # modelo configurado não é Gemini → usa um que ouve áudio
     from google.genai import types
+
     from app.agent.llm import get_client
     client = get_client(key)
     resp = await client.aio.models.generate_content(

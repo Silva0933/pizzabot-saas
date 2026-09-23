@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
     # Aplica migrations SQL pendentes (idempotente, com advisory lock global).
     try:
         import asyncio
+
         from migrations.apply import run as run_migrations
         await asyncio.to_thread(run_migrations, False)
         log.info("Migrations verificadas/aplicadas.")
@@ -133,6 +134,8 @@ app = FastAPI(
     version="2.0.0",
     description="Backend Python que orquestra o atendimento das pizzarias.",
     docs_url="/docs" if not settings.is_production else None,
+    # O /docs já some em produção, mas o openapi.json seguia listando todas as rotas.
+    openapi_url="/openapi.json" if not settings.is_production else None,
     redoc_url=None,
     lifespan=lifespan,
 )

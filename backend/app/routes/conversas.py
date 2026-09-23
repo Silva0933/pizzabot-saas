@@ -1,7 +1,7 @@
 """API do painel para conversas e mensagens."""
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import delete, desc, select
@@ -136,7 +136,7 @@ async def enviar_manual(
     )
     db.add(msg)
     conv.last_message = body.conteudo
-    conv.last_timestamp = datetime.now(timezone.utc)
+    conv.last_timestamp = datetime.now(UTC)
     await db.commit()
     await db.refresh(msg)
 
