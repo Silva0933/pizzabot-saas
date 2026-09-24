@@ -48,12 +48,11 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
   }, [pid]);
 
   useEffect(() => {
+    // O status vem do callback (vale para toda reconexão). Os listeners antigos
+    // ficavam presos à primeira conexão: depois de reconectar, "offline" para sempre.
     const ws = connectWebSocket(pid, (ev) => {
       if (REFRESH_EVENTS.includes(ev.tipo)) load(true);
-    });
-    ws.addEventListener("open", () => setWsOnline(true));
-    ws.addEventListener("close", () => setWsOnline(false));
-    ws.addEventListener("error", () => setWsOnline(false));
+    }, setWsOnline);
     return () => { ws.close(); setWsOnline(false); };
   }, [pid]);
 

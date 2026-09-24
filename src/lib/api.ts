@@ -46,7 +46,43 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T = any>(path: string, init: RequestInit = {}): Promise<T> {
+/*
+ * Renovação do access token (60 min) com o refresh token (30 dias). O painel
+ * nunca chamava /auth/refresh: qualquer 401 apagava tudo e voltava ao login, e o
+ * dono da pizzaria era deslogado a cada hora — no meio do expediente, sem
+ * alerta de pedido novo. Uma renovação por vez: as requisições que caírem
+ * juntas esperam a mesma promessa.
+ */
+let renovacaoEmAndamento: Promise<boolean> | null = null;
+
+async function renovarToken(): Promise<boolean> {
+  const refresh = typeof window !== "undefined" ? localStorage.getItem(REFRESH_KEY) : null;
+  if (!refresh) return false;
+  if (!renovacaoEmAndamento) {
+    renovacaoEmAndamento = (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+        if (!r.ok) return false;
+        const d = await r.json();
+        if (!d?.access_token || !d?.refresh_token) return false;
+        setTokens(d.access_token, d.refresh_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        // Libera a próxima renovação depois que esta terminar.
+        setTimeout(() => { renovacaoEmAndamento = null; }, 0);
+      }
+    })();
+  }
+  return renovacaoEmAndamento;
+}
+
+async function request<T = any>(path: string, init: RequestInit = {}, jaRenovou = false): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -57,7 +93,10 @@ async function request<T = any>(path: string, init: RequestInit = {}): Promise<T
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
   if (!res.ok) {
-    if (res.status === 401 && !path.includes("/auth/login")) {
+    if (res.status === 401 && !path.includes("/auth/login") && !path.includes("/auth/refresh")) {
+      if (!jaRenovou && await renovarToken()) {
+        return request<T>(path, init, true);
+      }
       clearTokens();
       if (typeof window !== "undefined") {
         window.location.reload();
@@ -1121,78 +1160,110 @@ export interface WsEvent {
   payload: Record<string, any>;
 }
 
+/** Conexão ao vivo do painel: o único uso de quem chama é encerrar. */
+export interface ConexaoAoVivo {
+  close(): void;
+}
+
+/** O access token (JWT) já venceu ou vence em menos de 1 minuto? */
+function tokenVencido(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp !== "number" || payload.exp * 1000 < Date.now() + 60_000;
+  } catch {
+    return true;
+  }
+}
+
 /**
- * Conecta ao WebSocket com reconexão automática (backoff exponencial).
- * Heartbeat a cada 30s para manter conexão viva.
+ * Conecta ao WebSocket com reconexão automática (backoff exponencial até 30s).
+ * Heartbeat a cada 30s para manter a conexão viva.
+ *
+ * Três falhas antigas, todas com o mesmo sintoma (painel sem pedido novo em
+ * tempo real): a URL levava o token de quando a tela abriu, então depois de 1h
+ * toda reconexão era recusada; após 10 tentativas desistia para sempre; e o
+ * close() devolvido só fechava a PRIMEIRA conexão — a reconectada ficava aberta
+ * e, ao voltar à tela, outra era aberta (eventos e alertas em dobro).
  */
 export function connectWebSocket(
   pizzariaId: string,
   onEvent: (e: WsEvent) => void,
   onStatusChange?: (connected: boolean) => void,
-): WebSocket {
+): ConexaoAoVivo {
   const base = API_BASE.replace(/^https/, "wss").replace(/^http/, "ws");
-  const token = getToken();
-  const url = `${base}/ws/${pizzariaId}?token=${token ?? ""}`;
 
-  let ws: WebSocket;
+  let ws: WebSocket | null = null;
   let retryCount = 0;
-  const maxRetries = 10;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  let intentionalClose = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let encerrada = false;
 
-  function connect(): WebSocket {
-    ws = new WebSocket(url);
+  async function connect(): Promise<void> {
+    if (encerrada) return;
+    // Token do momento, renovado se preciso — nunca o de quando a tela abriu.
+    if (tokenVencido(getToken())) await renovarToken();
+    if (encerrada) return;
+    const atual = new WebSocket(`${base}/ws/${pizzariaId}?token=${getToken() ?? ""}`);
+    ws = atual;
 
-    ws.onopen = () => {
+    atual.onopen = () => {
       console.info("WS conectado");
       retryCount = 0;
       onStatusChange?.(true);
-      // Heartbeat a cada 30s
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       heartbeatTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send("ping");
-        }
+        if (atual.readyState === WebSocket.OPEN) atual.send("ping");
       }, 30_000);
     };
 
-    ws.onmessage = (msg) => {
+    atual.onmessage = (msg) => {
       try {
-        const data: WsEvent = JSON.parse(msg.data);
-        onEvent(data);
+        onEvent(JSON.parse(msg.data) as WsEvent);
       } catch {
         // pong ou payload inválido
       }
     };
 
-    ws.onerror = () => {
+    atual.onerror = () => {
       console.warn("WS erro");
     };
 
-    ws.onclose = () => {
+    atual.onclose = () => {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (ws !== atual) return; // conexão antiga, já substituída
       onStatusChange?.(false);
-      if (!intentionalClose && retryCount < maxRetries) {
-        const delay = Math.min(1000 * 2 ** retryCount, 30_000);
-        retryCount++;
-        console.info(`WS reconectando em ${delay}ms (tentativa ${retryCount})`);
-        setTimeout(() => connect(), delay);
-      }
+      if (encerrada) return;
+      const delay = Math.min(1000 * 2 ** retryCount, 30_000);
+      retryCount++;
+      console.info(`WS reconectando em ${delay}ms (tentativa ${retryCount})`);
+      retryTimer = setTimeout(() => { void connect(); }, delay);
     };
-
-    return ws;
   }
 
-  ws = connect();
-
-  // Sobrescreve close para marcar como intencional
-  const originalClose = ws.close.bind(ws);
-  ws.close = (...args: any[]) => {
-    intentionalClose = true;
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
-    originalClose(...args);
+  // Aba volta a ficar visível (celular desbloqueado, notebook acordou): se a
+  // conexão caiu, reconecta na hora em vez de esperar o próximo backoff.
+  const aoVoltar = () => {
+    if (document.visibilityState !== "visible" || encerrada) return;
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      if (retryTimer) clearTimeout(retryTimer);
+      retryCount = 0;
+      void connect();
+    }
   };
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", aoVoltar);
 
-  return ws;
+  void connect();
+
+  return {
+    close() {
+      encerrada = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (retryTimer) clearTimeout(retryTimer);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", aoVoltar);
+      ws?.close();
+    },
+  };
 }
 
 // ============================================

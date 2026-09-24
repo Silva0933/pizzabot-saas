@@ -31,7 +31,7 @@ import { AjudaView } from "./components/v2/AjudaView";
 import { AssinaturaView } from "./components/v2/AssinaturaView";
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
-  connectWebSocket, BackendPizzaria, UserMe, WsEvent,
+  connectWebSocket, BackendPizzaria, UserMe, WsEvent, type ConexaoAoVivo,
   backendToOrder, backendToConversation,
   clearTokens, getToken, ApiError,
 } from "./lib/api";
@@ -216,7 +216,7 @@ function AdminApp() {
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() =>
     typeof Notification !== "undefined" ? Notification.permission : "denied",
   );
-  const wsRef = useRef<WebSocket | null>(null);
+  const wsRef = useRef<ConexaoAoVivo | null>(null);
   // Eventos de pedido que já tocaram (chegada:<id> / fechado:<id>). Nunca é
   // limpo ao "atender" o alerta: é isso que impede o som de voltar a cada
   // mensagem do cliente enquanto o rascunho do pedido é atualizado.
