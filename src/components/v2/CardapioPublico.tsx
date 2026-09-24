@@ -1096,9 +1096,10 @@ export function CardapioPublico({ slug }: { slug: string }) {
           tipo: item?.tipo || "adicional"
         };
       }).filter(it => it.nome.length > 0);
-    } else {
-      adsp = data.pizzaria.adicionais || [];
     }
+    // Lista própria só com nomes vazios (ex.: [""] salvo pelo editor) não é
+    // lista: antes o produto ficava sem adicional nenhum, nem os globais.
+    if (!adsp.length) adsp = data.pizzaria.adicionais || [];
 
     let precoAds = 0;
     for (const a of modalAdicionais) {

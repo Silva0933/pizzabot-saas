@@ -502,7 +502,14 @@ export function CardapioViewV2({
     setSaving(true);
     setErr(null);
     try {
-      const body = { ...form, preco: Number(form.preco) || 0 };
+      // Linha de adicional deixada em branco era salva como "" — o cardápio
+      // digital tratava [""] como lista própria e o produto ficava sem adicionais.
+      const adicionais = normalizeAdicionais((form.opcoes as any)?.adicionais || []).filter((a) => a.nome);
+      const body = {
+        ...form,
+        preco: Number(form.preco) || 0,
+        opcoes: { ...(form.opcoes || {}), adicionais },
+      };
       if (editing) {
         await cardapioApi.update(pizzariaId, editing.id, body);
       } else {
