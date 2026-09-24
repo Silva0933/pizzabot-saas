@@ -73,7 +73,7 @@ Infra: Postgres com pgvector + Redis.
 ```bash
 # Backend (usar o venv do projeto; o Python global não tem as dependências)
 cd backend
-.venv/Scripts/python.exe -m pytest tests -q          # ~400 testes, usam mocks
+.venv/Scripts/python.exe -m pytest tests -q          # ~450 testes, usam mocks
 .venv/Scripts/python.exe -m ruff check app            # B008 (Depends) e E402 são intencionais
 docker compose up -d                                  # stack local completa
 
