@@ -18,6 +18,9 @@ from app.agent.context import AgentContext
 
 log = logging.getLogger(__name__)
 
+# Acima disto, quantidade de um mesmo item vai pra equipe confirmar.
+LIMITE_QTD_ITEM = 20
+
 ETAPAS = ("SAUDACAO", "COLETA_ITENS", "ENTREGA", "ENDERECO", "PAGAMENTO", "AGUARDANDO_CONFIRMACAO", "FINALIZADO")
 
 
@@ -49,8 +52,11 @@ def resumo_estado(estado: dict[str, Any]) -> str:
 
 
 def _chave_item(nome: str | None, sabores: list[str]) -> str:
+    """Identidade do item no carrinho. Os sabores entram SEMPRE: a NLU manda meio
+    a meio com nome genérico ("pizza") + sabores, e só o nome fazia duas meias
+    diferentes no mesmo pedido virarem uma pizza só."""
     import unicodedata
-    base = (nome or " ".join(sorted(sabores or []))).strip().lower()
+    base = " ".join([nome or "", *sorted(s.strip() for s in (sabores or []))]).strip().lower()
     return "".join(c for c in unicodedata.normalize("NFD", base) if unicodedata.category(c) != "Mn")
 
 
@@ -465,7 +471,10 @@ async def _cardapio_em_texto(ctx: AgentContext, db: AsyncSession) -> str | None:
         "  (SELECT min(pt.preco) FROM public.produto_tamanhos pt "
         "   WHERE pt.produto_id = p.id AND pt.disponivel = true) AS preco_min "
         "FROM public.produtos p WHERE p.pizzaria_id = :pid AND p.disponivel = true "
-        "ORDER BY p.categoria NULLS LAST, p.ordem, p.nome LIMIT 80"
+        # Pratos principais primeiro: em ordem alfabética "Bebidas" abria a lista.
+        "ORDER BY CASE lower(coalesce(p.categoria, '')) WHEN 'pizza' THEN 0 WHEN 'lanche' THEN 1 "
+        "  WHEN 'bebida' THEN 3 WHEN 'sobremesa' THEN 4 ELSE 2 END, "
+        "  p.categoria NULLS LAST, p.ordem, p.nome LIMIT 80"
     ), {"pid": str(ctx.pizzaria.id)})).fetchall()
     if not rows:
         return None
@@ -964,6 +973,25 @@ async def processar(
             decisao["fatos"].append(
                 f"Cliente aceitou repetir o pedido de sempre: {de_sempre}."
             )
+    elif not estado["carrinho"] and _re.search(
+        r"\b(de sempre|o mesmo de sempre|de costume)\b", (user_input or "").lower()
+    ):
+        # Pediu "o de sempre" sem a oferta. A NLU extraía "o de sempre" como
+        # produto e a atendente respondia que "o de sempre não está no cardápio".
+        dados["produtos"] = [
+            p for p in (dados.get("produtos") or [])
+            if isinstance(p, dict) and not _re.search(r"sempre|costume", (p.get("nome") or "").lower())
+        ]
+        de_sempre = _item_de_sempre(ctx)
+        if de_sempre and not dados["produtos"]:
+            dados["produtos"] = [{"nome": de_sempre, "qtd": 1}]
+            decisao["fatos"].append(f"Cliente pediu o de sempre: {de_sempre}.")
+        elif not de_sempre:
+            decisao["fatos"].append(
+                "O cliente pediu 'o de sempre', mas ainda não há pedidos anteriores dele registrados. "
+                "Diga com simpatia que não encontrou um pedido anterior e pergunte o que ele vai querer "
+                "hoje. NÃO trate 'o de sempre' como nome de produto."
+            )
 
     # Aceite do upsell de ITEM ÚNICO: quando a oferta nomeou UM item específico
     # ("Quer uma Coca Cola 2L pra acompanhar?") e o cliente respondeu "quero"
@@ -1012,6 +1040,25 @@ async def processar(
 
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
+
+    # Pedido grande (ex.: 60 pizzas) passa pela equipe: prazo e estoque não são
+    # coisa pro bot prometer. Antes entrava calado, e o cálculo ainda cortava a
+    # quantidade em silêncio (carrinho 60, preço de 50).
+    grandes = [it for it in estado["carrinho"] if int(it.get("qtd") or 1) > LIMITE_QTD_ITEM]
+    if grandes and not estado.get("pedido_grande_escalado"):
+        estado["pedido_grande_escalado"] = True
+        qtd_max = max(int(it.get("qtd") or 1) for it in grandes)
+        try:
+            await escalar_humano(ctx, db, motivo_escalonamento=f"FSM: pedido grande ({qtd_max} unidades de um item)")
+        except Exception:  # noqa: BLE001
+            pass
+        decisao["acao"] = "escalado"
+        decisao["fatos"].append(f"Pedido grande: {qtd_max} unidades de um mesmo item. Itens anotados.")
+        decisao["proxima_pergunta"] = (
+            "Agradeça o pedido e explique que, para pedidos grandes assim, a equipe confirma o prazo "
+            "e a disponibilidade — já chamou alguém para continuar. NÃO confirme prazo nem total."
+        )
+        return {"decisao": decisao, "estado": estado}
 
     # Qualquer resposta após pedirmos o número da casa consome a flag (se o
     # cliente respondeu outra coisa, o funil segue normal sem insistir).
@@ -1297,6 +1344,17 @@ async def processar(
                 "" if estado.get("cardapio_enviado")
                 else " Se fizer sentido e ainda não enviou o cardápio, ofereça mostrá-lo."
             )
+            if intencao == "conversa_fiada":
+                # A regra genérica de "fora do tema" no fim da instrução era
+                # ignorada ("a capital da França é Paris"); aqui ela é a instrução.
+                decisao["proxima_pergunta"] = (
+                    "O cliente puxou conversa. Se for cumprimento ou agradecimento, responda curto e simpático "
+                    "e pergunte o que ele vai querer hoje. Se for pergunta sobre OUTRO assunto (geografia, "
+                    "notícias, contas, conselhos...), NÃO responda o conteúdo, mesmo sabendo: diga com "
+                    f"simpatia que por aqui você cuida dos pedidos da {ctx.pizzaria.nome} e ofereça o cardápio."
+                )
+                estado["apresentou"] = True
+                return {"decisao": decisao, "estado": estado}
             decisao["proxima_pergunta"] = (
                 "Responda com naturalidade EXATAMENTE ao que o cliente perguntou/disse, usando SÓ os dados reais. "
                 "Se ele perguntou por um SABOR/PRODUTO específico: se ele aparece em 'Produtos encontrados no cardápio', "

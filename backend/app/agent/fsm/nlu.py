@@ -112,6 +112,7 @@ async def nlu_extract(
     estado_resumo: str,
     historico_texto: str,
     user_input: str,
+    reasoning: str | None = None,
 ) -> dict[str, Any]:
     """Roda a extração NLU. Retorna {intencao, confianca, dados}. Nunca lança."""
     from app.agent.providers import openai_chat
@@ -133,7 +134,7 @@ async def nlu_extract(
             try:
                 res = await openai_chat(
                     provider=provider, api_key=api_key, model=model,
-                    messages=messages, temperature=0.0, max_tokens=1500,
+                    messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning,
                     response_format={"type": "json_object"},
                 )
             except Exception as e_json:
@@ -144,12 +145,12 @@ async def nlu_extract(
                 _SEM_JSON_MODE.add(chave_modelo)
                 res = await openai_chat(
                     provider=provider, api_key=api_key, model=model,
-                    messages=messages, temperature=0.0, max_tokens=1500,
+                    messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning,
                 )
         else:
             res = await openai_chat(
                 provider=provider, api_key=api_key, model=model,
-                messages=messages, temperature=0.0, max_tokens=1500,
+                messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning,
             )
         usage = res.get("usage") or {}
         parsed = _extrair_json(res.get("content") or "")

@@ -301,12 +301,27 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     # Modelo barato para a NLU (extração JSON). Cai no modelo principal se vazio.
     nlu_model = (cfg.get("nlu_model") or "").strip() or model
 
+    # Nível de raciocínio por papel ("" = padrão do provedor). NLU interpreta a
+    # mensagem (raciocínio ajuda em frase ambígua); a voz só redige (raciocínio
+    # só custa latência). Valores: none | low | medium | high.
+    nlu_reasoning = normalizar_reasoning(cfg.get("nlu_reasoning"))
+    voz_reasoning = normalizar_reasoning(cfg.get("voz_reasoning"))
+
     return {
         "provider": provider, "model": model, "keys": keys,
         "modelos_plano": modelos_plano, "transcription_model": transcription_model,
         "fallback_provider": fallback_provider, "fallback_model": fallback_model,
         "nlu_model": nlu_model,
+        "nlu_reasoning": nlu_reasoning, "voz_reasoning": voz_reasoning,
     }
+
+
+REASONING_VALIDOS = ("none", "low", "medium", "high")
+
+
+def normalizar_reasoning(valor: Any) -> str:
+    v = str(valor or "").strip().lower()
+    return v if v in REASONING_VALIDOS else ""
 
 
 def modelo_para_plano(cfg: dict[str, Any], plano: str | None) -> str:

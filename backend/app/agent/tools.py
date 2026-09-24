@@ -759,7 +759,7 @@ async def _calcular_pedido(
             qtd = int(it.get("qtd") or it.get("quantidade") or 1)
         except (TypeError, ValueError):
             qtd = 1
-        qtd = max(1, min(qtd, 50))
+        qtd = max(1, min(qtd, 200))  # acima de 20 o FSM já escala; teto só contra abuso
         tamanho = it.get("tamanho") or it.get("tam")
 
         # BLINDAGEM (Pilar 1) — preço CONGELADO: se este item já teve o preço

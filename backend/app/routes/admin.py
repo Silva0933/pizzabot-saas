@@ -25,6 +25,7 @@ from app.services.app_config import (
     get_config,
     get_evolution_config,
     get_llm_config,
+    normalizar_reasoning,
     set_config,
 )
 from app.services.billing_plataforma import billing_configurado
@@ -813,6 +814,9 @@ class LLMConfigIn(BaseModel):
     fallback_model: str | None = None
     # Modelo barato p/ NLU (extração JSON). Vazio = mesmo modelo principal.
     nlu_model: str | None = None
+    # Raciocínio por papel: "" (padrão do provedor) | none | low | medium | high.
+    nlu_reasoning: str | None = None
+    voz_reasoning: str | None = None
 
 
 @router.get("/llm")
@@ -837,6 +841,8 @@ async def get_llm(
         "fallback_model": cfg.get("fallback_model") or "",
         # Devolve o valor CONFIGURADO (cru), não o resolvido — vazio = herda o principal.
         "nlu_model": (raw.get("nlu_model") or "").strip(),
+        "nlu_reasoning": cfg.get("nlu_reasoning") or "",
+        "voz_reasoning": cfg.get("voz_reasoning") or "",
     }
 
 
@@ -883,6 +889,8 @@ async def put_llm(
         "fallback_provider": fallback_provider,
         "fallback_model": fallback_model,
         "nlu_model": (body.nlu_model or "").strip(),
+        "nlu_reasoning": normalizar_reasoning(body.nlu_reasoning),
+        "voz_reasoning": normalizar_reasoning(body.voz_reasoning),
     })
     return {"ok": True, "provider": provider, "model": body.model.strip(),
             "modelos_plano": modelos_plano,
@@ -890,6 +898,8 @@ async def put_llm(
             "fallback_provider": fallback_provider,
             "fallback_model": fallback_model,
             "nlu_model": (body.nlu_model or "").strip(),
+            "nlu_reasoning": normalizar_reasoning(body.nlu_reasoning),
+            "voz_reasoning": normalizar_reasoning(body.voz_reasoning),
             "keys_configuradas": {k: bool(decrypt_secret(v) or v) for k, v in keys.items()}}
 
 

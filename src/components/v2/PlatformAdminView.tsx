@@ -2319,16 +2319,18 @@ function LLMConfigCard() {
     pro: "",
     premium: "",
   });
-  const [transcriptionModel, setTranscriptionModel] = useState("google/gemma-3-27b-it");
-  const [fallbackProvider, setFallbackProvider] = useState("openrouter");
-  const [fallbackModel, setFallbackModel] = useState("meta-llama/llama-3.1-70b-instruct");
-  const [nluModel, setNluModel] = useState("meta-llama/llama-3.1-8b-instruct");
+  // Vazios = "não configurado" (herda o principal / sem reserva). Antes os campos
+  // nasciam com modelos de exemplo e salvar a tela ativava um failover e um
+  // modelo de NLU que ninguém escolheu.
+  const [transcriptionModel, setTranscriptionModel] = useState("");
+  const [fallbackProvider, setFallbackProvider] = useState("");
+  const [fallbackModel, setFallbackModel] = useState("");
+  const [nluModel, setNluModel] = useState("");
+  const [nluReasoning, setNluReasoning] = useState("");
+  const [vozReasoning, setVozReasoning] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>({
-    ok: true,
-    text: 'OK! gemini/gemini-2.5-flash respondeu com sucesso: "ok"',
-  });
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [usage, setUsage] = useState<LLMUsage | null>({
     total: { total: 0, prompt: 0, completion: 0, calls: 0 },
     por_dia: [],
@@ -2346,6 +2348,8 @@ function LLMConfigCard() {
     if (c.fallback_provider) setFallbackProvider(c.fallback_provider);
     if (c.fallback_model) setFallbackModel(c.fallback_model);
     if (c.nlu_model) setNluModel(c.nlu_model);
+    setNluReasoning(c.nlu_reasoning || "");
+    setVozReasoning(c.voz_reasoning || "");
   }
 
   function load() {
@@ -2400,6 +2404,8 @@ function LLMConfigCard() {
         fallback_provider: fallbackProvider,
         fallback_model: fallbackModel.trim(),
         nlu_model: nluModel.trim(),
+        nlu_reasoning: nluReasoning,
+        voz_reasoning: vozReasoning,
       });
       setMsg({ ok: true, text: "Configuração de IA salva. O atendimento de todas as pizzarias já está atualizado." });
       load();
@@ -2566,11 +2572,31 @@ function LLMConfigCard() {
                         type="text"
                         value={nluModel}
                         onChange={(e) => setNluModel(e.target.value)}
-                        placeholder="meta-llama/llama-3.1-8b-instruct"
+                        placeholder="Vazio = mesmo modelo principal"
                         className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 pr-8 outline-none focus:border-purple-500 font-mono text-xs"
                       />
                       <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 md:col-span-2">
+                    {([
+                      ["Raciocínio da NLU", "Entender a mensagem. 'Baixo' ajuda em frase ambígua.", nluReasoning, setNluReasoning],
+                      ["Raciocínio da resposta", "Redigir a fala. Raciocinar aqui só aumenta a espera.", vozReasoning, setVozReasoning],
+                    ] as const).map(([rotulo, ajuda, valor, setValor]) => (
+                      <div key={rotulo}>
+                        <label className="block text-[11px] text-slate-300 font-medium mb-0.5">{rotulo}</label>
+                        <p className="text-[10px] text-slate-500 mb-1">{ajuda}</p>
+                        <select value={valor} onChange={(e) => setValor(e.target.value)}
+                          className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 text-xs">
+                          <option value="">Padrão do modelo</option>
+                          <option value="none">Desligado</option>
+                          <option value="low">Baixo</option>
+                          <option value="medium">Médio</option>
+                          <option value="high">Alto</option>
+                        </select>
+                      </div>
+                    ))}
                   </div>
 
                   <div>
@@ -2616,8 +2642,8 @@ function LLMConfigCard() {
                         <option value="openrouter">OpenRouter</option>
                         <option value="gemini">Google Gemini</option>
                         <option value="openai">OpenAI</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="groq">Groq</option>
+                        {/* Só os provedores que o backend aceita (LLM_PROVIDERS):
+                            Anthropic/Groq aqui faziam a tela inteira falhar ao salvar. */}
                         <option value="">(Sem reserva)</option>
                       </select>
                       <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />

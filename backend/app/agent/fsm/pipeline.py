@@ -294,6 +294,7 @@ async def run_fsm_agent(
                 estado_resumo=estado_resumo,
                 historico_texto=hist_txt,
                 user_input=user_input,
+                reasoning=cfg.get("nlu_reasoning") or None,
             )
 
         res_nlu, nlu_provider_usado, nlu_model_usado = await com_failover(
@@ -421,7 +422,10 @@ async def run_fsm_agent(
             user_input=user_input,
         )
         async def _voz(prov: str, key: str, mdl: str):
-            return await voice.gerar_voz(provider=prov, api_key=key, model=mdl, comando=comando)
+            return await voice.gerar_voz(
+                provider=prov, api_key=key, model=mdl, comando=comando,
+                reasoning=cfg.get("voz_reasoning") or None,
+            )
 
         (texto, voz_usage), provider_usado, model_usado = await com_failover(_voz, cfg=cfg, model=model)
         if not texto:

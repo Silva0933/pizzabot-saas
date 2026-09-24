@@ -119,6 +119,7 @@ async def gerar_voz(
     api_key: str,
     model: str,
     comando: str,
+    reasoning: str | None = None,
 ) -> tuple[str, dict]:
     """Retorna (texto, usage). Refaz UMA vez se a 1ª resposta vier truncada."""
     from app.agent.providers import openai_chat
@@ -128,7 +129,7 @@ async def gerar_voz(
         # saía cortada no meio quase sempre. max_tokens é só um TETO — resposta curta não
         # gasta mais; só evita o corte.
         res = await openai_chat(
-            provider=provider, api_key=api_key, model=model,
+            provider=provider, api_key=api_key, model=model, reasoning=reasoning,
             messages=[{"role": "user", "content": comando}],
             temperature=0.6, max_tokens=1200,
         )
@@ -140,7 +141,7 @@ async def gerar_voz(
         if _parece_truncado(texto):
             log.warning("Voz FSM veio truncada (%r) — refazendo", texto[:60])
             res2 = await openai_chat(
-                provider=provider, api_key=api_key, model=model,
+                provider=provider, api_key=api_key, model=model, reasoning=reasoning,
                 messages=[{
                     "role": "user",
                     "content": comando + "\n\nIMPORTANTE: responda a frase COMPLETA, terminando o pensamento (não corte no meio). Seja breve.",

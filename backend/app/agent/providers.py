@@ -103,6 +103,7 @@ async def openai_chat(
     temperature: float = 0.7,
     max_tokens: int = 1024,
     response_format: dict[str, Any] | None = None,
+    reasoning: str | None = None,
 ) -> dict[str, Any]:
     """
     Chama chat completions (OpenAI/OpenRouter). Retorna formato normalizado:
@@ -127,6 +128,13 @@ async def openai_chat(
     # rejeitar o parâmetro (400), refazemos a chamada sem ele logo abaixo.
     if provider == "gemini":
         payload["reasoning_effort"] = "none"
+    # Nível de raciocínio escolhido no painel (none/low/medium/high). OpenRouter
+    # usa o objeto unificado "reasoning"; OpenAI/Gemini, "reasoning_effort".
+    if reasoning:
+        if provider == "openrouter":
+            payload["reasoning"] = {"enabled": False} if reasoning == "none" else {"effort": reasoning}
+        else:
+            payload["reasoning_effort"] = reasoning
 
     # Timeout agressivo de propósito: o pipeline FSM tem teto de 15s e o legado de
     # 40s. Um provedor lento (OpenRouter/OpenAI instável) não pode segurar o worker
@@ -136,8 +144,9 @@ async def openai_chat(
         resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
         # Auto-cura: alguns modelos/endpoints não conhecem reasoning_effort → 400.
         # Nesse caso, refaz sem o parâmetro (cai pro caminho com thinking + teto folgado).
-        if resp.status_code == 400 and "reasoning_effort" in payload:
+        if resp.status_code == 400 and ("reasoning_effort" in payload or "reasoning" in payload):
             payload.pop("reasoning_effort", None)
+            payload.pop("reasoning", None)
             resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
         if resp.status_code >= 400:
             raise RuntimeError(f"{provider} {resp.status_code}: {resp.text[:400]}")

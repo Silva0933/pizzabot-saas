@@ -119,3 +119,110 @@ class TestDuvidaNaoEntraNoCarrinho:
         fatos = " ".join(out["decisao"]["fatos"])
         assert "G R$ 66,90" in fatos
         assert 66.9 in out["decisao"]["precos_validos"]
+
+
+def _ctx_basico():
+    ctx = MagicMock()
+    ctx.pizzaria.id = "p"
+    ctx.pizzaria.nome = "Fornalha"
+    ctx.pizzaria.adicionais = []
+    ctx.pizzaria.taxas_bairro = None
+    ctx.pizzaria.taxa_entrega_fixa = None
+    ctx.pizzaria.tema_cardapio = {}
+    ctx.ultimo_pedido_resumo = None
+    return ctx
+
+
+class TestBateria2:
+    def test_duas_meias_diferentes_nao_viram_uma(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        engine._aplicar_nlu(estado, {"produtos": [
+            {"nome": "pizza", "qtd": 1, "tamanho": "G", "sabores_meia": ["calabresa", "brasa"]},
+            {"nome": "pizza", "qtd": 1, "tamanho": "M", "sabores_meia": ["margherita", "portuguesa"]},
+        ]})
+        assert len(estado["carrinho"]) == 2
+        assert {it["tamanho"] for it in estado["carrinho"]} == {"G", "M"}
+
+    def test_mesma_meia_repetida_continua_sendo_esclarecimento(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        engine._aplicar_nlu(estado, {"produtos": [{"nome": "pizza", "qtd": 1, "sabores_meia": ["calabresa", "brasa"]}]})
+        engine._aplicar_nlu(estado, {"produtos": [{"nome": "pizza", "qtd": 1, "tamanho": "G", "sabores_meia": ["brasa", "calabresa"]}]})
+        assert len(estado["carrinho"]) == 1
+        assert estado["carrinho"][0]["tamanho"] == "G"
+
+    def test_de_sempre_sem_historico_nao_vira_produto(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [{"nome": "o de sempre", "qtd": 1}]}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="quero o de sempre"))
+        assert out["estado"]["carrinho"] == []
+        assert "não há pedidos anteriores" in " ".join(out["decisao"]["fatos"])
+
+    def test_pedido_grande_vai_para_a_equipe(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [{"nome": "Pizza Calabresa", "qtd": 60, "tamanho": "G"}]}}
+        escalar = AsyncMock(return_value={"ok": True})
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools.escalar_humano", new=escalar):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="60 calabresas G"))
+        escalar.assert_awaited_once()
+        assert out["decisao"]["acao"] == "escalado"
+        assert out["estado"]["carrinho"][0]["qtd"] == 60
+
+    def test_bate_papo_fora_do_tema_nao_e_respondido(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "conversa_fiada", "dados": {}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools.buscar_cardapio", new=AsyncMock(return_value={"items": []})):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="qual a capital da França?"))
+        assert "NÃO responda o conteúdo" in out["decisao"]["proxima_pergunta"]
+
+
+class TestReasoningNoProvedor:
+    def _payload(self, provider, reasoning):
+        from unittest.mock import patch as _p
+        from app.agent import providers
+        capturado = {}
+
+        class _Resp:
+            status_code = 200
+            def json(self):
+                return {"choices": [{"message": {"content": "ok"}}], "usage": {}}
+
+        async def _post(self, url, headers=None, json=None):
+            capturado.update(json)
+            return _Resp()
+
+        with _p("httpx.AsyncClient.post", new=_post):
+            asyncio.run(providers.openai_chat(
+                provider=provider, api_key="k", model="m",
+                messages=[{"role": "user", "content": "oi"}], reasoning=reasoning,
+            ))
+        return capturado
+
+    def test_openrouter_usa_objeto_reasoning(self):
+        assert self._payload("openrouter", "low")["reasoning"] == {"effort": "low"}
+        assert self._payload("openrouter", "none")["reasoning"] == {"enabled": False}
+
+    def test_openai_usa_reasoning_effort(self):
+        p = self._payload("openai", "low")
+        assert p["reasoning_effort"] == "low" and "reasoning" not in p
+
+    def test_sem_config_nao_manda_nada(self):
+        p = self._payload("openrouter", None)
+        assert "reasoning" not in p and "reasoning_effort" not in p
+
+
+def test_normalizar_reasoning():
+    from app.services.app_config import normalizar_reasoning
+    assert normalizar_reasoning("LOW") == "low"
+    assert normalizar_reasoning("turbo") == ""
+    assert normalizar_reasoning(None) == ""
