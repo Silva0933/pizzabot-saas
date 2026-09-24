@@ -26,11 +26,11 @@ def _ctx_db():
     return ctx, MagicMock()
 
 
-def _pedido(numero=42, status="confirmado", bot_ativo=False):
+def _pedido(numero=42, status="confirmado", origem="cardapio_digital"):
     ped = MagicMock()
     ped.numero_pedido = numero
     ped.status = status
-    ped.bot_ativo = bot_ativo
+    ped.origem = origem
     return ped
 
 

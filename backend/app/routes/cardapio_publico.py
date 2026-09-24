@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import create_access_token, decode_token, hash_password, verify_password
@@ -312,6 +312,13 @@ def _telefones_equivalentes(tel: str) -> set[str]:
     """Returns equivalent forms of a Brazilian WhatsApp number."""
     from app.services.telefones import telefones_equivalentes
     return telefones_equivalentes(tel)
+
+
+def _normalizar_bairro(bairro: Any) -> str:
+    """Nome de bairro comparável: sem acento, sem caixa, espaço simples."""
+    import unicodedata
+    base = unicodedata.normalize("NFD", str(bairro or "").strip().lower())
+    return re.sub(r"\s+", " ", "".join(c for c in base if unicodedata.category(c) != "Mn"))
 
 
 def _calcular_desconto(
@@ -660,17 +667,26 @@ async def criar_pedido_digital(
 
     # Taxa de entrega
     taxa_entrega = Decimal("0")
+    taxa_a_confirmar = False
     if body.tipo == "delivery":
-        # Tenta taxa por bairro primeiro
+        # Tenta taxa por bairro primeiro. Sem acento e sem caixa: "Cidade Operaria"
+        # digitado não casava com "Cidade Operária" cadastrado.
+        achou_bairro = False
         if body.endereco_bairro and pizz.taxas_bairro:
-            bairro_lower = body.endereco_bairro.strip().lower()
+            bairro_norm = _normalizar_bairro(body.endereco_bairro)
             for tb in pizz.taxas_bairro:
-                if (tb.get("bairro") or "").strip().lower() == bairro_lower:
+                if _normalizar_bairro(tb.get("bairro")) == bairro_norm:
                     taxa_entrega = Decimal(str(tb.get("taxa", 0)))
+                    achou_bairro = True
                     break
         # Senão, usa taxa fixa
-        if taxa_entrega == 0 and pizz.taxa_entrega_fixa:
+        if not achou_bairro and pizz.taxa_entrega_fixa:
             taxa_entrega = Decimal(str(pizz.taxa_entrega_fixa))
+        elif not achou_bairro and pizz.taxas_bairro:
+            # Bairro fora da tabela e sem taxa fixa: antes a entrega saía de graça
+            # em silêncio. O pedido segue (não perde a venda), mas marcado para a
+            # loja confirmar a taxa — no card, na observação e no WhatsApp.
+            taxa_a_confirmar = True
 
     valor_total = subtotal - desconto + taxa_entrega
 
@@ -683,14 +699,16 @@ async def criar_pedido_digital(
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão inválida. Entre novamente.")
         telefone = cli.telefone
     if cli is None:
+        # Com e sem o 9º dígito: quem já falou pelo WhatsApp (JID sem o 9) é o
+        # mesmo cliente — antes ganhava um segundo cadastro aqui.
         cli = (
-        await db.execute(
-            select(Cliente).where(
-                Cliente.pizzaria_id == pizz.id,
-                Cliente.telefone == telefone,
+            await db.execute(
+                select(Cliente).where(
+                    Cliente.pizzaria_id == pizz.id,
+                    Cliente.telefone.in_(sorted(_telefones_equivalentes(telefone) | {telefone})),
+                ).order_by(case((Cliente.telefone == telefone, 0), else_=1))
             )
-        )
-    ).scalar_one_or_none()
+        ).scalars().first()
     if cli is None:
         cli = Cliente(
             pizzaria_id=pizz.id,
@@ -713,6 +731,9 @@ async def criar_pedido_digital(
     # podia colidir com um pedido do WhatsApp criado ao mesmo tempo. Não setando o
     # número aqui, TODOS os fluxos passam pelo mesmo lock do trigger.
     observacoes_pedido = body.observacoes
+    if taxa_a_confirmar:
+        nota_taxa = f"⚠️ Taxa de entrega A CONFIRMAR: bairro '{(body.endereco_bairro or '').strip()}' sem taxa cadastrada"
+        observacoes_pedido = f"{observacoes_pedido}\n{nota_taxa}".strip() if observacoes_pedido else nota_taxa
     if desconto > 0 and cupom_codigo:
         desconto_fmt = f"{float(desconto):.2f}".replace(".", ",")
         nota_cupom = f"Cupom {cupom_codigo}: desconto de R$ {desconto_fmt}"
@@ -754,10 +775,10 @@ async def criar_pedido_digital(
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizz.id,
-                Conversa.cliente_telefone == telefone,
-            )
+                Conversa.cliente_telefone.in_(sorted(_telefones_equivalentes(telefone) | {telefone})),
+            ).order_by(case((Conversa.cliente_telefone == telefone, 0), else_=1))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if not conv:
         conv = Conversa(
             pizzaria_id=pizz.id,
@@ -792,7 +813,10 @@ async def criar_pedido_digital(
 
     # Envia confirmação no WhatsApp do cliente (fire-and-forget: não bloqueia a resposta)
     asyncio.create_task(
-        _enviar_confirmacao_whatsapp(pizz.id, pedido.id, cli.telefone, cli.nome, float(taxa_entrega))
+        _enviar_confirmacao_whatsapp(
+            pizz.id, pedido.id, cli.telefone, cli.nome, float(taxa_entrega),
+            taxa_a_confirmar=taxa_a_confirmar,
+        )
     )
 
     return _resposta_pedido_digital(pedido, pizz)
@@ -1129,6 +1153,7 @@ async def _enviar_confirmacao_whatsapp(
     cliente_telefone: str,
     cliente_nome: str | None,
     taxa_entrega: float,
+    taxa_a_confirmar: bool = False,
 ) -> None:
     """Envia mensagem de confirmação do pedido digital no WhatsApp do cliente. Segura para background."""
     from app.db import AsyncSessionLocal
@@ -1185,7 +1210,9 @@ async def _enviar_confirmacao_whatsapp(
         itens_texto,
     ]
 
-    if taxa_entrega > 0:
+    if taxa_a_confirmar:
+        msg_parts.append("  🚚 Taxa de entrega — a loja confirma com você em instantes")
+    elif taxa_entrega > 0:
         msg_parts.append(f"  🚚 Taxa de entrega — R$ {float(taxa_entrega):.2f}".replace(".", ","))
 
     msg_parts.extend([
@@ -1229,10 +1256,10 @@ async def _enviar_confirmacao_whatsapp(
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizz.id,
-                Conversa.cliente_telefone == cliente_telefone,
-            )
+                Conversa.cliente_telefone.in_(sorted(_telefones_equivalentes(cliente_telefone) | {cliente_telefone})),
+            ).order_by(case((Conversa.cliente_telefone == cliente_telefone, 0), else_=1))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if conv:
         msg = Mensagem(
             conversa_id=conv.id,

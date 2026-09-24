@@ -211,3 +211,8 @@ class TestMeioAMeio:
         itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f"], nome="meia", quantidade=1, tamanho="G")]
         with pytest.raises(HTTPException):
             _recalcular_itens(itens, _map(calabresa, frango), {})
+
+
+def test_bairro_casa_sem_acento_e_caixa():
+    from app.routes.cardapio_publico import _normalizar_bairro
+    assert _normalizar_bairro("Cidade Operária ") == _normalizar_bairro("cidade  operaria")

@@ -722,7 +722,10 @@ async def processar(
             log.debug("Consulta de pedido ativo falhou (segue sem): %s", e_ativo)
             ativo = None
         if ativo is not None and getattr(ativo, "numero_pedido", None):
-            origem = "pelo cardápio digital" if not getattr(ativo, "bot_ativo", True) else "pelo WhatsApp"
+            origem = (
+                "pelo cardápio digital" if getattr(ativo, "origem", None) == "cardapio_digital"
+                else "pelo WhatsApp"
+            )
             status_txt = ROTULO_STATUS_PEDIDO.get(ativo.status, ativo.status)
             decisao["fatos"].append(
                 f"O cliente JÁ TEM o pedido #{ativo.numero_pedido} feito {origem}, status atual: {status_txt}. "

@@ -584,16 +584,20 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const cartTotal = useMemo(() => cart.reduce((s, i) => s + i.preco * i.quantidade, 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((s, i) => s + i.quantidade, 0), [cart]);
 
-  const taxaEntrega = useMemo(() => {
-    if (!data || checkoutForm.tipo !== "delivery") return 0;
+  // Mesma regra do servidor: bairro comparado sem acento/caixa; fora da tabela e
+  // sem taxa fixa, a taxa fica "a confirmar" pela loja (não sai de graça).
+  const { taxaEntrega, taxaAConfirmar } = useMemo(() => {
+    if (!data || checkoutForm.tipo !== "delivery") return { taxaEntrega: 0, taxaAConfirmar: false };
     const p = data.pizzaria;
-    if (checkoutForm.bairro && p.taxas_bairro?.length) {
+    const bairro = normalizarBusca(checkoutForm.bairro.trim()).replace(/\s+/g, " ");
+    if (bairro && p.taxas_bairro?.length) {
       const match = p.taxas_bairro.find(
-        tb => tb.bairro.toLowerCase().trim() === checkoutForm.bairro.toLowerCase().trim()
+        tb => normalizarBusca(String(tb.bairro || "").trim()).replace(/\s+/g, " ") === bairro
       );
-      if (match) return match.taxa;
+      if (match) return { taxaEntrega: Number(match.taxa) || 0, taxaAConfirmar: false };
     }
-    return p.taxa_entrega_fixa || 0;
+    if (p.taxa_entrega_fixa) return { taxaEntrega: Number(p.taxa_entrega_fixa), taxaAConfirmar: false };
+    return { taxaEntrega: 0, taxaAConfirmar: Boolean(bairro && p.taxas_bairro?.length) };
   }, [data, checkoutForm.tipo, checkoutForm.bairro]);
 
   // Validação do telefone: precisa de DDD (Brasil = 10-11 dígitos com DDD).
@@ -1672,8 +1676,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
                       </div>
                       <div className="cdp-input-group" style={{ flex: 1 }}>
                         <label className="cdp-input-label">Bairro</label>
-                        <input placeholder="Seu bairro" value={checkoutForm.bairro}
+                        <input placeholder="Seu bairro" value={checkoutForm.bairro} list="cdp-bairros"
                           onChange={e => setCheckoutForm({ ...checkoutForm, bairro: e.target.value })} className="cdp-input" />
+                        {/* Sugere os bairros com taxa cadastrada: o nome certo já
+                            traz a taxa certa, sem depender de digitação exata. */}
+                        {(pizz.taxas_bairro?.length ?? 0) > 0 && (
+                          <datalist id="cdp-bairros">
+                            {pizz.taxas_bairro.map((tb) => <option key={tb.bairro} value={tb.bairro} />)}
+                          </datalist>
+                        )}
                       </div>
                     </div>
                     <div className="cdp-input-group">
@@ -1695,6 +1706,9 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     )}
                     {checkoutForm.bairro && taxaEntrega > 0 && (
                       <p className="cdp-taxa-info">🚚 Taxa para {checkoutForm.bairro}: <strong>{fmt(taxaEntrega)}</strong></p>
+                    )}
+                    {taxaAConfirmar && (
+                      <p className="cdp-taxa-info">🚚 Não temos taxa cadastrada para <strong>{checkoutForm.bairro}</strong>: a loja confirma o valor da entrega com você pelo WhatsApp.</p>
                     )}
                   </div>
                 </>
