@@ -377,6 +377,8 @@ async def buscar_cardapio(
         "quais", "essa", "esse", "aquela", "aquele", "isso", "ai", "aí",
         "pizza", "pizzas", "sabor", "sabores", "lanche", "lanches", "bebida", "bebidas",
         "grande", "media", "média", "pequena", "broto", "tamanho", "p", "m", "g",
+        # Pergunta de preço: não são nomes de produto e só traziam ruído.
+        "quanto", "custa", "custo", "preco", "preço", "valor", "sai", "fica", "voces", "vocês",
     }
     GENERIC_HINT = ("cardap", "menu", "opç", "opc", "sabor", "tudo", "todas", "todos",
                     "disponiv", "que tem", "o que voce", "o que vc")
@@ -424,6 +426,13 @@ async def buscar_cardapio(
             )
             params[f"q{i}"] = f"%{w}%"
         where_extra += " AND (" + " OR ".join(ors) + ")"
+        # Relevância: quantas palavras casam no NOME. Sem isso, a ordem era por
+        # categoria e o LIMIT cortava o produto certo — "quatro queijos" trazia
+        # 5 lanches com "queijo" na descrição e a pizza Quatro Queijos ficava de fora.
+        relevancia = " + ".join(
+            f"(CASE WHEN p.nome ILIKE :q{i} THEN 1 ELSE 0 END)" for i in range(len(tokens[:6]))
+        )
+        order = f" ORDER BY ({relevancia}) DESC, p.categoria NULLS LAST, p.ordem, p.nome LIMIT :lim"
     if categoria:
         where_extra += " AND p.categoria ILIKE :cat"
         params["cat"] = f"%{categoria.strip().rstrip('s')}%"

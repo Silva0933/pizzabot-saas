@@ -309,3 +309,14 @@ class TestTaxaAoMudarEndereco:
         ped.taxa_entrega = 6.9
         ped.endereco_entrega = "Rua A, Cidade Operária"
         assert _ajuste_taxa_endereco(self._pizz(), ped, "Rua X, Renascença") == {"a_confirmar": True}
+
+
+class TestBateria4:
+    def test_meia_de_um_sabor_vira_pizza_inteira(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        engine._aplicar_nlu(estado, {"produtos": [
+            {"nome": "pizza", "qtd": 1, "tamanho": "G", "sabores_meia": ["calabresa"]},
+            {"nome": "pizza", "qtd": 1, "tamanho": "G", "sabores_meia": ["frango"]},
+        ]})
+        assert [(it["nome"], it["sabores"]) for it in estado["carrinho"]] == [("calabresa", []), ("frango", [])]

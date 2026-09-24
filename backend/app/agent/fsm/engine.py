@@ -196,6 +196,14 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
             continue
         nome = (p.get("nome") or "").strip()
         sabores = [s for s in (p.get("sabores_meia") or []) if s]
+        # "Meio a meio" de UM sabor é a pizza inteira desse sabor. A NLU manda
+        # "calabresa e frango" (2 pizzas) como duas meias de um sabor cada, e o
+        # resumo saía "Pizza Meia Calabresa" para uma pizza inteira.
+        if len(sabores) == 1:
+            from app.agent.tools import eh_termo_generico
+            if not nome or eh_termo_generico(nome):
+                nome = sabores[0]
+            sabores = []
         if not nome and not sabores:
             continue
         tamanho = (p.get("tamanho") or None)
