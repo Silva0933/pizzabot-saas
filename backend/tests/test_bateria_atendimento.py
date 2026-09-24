@@ -558,3 +558,21 @@ def test_so_isso_nao_vira_observacao():
     estado = engine.estado_inicial()
     engine._aplicar_nlu(estado, {"observacoes": "sem cebola, só isso"})
     assert estado["observacoes"] == "sem cebola, só isso"
+
+
+def test_delivery_sem_endereco_pede_endereco_fixo():
+    """Bateria 7: "entrega" → cálculo falhava sem endereço, virava pendência e a voz
+    improvisava "Prefere delivery? Se sim, qual o endereço?"."""
+    from app.agent.fsm import engine
+    estado = engine.estado_inicial()
+    estado["apresentou"] = True
+    estado["carrinho"] = [{"nome": "fornalha bacon", "sabores": [], "qtd": 1, "adicionais": []}]
+    calc = {"ok": True, "itens": [{"nome": "Fornalha Bacon", "quantidade": 1, "preco_unit": 36.9}],
+            "valor_total": 36.9, "taxa_entrega": 0}
+    nlu = {"intencao": "informar_entrega_retirada", "dados": {"tipo_entrega": "delivery"}}
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc)) as m:
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="entrega"))
+    assert m.await_args.kwargs["tipo"] == "retirada"
+    assert res["estado"]["tipo"] == "delivery"
+    assert "endereço completo" in (res["decisao"].get("mensagem_pronta") or "")

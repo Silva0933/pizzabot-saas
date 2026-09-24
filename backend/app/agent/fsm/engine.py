@@ -1302,10 +1302,18 @@ async def processar(
     # Resolve o carrinho (preços reais) sempre que houver itens
     calc = None
     if estado["carrinho"]:
+        # Delivery ainda SEM endereço: calcula os itens como retirada. Antes o
+        # cálculo falhava ("endereco_entrega é obrigatório"), o turno virava
+        # pendência e a voz improvisava "Prefere delivery? Se sim, qual o
+        # endereço?" em vez do pedido de endereço fixo (com a opção de mandar a
+        # localização). A taxa só entra no resumo, que exige o endereço.
+        tipo_calc = estado.get("tipo") or "retirada"
+        if tipo_calc == "delivery" and not estado.get("endereco"):
+            tipo_calc = "retirada"
         calc = await _calcular_pedido(
             ctx, db,
             itens=estado["carrinho"],
-            tipo=estado.get("tipo") or "retirada",
+            tipo=tipo_calc,
             forma_pagamento=estado.get("pagamento") or "dinheiro",
             pagar_agora=bool(estado.get("pagar_agora")),
             endereco_entrega=estado.get("endereco"),
