@@ -721,22 +721,24 @@ async def _obter_preco_produto(
 
 
 async def _obter_regras_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sabor: str) -> dict[str, Any]:
+    """`regras` do produto + a categoria dele em `_categoria` (o meio a meio
+    recusa sabores de categorias diferentes, como o cardápio digital)."""
     q, _ = _parse_nome_e_tamanho(nome_sabor)
     row = (await db.execute(text("""
-        SELECT regras FROM public.produtos
+        SELECT regras, categoria FROM public.produtos
         WHERE pizzaria_id = :pid AND disponivel = true
           AND (nome ILIKE :q OR aliases::text ILIKE :q)
         LIMIT 1
     """), {"pid": str(pizzaria_id), "q": q})).first()
     if not row:
         row = (await db.execute(text("""
-            SELECT regras FROM public.produtos
+            SELECT regras, categoria FROM public.produtos
             WHERE pizzaria_id = :pid AND disponivel = true
               AND (nome ILIKE :q OR aliases::text ILIKE :q OR tags::text ILIKE :q)
             LIMIT 1
         """), {"pid": str(pizzaria_id), "q": f"%{q}%"})).first()
-    regras = row[0] if row else {}
-    return regras if isinstance(regras, dict) else {}
+    regras = row[0] if row and isinstance(row[0], dict) else {}
+    return {**regras, "_categoria": row[1]} if row else {}
 
 
 def _metodo_online(forma_pagamento: str | None) -> str | None:
@@ -836,7 +838,8 @@ async def _calcular_pedido(
         if sabores and isinstance(sabores, list):
             precos_sabores = []
             nomes_sabores = []
-            regras_meia: dict[str, Any] = {}
+            regras_sabores: list[dict[str, Any]] = []
+            categorias: set[str] = set()
             tam_real_meia: str | None = None
             for sab in sabores:
                 try:
@@ -847,21 +850,31 @@ async def _calcular_pedido(
                     nm_limpo, tam_nm = _parse_nome_e_tamanho(nm)
                     tam_real_meia = tam_real_meia or tam_nm
                     nomes_sabores.append(nm_limpo)
-                    regras = await _obter_regras_produto(db, ctx.pizzaria.id, sab)
-                    if isinstance(regras.get("meia_meia"), dict):
-                        regras_meia = {**regras_meia, **regras["meia_meia"]}
+                    # Regras pelo nome RESOLVIDO: "brasa" solto casava o lanche
+                    # Brasa Supreme e trazia as regras dele para a Pizza Brasa.
+                    regras = await _obter_regras_produto(db, ctx.pizzaria.id, nm_limpo or sab)
+                    if regras.get("_categoria"):
+                        categorias.add(str(regras["_categoria"]).strip().lower())
+                    meia = regras.get("meia_meia")
+                    regras_sabores.append(meia if isinstance(meia, dict) else {})
                 except ValueError as e:
                     return {"ok": False, "erro": str(e), "sabor_invalido": sab}
 
             if not precos_sabores:
                 return {"ok": False, "erro": "Pizza combinada sem sabores validos."}
-            max_sabores = int(regras_meia.get("max_sabores") or 2)
+            # Mesmas regras do cardápio digital (cardapio_publico._preco_dos_sabores).
+            # Antes as regras eram fundidas com {**a, **b}: o último sabor
+            # sobrescrevia o primeiro, e um sabor que NÃO aceita meia passava se o
+            # outro aceitasse; categorias diferentes (pizza + sobremesa) também.
+            if len(precos_sabores) > 1 and len(categorias) > 1:
+                return {"ok": False, "erro": "Meio a meio so entre sabores da mesma categoria.", "meia_invalida": list(sabores)}
+            max_sabores = min(int(r.get("max_sabores") or 2) for r in regras_sabores)
             if len(precos_sabores) > max_sabores:
-                return {"ok": False, "erro": f"Esta pizza aceita no maximo {max_sabores} sabores."}
-            if regras_meia.get("permitido") is False:
-                return {"ok": False, "erro": "Um dos sabores escolhidos nao aceita meia/meia."}
+                return {"ok": False, "erro": f"Esta pizza aceita no maximo {max_sabores} sabores.", "meia_invalida": list(sabores)}
+            if any(r.get("permitido") is False for r in regras_sabores):
+                return {"ok": False, "erro": "Um dos sabores escolhidos nao aceita meia/meia.", "meia_invalida": list(sabores)}
 
-            calculo_meia = regras_meia.get("calculo") or "maior_valor"
+            calculo_meia = regras_sabores[0].get("calculo") or "maior_valor"
             preco_unitario = (sum(precos_sabores) / len(precos_sabores)) if calculo_meia == "media" else max(precos_sabores)
             # "Pizza Meia Pizza Calabresa / Meia Pizza Frango" → "Pizza Meia Calabresa / Meia Frango".
             curtos = [re.sub(r"^pizza\s+(de\s+)?", "", n, flags=re.IGNORECASE) or n for n in nomes_sabores]

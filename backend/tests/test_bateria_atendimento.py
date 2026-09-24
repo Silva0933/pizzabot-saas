@@ -418,3 +418,111 @@ def test_borda_colada_no_nome_do_produto():
         est = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="x"))["estado"]
     assert est["carrinho"][0]["nome"] == "pizza de frango com catupiry"
     assert est["carrinho"][0]["adicionais"] == ["borda de cheddar"]
+
+
+class TestCorrecaoDeQuantidade:
+    """Bateria 7: "na verdade são 3" → a voz dizia "três" e o carrinho seguia com 2."""
+
+    def _estado(self, *itens):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["carrinho"] = [dict(i) for i in itens]
+        return estado
+
+    def _aplicar(self, estado, produto):
+        from app.agent.fsm import engine
+        engine._aplicar_nlu(estado, {"produtos": [produto]})
+        return estado["carrinho"]
+
+    def test_definir_troca_a_quantidade(self):
+        est = self._estado({"nome": "smash duplo", "sabores": [], "qtd": 2, "adicionais": []})
+        car = self._aplicar(est, {"nome": "smash duplo", "qtd": 3, "qtd_modo": "definir"})
+        assert len(car) == 1 and car[0]["qtd"] == 3
+
+    def test_somar_acrescenta(self):
+        est = self._estado({"nome": "pizza calabresa", "sabores": [], "tamanho": "G", "qtd": 1, "adicionais": []})
+        car = self._aplicar(est, {"nome": "pizza calabresa", "qtd": 1, "tamanho": "G", "qtd_modo": "somar"})
+        assert len(car) == 1 and car[0]["qtd"] == 2
+
+    def test_nome_pela_metade_corrige_o_item_certo(self):
+        est = self._estado(
+            {"nome": "smash duplo", "sabores": [], "qtd": 2, "adicionais": []},
+            {"nome": "coca-cola 2l", "sabores": [], "qtd": 1, "adicionais": []},
+        )
+        car = self._aplicar(est, {"nome": "smash", "qtd": 3, "qtd_modo": "definir"})
+        assert [(i["nome"], i["qtd"]) for i in car] == [("smash duplo", 3), ("coca-cola 2l", 1)]
+
+    def test_esclarecimento_sem_modo_nao_mexe_na_quantidade(self):
+        est = self._estado({"nome": "pizza brasa", "sabores": [], "qtd": 2, "adicionais": []})
+        car = self._aplicar(est, {"nome": "pizza brasa", "qtd": 1, "tamanho": "G"})
+        assert car[0]["qtd"] == 2 and car[0]["tamanho"] == "G"
+
+
+class TestRegrasDoMeioAMeio:
+    """As regras dos sabores eram fundidas com {**a, **b}: o último sobrescrevia o
+    primeiro, e sabor que não aceita meia (ou de outra categoria) passava."""
+
+    def _calc(self, precos, regras):
+        from app.agent.tools import _calcular_pedido
+        ctx = MagicMock()
+        ctx.pizzaria.id = "p"
+        ctx.pizzaria.adicionais = []
+        with patch("app.agent.tools._obter_preco_produto", new=AsyncMock(side_effect=precos)), \
+             patch("app.agent.tools._obter_regras_produto", new=AsyncMock(side_effect=regras)) as m:
+            r = asyncio.run(_calcular_pedido(ctx, MagicMock(), itens=[{"sabores": ["calabresa", "brasa"], "tamanho": "G", "qtd": 1}],
+                                             tipo="retirada", forma_pagamento="dinheiro"))
+        return r, m
+
+    def test_sabor_que_nao_aceita_meia_nao_e_sobrescrito(self):
+        r, _ = self._calc(
+            [(59.9, "Pizza Calabresa (G)"), (64.9, "Pizza Brasa (G)")],
+            [{"meia_meia": {"permitido": False}, "_categoria": "pizza"},
+             {"meia_meia": {"permitido": True}, "_categoria": "pizza"}],
+        )
+        assert r["ok"] is False and r["meia_invalida"] == ["calabresa", "brasa"]
+
+    def test_categorias_diferentes_sao_recusadas(self):
+        r, _ = self._calc(
+            [(64.9, "Pizza Brasa (G)"), (52.9, "Pizza Doce de Chocolate (G)")],
+            [{"_categoria": "pizza"}, {"_categoria": "sobremesa"}],
+        )
+        assert r["ok"] is False and "categoria" in r["erro"]
+
+    def test_regras_buscadas_pelo_nome_resolvido(self):
+        r, m = self._calc(
+            [(59.9, "Pizza Calabresa (G)"), (64.9, "Pizza Brasa (G)")],
+            [{"_categoria": "pizza"}, {"_categoria": "pizza"}],
+        )
+        assert r["ok"] is True and r["itens"][0]["preco_unit"] == 64.9
+        assert [c.args[2] for c in m.await_args_list] == ["Pizza Calabresa", "Pizza Brasa"]
+
+
+def test_meia_recusada_sai_do_carrinho():
+    from app.agent.fsm import engine
+    estado = engine.estado_inicial()
+    estado["apresentou"] = True
+    estado["carrinho"] = [{"nome": "pizza", "sabores": ["brasa", "pizza doce"], "tamanho": "G", "qtd": 1, "adicionais": []}]
+    calc = {"ok": False, "erro": "Meio a meio so entre sabores da mesma categoria.", "meia_invalida": ["brasa", "pizza doce"]}
+    nlu = {"intencao": "confirmar_resumo", "dados": {}}
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc)):
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="so isso"))
+    assert res["estado"]["carrinho"] == []
+    assert res["decisao"]["acao"] == "pendencia"
+
+
+def test_horario_vai_por_extenso_nos_fatos():
+    """Bateria 7: "até que horas vocês ficam abertos?" → "vou consultar" e nada."""
+    from types import SimpleNamespace
+
+    from app.agent.fsm import engine
+    dia = {"abre": "18:00", "fecha": "23:30", "fechado": False}
+    pizz = SimpleNamespace(
+        nome="Fornalha", endereco=None, endereco_maps_url=None, formas_pagamento_aceitas=[],
+        tempo_entrega_min=None, tempo_retirada_min=None, aberto_manual=None,
+        horario_funcionamento={**{k: dia for k in ("seg", "ter", "qua", "qui", "sex", "sab")}, "dom": {"fechado": True}},
+    )
+    fatos = engine._fatos_pizzaria(pizz)
+    assert "Seg a Sáb: 18:00 às 23:30" in fatos
+    assert "Dom: fechado" in fatos
+    assert "consulte" not in fatos

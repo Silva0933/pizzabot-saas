@@ -214,6 +214,17 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
             (it for it in estado["carrinho"] if _chave_item(it.get("nome"), it.get("sabores") or []) == chave),
             None,
         )
+        if existente is None and p.get("qtd_modo") in ("definir", "somar"):
+            # Correção de quantidade cita o item pela metade ("muda pra 3 smash"):
+            # casa pelo pedaço do nome, desde que só UM item do carrinho case —
+            # senão viraria um item novo "smash" ao lado do "smash duplo".
+            alvo = _normalizar_txt(nome or " ".join(sabores))
+            casados = [
+                it for it in estado["carrinho"]
+                if alvo and (alvo in _normalizar_txt(_item_texto(it)) or _normalizar_txt(_item_texto(it)) in alvo)
+            ]
+            if len(casados) == 1:
+                existente = casados[0]
         if existente is not None:
             # Esclarecimento do mesmo item: atualiza tamanho/adicionais, não duplica.
             mudou = False
@@ -225,6 +236,17 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
                 existente["adicionais"] = list({*antes, *adicionais})
                 if set(existente["adicionais"]) != antes:
                     mudou = True
+            # Quantidade só muda quando o cliente pede: "na verdade são 3" (definir)
+            # ou "mais uma igual" (somar). Antes a qtd do item repetido era sempre
+            # ignorada — a voz dizia "três" e o carrinho seguia com 2.
+            try:
+                qtd_nova = int(p.get("qtd") or 0)
+            except (TypeError, ValueError):
+                qtd_nova = 0
+            if qtd_nova > 0 and p.get("qtd_modo") == "definir":
+                existente["qtd"] = qtd_nova
+            elif qtd_nova > 0 and p.get("qtd_modo") == "somar":
+                existente["qtd"] = int(existente.get("qtd") or 1) + qtd_nova
             if mudou:
                 _descongelar(existente)  # item mudou → re-resolver o preço
             continue
@@ -445,9 +467,19 @@ def _fatos_pizzaria(pizz) -> str:
         partes.append(f"Entrega ~{pizz.tempo_entrega_min}-{pizz.tempo_entrega_max} min")
     if getattr(pizz, "tempo_retirada_min", None):
         partes.append(f"Retirada ~{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min")
+    # O horário vai POR EXTENSO: antes o fato era só "tem horário cadastrado
+    # (consulte)" e a voz respondia "vou consultar pra te passar" sem nunca passar.
     hf = getattr(pizz, "horario_funcionamento", None) or {}
     if hf:
-        partes.append("Tem horário de funcionamento cadastrado (consulte se perguntarem).")
+        from app.services.business_hours import esta_aberto, formatar_horario
+        texto_hf = formatar_horario(hf)
+        if texto_hf:
+            partes.append("Horário de funcionamento: " + texto_hf.replace("\n", "; ").replace("• ", ""))
+            try:
+                aberto = esta_aberto(hf, override=getattr(pizz, "aberto_manual", None))
+                partes.append("Agora a loja está " + ("ABERTA" if aberto else "FECHADA"))
+            except Exception:  # noqa: BLE001
+                pass
     base = "DADOS REAIS DA PIZZARIA (use só estes; não invente): " + " · ".join(partes)
     if endereco:
         instr = " | Se o cliente PERGUNTAR o endereço/localização, informe o endereço completo"
@@ -1309,6 +1341,16 @@ async def processar(
                     if (not it.get("nome") or _norm(it.get("nome")) != alvo) and
                        (not it.get("sabores") or all(_norm(s) != alvo for s in it["sabores"]))
                 ]
+
+            # Meio a meio recusado pela regra: tira a combinação do carrinho, senão
+            # ela recalcula e falha em TODA mensagem seguinte e o pedido trava.
+            meia_inv = calc.get("meia_invalida")
+            if meia_inv:
+                estado["carrinho"] = [it for it in estado["carrinho"] if (it.get("sabores") or []) != meia_inv]
+                decisao["fatos"].append(
+                    "Esse meio a meio NÃO pode ser feito e foi tirado do pedido. Explique o motivo "
+                    "ao cliente e pergunte se ele quer os sabores como pizzas inteiras ou outra combinação."
+                )
 
             # Pendência: item não encontrado / falta tamanho / taxa não cadastrada.
             decisao["acao"] = "pendencia"

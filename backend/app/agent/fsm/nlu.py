@@ -35,7 +35,7 @@ _SYSTEM = (
     '  "intencao": uma de ' + str(list(INTENCOES)) + ",\n"
     '  "confianca_intencao": number 0..1,\n'
     '  "dados_extraidos": {\n'
-    '    "produtos": [{"nome": str, "qtd": int, "tamanho": str|null, "sabores_meia": [str], "adicionais": [str]}],\n'
+    '    "produtos": [{"nome": str, "qtd": int, "tamanho": str|null, "sabores_meia": [str], "adicionais": [str], "qtd_modo": "definir"|"somar"|null}],\n'
     '    "remover": [str],\n'
     '    "tipo_entrega": "delivery"|"retirada"|null,\n'
     '    "endereco": {"rua": str|null, "numero": str|null, "bairro": str|null, "referencia": str|null}|null,\n'
@@ -62,6 +62,10 @@ _SYSTEM = (
     "'adicionais' do produto, NUNCA em 'observacoes' (só 'borda fina/grossa' é observação). "
     "Resposta sobre QUANDO pagar ('agora', 'já', 'na entrega', 'na retirada', 'na hora de pegar', 'quando chegar') "
     "vai SÓ em 'pagar_agora' (true = agora, false = na entrega/retirada) — NUNCA em 'observacoes'. "
+    "Se o cliente CORRIGE a quantidade de um item que já está no pedido ('na verdade são 3', 'muda pra 2', "
+    "'é só 1'), repita o produto com o NOME dele no estado, a nova quantidade TOTAL em 'qtd' e 'qtd_modo': 'definir'. "
+    "Se ele quer MAIS unidades do que já pediu ('mais uma igual', 'põe outra calabresa'), 'qtd' é só o que "
+    "acrescenta e 'qtd_modo': 'somar'. Produto novo ou citado pela primeira vez: 'qtd_modo': null. "
     "Se ele só confirma (ex.: 'sim', 'pode', 'isso', 'fechado'), use intencao 'confirmar_resumo'. Se for só bate-papo, 'conversa_fiada'. "
     "Se ele reclamar (pizza fria/atrasada/errada) use 'reclamar'; se pedir pra falar com atendente/humano "
     "use 'falar_humano'; se der uma nota/avaliação (0-10) use 'avaliar' e preencha 'nota'; se quiser MUDAR "
