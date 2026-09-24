@@ -92,6 +92,11 @@ def neutralizar_precos(texto: str, validos: Any) -> tuple[str, list[float]]:
 
     def _rep(m: re.Match) -> str:
         raw = m.group(0)
+        # "Troco para R$ 100" é o dinheiro do cliente, não preço de item: sem
+        # lastro no cálculo por natureza, e apagá-lo deixava "troco para (valor
+        # a confirmar)" — o entregador sairia sem saber quanto levar.
+        if "troco" in texto[max(0, m.start() - 30):m.start()].lower():
+            return raw
         val = _parse_valor(re.sub(r"[^\d.,]", "", raw.replace("R$", "")))
         if val is not None and any(abs(val - s) < 0.01 for s in suspeitos):
             removidos.append(val)

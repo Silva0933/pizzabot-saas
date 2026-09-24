@@ -85,6 +85,25 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.app_env == "production"
 
+    # URL pública do painel (onde vive o cardápio digital /m/<slug>). Vazio = a
+    # primeira origem do CORS que não é a própria API — em produção é o painel.
+    painel_url: str = ""
+
+    @property
+    def painel_base_url(self) -> str:
+        if self.painel_url.strip():
+            return self.painel_url.strip().rstrip("/")
+        api = self.public_base_url.rstrip("/")
+        for origem in self.cors_origins_list:
+            if origem.startswith("https://") and origem.rstrip("/") != api:
+                return origem.rstrip("/")
+        return ""
+
+    def url_cardapio(self, slug: str | None) -> str:
+        """Link do cardápio digital da pizzaria, ou "" se não dá pra montar."""
+        base = self.painel_base_url
+        return f"{base}/m/{slug}" if (base and slug) else ""
+
 
 @lru_cache
 def get_settings() -> Settings:

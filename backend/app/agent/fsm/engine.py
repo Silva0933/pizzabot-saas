@@ -442,6 +442,91 @@ def _fatos_pizzaria(pizz) -> str:
     return base
 
 
+_TITULO_CATEGORIA = {
+    "pizza": "Pizzas", "lanche": "Lanches", "bebida": "Bebidas",
+    "sobremesa": "Sobremesas", "outro": "Outros",
+}
+
+
+def _link_cardapio(pizz) -> str:
+    try:
+        from app.config import get_settings
+        return get_settings().url_cardapio(getattr(pizz, "slug", None))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+async def _cardapio_em_texto(ctx: AgentContext, db: AsyncSession) -> str | None:
+    """Cardápio REAL em texto (produtos disponíveis, por categoria, com o menor
+    preço) + o link do cardápio digital. None se não houver produto."""
+    from sqlalchemy import text as _text
+    rows = (await db.execute(_text(
+        "SELECT p.nome, p.categoria, p.preco, "
+        "  (SELECT min(pt.preco) FROM public.produto_tamanhos pt "
+        "   WHERE pt.produto_id = p.id AND pt.disponivel = true) AS preco_min "
+        "FROM public.produtos p WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+        "ORDER BY p.categoria NULLS LAST, p.ordem, p.nome LIMIT 80"
+    ), {"pid": str(ctx.pizzaria.id)})).fetchall()
+    if not rows:
+        return None
+    blocos: list[str] = []
+    atual: str | None = None
+    for nome, categoria, preco, preco_min in rows:
+        cat = (categoria or "outro").strip().lower()
+        if cat != atual:
+            atual = cat
+            blocos.append(f"\n*{_TITULO_CATEGORIA.get(cat, cat.capitalize())}*")
+        if preco_min is not None:
+            blocos.append(f"• {nome} — a partir de {_fmt_brl(float(preco_min))}")
+        else:
+            blocos.append(f"• {nome} — {_fmt_brl(float(preco or 0))}")
+    texto = "Aqui está o nosso cardápio 🍕\n" + "\n".join(blocos)
+    link = _link_cardapio(ctx.pizzaria)
+    if link:
+        texto += f"\n\n📲 Com fotos e pedido direto: {link}"
+    return texto + "\n\nO que vai querer hoje? 😊"
+
+
+def _fatos_promocoes(pizz) -> tuple[str, list[float]]:
+    """Cupons e campanhas REAIS (cadastrados no cardápio digital). Sem nenhum,
+    o fato proíbe inventar — perguntado se tinha cupom, a voz criou um "10% na
+    primeira compra" que não existia."""
+    from datetime import date
+    tema = getattr(pizz, "tema_cardapio", None) or {}
+    hoje = date.today().isoformat()
+    cupons = [
+        c for c in (tema.get("cupons") or [])
+        if isinstance(c, dict) and c.get("ativo") and c.get("codigo")
+        and not (c.get("validade") and str(c["validade"])[:10] < hoje)
+    ]
+    campanhas = [c for c in (tema.get("campanhas") or []) if isinstance(c, dict) and c.get("ativa") and c.get("titulo")]
+    valores: list[float] = []
+    if not cupons and not campanhas:
+        return ("Promoções/cupons: NÃO há nenhum cadastrado. Se perguntarem, diga que no momento não "
+                "temos cupom nem promoção — NUNCA invente desconto.", valores)
+    partes: list[str] = []
+    for c in cupons:
+        try:
+            valor = float(c.get("valor") or 0)
+            minimo = float(c.get("pedido_minimo") or 0)
+        except (TypeError, ValueError):
+            continue
+        desc = f"{valor:g}% OFF" if c.get("tipo") == "percentual" else f"{_fmt_brl(valor)} OFF"
+        if c.get("tipo") != "percentual":
+            valores.append(valor)
+        if minimo > 0:
+            desc += f" em pedidos acima de {_fmt_brl(minimo)}"
+            valores.append(minimo)
+        partes.append(f"cupom {str(c['codigo']).upper()} ({desc})")
+    for c in campanhas:
+        partes.append(f"campanha '{c['titulo']}'" + (f": {c['subtitulo']}" if c.get("subtitulo") else ""))
+    link = _link_cardapio(pizz)
+    onde = f" pelo cardápio digital ({link})" if link else " pelo cardápio digital"
+    return ("Promoções REAIS (só estas, não invente outras): " + "; ".join(partes)
+            + f". Os cupons valem para pedidos feitos{onde}; pelo WhatsApp não dá para aplicar cupom.",
+            valores)
+
+
 # "Observação" que na verdade é a resposta de QUANDO pagar ("na hora de pegar",
 # "quando chegar", "pago na entrega"). Texto já normalizado (sem acento).
 _OBS_E_MOMENTO_DE_PAGAR_RE = _re.compile(
@@ -799,6 +884,7 @@ async def processar(
         and (_eh_confirmacao(intencao, user_input) or _afirmou_upsell(intencao, user_input))
     )
     if _quer_cardapio(intencao, user_input, dados) or confirmou_ver_cardapio:
+        texto_cardapio: str | None = None
         if not estado.get("cardapio_enviado"):
             try:
                 r = await enviar_cardapio_arquivo(ctx, db)
@@ -811,12 +897,23 @@ async def processar(
                     except Exception as e_commit:
                         log.debug("Falha no commit preventivo de cardapio_enviado: %s", e_commit)
                 elif r.get("motivo") == "sem_arquivo":
-                    # Não há arquivo: a voz deve listar via buscar_cardapio.
-                    decisao["fatos"].append("Não há arquivo de cardápio; liste os sabores em texto (use o que souber do cardápio).")
+                    # Sem arquivo, a voz era mandada "listar o que souber" e inventava
+                    # sabores (listou Pepperoni e Mussarela numa casa que não tem).
+                    # A lista sai do banco, verbatim.
+                    texto_cardapio = await _cardapio_em_texto(ctx, db)
+                    if not texto_cardapio:
+                        decisao["fatos"].append(
+                            "Não foi possível carregar o cardápio agora. NÃO cite nenhum sabor: peça "
+                            "desculpas e pergunte o que o cliente procura."
+                        )
             except Exception:  # noqa: BLE001
                 pass
         decisao["acao"] = "cardapio"
-        if estado.get("cardapio_enviado"):
+        if texto_cardapio:
+            estado["cardapio_enviado"] = True
+            decisao["mensagem_pronta"] = texto_cardapio
+            decisao["mensagem_pronta_acao"] = "cardapio"
+        elif estado.get("cardapio_enviado"):
             decisao["fatos"].append("O cardápio (arquivo) JÁ foi enviado ao cliente acima.")
             # Mensagem verbatim (backend) — a LLM não improvisa "te mostro os sabores
             # em texto" nem pergunta o sabor. Curta e objetiva, como pedido.
@@ -881,6 +978,12 @@ async def processar(
         decisao["fatos"].append(
             f"Cliente aceitou o item que você ofereceu ({item}) — já adicionado ao pedido."
         )
+
+    # Pergunta não é pedido: "quanto é a pizza de frango grande?" e "a calabresa
+    # é 10 reais né?" colocavam a pizza no carrinho. A NLU às vezes extrai o
+    # produto citado mesmo classificando como dúvida.
+    if intencao == "duvida_geral" and dados.get("produtos"):
+        dados["produtos"] = []
 
     # Resposta à pergunta "pagar agora ou na entrega/retirada?" não é observação
     # do pedido. A NLU às vezes gravava "na hora de pegar" nos dois campos e o
@@ -1148,12 +1251,35 @@ async def processar(
                     items = card_res.get("items") or []
                     if items:
                         fatos_prod = []
+                        precos_prod: list[float] = []
                         for item in items:
                             desc = f" ({item['descricao']})" if item.get("descricao") else ""
-                            fatos_prod.append(f"{item['nome']}: R$ {item['preco']:.2f}{desc}")
+                            # Com tamanhos, o preço base não é o de nenhum tamanho: a
+                            # voz chutava o do G e o guard trocava por "valor a confirmar".
+                            tams = [t for t in (item.get("tamanhos") or []) if isinstance(t, dict)]
+                            if tams:
+                                precos_txt = " · ".join(
+                                    f"{t.get('tamanho')} {_fmt_brl(float(t.get('preco') or 0))}" for t in tams
+                                )
+                                precos_prod += [round(float(t.get("preco") or 0), 2) for t in tams]
+                            else:
+                                precos_txt = _fmt_brl(float(item.get("preco") or 0))
+                                precos_prod.append(round(float(item.get("preco") or 0), 2))
+                            fatos_prod.append(f"{item['nome']}: {precos_txt}{desc}")
                         decisao["fatos"].append("Produtos encontrados no cardápio para esclarecer a dúvida do cliente: " + "; ".join(fatos_prod))
+                        decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *[p for p in precos_prod if p > 0]]
             except Exception:
                 pass
+
+        fato_promo, valores_promo = _fatos_promocoes(ctx.pizzaria)
+        decisao["fatos"].append(fato_promo)
+        if valores_promo:
+            decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *valores_promo]
+        fora_do_tema = (
+            " Se a mensagem NÃO tiver relação com a pizzaria (pedido, cardápio, entrega, pagamento, "
+            "horário, endereço), NÃO responda o conteúdo: diga com simpatia que por aqui você cuida "
+            "dos pedidos e traga a conversa de volta ao pedido."
+        )
 
         if estado["carrinho"]:
             decisao["proxima_pergunta"] = (
@@ -1161,6 +1287,7 @@ async def processar(
                 "Se ele perguntou se um item TEM um ingrediente (ex.: cebola): responda sim ou não e, se TIVER, "
                 "pergunte se ele prefere pedir SEM esse ingrediente ou escolher outro sabor — NUNCA pule direto "
                 "para confirmar o pedido. Caso contrário, responda e retome o pedido de leve, sem ser robótica."
+                + fora_do_tema
             )
         else:
             oferta_cardapio = (
@@ -1173,7 +1300,7 @@ async def processar(
                 "confirme que TEMOS e diga o preço (se ele perguntou pelo preço); se NÃO aparecer ali, diga com gentileza "
                 "que infelizmente não temos esse sabor." + oferta_cardapio +
                 " Se ele só perguntou algo geral (ex.: se é a pizzaria X), responda direto. NÃO force 'qual sabor' "
-                "se ele não pediu pizza."
+                "se ele não pediu pizza." + fora_do_tema
             )
         estado["apresentou"] = True
         return {"decisao": decisao, "estado": estado}
