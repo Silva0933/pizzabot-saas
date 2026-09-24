@@ -192,6 +192,9 @@ _QTD_NO_NOME_RE = _re.compile(
 )
 
 
+_SO_ISSO_RE = _re.compile(r"(e |eh )?(so|somente|apenas) isso( mesmo| msm| por enquanto)?|nada mais|mais nada|e isso|eh isso")
+
+
 def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
     """Funde os dados extraídos pela NLU no estado (carrinho e campos)."""
     # Adicionar produtos — com MERGE: se já existe item com o mesmo nome/sabores,
@@ -333,6 +336,10 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         estado["pagar_agora"] = dados["pagar_agora"]
     if dados.get("observacoes") and isinstance(dados.get("observacoes"), str):
         obs = dados["observacoes"].strip()
+        # "só isso" fecha a lista de itens, não é recado pra cozinha — a NLU às
+        # vezes mandava pra observação e o pedido saía com "Obs: Só isso."
+        if _SO_ISSO_RE.fullmatch(_normalizar_txt(obs).strip(" .!")):
+            obs = ""
         if obs:
             if estado.get("observacoes"):
                 if obs.lower() not in estado["observacoes"].lower():

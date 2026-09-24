@@ -547,3 +547,14 @@ class TestQuantidadeDentroDoNome:
 
     def test_qtd_ja_informada_nao_e_trocada(self):
         assert self._carrinho({"nome": "cheese classico", "qtd": 3}) == [("cheese classico", 3)]
+
+
+def test_so_isso_nao_vira_observacao():
+    from app.agent.fsm import engine
+    for fala in ("Só isso.", "so isso mesmo", "É isso!", "nada mais"):
+        estado = engine.estado_inicial()
+        engine._aplicar_nlu(estado, {"observacoes": fala})
+        assert not estado.get("observacoes"), fala
+    estado = engine.estado_inicial()
+    engine._aplicar_nlu(estado, {"observacoes": "sem cebola, só isso"})
+    assert estado["observacoes"] == "sem cebola, só isso"

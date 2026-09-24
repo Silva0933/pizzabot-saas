@@ -112,7 +112,9 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
         "Responda DE VERDADE ao que o cliente falou acima (não ignore a pergunta dele).\n\n"
         f"REGRAS: responda em {'1 frase, no máximo 2' if comportamento.tamanho_resposta == 'curta' else '1 a 3 frases curtas'}. "
         f"{'Faça apenas UMA pergunta por vez.' if comportamento.uma_pergunta_por_vez else 'Faça no máximo duas perguntas relacionadas.'} "
-        "NÃO faça a mesma pergunta duas vezes. NUNCA dê a entender que o pedido está fechado, confirmado ou pronto antes de o "
+        "NÃO faça a mesma pergunta duas vezes. O que o cliente ACABOU de dizer o sistema já registrou: "
+        "confirme afirmando ('Anotado, entrega.', 'Tirei a Coca.') e NUNCA devolva como pergunta "
+        "('Você quer retirar a Coca?', 'Prefere entrega? Se sim...'). NUNCA dê a entender que o pedido está fechado, confirmado ou pronto antes de o "
         "cliente confirmar — NÃO diga 'é só vir buscar', 'pode retirar', 'pedido fechado' nem 'qualquer "
         "coisa é só chamar' enquanto o pedido não foi confirmado. "
         + regra_valores +
