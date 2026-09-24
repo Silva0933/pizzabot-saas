@@ -1320,6 +1320,8 @@ export interface CampanhaCardapio {
   etiqueta?: string;
   cta_label?: string;
   cupom_codigo?: string;
+  /** Até 3 produtos cujas fotos formam a colagem do cartão. Vazio = escolha automática. */
+  produtos_colagem?: string[];
   ativa: boolean;
   ordem: number;
 }

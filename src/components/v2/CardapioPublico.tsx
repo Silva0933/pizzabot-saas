@@ -1205,9 +1205,16 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const telefoneExibido = formatarTelefone(pizz.telefone_contato);
   const fotosProdutos = data.produtos.filter((p) => p.imagem_url).map((p) => p.imagem_url as string);
   const campanhaPrincipal = campanhasAtivas[0] ?? null;
-  const fotosCampanha = campanhaPrincipal
-    ? [campanhaPrincipal.imagem_url, ...fotosProdutos].filter((f): f is string => !!f).slice(0, 3)
-    : [];
+  // Colagem do cartão: os produtos que a pizzaria escolheu, na ordem escolhida.
+  // Sem escolha, a imagem da campanha e depois as primeiras fotos do cardápio.
+  const fotosEscolhidas = (campanhaPrincipal?.produtos_colagem || [])
+    .map((id) => data.produtos.find((p) => p.id === id)?.imagem_url)
+    .filter((f): f is string => !!f);
+  const fotosCampanha = !campanhaPrincipal
+    ? []
+    : fotosEscolhidas.length > 0
+      ? fotosEscolhidas.slice(0, 3)
+      : [campanhaPrincipal.imagem_url, ...fotosProdutos].filter((f): f is string => !!f).slice(0, 3);
 
   function finalizarPedido() {
     setBagOpen(false);

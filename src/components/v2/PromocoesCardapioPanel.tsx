@@ -17,12 +17,16 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  BackendProduto,
   CampanhaCardapio,
+  cardapioApi,
   CupomCardapio,
   pizzariasApi,
   TemaCardapioConfig,
   BackendPizzaria,
 } from "../../lib/api";
+
+const MAX_COLAGEM = 3;
 
 interface Props {
   pizzariaId: string;
@@ -84,6 +88,28 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, [pizzariaId]);
+
+  // Produtos com foto, para escolher as fotos da colagem do cartão da campanha.
+  const [produtosComFoto, setProdutosComFoto] = useState<BackendProduto[]>([]);
+  useEffect(() => {
+    let active = true;
+    cardapioApi.list(pizzariaId)
+      .then((lista) => {
+        if (!active) return;
+        setProdutosComFoto(lista.filter((p) => p.imagem_url && p.disponivel).sort((a, b) => a.ordem - b.ordem));
+      })
+      .catch(() => { /* sem a lista, a colagem segue automática */ });
+    return () => { active = false; };
+  }, [pizzariaId]);
+
+  /** Marca/desmarca um produto da colagem, respeitando o limite de 3 e a ordem do clique. */
+  function alternarProdutoColagem(campanha: CampanhaCardapio, produtoId: string) {
+    const atual = campanha.produtos_colagem || [];
+    const proximo = atual.includes(produtoId)
+      ? atual.filter((id) => id !== produtoId)
+      : atual.length >= MAX_COLAGEM ? atual : [...atual, produtoId];
+    updateCampanha(campanha.id, { produtos_colagem: proximo });
+  }
 
   const campanhaAtiva = useMemo(
     () => campanhas.filter((item) => item.ativa).sort((a, b) => a.ordem - b.ordem)[0],
@@ -265,6 +291,49 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
                     <label className="md:col-span-2 space-y-1"><span className="text-xs font-semibold text-slate-400">URL da imagem</span><input value={item.imagem_url || ""} onChange={(e) => updateCampanha(item.id, { imagem_url: e.target.value })} className="admin-promo-input" placeholder="https://.../foto-da-oferta.jpg" /></label>
                     <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Texto do botão</span><input value={item.cta_label || ""} onChange={(e) => updateCampanha(item.id, { cta_label: e.target.value })} className="admin-promo-input" placeholder="Pedir agora" /></label>
                     <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Cupom associado</span><select value={item.cupom_codigo || ""} onChange={(e) => updateCampanha(item.id, { cupom_codigo: e.target.value })} className="admin-promo-input"><option value="">Sem cupom</option>{cupons.map((c) => <option key={c.id} value={c.codigo}>{c.codigo || "Cupom sem código"}</option>)}</select></label>
+                  </div>
+                  <div className="pt-1 space-y-2">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-xs font-semibold text-slate-400">Fotos da colagem</span>
+                      <span className="text-[10px] text-slate-500">
+                        {(item.produtos_colagem || []).length}/{MAX_COLAGEM} escolhidos
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Escolha até 3 produtos: as fotos deles aparecem no cartão, na ordem em que você clicar.
+                      Sem escolha, o cardápio usa a imagem acima e as primeiras fotos do cardápio.
+                    </p>
+                    {produtosComFoto.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 rounded-xl border border-dashed border-[#1e293b] px-3 py-3">
+                        Nenhum produto com foto no cardápio. Adicione fotos em Cardápio para escolher aqui.
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-56 overflow-y-auto pr-1">
+                        {produtosComFoto.map((p) => {
+                          const posicao = (item.produtos_colagem || []).indexOf(p.id);
+                          const marcado = posicao >= 0;
+                          const cheio = !marcado && (item.produtos_colagem || []).length >= MAX_COLAGEM;
+                          return (
+                            <button key={p.id} type="button" disabled={cheio} aria-pressed={marcado}
+                              title={cheio ? `Máximo de ${MAX_COLAGEM} fotos` : p.nome}
+                              onClick={() => alternarProdutoColagem(item, p.id)}
+                              className={`relative rounded-xl overflow-hidden border-2 text-left transition ${marcado ? "border-orange-500" : "border-transparent hover:border-slate-600"} disabled:opacity-35 disabled:cursor-not-allowed`}>
+                              <img src={p.imagem_url || ""} alt="" className="w-full aspect-square object-cover" loading="lazy" />
+                              <span className="block truncate px-1.5 py-1 text-[10px] text-slate-300 bg-[#111622]">{p.nome}</span>
+                              {marcado && (
+                                <span className="absolute top-1 right-1 w-5 h-5 grid place-items-center rounded-full bg-orange-500 text-white text-[10px] font-bold shadow">{posicao + 1}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {(item.produtos_colagem || []).length > 0 && (
+                      <button type="button" onClick={() => updateCampanha(item.id, { produtos_colagem: [] })}
+                        className="text-[11px] font-semibold text-slate-400 hover:text-orange-400">
+                        Voltar para a escolha automática
+                      </button>
+                    )}
                   </div>
                   <button type="button" onClick={() => updateCampanha(item.id, { ativa: !item.ativa })}
                     className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border ${item.ativa ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-[#1e293b] text-slate-400"}`}>
