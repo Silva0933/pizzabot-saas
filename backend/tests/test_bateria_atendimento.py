@@ -619,3 +619,27 @@ def test_sinonimos_de_tamanho():
 def test_gg_nao_vira_g():
     from app.agent.tools import _match_tamanho
     assert _match_tamanho([{"tamanho": "G"}, {"tamanho": "GG"}], "GG")["tamanho"] == "GG"
+
+
+def test_pechincha_nao_busca_produto_e_avisa_preco_fixo():
+    """Bateria 8: "faz por 50 reais?" com a Brasa no carrinho → a voz respondeu
+    com o preço da calabresa (a busca semântica achou a frase "parecida")."""
+    from app.agent.fsm import engine
+    assert engine._PECHINCHA_RE.search(engine._normalizar_txt("faz por 50 reais?"))
+    assert engine._PECHINCHA_RE.search(engine._normalizar_txt("tem desconto?"))
+    assert not engine._PECHINCHA_RE.search(engine._normalizar_txt("quanto é a pizza brasa G?"))
+
+    estado = engine.estado_inicial()
+    estado["apresentou"] = True
+    estado["carrinho"] = [{"nome": "pizza brasa", "sabores": [], "tamanho": "G", "qtd": 1, "adicionais": []}]
+    calc = {"ok": True, "itens": [{"nome": "Pizza Brasa (G)", "quantidade": 1, "preco_unit": 64.9}],
+            "valor_total": 64.9, "taxa_entrega": 0}
+    nlu = {"intencao": "duvida_geral", "dados": {}}
+    busca = AsyncMock(return_value={"items": [{"nome": "Pizza Calabresa", "preco": 46.9}]})
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc)), \
+         patch("app.agent.tools.buscar_cardapio", new=busca):
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="faz por 50 reais?"))
+    assert not busca.await_count
+    fatos = " ".join(res["decisao"]["fatos"])
+    assert "FIXOS" in fatos and "Calabresa" not in fatos

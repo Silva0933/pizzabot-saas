@@ -192,6 +192,10 @@ _QTD_NO_NOME_RE = _re.compile(
 )
 
 
+_PECHINCHA_RE = _re.compile(
+    r"\b(faz|faria|deixa|fecha|sai|consegue|pode ser)\b[^0-9]{0,20}\b(por|em|a)\s*(r\$\s*)?\d+"
+    r"|\bdesconto\b|\babatimento\b|mais barat|\babaixa\b|\bbaixar? o (preco|valor)\b|\bchorinho\b"
+)
 _SO_ISSO_RE = _re.compile(r"(e |eh )?(so|somente|apenas) isso( mesmo| msm| por enquanto)?|nada mais|mais nada|e isso|eh isso")
 
 
@@ -1508,7 +1512,17 @@ async def processar(
                 decisao["fatos"].append(fato_taxa)
                 decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *valores_taxa]
 
-        if user_input:
+        # Pechincha ("faz por 50 reais?", "tem desconto?"): a frase ia inteira pra
+        # busca do cardápio, a busca semântica devolvia a calabresa e a voz
+        # respondia com o preço de um produto que ninguém citou.
+        pechincha = bool(_PECHINCHA_RE.search(_normalizar_txt(user_input)))
+        if pechincha:
+            decisao["fatos"].append(
+                "O cliente está NEGOCIANDO o preço/pedindo desconto. Os preços são FIXOS: diga com "
+                "simpatia que não consegue mudar o valor; só cite cupom/promoção se estiverem nos fatos. "
+                "NÃO cite preço de nenhum produto."
+            )
+        if user_input and not pechincha:
             try:
                 from app.agent.tools import buscar_cardapio
                 clean_query = user_input.replace("?", "").replace("!", "").strip()
