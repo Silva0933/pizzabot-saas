@@ -54,6 +54,16 @@ def _chave_item(nome: str | None, sabores: list[str]) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", base) if unicodedata.category(c) != "Mn")
 
 
+def _normalizar_txt(s: Any) -> str:
+    """Minúsculas, sem acento e espaço simples — para casar nomes digitados."""
+    import unicodedata
+    base = "".join(
+        c for c in unicodedata.normalize("NFD", str(s or "").strip().lower())
+        if unicodedata.category(c) != "Mn"
+    )
+    return _re.sub(r"\s+", " ", base)
+
+
 def _descongelar(item: dict[str, Any]) -> None:
     """Remove o preço congelado de um item (força re-resolução no próximo cálculo)."""
     item.pop("preco_congelado", None)
@@ -432,6 +442,43 @@ def _fatos_pizzaria(pizz) -> str:
     return base
 
 
+# "Observação" que na verdade é a resposta de QUANDO pagar ("na hora de pegar",
+# "quando chegar", "pago na entrega"). Texto já normalizado (sem acento).
+_OBS_E_MOMENTO_DE_PAGAR_RE = _re.compile(
+    r"\b(pag\w*|agora|entrega|retira\w*|pegar|buscar|busco|chegar|chegada|hora|depois|maquin\w*)\b"
+)
+
+
+def _fatos_taxa_entrega(pizz, user_input: str) -> tuple[str | None, list[float]]:
+    """Taxas de entrega reais para responder dúvida: a do bairro citado (se estiver
+    cadastrado) ou a tabela resumida. Devolve (fato, valores válidos pro guard)."""
+    tabela: list[tuple[str, float]] = []
+    for b in (getattr(pizz, "taxas_bairro", None) or []):
+        if isinstance(b, dict) and b.get("bairro") and b.get("taxa") is not None:
+            try:
+                tabela.append((str(b["bairro"]).strip(), float(b["taxa"])))
+            except (TypeError, ValueError):
+                continue
+    fixa = getattr(pizz, "taxa_entrega_fixa", None)
+    try:
+        fixa = float(fixa) if fixa is not None else None
+    except (TypeError, ValueError):
+        fixa = None
+
+    texto = _normalizar_txt(user_input)
+    citado = next(((n, v) for n, v in tabela if _normalizar_txt(n) and _normalizar_txt(n) in texto), None)
+    if citado:
+        return (f"Taxa de entrega para o bairro {citado[0]}: {_fmt_brl(citado[1])}.", [citado[1]])
+    if tabela:
+        lista = "; ".join(f"{n}: {_fmt_brl(v)}" for n, v in tabela[:15])
+        extra = f" Demais bairros: {_fmt_brl(fixa)}." if fixa else " Bairro fora da lista: diga que a equipe confirma a taxa."
+        return (f"Taxas de entrega cadastradas por bairro — {lista}.{extra} Se o cliente citou um bairro "
+                "que não está aqui, NÃO invente valor.", [v for _, v in tabela] + ([fixa] if fixa else []))
+    if fixa:
+        return (f"Taxa de entrega (qualquer bairro): {_fmt_brl(fixa)}.", [fixa])
+    return (None, [])
+
+
 import re as _re
 from datetime import UTC
 
@@ -577,6 +624,30 @@ async def processar(
         "acao": "conversar", "fatos": [], "proxima_pergunta": None,
         "enviar_cardapio": False, "dados": {},
     }
+
+    # Pedido REAL já feito fora deste estado: pelo cardápio digital (que nunca
+    # passa pelo FSM) ou pelo WhatsApp com o estado já expirado (TTL de 2h). Sem
+    # isto, "quero cancelar" caía no ramo de rascunho e a atendente CONFIRMAVA o
+    # cancelamento sem cancelar nada, e "já saiu?" ficava sem resposta.
+    if estado.get("etapa") != "FINALIZADO" and not estado.get("carrinho"):
+        try:
+            from app.agent.tools import ROTULO_STATUS_PEDIDO, pedido_ativo_do_cliente
+            ativo = await pedido_ativo_do_cliente(ctx, db)
+        except Exception as e_ativo:  # noqa: BLE001
+            log.debug("Consulta de pedido ativo falhou (segue sem): %s", e_ativo)
+            ativo = None
+        if ativo is not None and getattr(ativo, "numero_pedido", None):
+            origem = "pelo cardápio digital" if not getattr(ativo, "bot_ativo", True) else "pelo WhatsApp"
+            status_txt = ROTULO_STATUS_PEDIDO.get(ativo.status, ativo.status)
+            decisao["fatos"].append(
+                f"O cliente JÁ TEM o pedido #{ativo.numero_pedido} feito {origem}, status atual: {status_txt}. "
+                "Se ele perguntar do pedido, responda com esse status. Não diga que ele não tem pedido."
+            )
+            if intencao in ("cancelar", "alterar_pedido"):
+                # Cai nos ramos de pós-venda abaixo, que agem no pedido de verdade
+                # (e escalam pro humano se não der, sem fingir que deu).
+                estado["etapa"] = "FINALIZADO"
+                estado["apresentou"] = True
 
     # Se a conversa anterior já foi finalizada com sucesso e o cliente está iniciando um novo
     # contato (intenção não é de pós-venda ou pós-entrega), resetamos o estado FSM.
@@ -811,6 +882,28 @@ async def processar(
             f"Cliente aceitou o item que você ofereceu ({item}) — já adicionado ao pedido."
         )
 
+    # Resposta à pergunta "pagar agora ou na entrega/retirada?" não é observação
+    # do pedido. A NLU às vezes gravava "na hora de pegar" nos dois campos e o
+    # resumo saía com "Obs: na hora de pegar". Observação de verdade ("sem
+    # cebola") não fala de pagamento e passa.
+    obs_turno = dados.get("observacoes")
+    if (
+        estado.get("etapa") == "PAGAMENTO"
+        and isinstance(dados.get("pagar_agora"), bool)
+        and isinstance(obs_turno, str)
+        and len(obs_turno) <= 60
+        and _OBS_E_MOMENTO_DE_PAGAR_RE.search(_normalizar_txt(obs_turno))
+    ):
+        dados["observacoes"] = None
+
+    # Itens que o cliente pediu NESTA mensagem — só eles podem ser confirmados
+    # como "anotados" (ver a pergunta de entrega/retirada mais abaixo).
+    itens_do_turno = [
+        (p.get("nome") or " / ".join(s for s in (p.get("sabores_meia") or []) if s)).strip()
+        for p in (dados.get("produtos") or []) if isinstance(p, dict)
+    ]
+    itens_do_turno = [n for n in itens_do_turno if n]
+
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
 
@@ -868,6 +961,39 @@ async def processar(
             observacoes=estado.get("observacoes"),
             bairro_confirmado=estado.get("endereco_bairro"),
         )
+        # Borda/adicional que a casa não tem: tira do item e segue com o pedido
+        # (o item em si existe). Antes o item ficava preso ao adicional inválido,
+        # cada turno repetia a mesma pendência e o atendimento ia pro humano.
+        tentativas_adic = 0
+        while not calc.get("ok") and calc.get("adicional_invalido") and tentativas_adic < 3:
+            tentativas_adic += 1  # um item por volta; teto evita laço se algo não sair
+            invalidos = {_normalizar_txt(a) for a in calc["adicional_invalido"]}
+            for it in estado["carrinho"]:
+                ads = it.get("adicionais") or []
+                restantes = [a for a in ads if _normalizar_txt(a) not in invalidos]
+                if len(restantes) != len(ads):
+                    it["adicionais"] = restantes
+                    _descongelar(it)
+            validos = calc.get("adicionais_validos") or []
+            fato = (
+                f"A casa NÃO tem: {', '.join(calc['adicional_invalido'])}. O item foi anotado SEM isso — "
+                "avise o cliente em uma frase curta"
+            )
+            fato += (
+                f" e cite as opções que existem: {', '.join(validos[:6])}."
+                if validos else " (não há bordas/adicionais cadastrados; não ofereça nenhum)."
+            )
+            decisao["fatos"].append(fato)
+            calc = await _calcular_pedido(
+                ctx, db,
+                itens=estado["carrinho"],
+                tipo=estado.get("tipo") or "retirada",
+                forma_pagamento=estado.get("pagamento") or "dinheiro",
+                pagar_agora=bool(estado.get("pagar_agora")),
+                endereco_entrega=estado.get("endereco"),
+                observacoes=estado.get("observacoes"),
+                bairro_confirmado=estado.get("endereco_bairro"),
+            )
         if not calc.get("ok"):
             # Se for erro de item/sabor não encontrado no cardápio, removemos do carrinho
             prod_inv = calc.get("produto_invalido") or calc.get("sabor_invalido")
@@ -1005,6 +1131,13 @@ async def processar(
     if responder_como_duvida:
         decisao["acao"] = "responder_duvida"
         decisao["fatos"].append(_fatos_pizzaria(ctx.pizzaria))
+        # "Quanto é a entrega pro Cohatrac?" — sem a tabela de taxas nos fatos a voz
+        # chutava um valor e o guard trocava por "(valor a confirmar)".
+        if _re.search(r"\b(taxa|frete|entrega|entregam|delivery)\b", (user_input or "").lower()):
+            fato_taxa, valores_taxa = _fatos_taxa_entrega(ctx.pizzaria, user_input)
+            if fato_taxa:
+                decisao["fatos"].append(fato_taxa)
+                decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *valores_taxa]
 
         if user_input:
             try:
@@ -1281,12 +1414,20 @@ async def processar(
     if not estado.get("tipo"):
         estado["etapa"] = "ENTREGA"
         decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = (
-            "Se os FATOS citarem um item que o cliente acabou de aceitar (ex.: a bebida "
-            "que você ofereceu), confirme-o pelo nome em 2-3 palavras (ex.: 'Coca anotada!') — "
-            "não responda só 'Beleza'. Em seguida pergunte se vai ser ENTREGA ou RETIRADA "
-            "(não repita o total)."
-        )
+        # A instrução antiga trazia o exemplo "Coca anotada!" em TODA mensagem e
+        # pedia pra confirmar "se" houvesse item aceito: com o cliente recusando a
+        # bebida ("não, só isso"), a voz copiava o exemplo e dizia "Coca anotada!".
+        if itens_do_turno:
+            decisao["proxima_pergunta"] = (
+                f"Confirme em 2-3 palavras o que o cliente acabou de pedir ({', '.join(itens_do_turno)}) "
+                "— não responda só 'Beleza'. Em seguida pergunte se vai ser ENTREGA ou RETIRADA "
+                "(não repita o total)."
+            )
+        else:
+            decisao["proxima_pergunta"] = (
+                "Pergunte se vai ser ENTREGA ou RETIRADA (não repita o total). O cliente NÃO "
+                "pediu nada novo nesta mensagem: NÃO diga que anotou ou adicionou algum item."
+            )
         return {"decisao": decisao, "estado": estado}
 
     # 2) endereço (se delivery)
@@ -1339,7 +1480,8 @@ async def processar(
     if falta_pagar_agora:
         estado["etapa"] = "PAGAMENTO"
         decisao["acao"] = "pedir_info"
-        decisao["proxima_pergunta"] = "Pergunte SÓ se quer pagar AGORA pela conversa ou NA ENTREGA. Não repita o total."
+        momento = "NA RETIRADA" if estado.get("tipo") == "retirada" else "NA ENTREGA"
+        decisao["proxima_pergunta"] = f"Pergunte SÓ se quer pagar AGORA pela conversa ou {momento}. Não repita o total."
         return {"decisao": decisao, "estado": estado}
 
     # tudo coletado, mas ainda não confirmado → mostra o resumo UMA vez e pede confirmação

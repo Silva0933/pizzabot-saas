@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import select, text
+from sqlalchemy import case, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -149,11 +149,15 @@ async def _get_or_create_conversa(
     telefone: str,
     nome: str | None,
 ) -> Conversa:
+    # O mesmo número chega com e sem o 9º dígito (cardápio digital × JID do
+    # WhatsApp). Procurar só o exato abria uma conversa nova para quem acabou de
+    # pedir pelo cardápio, separada da confirmação que o sistema mandou.
+    from app.services.telefones import telefones_equivalentes
     stmt = select(Conversa).where(
         Conversa.pizzaria_id == pizzaria_id,
-        Conversa.cliente_telefone == telefone,
-    )
-    conv = (await db.execute(stmt)).scalar_one_or_none()
+        Conversa.cliente_telefone.in_(sorted(telefones_equivalentes(telefone) | {telefone})),
+    ).order_by(case((Conversa.cliente_telefone == telefone, 0), else_=1))
+    conv = (await db.execute(stmt)).scalars().first()
     if conv:
         return conv
 
@@ -403,11 +407,12 @@ async def evolution_webhook(
 
     from app.models import Cliente, Pedido
 
+    from app.services.telefones import telefones_equivalentes
     stmt_cli = select(Cliente).where(
         Cliente.pizzaria_id == pizz.id,
-        Cliente.telefone == telefone,
-    )
-    cli = (await db.execute(stmt_cli)).scalar_one_or_none()
+        Cliente.telefone.in_(sorted(telefones_equivalentes(telefone) | {telefone})),
+    ).order_by(case((Cliente.telefone == telefone, 0), else_=1))
+    cli = (await db.execute(stmt_cli)).scalars().first()
     if not cli:
         cli = Cliente(
             pizzaria_id=pizz.id,

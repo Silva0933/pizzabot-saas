@@ -43,6 +43,8 @@ interface CartItem {
   observacao: string;
   adicionais: string[];
   imgUrl?: string;
+  /** Meio a meio: os OUTROS sabores (o primeiro é produtoId). */
+  sabores?: Array<{ id: string; nome: string }>;
 }
 
 type Step = "menu" | "produto" | "carrinho" | "checkout" | "confirmacao";
@@ -197,6 +199,49 @@ function precoDe(p: MenuProduto): number {
   return p.tamanhos && p.tamanhos.length > 0
     ? Math.min(...p.tamanhos.map((t) => Number(t.preco)))
     : Number(p.preco);
+}
+
+type RegrasMeia = { permitido?: boolean; calculo?: string; max_sabores?: number };
+
+/** Regra de meio a meio do produto (Cardápio → produto). Sem regra = permitido. */
+function regrasMeia(p: MenuProduto): RegrasMeia {
+  const r = (p.regras as { meia_meia?: RegrasMeia } | undefined)?.meia_meia;
+  return r && typeof r === "object" ? r : {};
+}
+
+/**
+ * Aceita meio a meio: pizza sem a regra desligada, ou qualquer produto em que a
+ * pizzaria ligou a regra de propósito. Sem o filtro de categoria, todo lanche
+ * (que não tem regra cadastrada) ganharia um "meio a meio" sem sentido.
+ */
+function aceitaMeia(p: MenuProduto): boolean {
+  const r = regrasMeia(p);
+  if (r.permitido === false) return false;
+  return r.permitido === true || /pizza/i.test(p.categoria || "");
+}
+
+/**
+ * Preço de 1 unidade com os sabores escolhidos, pela mesma regra do servidor
+ * (maior valor, ou média se a pizzaria configurou). null = o tamanho não existe
+ * em algum sabor. O servidor recalcula tudo; isto é só o que o cliente vê.
+ */
+function precoDosSabores(sabores: MenuProduto[], tamanho: string | null): number | null {
+  const precos: number[] = [];
+  for (const s of sabores) {
+    if (s.tamanhos && s.tamanhos.length > 0) {
+      const t = s.tamanhos.find((x) => x.tamanho === tamanho);
+      if (!t) return null;
+      precos.push(Number(t.preco));
+    } else {
+      precos.push(Number(s.preco));
+    }
+  }
+  if (precos.length === 0) return null;
+  if (precos.length === 1) return precos[0];
+  if (regrasMeia(sabores[0]).calculo === "media") {
+    return Math.round((precos.reduce((a, b) => a + b, 0) / precos.length) * 100) / 100;
+  }
+  return Math.max(...precos);
 }
 
 function waLink(tel?: string | null): string {
@@ -403,6 +448,9 @@ export function CardapioPublico({ slug }: { slug: string }) {
   const [modalObs, setModalObs] = useState("");
   const [modalAdicionais, setModalAdicionais] = useState<string[]>([]);
   const [modalQtd, setModalQtd] = useState(1);
+  // Meio a meio: ligado pelo cliente e os ids dos outros sabores escolhidos.
+  const [modalMeio, setModalMeio] = useState(false);
+  const [modalSabores, setModalSabores] = useState<string[]>([]);
 
   // ---- Load & Sincronização em tempo real do status da loja ----
   useEffect(() => {
@@ -612,18 +660,30 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }, [trackingOpen, tracking, trackingForm.numero, trackingForm.telefone, slug]);
 
 
-  function addToCart(produto: MenuProduto, tamanho: string | null, preco: number, qtd: number, obs: string, adicionais: string[]) {
+  function addToCart(
+    produto: MenuProduto, tamanho: string | null, preco: number, qtd: number, obs: string,
+    adicionais: string[], outrosSabores: MenuProduto[] = [],
+  ) {
     if (!data?.pizzaria.aberto) return;
-    const key = `${produto.id}-${tamanho || "unico"}`;
+    // Sabores e adicionais entram na chave: sem eles, uma calabresa com borda e
+    // outra sem viravam "2 calabresas" com a borda de só uma delas.
+    const key = [
+      produto.id, ...outrosSabores.map((s) => s.id).sort(), tamanho || "unico",
+      ...[...adicionais].sort(),
+    ].join("-");
+    const nome = outrosSabores.length
+      ? [produto, ...outrosSabores].map((s) => `Meia ${s.nome}`).join(" / ")
+      : produto.nome;
     setCart(prev => {
       const existing = prev.find(i => i.id === key && i.observacao === obs);
       if (existing) {
         return prev.map(i => i === existing ? { ...i, quantidade: i.quantidade + qtd } : i);
       }
       return [...prev, {
-        id: key, produtoId: produto.id, nome: produto.nome,
+        id: key, produtoId: produto.id, nome,
         tamanho, preco, quantidade: qtd, observacao: obs, adicionais,
         imgUrl: produto.imagem_url || undefined,
+        sabores: outrosSabores.length ? outrosSabores.map((s) => ({ id: s.id, nome: s.nome })) : undefined,
       }];
     });
     // Animação de pulso no botão flutuante
@@ -875,27 +935,41 @@ export function CardapioPublico({ slug }: { slug: string }) {
     setModalObs("");
     setModalAdicionais([]);
     setModalQtd(1);
+    setModalMeio(false);
+    setModalSabores([]);
     setStep("produto");
     window.scrollTo({ top: 0, behavior: "instant" });
   }
 
   function confirmAddToCart() {
-    if (!selectedProduto || !data?.pizzaria.aberto) return;
-    const p = selectedProduto;
-    let preco = Number(p.preco);
-    if (p.tamanhos && modalTamanho) {
-      const t = p.tamanhos.find(t => t.tamanho === modalTamanho);
-      if (t) preco = Number(t.preco);
-    }
-    const adicionaisInfo = data?.pizzaria.adicionais || [];
-    let precoAdicionais = 0;
-    for (const a of modalAdicionais) {
-      const info = adicionaisInfo.find(ai => ai.nome === a);
-      if (info) precoAdicionais += info.preco;
-    }
-    addToCart(p, modalTamanho, preco + precoAdicionais, modalQtd, modalObs, modalAdicionais);
+    if (!selectedProduto || !data?.pizzaria.aberto || faltaSabor) return;
+    // Mesmo preço que a tela mostra (antes o botão somava os adicionais da
+    // pizzaria e a tela os do produto, e os valores podiam divergir).
+    addToCart(
+      selectedProduto, modalTamanho, precoAtual + precoAdicionais, modalQtd, modalObs,
+      modalAdicionais, modalMeio ? saboresEscolhidos : [],
+    );
     setStep("menu");
     setSelectedProduto(null);
+  }
+
+  /** Marca/desmarca um sabor da meia; ajusta o tamanho se o novo sabor não tiver o atual. */
+  function alternarSabor(id: string) {
+    if (!selectedProduto || !data) return;
+    const proximo = modalSabores.includes(id)
+      ? modalSabores.filter((x) => x !== id)
+      : modalSabores.length >= limiteOutrosSabores
+        ? [...modalSabores.slice(1), id] // no limite: troca o mais antigo
+        : [...modalSabores, id];
+    setModalSabores(proximo);
+    const escolhidos = proximo
+      .map((x) => data.produtos.find((p) => p.id === x))
+      .filter((p): p is MenuProduto => !!p);
+    if (precoDosSabores([selectedProduto, ...escolhidos], modalTamanho) === null) {
+      const comum = (selectedProduto.tamanhos || [])
+        .find((t) => precoDosSabores([selectedProduto, ...escolhidos], t.tamanho) !== null);
+      setModalTamanho(comum ? comum.tamanho : null);
+    }
   }
 
   // ---- Submit pedido ----
@@ -928,6 +1002,7 @@ export function CardapioPublico({ slug }: { slug: string }) {
         preco_unit: i.preco,
         observacao: i.observacao || undefined,
         adicionais: i.adicionais.length ? i.adicionais : undefined,
+        sabores_ids: i.sabores?.length ? i.sabores.map((s) => s.id) : undefined,
       })),
       website: "",
     };
@@ -968,14 +1043,43 @@ export function CardapioPublico({ slug }: { slug: string }) {
   }
 
   // Adicionais e preços calculados de forma segura para o passo de produto
-  const { precoAtual, precoAdicionais, precoTotal, adicionaisDisp } = useMemo(() => {
-    if (!selectedProduto || !data) return { precoAtual: 0, precoAdicionais: 0, precoTotal: 0, adicionaisDisp: [] };
+  const {
+    precoAtual, precoAdicionais, precoTotal, adicionaisDisp,
+    saboresCandidatos, saboresEscolhidos, limiteOutrosSabores, faltaSabor, tamanhosMeia,
+  } = useMemo(() => {
+    const vazio = {
+      precoAtual: 0, precoAdicionais: 0, precoTotal: 0,
+      adicionaisDisp: [] as Array<{ nome: string; preco: number; tipo?: string }>,
+      saboresCandidatos: [] as MenuProduto[], saboresEscolhidos: [] as MenuProduto[],
+      limiteOutrosSabores: 1, faltaSabor: false, tamanhosMeia: null as string[] | null,
+    };
+    if (!selectedProduto || !data) return vazio;
     const p = selectedProduto;
-    let precoAt = Number(p.preco);
-    if (p.tamanhos && modalTamanho) {
-      const t = p.tamanhos.find(t => t.tamanho === modalTamanho);
-      if (t) precoAt = Number(t.preco);
-    }
+
+    // Meio a meio: outros sabores da MESMA categoria que aceitam meia e têm ao
+    // menos um tamanho em comum com este (o servidor recusa o resto).
+    const candidatos = aceitaMeia(p)
+      ? data.produtos.filter((o) =>
+          o.id !== p.id
+          && (o.categoria || "") === (p.categoria || "")
+          && aceitaMeia(o)
+          && (!p.tamanhos?.length || p.tamanhos.some((t) => precoDosSabores([p, o], t.tamanho) !== null)))
+      : [];
+    const escolhidos = modalMeio
+      ? modalSabores.map((id) => candidatos.find((o) => o.id === id)).filter((o): o is MenuProduto => !!o)
+      : [];
+    const limite = Math.max(
+      1,
+      Math.min(...[p, ...escolhidos].map((s) => Number(regrasMeia(s).max_sabores) || 2)) - 1,
+    );
+    const tamanhos = escolhidos.length && p.tamanhos?.length
+      ? p.tamanhos.filter((t) => precoDosSabores([p, ...escolhidos], t.tamanho) !== null).map((t) => t.tamanho)
+      : null;
+
+    let precoAt = precoDosSabores([p, ...escolhidos], modalTamanho)
+      ?? precoDosSabores([p], modalTamanho)
+      ?? Number(p.preco);
+    if (!p.tamanhos?.length && !escolhidos.length) precoAt = Number(p.preco);
     let adsp: Array<{ nome: string; preco: number; tipo?: string }> = [];
     if (p.opcoes && Array.isArray((p.opcoes as any).adicionais) && (p.opcoes as any).adicionais.length > 0) {
       adsp = ((p.opcoes as any).adicionais as any[]).map(item => {
@@ -1001,9 +1105,15 @@ export function CardapioPublico({ slug }: { slug: string }) {
       precoAtual: precoAt,
       precoAdicionais: precoAds,
       precoTotal: (precoAt + precoAds) * modalQtd,
-      adicionaisDisp: adsp
+      adicionaisDisp: adsp,
+      saboresCandidatos: candidatos,
+      saboresEscolhidos: escolhidos,
+      limiteOutrosSabores: limite,
+      // Ligou meio a meio mas ainda não escolheu o outro sabor: não dá pra adicionar.
+      faltaSabor: modalMeio && escolhidos.length === 0,
+      tamanhosMeia: tamanhos,
     };
-  }, [selectedProduto, modalTamanho, modalAdicionais, modalQtd, data]);
+  }, [selectedProduto, modalTamanho, modalAdicionais, modalQtd, modalMeio, modalSabores, data]);
 
   // ============================================
   // Renders
@@ -1787,7 +1897,11 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path d="M19 12H5M5 12l7 7M5 12l7-7"/></svg>
               </button>
               <div className="cdp-produto-hero-overlay">
-                <h1 className="cdp-produto-hero-title">{selectedProduto.nome}</h1>
+                <h1 className="cdp-produto-hero-title">
+                  {saboresEscolhidos.length
+                    ? [selectedProduto, ...saboresEscolhidos].map((s) => `Meia ${s.nome}`).join(" / ")
+                    : selectedProduto.nome}
+                </h1>
                 {!selectedProduto.tamanhos || selectedProduto.tamanhos.length === 0 ? (
                   <div className="cdp-produto-hero-price">{fmt(Number(selectedProduto.preco))}</div>
                 ) : (
@@ -1803,7 +1917,69 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 </div>
               )}
 
-              {/* Tamanhos */}
+              {/* Meio a meio: só aparece se existir outro sabor compatível */}
+              {saboresCandidatos.length > 0 && (
+                <div className="cdp-produto-section">
+                  <div className="cdp-produto-section-header">
+                    <h3>Inteira ou meio a meio?</h3>
+                  </div>
+                  <div className="cdp-tamanho-list">
+                    {([[false, "Inteira", selectedProduto.nome], [true, "Meio a meio", "Escolha o outro sabor"]] as const).map(([meio, rotulo, detalhe]) => (
+                      <button
+                        key={rotulo}
+                        type="button"
+                        aria-pressed={modalMeio === meio}
+                        className={`cdp-tamanho-btn ${modalMeio === meio ? "active" : ""}`}
+                        onClick={() => { setModalMeio(meio); if (!meio) setModalSabores([]); }}
+                      >
+                        <div className="cdp-tamanho-left">
+                          <span className={`cdp-radio ${modalMeio === meio ? "active" : ""}`} />
+                          <span className="cdp-tamanho-name">{rotulo}</span>
+                        </div>
+                        <span className="cdp-tamanho-price" style={{ fontWeight: 500 }}>{detalhe}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {modalMeio && saboresCandidatos.length > 0 && (
+                <div className="cdp-produto-section">
+                  <div className="cdp-produto-section-header">
+                    <h3>{limiteOutrosSabores > 1 ? `Escolha até ${limiteOutrosSabores} sabores` : "Escolha o outro sabor"}</h3>
+                    <span className="cdp-badge cdp-badge-required">Obrigatório</span>
+                  </div>
+                  <p className="cdp-produto-desc" style={{ marginBottom: 10 }}>
+                    Metade {selectedProduto.nome}, metade o sabor escolhido.{" "}
+                    {regrasMeia(selectedProduto).calculo === "media"
+                      ? "O preço é a média dos sabores."
+                      : "O preço é o do sabor mais caro."}
+                  </p>
+                  <div className="cdp-tamanho-list">
+                    {saboresCandidatos.map((s) => {
+                      const ativo = modalSabores.includes(s.id);
+                      const preco = precoDosSabores([s], modalTamanho);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          aria-pressed={ativo}
+                          className={`cdp-tamanho-btn ${ativo ? "active" : ""}`}
+                          onClick={() => alternarSabor(s.id)}
+                        >
+                          <div className="cdp-tamanho-left">
+                            <span className={`cdp-radio ${ativo ? "active" : ""}`} />
+                            <span className="cdp-tamanho-name">{s.nome}</span>
+                          </div>
+                          {preco !== null && <span className="cdp-tamanho-price">{fmt(preco)}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Tamanhos (no meio a meio, só os que existem em todos os sabores) */}
               {selectedProduto.tamanhos && selectedProduto.tamanhos.length > 0 && (
                 <div className="cdp-produto-section">
                   <div className="cdp-produto-section-header">
@@ -1811,7 +1987,9 @@ export function CardapioPublico({ slug }: { slug: string }) {
                     <span className="cdp-badge cdp-badge-required">Obrigatório</span>
                   </div>
                   <div className="cdp-tamanho-list">
-                    {selectedProduto.tamanhos.map(t => (
+                    {selectedProduto.tamanhos
+                      .filter(t => !tamanhosMeia || tamanhosMeia.includes(t.tamanho))
+                      .map(t => (
                       <button
                         key={t.tamanho}
                         className={`cdp-tamanho-btn ${modalTamanho === t.tamanho ? "active" : ""}`}
@@ -1821,7 +1999,9 @@ export function CardapioPublico({ slug }: { slug: string }) {
                           <span className={`cdp-radio ${modalTamanho === t.tamanho ? "active" : ""}`} />
                           <span className="cdp-tamanho-name">{t.tamanho}</span>
                         </div>
-                        <span className="cdp-tamanho-price">{fmt(t.preco)}</span>
+                        <span className="cdp-tamanho-price">
+                          {fmt(precoDosSabores([selectedProduto, ...saboresEscolhidos], t.tamanho) ?? t.preco)}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -1886,8 +2066,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
                 <span>{modalQtd}</span>
                 <button onClick={() => setModalQtd(modalQtd + 1)}>+</button>
               </div>
-              <button className="cdp-btn-primary cdp-btn-add" disabled={!pizz.aberto} onClick={confirmAddToCart}>
-                {pizz.aberto ? `Adicionar • ${fmt(precoTotal)}` : "Loja fechada"}
+              <button className="cdp-btn-primary cdp-btn-add" disabled={!pizz.aberto || faltaSabor} onClick={confirmAddToCart}>
+                {!pizz.aberto ? "Loja fechada" : faltaSabor ? "Escolha o outro sabor" : `Adicionar • ${fmt(precoTotal)}`}
               </button>
             </div>
           </>

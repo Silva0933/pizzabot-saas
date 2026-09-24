@@ -1435,6 +1435,8 @@ export interface PedidoDigitalPayload {
     preco_unit: number;
     observacao?: string;
     adicionais?: string[];
+    /** Meio a meio: ids dos outros sabores (o primeiro é produto_id). */
+    sabores_ids?: string[];
   }>;
   website?: string; // honeypot
 }

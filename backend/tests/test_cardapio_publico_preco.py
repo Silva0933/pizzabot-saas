@@ -138,3 +138,76 @@ class TestCupomSeguro:
         }]}
         with pytest.raises(HTTPException):
             _calcular_desconto(inativo, "OFF", Decimal("100"))
+
+
+# ============================================================
+# Meio a meio no cardápio digital (mesmas regras do agente do WhatsApp)
+# ============================================================
+@dataclass
+class FakePizza:
+    id: str
+    nome: str
+    preco: float
+    tamanhos: list[dict[str, Any]] | None = None
+    categoria: str = "pizza"
+    disponivel: bool = True
+    opcoes: dict[str, Any] | None = None
+    regras: dict[str, Any] | None = None
+
+
+def _pizzas():
+    calabresa = FakePizza("c", "Pizza Calabresa", 46.9, [{"tamanho": "M", "preco": 46.9}, {"tamanho": "G", "preco": 59.9}])
+    frango = FakePizza("f", "Pizza Frango", 40.9, [{"tamanho": "M", "preco": 53.9}, {"tamanho": "G", "preco": 66.9}])
+    return calabresa, frango
+
+
+class TestMeioAMeio:
+    def test_cobra_o_maior_valor_por_padrao(self):
+        calabresa, frango = _pizzas()
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f"], nome="meia", quantidade=1, tamanho="G", preco_unit=1)]
+        itens_json, subtotal = _recalcular_itens(itens, _map(calabresa, frango), {})
+        assert subtotal == Decimal("66.9")
+        assert itens_json[0]["nome"] == "Meia Pizza Calabresa / Meia Pizza Frango (G)"
+        assert itens_json[0]["sabores"] == ["Pizza Calabresa", "Pizza Frango"]
+
+    def test_cobra_a_media_quando_configurado(self):
+        calabresa, frango = _pizzas()
+        calabresa.regras = {"meia_meia": {"calculo": "media"}}
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f"], nome="meia", quantidade=1, tamanho="G")]
+        _, subtotal = _recalcular_itens(itens, _map(calabresa, frango), {})
+        assert subtotal == Decimal("63.40")  # (59,90 + 66,90) / 2
+
+    def test_sabor_que_nao_aceita_meia_e_recusado(self):
+        calabresa, frango = _pizzas()
+        frango.regras = {"meia_meia": {"permitido": False}}
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f"], nome="meia", quantidade=1, tamanho="G")]
+        with pytest.raises(HTTPException):
+            _recalcular_itens(itens, _map(calabresa, frango), {})
+
+    def test_limite_de_sabores(self):
+        calabresa, frango = _pizzas()
+        port = FakePizza("p", "Pizza Portuguesa", 40.9, [{"tamanho": "G", "preco": 66.9}])
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f", "p"], nome="3", quantidade=1, tamanho="G")]
+        with pytest.raises(HTTPException):
+            _recalcular_itens(itens, _map(calabresa, frango, port), {})
+
+    def test_tamanho_precisa_existir_em_todos(self):
+        calabresa, frango = _pizzas()
+        frango.tamanhos = [{"tamanho": "G", "preco": 66.9}]  # sem M
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f"], nome="meia", quantidade=1, tamanho="M")]
+        with pytest.raises(HTTPException):
+            _recalcular_itens(itens, _map(calabresa, frango), {})
+
+    def test_categorias_diferentes_sao_recusadas(self):
+        calabresa, _ = _pizzas()
+        brownie = FakePizza("b", "Brownie", 16.9, None, categoria="sobremesa")
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["b"], nome="x", quantidade=1, tamanho="G")]
+        with pytest.raises(HTTPException):
+            _recalcular_itens(itens, _map(calabresa, brownie), {})
+
+    def test_sabor_indisponivel_e_recusado(self):
+        calabresa, frango = _pizzas()
+        frango.disponivel = False
+        itens = [ItemPedidoIn(produto_id="c", sabores_ids=["f"], nome="meia", quantidade=1, tamanho="G")]
+        with pytest.raises(HTTPException):
+            _recalcular_itens(itens, _map(calabresa, frango), {})

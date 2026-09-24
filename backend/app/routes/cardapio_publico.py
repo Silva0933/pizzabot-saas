@@ -98,6 +98,8 @@ class ItemPedidoIn(BaseModel):
     preco_unit: float = Field(default=0, ge=0)
     observacao: str | None = Field(default=None, max_length=500)
     adicionais: list[str] = Field(default_factory=list)
+    # Meio a meio: ids dos OUTROS sabores (o primeiro é produto_id). Vazio = inteira.
+    sabores_ids: list[str] = Field(default_factory=list, max_length=3)
 
 
 class PedidoDigitalIn(BaseModel):
@@ -186,15 +188,17 @@ def _recalcular_itens(
                 status.HTTP_400_BAD_REQUEST,
                 f"Item indisponível ou inválido: {item.nome}. Atualize a página e tente novamente.",
             )
-        preco_unit = Decimal(str(prod.preco))
-        tamanho_final = None
-        tamanhos = prod.tamanhos or []
-        if tamanhos:
-            match = next((t for t in tamanhos if str(t.get("tamanho")) == str(item.tamanho)), None)
-            if not match:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Tamanho inválido para {prod.nome}.")
-            preco_unit = Decimal(str(match.get("preco") or 0))
-            tamanho_final = match.get("tamanho")
+        sabores = [prod]
+        for sid in item.sabores_ids or []:
+            outro = produtos_map.get(sid or "")
+            if outro is None or not getattr(outro, "disponivel", False):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Um dos sabores de {item.nome} está indisponível. Atualize a página e tente novamente.",
+                )
+            if outro is not prod and outro not in sabores:
+                sabores.append(outro)
+        preco_unit, tamanho_final = _preco_dos_sabores(sabores, item.tamanho)
         mapa_item = _obter_mapa_adicionais(prod, adicionais_precos)
         adicionais_validos: list[str] = []
         for a in (item.adicionais or []):
@@ -203,16 +207,70 @@ def _recalcular_itens(
                 adicionais_validos.append(a)
                 preco_unit += preco_a
         subtotal += preco_unit * item.quantidade
-        itens_json.append({
+        nome_base = (
+            " / ".join(f"Meia {s.nome}" for s in sabores) if len(sabores) > 1 else prod.nome
+        )
+        linha: dict[str, Any] = {
             "produto_id": str(prod.id),
-            "nome": prod.nome + (f" ({tamanho_final})" if tamanho_final else ""),
+            "nome": nome_base + (f" ({tamanho_final})" if tamanho_final else ""),
             "quantidade": item.quantidade,
             "preco_unit": float(preco_unit),
             "tamanho": tamanho_final,
             "observacao": item.observacao,
             "adicionais": adicionais_validos,
-        })
+        }
+        if len(sabores) > 1:
+            linha["sabores"] = [s.nome for s in sabores]
+            linha["sabores_ids"] = [str(s.id) for s in sabores]
+        itens_json.append(linha)
     return itens_json, subtotal
+
+
+def _regras_meia(prod: Any) -> dict[str, Any]:
+    regras = getattr(prod, "regras", None)
+    meia = regras.get("meia_meia") if isinstance(regras, dict) else None
+    return meia if isinstance(meia, dict) else {}
+
+
+def _preco_dos_sabores(sabores: list[Any], tamanho: str | None) -> tuple[Decimal, str | None]:
+    """Preço unitário de uma pizza inteira (1 sabor) ou meio a meio.
+
+    Mesmas regras que o agente do WhatsApp aplica (tools._calcular_pedido):
+    sabor com meia_meia.permitido = false não entra em meio a meio; limite de
+    max_sabores (padrão 2); cálculo pelo maior valor (padrão) ou pela média. O
+    tamanho precisa existir em TODOS os sabores. Levanta HTTP 400 se inválido.
+    """
+    principal = sabores[0]
+    if len(sabores) > 1:
+        categorias = {(getattr(s, "categoria", None) or "").strip().lower() for s in sabores}
+        if len(categorias) > 1:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Meio a meio só entre sabores da mesma categoria.")
+        regras = [_regras_meia(s) for s in sabores]
+        if any(r.get("permitido") is False for r in regras):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Um dos sabores escolhidos não aceita meio a meio.")
+        limite = min(int(r.get("max_sabores") or 2) for r in regras)
+        if len(sabores) > limite:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Esta pizza aceita no máximo {limite} sabores.")
+
+    precos: list[Decimal] = []
+    tamanho_final = None
+    for s in sabores:
+        tamanhos = s.tamanhos or []
+        if tamanhos:
+            match = next((t for t in tamanhos if str(t.get("tamanho")) == str(tamanho)), None)
+            if not match:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Tamanho inválido para {s.nome}.")
+            precos.append(Decimal(str(match.get("preco") or 0)))
+            tamanho_final = match.get("tamanho")
+        else:
+            precos.append(Decimal(str(s.preco)))
+
+    if len(precos) == 1:
+        return precos[0], tamanho_final
+    calculo = _regras_meia(principal).get("calculo") or "maior_valor"
+    if calculo == "media":
+        return (sum(precos) / len(precos)).quantize(Decimal("0.01")), tamanho_final
+    return max(precos), tamanho_final
 
 
 # ============================================
@@ -246,27 +304,14 @@ def _token_conta(cliente: Cliente, pizzaria: Pizzaria) -> str:
 # ============================================
 def _limpar_telefone(tel: str) -> str:
     """Remove caracteres não-numéricos e garante formato brasileiro."""
-    digits = re.sub(r"\D", "", tel)
-    if len(digits) == 11:
-        digits = "55" + digits
-    elif len(digits) == 10:
-        digits = "55" + digits
-    elif not digits.startswith("55") and len(digits) >= 12:
-        pass  # já tem DDI
-    return digits
+    from app.services.telefones import limpar_telefone
+    return limpar_telefone(tel)
+
 
 def _telefones_equivalentes(tel: str) -> set[str]:
     """Returns equivalent forms of a Brazilian WhatsApp number."""
-    digits = re.sub(r"\D", "", tel)
-    nacional = digits[2:] if digits.startswith("55") and len(digits) in {12, 13} else digits
-    variantes = {digits, _limpar_telefone(digits), nacional}
-    if len(nacional) == 11 and nacional[2:3] == "9":
-        sem_nono = nacional[:2] + nacional[3:]
-        variantes.update({sem_nono, "55" + sem_nono})
-    elif len(nacional) == 10:
-        com_nono = nacional[:2] + "9" + nacional[2:]
-        variantes.update({com_nono, "55" + com_nono})
-    return {numero for numero in variantes if numero}
+    from app.services.telefones import telefones_equivalentes
+    return telefones_equivalentes(tel)
 
 
 def _calcular_desconto(
@@ -590,9 +635,12 @@ async def criar_pedido_digital(
     # NUNCA confia no preço enviado pelo cliente (anti-tampering de preço).
     prod_ids: list[uuid.UUID] = []
     for it in body.itens:
-        if it.produto_id:
+        # Os outros sabores do meio a meio também precisam vir do cadastro.
+        for pid in [it.produto_id, *(it.sabores_ids or [])]:
+            if not pid:
+                continue
             try:
-                prod_ids.append(uuid.UUID(it.produto_id))
+                prod_ids.append(uuid.UUID(pid))
             except ValueError:
                 pass
     produtos_map: dict[str, Produto] = {}
@@ -1107,7 +1155,9 @@ async def _enviar_confirmacao_whatsapp(
         adicionais = item.get("adicionais", [])
 
         linha = f"  {qtd}x {nome}"
-        if tamanho:
+        # O nome já sai do recálculo com o tamanho ("Pizza Calabresa (G)"); somar
+        # de novo mandava "Pizza Calabresa (G) (G)" no WhatsApp do cliente.
+        if tamanho and f"({tamanho})" not in nome:
             linha += f" ({tamanho})"
         linha += f" — R$ {preco * qtd:.2f}".replace(".", ",")
         if adicionais:

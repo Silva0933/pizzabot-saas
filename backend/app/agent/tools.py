@@ -15,7 +15,7 @@ import logging
 import re
 import uuid
 from collections.abc import Callable, Coroutine
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -883,6 +883,11 @@ async def _calcular_pedido(
                         f"Adicional(is) não disponível(is) para este item: {faltantes}. Ofereça só os "
                         f"complementos que pertencem ao produto (use buscar_cardapio para ver)."
                     ),
+                    # Nomes exatos como vieram do cliente: o FSM tira do carrinho
+                    # e segue. Sem isso a borda inexistente travava o pedido em
+                    # pendência até cair no atendente humano.
+                    "adicional_invalido": faltantes,
+                    "adicionais_validos": [c["nome"] for c in complementos_validos],
                 }
             if ad_fmt:
                 preco_unitario += ad_preco
@@ -1587,18 +1592,72 @@ async def _resolver_pedido(ctx: AgentContext, db: AsyncSession, ref: str | None 
             )).scalar_one_or_none()
             if ped:
                 return ped
-    cli = ctx.cliente or (await db.execute(
-        select(Cliente).where(Cliente.pizzaria_id == ctx.pizzaria.id, Cliente.telefone == ctx.telefone)
-    )).scalar_one_or_none()
-    if not cli:
+    ids = await _ids_do_cliente(ctx, db)
+    if not ids:
         return None
     return (await db.execute(
         select(Pedido).where(
             Pedido.pizzaria_id == ctx.pizzaria.id,
-            Pedido.cliente_id == cli.id,
+            Pedido.cliente_id.in_(ids),
             Pedido.status.in_(["novo", "confirmado", "no_forno"]),
         ).order_by(Pedido.created_at.desc())
     )).scalars().first()
+
+
+async def _ids_do_cliente(ctx: AgentContext, db: AsyncSession) -> list[Any]:
+    """Ids de cliente deste número em qualquer formato (com/sem 55, com/sem o 9).
+
+    O cardápio digital grava o número com o 9º dígito; o WhatsApp muitas vezes
+    entrega sem. Buscar só pelo telefone exato deixava o pedido do cardápio
+    invisível para o agente que atende a mensagem do mesmo cliente.
+    """
+    from app.services.telefones import telefones_equivalentes
+    ids: list[Any] = []
+    if ctx.cliente is not None and getattr(ctx.cliente, "id", None):
+        ids.append(ctx.cliente.id)
+    rows = (await db.execute(
+        select(Cliente.id).where(
+            Cliente.pizzaria_id == ctx.pizzaria.id,
+            Cliente.telefone.in_(sorted(telefones_equivalentes(ctx.telefone))),
+        )
+    )).scalars().all()
+    for cid in rows:
+        if cid not in ids:
+            ids.append(cid)
+    return ids
+
+
+# Pedido REAL em andamento (não o rascunho que o FSM mantém enquanto o cliente
+# monta o pedido). "novo" só conta se já tem cobrança: é o pedido fechado que
+# aguarda o pagamento online.
+STATUS_PEDIDO_ANDAMENTO = ("novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho")
+ROTULO_STATUS_PEDIDO = {
+    "novo": "aguardando a confirmação do pagamento",
+    "confirmado": "confirmado, aguardando o preparo",
+    "no_forno": "em preparo",
+    "pronto_entrega": "pronto",
+    "a_caminho": "saiu para entrega",
+}
+
+
+async def pedido_ativo_do_cliente(ctx: AgentContext, db: AsyncSession, *, horas: int = 12) -> Pedido | None:
+    """Pedido já feito (pelo WhatsApp ou pelo cardápio digital) ainda em andamento."""
+    ids = await _ids_do_cliente(ctx, db)
+    if not ids:
+        return None
+    desde = datetime.now(UTC) - timedelta(hours=horas)
+    pedidos = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == ctx.pizzaria.id,
+            Pedido.cliente_id.in_(ids),
+            Pedido.status.in_(STATUS_PEDIDO_ANDAMENTO),
+            Pedido.created_at >= desde,
+        ).order_by(Pedido.created_at.desc())
+    )).scalars().all()
+    for ped in pedidos:
+        if ped.status != "novo" or ped.payment_id or ped.link_pagamento:
+            return ped
+    return None
 
 
 async def atualizar_pedido(

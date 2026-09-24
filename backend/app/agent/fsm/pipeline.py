@@ -450,6 +450,11 @@ async def run_fsm_agent(
             log.debug("Guard FSM falhou (texto segue como veio): %s", e)
     texto = texto.replace(QUEBRA, "\n\n")
 
+    # Quem já falou com o cliente já se apresentou. O engine só marcava isso em
+    # alguns ramos; nos de pendência (falta tamanho, item ou borda inexistente) o
+    # flag ficava False e a resposta seguinte repetia "Oi! Sou a Camila...".
+    estado["apresentou"] = True
+
     # Qual pergunta ficou aberta? Decide pelo que o cliente LEU, não pelo ramo que
     # rodou: a voz às vezes oferece o cardápio de improviso ("quer que eu te mande
     # o cardápio?") em ramos que não sabem disso. Se a mensagem enviada perguntou
