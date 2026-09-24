@@ -405,3 +405,16 @@ class TestBordaNaObservacao:
         est = self._rodar("borda fina")
         assert est["carrinho"][0]["adicionais"] == []
         assert est["observacoes"] == "borda fina"
+
+
+def test_borda_colada_no_nome_do_produto():
+    from app.agent.fsm import engine
+    estado = engine.estado_inicial()
+    estado["apresentou"] = True
+    nlu = {"intencao": "adicionar_item", "dados": {"produtos": [
+        {"nome": "pizza de frango com catupiry com borda de cheddar", "qtd": 1, "tamanho": "G"}]}}
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value={"ok": False, "erro": "x"})):
+        est = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="x"))["estado"]
+    assert est["carrinho"][0]["nome"] == "pizza de frango com catupiry"
+    assert est["carrinho"][0]["adicionais"] == ["borda de cheddar"]

@@ -1072,6 +1072,23 @@ async def processar(
     # cheddar", a casa recebia uma borda que não vende — ou uma que vende, sem
     # cobrar. Movida para o item, passa pela validação de adicionais (existe →
     # cobra; não existe → sai e o cliente é avisado). "Borda fina" segue obs.
+    # A NLU às vezes cola a borda no NOME ("pizza de frango com borda de
+    # cheddar"): o produto não era achado e a pizza sumia do carrinho.
+    for p in (dados.get("produtos") or []):
+        if not isinstance(p, dict) or "borda" not in str(p.get("nome") or "").lower():
+            continue
+        nome_p = str(p["nome"])
+        achadas_nome = [
+            m for m in _BORDA_RECHEADA_RE.finditer(nome_p)
+            if not _re.search(r"\bsem\s*$", nome_p[:m.start()].lower())
+        ]
+        if not achadas_nome:
+            continue
+        for m in reversed(achadas_nome):
+            nome_p = nome_p[:m.start()] + nome_p[m.end():]
+        p["nome"] = _re.sub(r"\s+(com|e)\s*$", "", _re.sub(r"\s{2,}", " ", nome_p)).strip(" ,")
+        p["adicionais"] = [*(p.get("adicionais") or []), *[m.group(0).strip() for m in achadas_nome]]
+
     obs_bruta = dados.get("observacoes")
     if isinstance(obs_bruta, str) and "borda" in obs_bruta.lower():
         # "sem borda de catupiry" é pedido de NÃO ter borda: fica na observação.
