@@ -1024,13 +1024,43 @@ export function CardapioPublico({ slug }: { slug: string }) {
     if (window.parent === window) return; // so vale dentro do iframe
     function aoReceber(e: MessageEvent) {
       if (e.origin !== window.location.origin) return; // so o proprio painel
-      const d = e.data as { tipo?: string; tema?: TemaCardapioConfig; banner?: string } | null;
+      const d = e.data as {
+        tipo?: string; tema?: TemaCardapioConfig; banner?: string;
+        fracao?: number; secao?: string; item?: number;
+      } | null;
       if (d && d.tipo === "cdp-previa-tema") {
         setTemaPreview(d.tema || {});
         setBannerPreview(typeof d.banner === "string" ? d.banner : null);
       }
+      if (d && d.tipo === "cdp-previa-rolar") rolarPrevia(d);
+    }
+    /*
+     * O painel rola a previa junto com o formulario (fracao 0..1) e, quando um
+     * texto muda, leva ate a secao dele — sem isso quem edita as duvidas ou o
+     * rodape fica olhando o topo e nao ve a mudanca acontecer.
+     */
+    function rolarPrevia(d: { fracao?: number; secao?: string; item?: number }) {
+      const doc = document.documentElement;
+      if (typeof d.fracao === "number") {
+        window.scrollTo({ top: d.fracao * Math.max(0, doc.scrollHeight - window.innerHeight), behavior: "instant" });
+        return;
+      }
+      const seletores: Record<string, string> = {
+        diferenciais: ".fx-trust-wrap", cardapio: "#cardapio", promocoes: "#promocoes", passos: ".fx-steps",
+        localizacao: "#localizacao", duvidas: "#duvidas", rodape: ".fx-footer",
+      };
+      if (typeof d.item === "number") setFaqAberta(d.item);
+      // Espera o React pintar a mudanca (secao nova, pergunta aberta) antes de medir.
+      requestAnimationFrame(() => {
+        if (!d.secao || d.secao === "topo") { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+        const alvo = seletores[d.secao] ? document.querySelector(seletores[d.secao]) : null;
+        if (!alvo) return; // secao que nao aparece (ex.: promocoes sem cupom): fica onde esta
+        window.scrollTo({ top: alvo.getBoundingClientRect().top + window.scrollY - 88, behavior: "smooth" });
+      });
     }
     window.addEventListener("message", aoReceber);
+    // Dentro da moldura do painel a barra de rolagem so rouba largura.
+    document.documentElement.style.scrollbarWidth = "none";
     // Avisa que ja pode receber (o painel pode ter montado antes do iframe).
     try {
       window.parent.postMessage({ tipo: "cdp-previa-pronta" }, window.location.origin);

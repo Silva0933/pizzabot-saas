@@ -56,10 +56,33 @@ const BODY_FONTS = (Object.keys(FONTES_TEXTO) as Array<keyof typeof FONTES_TEXTO
   css: FONTES_TEXTO[value].stack,
 }));
 
-/* Tamanhos da previa: o artboard de referencia e 1440x6400 no desktop e 390 no
-   celular; aqui basta uma janela alta o bastante pra mostrar hero + cardapio. */
+/* Previa: o cardapio roda na largura real do aparelho (1280 no computador, 390
+   no celular) e so e reduzido para caber. O celular fica numa moldura de
+   aparelho de tamanho fixo: antes ele esticava ate a largura da coluna e
+   aparecia MAIOR que a previa do computador. */
 const LARGURA_PREVIA = { desktop: 1280, mobile: 390 } as const;
-const ALTURA_PREVIA = { desktop: 900, mobile: 780 } as const;
+const TELA_CELULAR = 300; // largura da tela dentro da moldura, em px do painel
+const ESCALA_CELULAR = TELA_CELULAR / LARGURA_PREVIA.mobile;
+const BARRA_STATUS = 30; // faixa do relogio/ilha no topo da moldura
+
+/** Secao do cardapio que cada campo muda: editar leva a previa ate ela. */
+const SECAO_DO_CAMPO: Partial<Record<keyof TemaCardapioConfig, string>> = {
+  barra_cupom_ativa: "topo", barra_cupom_texto: "topo",
+  chamada: "topo", titulo: "topo", descricao: "topo", cta_primario: "topo", cta_secundario: "topo",
+  diferenciais: "diferenciais", destaques_titulo: "cardapio",
+  promocoes_titulo: "promocoes", promocoes_subtitulo: "promocoes",
+  passos_titulo: "passos", passos: "passos", localizacao_titulo: "localizacao",
+  faq_titulo: "duvidas", faq: "duvidas", rodape_frase: "rodape",
+};
+
+/** Indice do primeiro item que mudou entre duas listas (para abrir a pergunta editada). */
+function primeiroDiferente(antes: unknown[] = [], depois: unknown[] = []): number | undefined {
+  const n = Math.max(antes.length, depois.length);
+  for (let i = 0; i < n; i++) {
+    if (JSON.stringify(antes[i]) !== JSON.stringify(depois[i])) return i < depois.length ? i : undefined;
+  }
+  return undefined;
+}
 
 const RADII: Record<TemaBordas, string> = {
   retas: BORDAS.retas.raio,
@@ -82,7 +105,17 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
     [pizzaria.tema_cardapio, pizzaria.banner_url, config, bannerUrl],
   );
 
+  // Pedido de "leve a previa ate a secao X", enviado depois que o tema novo chega.
+  const saltoRef = useRef<{ secao: string; item?: number } | null>(null);
+
   function update<K extends keyof TemaCardapioConfig>(key: K, value: TemaCardapioConfig[K]) {
+    const secao = SECAO_DO_CAMPO[key];
+    if (secao) {
+      const item = key === "faq" && Array.isArray(value)
+        ? primeiroDiferente(config.faq as unknown[] | undefined, value as unknown[])
+        : undefined;
+      saltoRef.current = { secao, item };
+    }
     setConfig((current) => ({ ...current, [key]: value }));
     setSaved(false);
   }
@@ -90,18 +123,30 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
   const [dispositivo, setDispositivo] = useState<"desktop" | "mobile">("desktop");
   const caixaPreviaRef = useRef<HTMLDivElement | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
-  const [escala, setEscala] = useState(0.3);
+  const colunaFormRef = useRef<HTMLDivElement | null>(null);
+  const [escala, setEscala] = useState(0.4);
+  const [alturaJanela, setAlturaJanela] = useState(() => (typeof window === "undefined" ? 900 : window.innerHeight));
 
-  /* A previa encolhe pra caber na coluna: mede a caixa e escala o iframe. */
+  /* O computador encolhe pra caber na largura da coluna; o celular tem moldura
+     de tamanho fixo e nao precisa medir. */
   useEffect(() => {
     const caixa = caixaPreviaRef.current;
-    if (!caixa) return;
-    const medir = () => setEscala(caixa.clientWidth / LARGURA_PREVIA[dispositivo]);
+    if (!caixa || dispositivo !== "desktop") return;
+    const medir = () => setEscala(caixa.clientWidth / LARGURA_PREVIA.desktop);
     medir();
     const observador = new ResizeObserver(medir);
     observador.observe(caixa);
     return () => observador.disconnect();
-  }, [dispositivo]);
+  }, [dispositivo, area]);
+
+  // A previa ocupa a altura da tela (fica fixa ao lado do formulario).
+  useEffect(() => {
+    const medir = () => setAlturaJanela(window.innerHeight);
+    window.addEventListener("resize", medir);
+    return () => window.removeEventListener("resize", medir);
+  }, []);
+  const alturaDesktop = Math.min(820, Math.max(360, alturaJanela - 300));
+  const alturaTelaCelular = Math.min(640, Math.max(420, alturaJanela - 320));
 
   /** Manda pro iframe o tema (e o banner) ainda nao salvos. */
   const enviarPrevia = useCallback(() => {
@@ -115,6 +160,42 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
 
   // Repinta a previa a cada tecla digitada / cor escolhida.
   useEffect(() => { enviarPrevia(); }, [enviarPrevia]);
+
+  // Depois do tema novo, leva a previa ate a secao do campo editado.
+  useEffect(() => {
+    const salto = saltoRef.current;
+    const janela = iframeRef.current?.contentWindow;
+    if (!salto || !janela) return;
+    saltoRef.current = null;
+    janela.postMessage({ tipo: "cdp-previa-rolar", ...salto }, window.location.origin);
+  }, [config, bannerUrl]);
+
+  /*
+   * A previa rola junto com o formulario: a fracao percorrida da coluna de
+   * edicao vira a mesma fracao da pagina do cardapio. Captura o scroll de
+   * qualquer conteiner, porque o painel pode rolar a janela ou o <main>.
+   */
+  const sincronizarRolagem = useCallback(() => {
+    const coluna = colunaFormRef.current;
+    const janela = iframeRef.current?.contentWindow;
+    if (!coluna || !janela) return;
+    const r = coluna.getBoundingClientRect();
+    const percurso = r.height - window.innerHeight;
+    const fracao = percurso > 0 ? Math.min(1, Math.max(0, -r.top / percurso)) : 0;
+    janela.postMessage({ tipo: "cdp-previa-rolar", fracao }, window.location.origin);
+  }, []);
+  useEffect(() => {
+    let quadro = 0;
+    const aoRolar = () => {
+      if (quadro) return;
+      quadro = requestAnimationFrame(() => { quadro = 0; sincronizarRolagem(); });
+    };
+    window.addEventListener("scroll", aoRolar, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("scroll", aoRolar, { capture: true });
+      cancelAnimationFrame(quadro);
+    };
+  }, [sincronizarRolagem]);
 
   // O iframe pode ficar pronto antes deste componente: ele avisa, a gente responde.
   useEffect(() => {
@@ -225,7 +306,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
       </section>
 
       <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(420px,.9fr)] gap-5 items-start">
-        <div className="space-y-5">
+        <div ref={colunaFormRef} className="space-y-5">
           <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2"><Type className="w-4 h-4 text-orange-400" /><h3 className="font-bold text-sm text-white">Tipografia e acabamento</h3></div>
@@ -276,7 +357,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             <p className="text-xs text-slate-400 mb-4">Use uma imagem horizontal com o produto mais à direita. O texto do cardápio ficará protegido e alinhado à esquerda.</p>
             <label className="block">
               <span className="block text-xs font-semibold text-slate-400 mb-1.5">Link da imagem do banner</span>
-              <input type="url" value={bannerUrl} onChange={(event) => { setBannerUrl(event.target.value); setSaved(false); }} placeholder="https://exemplo.com/banner.jpg"
+              <input type="url" value={bannerUrl} onChange={(event) => { saltoRef.current = { secao: "topo" }; setBannerUrl(event.target.value); setSaved(false); }} placeholder="https://exemplo.com/banner.jpg"
                 className="w-full px-3.5 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500" />
             </label>
             <div className="mt-3 overflow-hidden rounded-xl border border-[#1e293b] bg-[#161f30]">
@@ -384,34 +465,72 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
           {/* A previa e o cardapio de verdade num iframe, recebendo o tema ainda
               nao salvo por postMessage. Um mockup paralelo divergiria da pagina
               real a cada mudanca de layout. */}
-          <div
-            ref={caixaPreviaRef}
-            className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0b0f18]"
-            style={{ height: Math.round(ALTURA_PREVIA[dispositivo] * escala) }}
-          >
-            {pizzaria.slug ? (
+          {!pizzaria.slug ? (
+            <div className="h-64 grid place-items-center p-6 text-center text-[11px] text-slate-400 rounded-xl border border-white/10 bg-[#0b0f18]">
+              Defina o endereço (slug) do cardápio para ver a prévia.
+            </div>
+          ) : dispositivo === "desktop" ? (
+            <div
+              ref={caixaPreviaRef}
+              className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0b0f18]"
+              style={{ height: alturaDesktop }}
+            >
               <iframe
+                key="desktop"
                 ref={iframeRef}
                 title="Prévia do cardápio"
                 src={`/m/${pizzaria.slug}`}
-                onLoad={enviarPrevia}
+                onLoad={() => { enviarPrevia(); sincronizarRolagem(); }}
                 className="absolute top-0 left-0 origin-top-left border-0"
                 style={{
-                  width: LARGURA_PREVIA[dispositivo],
-                  height: ALTURA_PREVIA[dispositivo],
+                  width: LARGURA_PREVIA.desktop,
+                  height: alturaDesktop / escala,
                   transform: `scale(${escala})`,
                 }}
               />
-            ) : (
-              <div className="h-full grid place-items-center p-6 text-center text-[11px] text-slate-400">
-                Defina o endereço (slug) do cardápio para ver a prévia.
+            </div>
+          ) : (
+            /* Moldura de celular: bordas, botões laterais, relógio e a ilha no topo. */
+            <div className="flex justify-center py-1">
+              <div
+                className="relative rounded-[46px] bg-[#05070c] p-[10px] shadow-[0_24px_60px_rgba(0,0,0,0.55)] ring-1 ring-white/15"
+                style={{ width: TELA_CELULAR + 20 }}
+              >
+                <span aria-hidden="true" className="absolute -left-[3px] top-[110px] h-8 w-[3px] rounded-l bg-[#1b2230]" />
+                <span aria-hidden="true" className="absolute -left-[3px] top-[160px] h-14 w-[3px] rounded-l bg-[#1b2230]" />
+                <span aria-hidden="true" className="absolute -right-[3px] top-[140px] h-20 w-[3px] rounded-r bg-[#1b2230]" />
+                <div className="relative overflow-hidden rounded-[36px] bg-black" style={{ width: TELA_CELULAR, height: alturaTelaCelular }}>
+                  <div aria-hidden="true" className="relative flex items-center justify-between px-6 text-[11px] font-semibold text-white" style={{ height: BARRA_STATUS }}>
+                    <span>9:41</span>
+                    <span className="absolute left-1/2 top-[7px] -translate-x-1/2 h-[18px] w-[86px] rounded-full bg-[#05070c] ring-1 ring-white/5" />
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2 w-3 rounded-[2px] bg-white/90" />
+                      <span className="inline-block h-2.5 w-5 rounded-[3px] border border-white/80" />
+                    </span>
+                  </div>
+                  <iframe
+                    key="mobile"
+                    ref={iframeRef}
+                    title="Prévia do cardápio"
+                    src={`/m/${pizzaria.slug}`}
+                    onLoad={() => { enviarPrevia(); sincronizarRolagem(); }}
+                    className="absolute left-0 origin-top-left border-0 bg-black"
+                    style={{
+                      top: BARRA_STATUS,
+                      width: LARGURA_PREVIA.mobile,
+                      height: (alturaTelaCelular - BARRA_STATUS) / ESCALA_CELULAR,
+                      transform: `scale(${ESCALA_CELULAR})`,
+                    }}
+                  />
+                  <span aria-hidden="true" className="pointer-events-none absolute bottom-1.5 left-1/2 -translate-x-1/2 h-1 w-24 rounded-full bg-white/60" />
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          <p className="mt-2 text-[11px] text-slate-500">
-            É o cardápio real, com as mudanças que você ainda não salvou. Role dentro
-            da prévia para ver as outras seções.
+          <p className="mt-3 text-[11px] text-slate-500">
+            É o cardápio real, com as mudanças que você ainda não salvou. A prévia acompanha
+            a rolagem do formulário e vai até a seção de cada texto que você editar.
           </p>
         </aside>
       </div>
