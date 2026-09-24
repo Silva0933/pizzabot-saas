@@ -526,3 +526,24 @@ def test_horario_vai_por_extenso_nos_fatos():
     assert "Seg a Sáb: 18:00 às 23:30" in fatos
     assert "Dom: fechado" in fatos
     assert "consulte" not in fatos
+
+
+class TestQuantidadeDentroDoNome:
+    """Bateria 7: "3 cheese classico" virava "1x 3 cheese classico" (cobrava um)."""
+
+    def _carrinho(self, produto):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        engine._aplicar_nlu(estado, {"produtos": [produto]})
+        return [(i["nome"], i["qtd"]) for i in estado["carrinho"]]
+
+    def test_numero_no_inicio_vira_quantidade(self):
+        assert self._carrinho({"nome": "3 cheese classico", "qtd": 1}) == [("cheese classico", 3)]
+        assert self._carrinho({"nome": "2x smash duplo"}) == [("smash duplo", 2)]
+
+    def test_numero_que_faz_parte_do_nome_fica(self):
+        assert self._carrinho({"nome": "4 queijos", "qtd": 1}) == [("4 queijos", 1)]
+        assert self._carrinho({"nome": "2 litros de coca", "qtd": 1}) == [("2 litros de coca", 1)]
+
+    def test_qtd_ja_informada_nao_e_trocada(self):
+        assert self._carrinho({"nome": "cheese classico", "qtd": 3}) == [("cheese classico", 3)]

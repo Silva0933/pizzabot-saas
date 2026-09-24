@@ -186,6 +186,12 @@ def _inferir_remocao(user_input: str, carrinho: list[dict[str, Any]]) -> list[st
     return alvos
 
 
+_QTD_NO_NOME_RE = _re.compile(
+    r"(\d{1,2})\s*x?\s+(?!(?:queijos?|sabores?|litros?|l|ml|carnes?|cortes?|peda[cç]os?|fatias?)\b)(.+)",
+    _re.IGNORECASE,
+)
+
+
 def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
     """Funde os dados extraídos pela NLU no estado (carrinho e campos)."""
     # Adicionar produtos — com MERGE: se já existe item com o mesmo nome/sabores,
@@ -195,6 +201,13 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         if not isinstance(p, dict):
             continue
         nome = (p.get("nome") or "").strip()
+        # "3 cheese classico" (sem "quero") vinha com a quantidade DENTRO do nome e
+        # qtd 1: o carrinho ficava "1x 3 cheese classico" e cobrava um só. O número
+        # que faz parte do nome ("4 queijos", "2 litros") fica onde está.
+        m_qtd = _QTD_NO_NOME_RE.match(nome)
+        if m_qtd and int(p.get("qtd") or 1) == 1:
+            p = {**p, "qtd": int(m_qtd.group(1))}
+            nome = m_qtd.group(2).strip()
         sabores = [s for s in (p.get("sabores_meia") or []) if s]
         # "Meio a meio" de UM sabor é a pizza inteira desse sabor. A NLU manda
         # "calabresa e frango" (2 pizzas) como duas meias de um sabor cada, e o
