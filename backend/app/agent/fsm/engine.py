@@ -1054,8 +1054,10 @@ async def processar(
     # Pergunta não é pedido: "quanto é a pizza de frango grande?" e "a calabresa
     # é 10 reais né?" colocavam a pizza no carrinho. A NLU às vezes extrai o
     # produto citado mesmo classificando como dúvida.
-    if intencao == "duvida_geral" and dados.get("produtos"):
+    if intencao == "duvida_geral":
+        # Nem vira item, nem observação ("Obs: perguntou o preço da quatro queijos").
         dados["produtos"] = []
+        dados["observacoes"] = None
 
     # Resposta à pergunta "pagar agora ou na entrega/retirada?" não é observação
     # do pedido. A NLU às vezes gravava "na hora de pegar" nos dois campos e o
@@ -1101,6 +1103,20 @@ async def processar(
     elif estado.get("aguardando_sabores") and dados.get("produtos"):
         pend = estado.pop("aguardando_sabores")
         prods = [p for p in dados["produtos"] if isinstance(p, dict)]
+        # "2 pizzas grandes" + "calabresa e frango": a NLU às vezes junta numa
+        # meio a meio (com qtd 2). Sem o cliente falar em meia/metade, são N
+        # pizzas inteiras, uma de cada sabor.
+        sab = [x for x in (prods[0].get("sabores_meia") or []) if x] if len(prods) == 1 else []
+        if (
+            len(sab) >= 2 and len(sab) == int(pend.get("qtd") or 1)
+            and not _re.search(r"\b(meia|meio|metade)\b", (user_input or "").lower())
+        ):
+            base = prods[0]
+            prods = [
+                {"nome": x, "qtd": 1, "tamanho": base.get("tamanho"), "adicionais": list(base.get("adicionais") or [])}
+                for x in sab
+            ]
+            dados["produtos"] = prods
         for p in prods:
             if not p.get("tamanho") and pend.get("tamanho"):
                 p["tamanho"] = pend["tamanho"]

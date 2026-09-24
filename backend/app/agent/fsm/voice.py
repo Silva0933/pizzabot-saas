@@ -79,6 +79,22 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
             linhas.append(f"Pedido #{dados['numero_pedido']} · {dados.get('tempo_estimado','')}")
         resumo = "DADOS CALCULADOS PELO SISTEMA (use exatamente, não invente):\n" + "\n".join(linhas)
 
+    # Valores: por padrão a voz não cita R$ (resumo e taxa saem verbatim do
+    # backend). Em dúvida ("quanto é a quatro queijos média?") e alteração de
+    # pedido, o sistema já calculou os preços e eles estão nos FATOS — a regra
+    # geral proibia citá-los e o modelo (que obedece) respondia "o preço está
+    # no cardápio". O guard continua conferindo cada valor com precos_validos.
+    pode_citar_valor = bool(decisao.get("precos_validos")) and decisao.get("acao") in (
+        "responder_duvida", "pedido_atualizado",
+    )
+    regra_valores = (
+        "Se o cliente perguntou preço/valor/taxa, informe o valor EXATAMENTE como aparece nos FATOS acima "
+        "(não calcule somas nem descontos). Nunca cite valor que não esteja nos FATOS. "
+        if pode_citar_valor else
+        "NUNCA cite preço, total ou taxa em NENHUM valor (R$) — quem mostra os valores ao cliente é o "
+        "SISTEMA, não você. "
+    )
+
     apres = (
         "É a PRIMEIRA mensagem: apresente-se uma vez (nome + pizzaria) e cumprimente."
         if not ja_apresentou else
@@ -98,9 +114,9 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
         f"{'Faça apenas UMA pergunta por vez.' if comportamento.uma_pergunta_por_vez else 'Faça no máximo duas perguntas relacionadas.'} "
         "NÃO faça a mesma pergunta duas vezes. NUNCA dê a entender que o pedido está fechado, confirmado ou pronto antes de o "
         "cliente confirmar — NÃO diga 'é só vir buscar', 'pode retirar', 'pedido fechado' nem 'qualquer "
-        "coisa é só chamar' enquanto o pedido não foi confirmado. NUNCA cite preço, total ou taxa em "
-        "NENHUM valor (R$) — quem mostra os valores ao cliente é o SISTEMA, não você. Nunca invente "
-        "preço/sabor/taxa. Não repita bordões fixos "
+        "coisa é só chamar' enquanto o pedido não foi confirmado. "
+        + regra_valores +
+        "Nunca invente preço/sabor/taxa. Não repita bordões fixos "
         "('Perfeito!', 'Show!'). VOCÊ é a atendente: nunca diga que VOCÊ 'deu uma olhada', "
         "'escolheu' ou 'decidiu' algo pelo cliente — quem decide é ele. "
         f"SEU nome é {nome_atendente}: NUNCA chame o cliente pelo seu nome nem coloque "

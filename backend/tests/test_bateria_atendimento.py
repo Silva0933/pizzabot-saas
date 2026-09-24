@@ -320,3 +320,61 @@ class TestBateria4:
             {"nome": "pizza", "qtd": 1, "tamanho": "G", "sabores_meia": ["frango"]},
         ]})
         assert [(it["nome"], it["sabores"]) for it in estado["carrinho"]] == [("calabresa", []), ("frango", [])]
+
+
+class TestBateria5:
+    def _cmd(self, acao, precos):
+        from app.agent.fsm.voice import montar_comando
+        pers = MagicMock()
+        pers.nome = "Camila"
+        with patch("app.agent.behavior.get_behavior") as gb:
+            gb.return_value.comunicacao.tamanho_resposta = "curta"
+            gb.return_value.comunicacao.uma_pergunta_por_vez = True
+            gb.return_value.comunicacao.max_baloes = 2
+            return montar_comando(personalidade=pers, pizzaria_nome="Fornalha",
+                                  decisao={"acao": acao, "precos_validos": precos, "fatos": []},
+                                  ja_apresentou=True, user_input="quanto é?")
+
+    def test_duvida_com_preco_pode_citar_valor(self):
+        cmd = self._cmd("responder_duvida", [54.9])
+        assert "EXATAMENTE como aparece nos FATOS" in cmd
+        assert "NUNCA cite preço" not in cmd
+
+    def test_fora_de_duvida_continua_proibido(self):
+        assert "NUNCA cite preço" in self._cmd("upsell", [59.9])
+        assert "NUNCA cite preço" in self._cmd("responder_duvida", [])
+
+    def test_sabores_apos_generico_viram_pizzas_inteiras(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado.update({"apresentou": True, "aguardando_sabores": {"qtd": 2, "tamanho": "grande"}})
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [
+            {"nome": "pizza", "qtd": 2, "tamanho": "grande", "sabores_meia": ["calabresa", "frango"]}]}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value={"ok": False, "erro": "x"})):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="calabresa e frango"))
+        cart = out["estado"]["carrinho"]
+        assert sorted(it["nome"] for it in cart) == ["calabresa", "frango"]
+        assert all(it["qtd"] == 1 and not it["sabores"] for it in cart)
+
+    def test_meia_explicita_continua_meia(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado.update({"apresentou": True, "aguardando_sabores": {"qtd": 2, "tamanho": "grande"}})
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [
+            {"nome": "pizza", "qtd": 2, "tamanho": "grande", "sabores_meia": ["calabresa", "frango"]}]}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value={"ok": False, "erro": "x"})):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu,
+                                               user_input="as duas meia calabresa meia frango"))
+        assert out["estado"]["carrinho"][0]["sabores"] == ["calabresa", "frango"]
+
+    def test_duvida_nao_vira_observacao(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "duvida_geral", "dados": {"observacoes": "perguntou o preço"}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools.buscar_cardapio", new=AsyncMock(return_value={"items": []})):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="quanto é?"))
+        assert not out["estado"].get("observacoes")
