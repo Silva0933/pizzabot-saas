@@ -42,9 +42,16 @@ Infra: Postgres com pgvector + Redis.
     endereço, taxa, pagamento). Decide a ação e pode fixar `mensagem_pronta`.
   - `fsm/voice.py` — LLM redige a fala; `fsm/guard.py` blinda o texto (preço, saudação, nome).
   - `providers.py`/`llm.py` — Gemini, OpenAI, OpenRouter; `failover.py` troca para o reserva.
+    Nível de raciocínio por papel (`nlu_reasoning`/`voz_reasoning`, config de IA no admin).
+    Em produção: `openai/gpt-6-luna` com raciocínio desligado (low deixava a NLU até 14 s).
+  - Antes de decidir, o engine procura o pedido REAL ativo do cliente
+    (`tools.pedido_ativo_do_cliente`): pós-venda funciona para pedido do cardápio
+    digital e depois do TTL de 2h do estado.
   - `behavior.py` — as opções de comportamento configuráveis por pizzaria.
 - `routes/` — API. Rotas de pizzaria usam `Depends(membership)` (deps.py), que
   também devolve **402** para pizzaria suspensa. Admin da plataforma usa `require_platform_admin`.
+- `services/telefones.py` — o mesmo número chega com e sem o 9º dígito (cardápio ×
+  JID do WhatsApp): busca de cliente/conversa/pedido sempre por `telefones_equivalentes`.
 - `services/` — Evolution, pagamentos (Mercado Pago/Asaas), billing da
   plataforma, horário, geocoding, transcrição, alertas, `prontidao.py` (auditoria de config).
 - `workers/` — Celery (`tasks.py`) e jobs do beat (`periodic.py`).
@@ -79,6 +86,11 @@ npm run dev      # precisa de VITE_PIZZABOT_API_URL no .env.local
 backend/scripts/stress_atendimento.py
 ```
 
+Testar o agente REAL sem efeito colateral: `POST /pizzarias/{id}/agente/testar`
+(`{mensagem, sessao}`) roda o FSM em modo simulação — não envia WhatsApp, não cria
+pedido, não cobra; `POST .../agente/testar/reset` limpa a sessão. Bug achado assim
+vira teste em `backend/tests/test_bateria_atendimento.py`.
+
 Antes de commitar: pytest + `npm run lint` passando.
 
 ## Deploy e produção
@@ -90,6 +102,8 @@ Antes de commitar: pytest + `npm run lint` passando.
   rodar, a produção não atualiza.
 - Migrations rodam sozinhas no boot do serviço `backend`.
 - `/docs` e `/openapi.json` ficam desligados com `APP_ENV=production`.
+- Link público do cardápio: `Settings.url_cardapio(slug)` (`PAINEL_URL` ou a 1ª
+  origem https do CORS que não é a API).
 - `GET /admin/prontidao` lista configurações fail-open (tokens de webhook vazios etc.).
 
 ## Convenções
@@ -103,4 +117,9 @@ Antes de commitar: pytest + `npm run lint` passando.
   não improviso da LLM. Preço, taxa e disponibilidade vêm sempre do banco —
   a LLM nunca inventa.
 - Todo acesso a dado de pizzaria filtra por `pizzaria_id` (multi-tenant).
+- A voz só cita valor (R$) em dúvida/alteração e só os que estão nos fatos
+  (`precos_validos`); o guard (`fsm/guard.py`) neutraliza o resto, exceto troco.
+- Meio a meio: regra por produto em `regras.meia_meia` (permitido, max_sabores,
+  maior_valor|media), a mesma no agente (`tools._calcular_pedido`) e no cardápio
+  digital (`cardapio_publico._preco_dos_sabores`).
 - Correção de bug do agente vem com teste em `backend/tests/` reproduzindo a conversa.
