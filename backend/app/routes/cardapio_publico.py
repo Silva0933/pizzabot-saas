@@ -171,6 +171,18 @@ def _obter_mapa_adicionais(prod: Any, adicionais_precos_globais: dict[str, Decim
     return mapa
 
 
+def _adicionais_globais(adicionais: Any) -> list[dict[str, Any]]:
+    """Adicionais da pizzaria que valem para qualquer produto.
+
+    A tela usa esta lista para produto sem adicionais próprios. Antes ela vinha
+    agregada com os adicionais de TODOS os produtos: a borda da pizza aparecia
+    no hambúrguer, o cliente marcava, via o preço somado e o checkout
+    (`_obter_mapa_adicionais`: globais + os do próprio produto) descartava em
+    silêncio — o pedido saía sem o adicional e mais barato do que a tela mostrou.
+    """
+    return [a for a in (adicionais or []) if isinstance(a, dict) and str(a.get("nome") or "").strip()]
+
+
 def _recalcular_itens(
     itens: list["ItemPedidoIn"],
     produtos_map: dict[str, Any],
@@ -417,24 +429,6 @@ async def get_menu(
         for p in produtos_db
     ]
 
-    # Unificação: agrega adicionais dos produtos com os da pizzaria para retrocompatibilidade
-    ads_agregados: list[dict[str, Any]] = list(pizz.adicionais or [])
-    nomes_vistos = {str(a.get("nome") or "").strip().lower() for a in ads_agregados if isinstance(a, dict)}
-    for p in produtos_db:
-        if isinstance(p.opcoes, dict):
-            p_ads = p.opcoes.get("adicionais") or []
-            if isinstance(p_ads, list):
-                for a in p_ads:
-                    if isinstance(a, dict) and a.get("nome"):
-                        nl = str(a["nome"]).strip().lower()
-                        if nl not in nomes_vistos:
-                            nomes_vistos.add(nl)
-                            ads_agregados.append({
-                                "nome": a["nome"],
-                                "preco": float(a.get("preco") or 0),
-                                "tipo": a.get("tipo") or "adicional",
-                            })
-
     pizzaria_pub = PizzariaPublica(
         nome=pizz.nome,
         slug=pizz.slug,
@@ -450,7 +444,7 @@ async def get_menu(
         taxa_entrega_info=pizz.taxa_entrega_info,
         taxa_entrega_fixa=float(pizz.taxa_entrega_fixa) if pizz.taxa_entrega_fixa else None,
         taxas_bairro=pizz.taxas_bairro or [],
-        adicionais=ads_agregados,
+        adicionais=_adicionais_globais(pizz.adicionais),
         tempo_entrega_min=pizz.tempo_entrega_min,
         tempo_entrega_max=pizz.tempo_entrega_max,
         tempo_retirada_min=pizz.tempo_retirada_min,

@@ -216,3 +216,24 @@ class TestMeioAMeio:
 def test_bairro_casa_sem_acento_e_caixa():
     from app.routes.cardapio_publico import _normalizar_bairro
     assert _normalizar_bairro("Cidade Operária ") == _normalizar_bairro("cidade  operaria")
+
+
+def test_adicional_de_outro_produto_nao_aparece_para_quem_nao_tem_proprios():
+    """Hambúrguer sem adicionais próprios não pode oferecer a borda da pizza:
+    a tela mostrava, somava no preço, e o checkout descartava o adicional."""
+    from app.routes.cardapio_publico import _adicionais_globais
+
+    globais = [{"nome": "Bacon", "preco": 5}, "lixo", {"nome": "  "}]
+    exibidos = _adicionais_globais(globais)
+    assert [a["nome"] for a in exibidos] == ["Bacon"]
+
+    burger = FakeProduto(id="b1", nome="X-Burger", preco=30)
+    pizza = FakeProduto(
+        id="p1", nome="Pizza", preco=50,
+        opcoes={"adicionais": [{"nome": "Borda Catupiry", "preco": 10}]},
+    )
+    # Tudo que a tela oferece ao hambúrguer o checkout aceita e cobra.
+    itens = [ItemPedidoIn(produto_id="b1", nome="X-Burger", quantidade=1, adicionais=["Bacon"])]
+    itens_json, subtotal = _recalcular_itens(itens, _map(burger, pizza), {"bacon": Decimal("5")})
+    assert subtotal == Decimal("35")
+    assert itens_json[0]["adicionais"] == ["Bacon"]
