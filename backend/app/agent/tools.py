@@ -1705,6 +1705,47 @@ async def pedido_ativo_do_cliente(ctx: AgentContext, db: AsyncSession, *, horas:
     return None
 
 
+def _bairro_cadastrado_no_texto(pizz, endereco: str | None) -> str | None:
+    """Bairro da tabela de taxas citado no texto do endereço (sem acento/caixa)."""
+    texto = _normalizar(endereco)
+    for item in (getattr(pizz, "taxas_bairro", None) or []):
+        nome = item.get("bairro") if isinstance(item, dict) else None
+        if nome and _normalizar(nome) and _normalizar(nome) in texto:
+            return nome
+    return None
+
+
+def _ajuste_taxa_endereco(pizz, ped, novo_endereco: str) -> dict[str, Any] | None:
+    """Taxa antes/depois da troca de endereço. None quando não dá pra afirmar.
+
+    Devolve {"antes", "depois", "diferenca", "bairro"} ou {"a_confirmar": True}
+    quando o bairro novo não está na tabela e não há taxa fixa.
+    """
+    tabela = getattr(pizz, "taxas_bairro", None) or []
+    if not tabela:
+        return None  # só taxa fixa (ou nenhuma): trocar de endereço não muda o valor
+    bairro_novo = _bairro_cadastrado_no_texto(pizz, novo_endereco)
+    if not bairro_novo:
+        if getattr(pizz, "taxa_entrega_fixa", None) is None:
+            return {"a_confirmar": True}
+        taxa_nova = float(pizz.taxa_entrega_fixa)
+    else:
+        taxa_nova = _taxa_para_bairro(pizz, bairro_novo).get("taxa")
+        if taxa_nova is None:
+            return {"a_confirmar": True}
+    taxa_antiga = float(ped.taxa_entrega or 0) or None
+    if taxa_antiga is None:
+        bairro_antigo = _bairro_cadastrado_no_texto(pizz, ped.endereco_entrega)
+        if bairro_antigo:
+            taxa_antiga = _taxa_para_bairro(pizz, bairro_antigo).get("taxa")
+        elif getattr(pizz, "taxa_entrega_fixa", None) is not None:
+            taxa_antiga = float(pizz.taxa_entrega_fixa)
+    if taxa_antiga is None:
+        return None
+    dif = round(float(taxa_nova) - float(taxa_antiga), 2)
+    return {"antes": float(taxa_antiga), "depois": float(taxa_nova), "diferenca": dif, "bairro": bairro_novo}
+
+
 async def atualizar_pedido(
     ctx: AgentContext,
     db: AsyncSession,
@@ -1723,7 +1764,17 @@ async def atualizar_pedido(
     if ped.status in ("a_caminho", "entregue", "cancelado"):
         return {"ok": False, "erro": f"pedido #{ped.numero_pedido} já está '{ped.status}' e não pode ser alterado"}
 
+    ajuste_taxa: dict[str, Any] | None = None
     if novo_endereco:
+        # Endereço novo em OUTRO bairro muda a taxa: antes o total ficava com a
+        # taxa do endereço antigo. Só ajusta quando os dois bairros são
+        # reconhecidos na tabela; sem isso a equipe confirma.
+        if ped.tipo == "delivery":
+            ajuste_taxa = _ajuste_taxa_endereco(ctx.pizzaria, ped, novo_endereco)
+            if ajuste_taxa and ajuste_taxa.get("diferenca"):
+                ped.valor_total = Decimal(str(ped.valor_total or 0)) + Decimal(str(ajuste_taxa["diferenca"]))
+                ped.taxa_entrega = Decimal(str(ajuste_taxa["depois"]))
+                ajuste_taxa["novo_total"] = float(ped.valor_total)
         ped.endereco_entrega = novo_endereco
     forma_anterior = ped.forma_pagamento
     if nova_forma_pagamento:
@@ -1737,6 +1788,8 @@ async def atualizar_pedido(
 
     # Se passou a ser pagamento online e ainda não há cobrança (ou mudou o método), gera agora.
     resultado: dict[str, Any] = {"ok": True, "numero_pedido": ped.numero_pedido}
+    if ajuste_taxa:
+        resultado["taxa_entrega"] = ajuste_taxa
     metodo = _metodo_online(nova_forma_pagamento) if nova_forma_pagamento else None
     mudou_metodo = nova_forma_pagamento and (nova_forma_pagamento != forma_anterior)
     # "já tem cobrança" = tem pagamento OU link de checkout. No fluxo de cartão o

@@ -865,6 +865,17 @@ async def processar(
         decisao["fatos"].append("Pedido atualizado.")
         decisao["acao"] = "pedido_atualizado"
         decisao["proxima_pergunta"] = "Confirme a alteração feita de forma curta."
+        taxa_info = (r.get("taxa_entrega") if isinstance(r, dict) else None) or {}
+        if taxa_info.get("a_confirmar"):
+            decisao["fatos"].append(
+                "O novo endereço fica num bairro sem taxa cadastrada: diga que a equipe confirma a taxa de entrega."
+            )
+        elif taxa_info.get("diferenca"):
+            decisao["fatos"].append(
+                f"A taxa de entrega mudou de {_fmt_brl(taxa_info['antes'])} para {_fmt_brl(taxa_info['depois'])}; "
+                f"novo total do pedido: {_fmt_brl(taxa_info['novo_total'])}. Informe isso ao confirmar."
+            )
+            decisao["precos_validos"] = [taxa_info["antes"], taxa_info["depois"], taxa_info["novo_total"]]
         return {"decisao": decisao, "estado": estado}
 
     # Cancelar

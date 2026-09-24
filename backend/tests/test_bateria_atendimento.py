@@ -279,3 +279,33 @@ class TestBateria3:
         cart = out2["estado"]["carrinho"]
         assert len(cart) == 2 and all(it["tamanho"] == "grande" and it["qtd"] == 1 for it in cart)
         assert "aguardando_sabores" not in out2["estado"]
+
+
+class TestTaxaAoMudarEndereco:
+    def _pizz(self, fixa=None):
+        pizz = MagicMock()
+        pizz.taxas_bairro = [{"bairro": "Cidade Operária", "taxa": 6.9}, {"bairro": "Cohatrac", "taxa": 10}]
+        pizz.taxa_entrega_fixa = fixa
+        return pizz
+
+    def test_outro_bairro_ajusta_a_diferenca(self):
+        from app.agent.tools import _ajuste_taxa_endereco
+        ped = MagicMock()
+        ped.taxa_entrega = 0
+        ped.endereco_entrega = "Rua A, 10, Cidade Operaria"
+        r = _ajuste_taxa_endereco(self._pizz(), ped, "Rua B, 5, Cohatrac")
+        assert r["antes"] == 6.9 and r["depois"] == 10.0 and r["diferenca"] == 3.1
+
+    def test_mesmo_bairro_sem_diferenca(self):
+        from app.agent.tools import _ajuste_taxa_endereco
+        ped = MagicMock()
+        ped.taxa_entrega = 0
+        ped.endereco_entrega = "Rua A, 10, Cidade Operária"
+        assert _ajuste_taxa_endereco(self._pizz(), ped, "Rua B, 20, Cidade Operária")["diferenca"] == 0
+
+    def test_bairro_desconhecido_sem_fixa_fica_a_confirmar(self):
+        from app.agent.tools import _ajuste_taxa_endereco
+        ped = MagicMock()
+        ped.taxa_entrega = 6.9
+        ped.endereco_entrega = "Rua A, Cidade Operária"
+        assert _ajuste_taxa_endereco(self._pizz(), ped, "Rua X, Renascença") == {"a_confirmar": True}
