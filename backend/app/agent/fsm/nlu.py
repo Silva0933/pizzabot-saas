@@ -58,6 +58,8 @@ _SYSTEM = (
     "JAMAIS classifique perguntas sobre disponibilidade (ex.: 'tem coca?', 'vocês têm borda de catupiry?', 'quais bebidas vocês têm?') "
     "como 'adicionar_item'. Perguntas de consulta de disponibilidade devem ser classificadas como 'duvida_geral' ou 'pedir_cardapio', "
     "e a lista de produtos deve ir vazia. O cliente só quer saber se tem, ele ainda não pediu para adicionar o item ao carrinho. "
+    "Borda RECHEADA/de sabor ('borda de catupiry', 'borda recheada de cheddar') é ADICIONAL pago: vai em "
+    "'adicionais' do produto, NUNCA em 'observacoes' (só 'borda fina/grossa' é observação). "
     "Resposta sobre QUANDO pagar ('agora', 'já', 'na entrega', 'na retirada', 'na hora de pegar', 'quando chegar') "
     "vai SÓ em 'pagar_agora' (true = agora, false = na entrega/retirada) — NUNCA em 'observacoes'. "
     "Se ele só confirma (ex.: 'sim', 'pode', 'isso', 'fechado'), use intencao 'confirmar_resumo'. Se for só bate-papo, 'conversa_fiada'. "

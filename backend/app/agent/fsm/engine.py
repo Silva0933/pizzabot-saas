@@ -566,6 +566,14 @@ def _fatos_promocoes(pizz) -> tuple[str, list[float]]:
             valores)
 
 
+# "Borda de cheddar", "borda recheada com catupiry" (sabor = adicional pago).
+# Não casa "borda fina/grossa" (preparo, fica na observação).
+_BORDA_RECHEADA_RE = _re.compile(
+    r"borda\s+(?:recheada\s+)?(?:de|com)\s+[a-zà-ÿ]+(?:\s+[a-zà-ÿ]+)?",
+    _re.IGNORECASE,
+)
+
+
 # "Observação" que na verdade é a resposta de QUANDO pagar ("na hora de pegar",
 # "quando chegar", "pago na entrega"). Texto já normalizado (sem acento).
 _OBS_E_MOMENTO_DE_PAGAR_RE = _re.compile(
@@ -1058,6 +1066,33 @@ async def processar(
         # Nem vira item, nem observação ("Obs: perguntou o preço da quatro queijos").
         dados["produtos"] = []
         dados["observacoes"] = None
+
+    # Borda recheada é ADICIONAL (tem preço), não observação. A NLU mandava
+    # "borda de cheddar" nas observações: a atendente dizia "anotei com borda de
+    # cheddar", a casa recebia uma borda que não vende — ou uma que vende, sem
+    # cobrar. Movida para o item, passa pela validação de adicionais (existe →
+    # cobra; não existe → sai e o cliente é avisado). "Borda fina" segue obs.
+    obs_bruta = dados.get("observacoes")
+    if isinstance(obs_bruta, str) and "borda" in obs_bruta.lower():
+        # "sem borda de catupiry" é pedido de NÃO ter borda: fica na observação.
+        achadas = [
+            m for m in _BORDA_RECHEADA_RE.finditer(obs_bruta)
+            if not _re.search(r"\bsem\s*$", obs_bruta[:m.start()].lower())
+        ]
+        bordas = [m.group(0).strip() for m in achadas]
+        alvo = next(
+            (p for p in reversed(dados.get("produtos") or []) if isinstance(p, dict)),
+            estado["carrinho"][-1] if estado["carrinho"] else None,
+        )
+        if bordas and alvo is not None:
+            alvo["adicionais"] = [*(alvo.get("adicionais") or []), *bordas]
+            if alvo in estado["carrinho"]:
+                _descongelar(alvo)
+            restante = obs_bruta
+            for m in reversed(achadas):
+                restante = restante[:m.start()] + restante[m.end():]
+            restante = _re.sub(r"^[\s,;.e]+|[\s,;.]+$", "", _re.sub(r"\s*,\s*,\s*", ", ", restante)).strip()
+            dados["observacoes"] = restante or None
 
     # Resposta à pergunta "pagar agora ou na entrega/retirada?" não é observação
     # do pedido. A NLU às vezes gravava "na hora de pegar" nos dois campos e o

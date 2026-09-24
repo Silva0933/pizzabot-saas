@@ -222,16 +222,19 @@ async def _run_openai_agent(
 
     for iteration in range(1, max_iter + 1):
         log.info("Agente(%s) iter=%d pizzaria=%s", provider, iteration, pizzaria_id)
+        # Mesmo nível de raciocínio da voz: a reserva só entra quando o FSM já
+        # passou de 15s — raciocínio padrão do modelo aqui só piora a espera.
+        raciocinio = cfg.get("voz_reasoning") or None
         res = await openai_chat(
             provider=provider, api_key=api_key, model=model,
-            messages=messages, tools=tools,
+            messages=messages, tools=tools, reasoning=raciocinio,
         )
         # Modelos leves (flash-lite) às vezes devolvem resposta vazia.
         # Uma nova tentativa costuma resolver antes de desistir.
         if not (res.get("tool_calls") or (res.get("content") or "").strip()):
             res = await openai_chat(
                 provider=provider, api_key=api_key, model=model,
-                messages=messages, tools=tools, temperature=0.4,
+                messages=messages, tools=tools, temperature=0.4, reasoning=raciocinio,
             )
         u = res.get("usage") or {}
         usage_acc["prompt"] += u.get("prompt_tokens", 0) or 0

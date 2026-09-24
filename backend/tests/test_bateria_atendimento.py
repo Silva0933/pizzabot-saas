@@ -378,3 +378,30 @@ class TestBateria5:
              patch("app.agent.tools.buscar_cardapio", new=AsyncMock(return_value={"items": []})):
             out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="quanto é?"))
         assert not out["estado"].get("observacoes")
+
+
+class TestBordaNaObservacao:
+    def _rodar(self, obs):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "adicionar_item", "dados": {
+            "produtos": [{"nome": "Pizza Frango", "qtd": 1, "tamanho": "G"}], "observacoes": obs}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value={"ok": False, "erro": "x"})):
+            return asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input=obs))["estado"]
+
+    def test_borda_recheada_vira_adicional(self):
+        est = self._rodar("borda de cheddar, sem cebola")
+        assert est["carrinho"][0]["adicionais"] == ["borda de cheddar"]
+        assert est["observacoes"] == "sem cebola"
+
+    def test_sem_borda_fica_na_observacao(self):
+        est = self._rodar("sem borda de catupiry")
+        assert est["carrinho"][0]["adicionais"] == []
+        assert est["observacoes"] == "sem borda de catupiry"
+
+    def test_borda_fina_e_preparo(self):
+        est = self._rodar("borda fina")
+        assert est["carrinho"][0]["adicionais"] == []
+        assert est["observacoes"] == "borda fina"
