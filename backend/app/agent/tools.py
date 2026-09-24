@@ -567,18 +567,43 @@ def _parse_nome_e_tamanho(nome: str, tamanho: str | None = None) -> tuple[str, s
     return q, tam
 
 
+def _regex_palavra(termo: str) -> str:
+    """Regex (Postgres ~*) que casa `termo` como palavra inteira no texto."""
+    return r"(^|[^[:alnum:]])" + re.escape(str(termo).strip()) + r"($|[^[:alnum:]])"
+
+
+# Como o cliente fala o tamanho × como o cardápio cadastra. "Margherita
+# brotinho" não casava com "P" e o item se perdia na pergunta de tamanho.
+_SINONIMOS_TAMANHO = {
+    "broto": "p", "brotinho": "p", "pequeno": "p", "pequena": "p", "individual": "p",
+    "medio": "m", "media": "m", "grande": "g",
+    "familia": "gg", "familiar": "gg", "gigante": "gg", "extra grande": "gg",
+}
+
+
 def _match_tamanho(tamanhos: list[dict[str, Any]], tamanho: str | None) -> dict[str, Any] | None:
     if not tamanhos or not tamanho:
         return None
+
+    def _casar(t_norm: str) -> dict[str, Any] | None:
+        itens = [
+            (it, _normalizar(str(it.get("tamanho") or it.get("nome") or "")))
+            for it in tamanhos if isinstance(it, dict)
+        ]
+        # Igual primeiro: pela regra de prefixo "GG" casava o "G" que vinha antes.
+        for item, n_norm in itens:
+            if n_norm == t_norm:
+                return item
+        for item, n_norm in itens:
+            if (len(t_norm) == 1 and n_norm.startswith(t_norm)) or (len(n_norm) == 1 and t_norm.startswith(n_norm)):
+                return item
+        return None
+
     t_norm = _normalizar(tamanho)
-    for item in tamanhos:
-        if not isinstance(item, dict):
-            continue
-        nome = str(item.get("tamanho") or item.get("nome") or "").strip()
-        n_norm = _normalizar(nome)
-        if n_norm == t_norm or (len(t_norm) == 1 and n_norm.startswith(t_norm)) or (len(n_norm) == 1 and t_norm.startswith(n_norm)):
-            return item
-    return None
+    achado = _casar(t_norm)
+    if achado is None and t_norm in _SINONIMOS_TAMANHO:
+        achado = _casar(_SINONIMOS_TAMANHO[t_norm])
+    return achado
 
 
 # Palavras que nomeiam uma CATEGORIA, não um produto. "Quero 2 pizzas grandes"
@@ -637,11 +662,14 @@ async def _obter_preco_produto(
     # separados: "The Pizza (P)", "The Pizza (GG)"). Tenta casar nome + tamanho
     # antes da busca genérica, pra não pegar o tamanho errado.
     if tamanho:
+        # O tamanho tem de aparecer como PALAVRA no nome: com ILIKE '%M%' qualquer
+        # nome com a letra "m" casava — "pizza brasa M" virava o lanche "Brasa
+        # Supreme" (sem tamanhos, R$ 39,90) no lugar da Pizza Brasa M.
         row_ts = (await db.execute(text(
             colunas + "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
-            "AND p.nome ILIKE :q AND p.nome ILIKE :t "
+            "AND p.nome ILIKE :q AND p.nome ~* :tre "
             "ORDER BY length(p.nome) LIMIT 1"
-        ), {"pid": str(pizzaria_id), "q": f"%{q}%", "t": f"%{tamanho}%"})).first()
+        ), {"pid": str(pizzaria_id), "q": f"%{q}%", "tre": _regex_palavra(tamanho)})).first()
         if row_ts:
             db_nome, db_preco, db_tamanhos = row_ts
             if not db_tamanhos:  # produto já é o do tamanho certo

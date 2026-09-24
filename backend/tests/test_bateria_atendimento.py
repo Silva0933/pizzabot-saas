@@ -576,3 +576,46 @@ def test_delivery_sem_endereco_pede_endereco_fixo():
     assert m.await_args.kwargs["tipo"] == "retirada"
     assert res["estado"]["tipo"] == "delivery"
     assert "endereço completo" in (res["decisao"].get("mensagem_pronta") or "")
+
+
+class TestTamanhoNoNome:
+    """Bateria 8: "1 pizza brasa M" virou o lanche "Brasa Supreme" (R$ 39,90):
+    o ILIKE '%M%' da busca de tamanho no nome casava o "m" de "supreMe"."""
+
+    def test_regex_exige_palavra_inteira(self):
+        import re as _r
+
+        from app.agent.tools import _regex_palavra
+        pg = lambda termo, nome: _r.search(_regex_palavra(termo).replace("[:alnum:]", "a-z0-9"), nome, _r.I)  # noqa: E731
+        assert not pg("M", "Brasa Supreme")
+        assert pg("M", "The Pizza (M)")
+        assert pg("GG", "Pizza Calabresa GG")
+        assert not pg("G", "Pizza Calabresa GG")
+
+    def test_busca_manda_o_regex_de_palavra(self):
+        from app.agent.tools import _obter_preco_produto
+        db = MagicMock()
+        vazio = MagicMock()
+        vazio.first.return_value = None
+        achou = MagicMock()
+        achou.first.return_value = ("Pizza Brasa", 49.9, [{"tamanho": "M", "preco": 49.9}, {"tamanho": "G", "preco": 64.9}])
+        db.execute = AsyncMock(side_effect=[vazio, achou])
+        preco, nome = asyncio.run(_obter_preco_produto(db, "p", "brasa", "M"))
+        params = db.execute.await_args_list[0].args[1]
+        assert "tre" in params and "t" not in params
+        assert (preco, nome) == (49.9, "Pizza Brasa (M)")
+
+
+def test_sinonimos_de_tamanho():
+    from app.agent.tools import _match_tamanho
+    tams = [{"tamanho": "P"}, {"tamanho": "M"}, {"tamanho": "G"}, {"tamanho": "GG"}]
+    assert _match_tamanho(tams, "brotinho")["tamanho"] == "P"
+    assert _match_tamanho(tams, "média")["tamanho"] == "M"
+    assert _match_tamanho(tams, "grande")["tamanho"] == "G"
+    assert _match_tamanho(tams, "família")["tamanho"] == "GG"
+    assert _match_tamanho([{"tamanho": "M"}, {"tamanho": "G"}], "brotinho") is None
+
+
+def test_gg_nao_vira_g():
+    from app.agent.tools import _match_tamanho
+    assert _match_tamanho([{"tamanho": "G"}, {"tamanho": "GG"}], "GG")["tamanho"] == "GG"
