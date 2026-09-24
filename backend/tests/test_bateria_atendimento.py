@@ -226,3 +226,56 @@ def test_normalizar_reasoning():
     assert normalizar_reasoning("LOW") == "low"
     assert normalizar_reasoning("turbo") == ""
     assert normalizar_reasoning(None) == ""
+
+
+class TestBateria3:
+    def test_termo_generico_nao_e_produto(self):
+        from app.agent.tools import eh_termo_generico
+        assert eh_termo_generico("pizzas") and eh_termo_generico("Refrigerante")
+        assert not eh_termo_generico("Pizza Calabresa")
+
+    def test_produto_sem_tamanho_nao_ganha_tamanho_no_nome(self):
+        from app.agent.tools import _calcular_pedido
+        ctx = MagicMock()
+        ctx.pizzaria.id = "p"
+        ctx.pizzaria.adicionais = []
+        with patch("app.agent.tools._obter_preco_produto", new=AsyncMock(return_value=(15.9, "Coca-Cola 2L"))):
+            r = asyncio.run(_calcular_pedido(ctx, MagicMock(), itens=[{"nome": "coca", "tamanho": "2l", "qtd": 1}],
+                                             tipo="retirada", forma_pagamento="dinheiro"))
+        assert r["itens"][0]["nome"] == "Coca-Cola 2L"
+
+    def test_meia_pede_categoria_pizza_e_nome_limpo(self):
+        from app.agent.tools import _calcular_pedido
+        ctx = MagicMock()
+        ctx.pizzaria.id = "p"
+        ctx.pizzaria.adicionais = []
+        busca = AsyncMock(side_effect=[(59.9, "Pizza Calabresa (Grande)"), (64.9, "Pizza Brasa (Grande)")])
+        with patch("app.agent.tools._obter_preco_produto", new=busca), \
+             patch("app.agent.tools._obter_regras_produto", new=AsyncMock(return_value={})):
+            r = asyncio.run(_calcular_pedido(ctx, MagicMock(), itens=[{"sabores": ["calabresa", "brasa"], "tamanho": "grande", "qtd": 1}],
+                                             tipo="retirada", forma_pagamento="dinheiro"))
+        assert all(c.kwargs.get("categoria") == "pizza" for c in busca.await_args_list)
+        assert r["itens"][0]["nome"] == "Pizza Meia Calabresa / Meia Brasa (Grande)"
+        assert r["itens"][0]["preco_unit"] == 64.9
+
+    def test_duas_pizzas_grandes_pergunta_sabor_e_herda_qtd_tamanho(self):
+        from app.agent.fsm import engine
+        estado = engine.estado_inicial()
+        estado["apresentou"] = True
+        nlu = {"intencao": "adicionar_item", "dados": {"produtos": [{"nome": "pizzas", "qtd": 2, "tamanho": "grande"}]}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.fsm.engine._nomes_da_categoria", new=AsyncMock(return_value=["Pizza Calabresa", "Pizza Brasa"])):
+            out = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado, nlu, user_input="quero 2 pizzas grandes"))
+        assert out["estado"]["carrinho"] == []
+        assert out["estado"]["aguardando_sabores"] == {"qtd": 2, "tamanho": "grande"}
+        assert "Pizza Calabresa" in " ".join(out["decisao"]["fatos"])
+
+        estado2 = out["estado"]
+        nlu2 = {"intencao": "adicionar_item", "dados": {"produtos": [
+            {"nome": "calabresa", "qtd": 1}, {"nome": "frango", "qtd": 1}]}}
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value={"ok": False, "erro": "x"})):
+            out2 = asyncio.run(engine.processar(MagicMock(), _ctx_basico(), estado2, nlu2, user_input="calabresa e frango"))
+        cart = out2["estado"]["carrinho"]
+        assert len(cart) == 2 and all(it["tamanho"] == "grande" and it["qtd"] == 1 for it in cart)
+        assert "aguardando_sabores" not in out2["estado"]

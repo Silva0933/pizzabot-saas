@@ -572,19 +572,64 @@ def _match_tamanho(tamanhos: list[dict[str, Any]], tamanho: str | None) -> dict[
     return None
 
 
-async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sabor: str, tamanho: str | None) -> tuple[float, str]:
-    """Busca o produto e calcula o preço adequado para o tamanho informado."""
+# Palavras que nomeiam uma CATEGORIA, não um produto. "Quero 2 pizzas grandes"
+# chegava como produto "pizza" e o ILIKE '%pizza%' casava com a primeira pizza do
+# cardápio: o cliente levava 2 Pizzas Brasa sem ter escolhido sabor.
+TERMOS_GENERICOS = {
+    "pizza", "pizzas", "lanche", "lanches", "hamburguer", "hamburgueres", "hamburger",
+    "burger", "burguer", "bebida", "bebidas", "refri", "refris", "refrigerante",
+    "refrigerantes", "sobremesa", "sobremesas", "doce", "doces", "suco", "sucos",
+}
+
+
+def eh_termo_generico(nome: str | None) -> bool:
+    return _normalizar(nome) in {_normalizar(t) for t in TERMOS_GENERICOS}
+
+
+async def _obter_preco_produto(
+    db: AsyncSession,
+    pizzaria_id: uuid.UUID,
+    nome_sabor: str,
+    tamanho: str | None,
+    categoria: str | None = None,
+) -> tuple[float, str]:
+    """Busca o produto e calcula o preço adequado para o tamanho informado.
+
+    Devolve (preço, nome); quando o produto tem tamanhos, o nome já sai com o
+    tamanho REAL do cadastro ("Pizza Calabresa (Grande)"). Produto sem tamanhos
+    sai sem — antes o tamanho dito pelo cliente era colado em qualquer item
+    ("Brasa Supreme (média)", "Coca-Cola 2L (2l)").
+
+    Empate entre produtos com o mesmo termo ("brasa" = Pizza Brasa e o lanche
+    Brasa Supreme): prefere a `categoria` pedida (meio a meio → pizza) e, se o
+    cliente citou tamanho, o produto que TEM tamanhos.
+    """
     q, tamanho = _parse_nome_e_tamanho(nome_sabor, tamanho)
+    if eh_termo_generico(q):
+        raise ValueError(f"'{q}' é uma categoria, não um sabor. Pergunte ao cliente QUAL sabor/produto ele quer.")
+
+    preferencia = (
+        "CASE WHEN :cat <> '' AND p.categoria ILIKE :catlike THEN 0 ELSE 1 END, "
+        "CASE WHEN :comtam AND EXISTS (SELECT 1 FROM public.produto_tamanhos pt2 "
+        "  WHERE pt2.produto_id = p.id AND pt2.disponivel = true) THEN 0 ELSE 1 END"
+    )
+    pref_params = {
+        "cat": (categoria or "").strip(), "catlike": f"%{(categoria or '').strip()}%",
+        "comtam": bool(tamanho),
+    }
+    colunas = (
+        "SELECT p.nome, p.preco, "
+        "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
+        "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
+        "FROM public.produtos p "
+    )
+
     # Se veio tamanho, alguns cardápios cadastram o tamanho NO NOME (produtos
     # separados: "The Pizza (P)", "The Pizza (GG)"). Tenta casar nome + tamanho
     # antes da busca genérica, pra não pegar o tamanho errado.
     if tamanho:
         row_ts = (await db.execute(text(
-            "SELECT p.nome, p.preco, "
-            "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
-            "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
-            "FROM public.produtos p "
-            "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+            colunas + "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
             "AND p.nome ILIKE :q AND p.nome ILIKE :t "
             "ORDER BY length(p.nome) LIMIT 1"
         ), {"pid": str(pizzaria_id), "q": f"%{q}%", "t": f"%{tamanho}%"})).first()
@@ -594,32 +639,24 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
                 return (float(db_preco) if db_preco is not None else 0.0), db_nome
 
     # Primeiro tenta busca exata por nome
-    stmt = text(
-        "SELECT p.nome, p.preco, "
-        "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
-        "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
-        "FROM public.produtos p "
-        "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
-        "AND (p.nome ILIKE :q OR p.aliases::text ILIKE :q) LIMIT 1"
-    )
-    row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": q})).first()
+    row = (await db.execute(text(
+        colunas + "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+        "AND (p.nome ILIKE :q OR p.aliases::text ILIKE :q) "
+        f"ORDER BY {preferencia} LIMIT 1"
+    ), {"pid": str(pizzaria_id), "q": q, **pref_params})).first()
     if not row:
         # Se não achar exato, tenta busca parcial (ILike)
-        stmt = text(
-            "SELECT p.nome, p.preco, "
-            "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
-            "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos "
-            "FROM public.produtos p "
-            "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
+        row = (await db.execute(text(
+            colunas + "WHERE p.pizzaria_id = :pid AND p.disponivel = true "
             "AND (p.nome ILIKE :q OR p.aliases::text ILIKE :q OR p.tags::text ILIKE :q) "
-            "ORDER BY CASE WHEN p.nome ILIKE :q THEN 0 ELSE 1 END, p.ordem, p.nome LIMIT 1"
-        )
-        row = (await db.execute(stmt, {"pid": str(pizzaria_id), "q": f"%{q}%"})).first()
+            f"ORDER BY {preferencia}, CASE WHEN p.nome ILIKE :q THEN 0 ELSE 1 END, p.ordem, p.nome LIMIT 1"
+        ), {"pid": str(pizzaria_id), "q": f"%{q}%", **pref_params})).first()
 
     if not row:
         # Fallback POR PALAVRA-CHAVE (sem acento, qualquer ordem): "vulcão de
         # calabresa" casa com "Calabresa Vulcão". Busca o produto que contém MAIS
-        # tokens da query (e, em empate, o nome mais curto).
+        # tokens da query (e, em empate, a categoria/tamanho preferidos e o nome
+        # mais curto).
         _STOP = {"de", "da", "do", "com", "sem", "a", "o", "e", "pizza", "sabor", "uma", "um"}
         tokens = [t for t in re.split(r"[^0-9a-zà-ÿ]+", q.lower()) if len(t) >= 3 and t not in _STOP]
         tokens_norm = [_normalizar(t) for t in tokens]
@@ -628,19 +665,22 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
                 "SELECT p.nome, p.preco, "
                 "  (SELECT json_agg(json_build_object('tamanho', pt.tamanho, 'preco', pt.preco)) "
                 "   FROM public.produto_tamanhos pt WHERE pt.produto_id = p.id AND pt.disponivel = true) as tamanhos, "
-                "  COALESCE(p.aliases::text,'') "
+                "  COALESCE(p.aliases::text,''), COALESCE(p.categoria,'') "
                 "FROM public.produtos p "
                 "WHERE p.pizzaria_id = :pid AND p.disponivel = true"
             ), {"pid": str(pizzaria_id)})).fetchall()
-            melhor = None
-            melhor_score = 0
-            for c in cands:
+            cat_norm = _normalizar(categoria)
+
+            def _chave(c) -> tuple:
                 alvo = _normalizar(f"{c[0]} {c[3]}")
                 score = sum(1 for t in tokens_norm if t in alvo)
-                if score > melhor_score or (score == melhor_score and score > 0 and melhor and len(c[0]) < len(melhor[0])):
-                    melhor, melhor_score = c, score
+                pref_cat = 1 if cat_norm and cat_norm in _normalizar(c[4]) else 0
+                pref_tam = 1 if tamanho and c[2] else 0
+                return (score, pref_cat, pref_tam, -len(c[0]))
+
+            melhor = max(cands, key=_chave, default=None)
             # Exige casar TODOS os tokens (precisão) — evita pegar item errado.
-            if melhor and melhor_score >= len(tokens_norm):
+            if melhor and _chave(melhor)[0] >= len(tokens_norm):
                 row = (melhor[0], melhor[1], melhor[2])
 
     if not row:
@@ -665,6 +705,8 @@ async def _obter_preco_produto(db: AsyncSession, pizzaria_id: uuid.UUID, nome_sa
             preco_calculado = float(tamanho_match.get("preco") or 0)
         except (TypeError, ValueError) as exc:
             raise ValueError(f"Preco do tamanho '{tamanho}' em '{db_nome}' esta invalido no cardapio.") from exc
+        tam_real = str(tamanho_match.get("tamanho") or tamanho_match.get("nome") or tamanho)
+        return preco_calculado, f"{db_nome} ({tam_real})"
 
     return preco_calculado, db_nome
 
@@ -786,11 +828,15 @@ async def _calcular_pedido(
             precos_sabores = []
             nomes_sabores = []
             regras_meia: dict[str, Any] = {}
+            tam_real_meia: str | None = None
             for sab in sabores:
                 try:
-                    pr, nm = await _obter_preco_produto(db, ctx.pizzaria.id, sab, tamanho)
+                    # Meio a meio é de pizza: "meia brasa" é a Pizza Brasa, não o
+                    # lanche Brasa Supreme (que vinha primeiro na ordem do cardápio).
+                    pr, nm = await _obter_preco_produto(db, ctx.pizzaria.id, sab, tamanho, categoria="pizza")
                     precos_sabores.append(pr)
-                    nm_limpo, _ = _parse_nome_e_tamanho(nm)
+                    nm_limpo, tam_nm = _parse_nome_e_tamanho(nm)
+                    tam_real_meia = tam_real_meia or tam_nm
                     nomes_sabores.append(nm_limpo)
                     regras = await _obter_regras_produto(db, ctx.pizzaria.id, sab)
                     if isinstance(regras.get("meia_meia"), dict):
@@ -808,9 +854,11 @@ async def _calcular_pedido(
 
             calculo_meia = regras_meia.get("calculo") or "maior_valor"
             preco_unitario = (sum(precos_sabores) / len(precos_sabores)) if calculo_meia == "media" else max(precos_sabores)
-            nome_final = "Pizza Meia " + " / Meia ".join(nomes_sabores)
-            if tamanho:
-                nome_final += f" ({tamanho})"
+            # "Pizza Meia Pizza Calabresa / Meia Pizza Frango" → "Pizza Meia Calabresa / Meia Frango".
+            curtos = [re.sub(r"^pizza\s+(de\s+)?", "", n, flags=re.IGNORECASE) or n for n in nomes_sabores]
+            nome_final = "Pizza Meia " + " / Meia ".join(curtos)
+            if tam_real_meia:
+                nome_final += f" ({tam_real_meia})"
         # Caso 2: Item simples
         else:
             nome_prod = it.get("nome") or it.get("produto")
@@ -818,13 +866,10 @@ async def _calcular_pedido(
                 return {"ok": False, "erro": "Item do pedido sem nome ou sabores definidos."}
             try:
                 preco_unitario, db_nome = await _obter_preco_produto(db, ctx.pizzaria.id, nome_prod, tamanho)
+                # O nome já vem com o tamanho REAL quando o produto tem tamanhos;
+                # sem tamanhos, sai limpo (nada de "Coca-Cola 2L (2l)").
                 nome_limpo, tam_existente = _parse_nome_e_tamanho(db_nome)
-                if tamanho:
-                    nome_final = f"{nome_limpo} ({tamanho})"
-                elif tam_existente:
-                    nome_final = f"{nome_limpo} ({tam_existente})"
-                else:
-                    nome_final = nome_limpo
+                nome_final = f"{nome_limpo} ({tam_existente})" if tam_existente else nome_limpo
             except ValueError as e:
                 return {"ok": False, "erro": str(e), "produto_invalido": nome_prod}
 

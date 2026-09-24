@@ -796,7 +796,7 @@ class TestHumanizacaoEMelhorias:
         p_id = "00000000-0000-0000-0000-000000000001"
         pr, nm = asyncio.run(_obter_preco_produto(db, p_id, "Calabresa", "Grande"))
         assert pr == 55.0
-        assert nm == "Calabresa"
+        assert nm == "Calabresa (G)"  # o nome já sai com o tamanho real do cadastro
 
     def test_fallback_ia_process_and_reply(self):
         import asyncio
@@ -926,7 +926,8 @@ class TestMelhoriasEspecificas:
 
         with patch("app.agent.tools._obter_preco_produto") as mock_obter_preco:
             # "Frango" tem a letra "g"
-            mock_obter_preco.return_value = (40.0, "Frango")
+            # Contrato: a busca devolve o nome com o tamanho REAL quando o produto tem tamanhos.
+            mock_obter_preco.return_value = (40.0, "Frango (G)")
 
             r = asyncio.run(_calcular_pedido(
                 ctx, db,

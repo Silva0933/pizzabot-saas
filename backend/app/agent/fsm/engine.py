@@ -454,6 +454,28 @@ _TITULO_CATEGORIA = {
 }
 
 
+_CATEGORIA_DO_TERMO = {
+    "pizza": "pizza", "lanche": "lanche", "hamburguer": "lanche", "hamburger": "lanche",
+    "burger": "lanche", "burguer": "lanche", "bebida": "bebida", "refri": "bebida",
+    "refrigerante": "bebida", "suco": "bebida", "sobremesa": "sobremesa", "doce": "sobremesa",
+}
+
+
+async def _nomes_da_categoria(ctx: AgentContext, db: AsyncSession, termo: str | None) -> list[str]:
+    """Até 8 produtos reais da categoria citada genericamente ("pizzas")."""
+    base = _normalizar_txt(termo).rstrip("s")
+    categoria = _CATEGORIA_DO_TERMO.get(base) or base
+    try:
+        from sqlalchemy import text as _text
+        rows = (await db.execute(_text(
+            "SELECT nome FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = true "
+            "AND categoria ILIKE :cat ORDER BY ordem, nome LIMIT 8"
+        ), {"pid": str(ctx.pizzaria.id), "cat": f"%{categoria}%"})).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _link_cardapio(pizz) -> str:
     try:
         from app.config import get_settings
@@ -1029,6 +1051,43 @@ async def processar(
         and _OBS_E_MOMENTO_DE_PAGAR_RE.search(_normalizar_txt(obs_turno))
     ):
         dados["observacoes"] = None
+
+    # "Quero 2 pizzas grandes": categoria sem sabor. Guarda quantidade/tamanho e
+    # pergunta os sabores; a resposta ("calabresa e frango") herda o que faltou.
+    # Antes "pizza" casava com a primeira pizza do cardápio (2 Pizzas Brasa) e a
+    # resposta com os sabores entrava como MAIS 2 pizzas genéricas.
+    from app.agent.tools import eh_termo_generico
+    genericos = [
+        p for p in (dados.get("produtos") or [])
+        if isinstance(p, dict) and not p.get("sabores_meia") and eh_termo_generico(p.get("nome"))
+    ]
+    if genericos:
+        dados["produtos"] = [p for p in dados["produtos"] if p not in genericos]
+        g = genericos[0]
+        qtd_g = int(g.get("qtd") or 1)
+        estado["aguardando_sabores"] = {"qtd": qtd_g, "tamanho": g.get("tamanho")}
+        if not dados["produtos"]:
+            opcoes = await _nomes_da_categoria(ctx, db, g.get("nome"))
+            decisao["acao"] = "pendencia"
+            decisao["fatos"].append(
+                f"O cliente quer {qtd_g} {g.get('nome')}{' ' + g['tamanho'] if g.get('tamanho') else ''} "
+                "mas NÃO disse o sabor." + (f" Opções reais: {', '.join(opcoes)}." if opcoes else "")
+            )
+            decisao["proxima_pergunta"] = (
+                f"Pergunte QUAL sabor ele quer{' para cada uma das ' + str(qtd_g) if qtd_g > 1 else ''}, "
+                "citando algumas opções reais. Não anote nada ainda e não invente sabores."
+            )
+            estado["apresentou"] = True
+            return {"decisao": decisao, "estado": estado}
+    elif estado.get("aguardando_sabores") and dados.get("produtos"):
+        pend = estado.pop("aguardando_sabores")
+        prods = [p for p in dados["produtos"] if isinstance(p, dict)]
+        for p in prods:
+            if not p.get("tamanho") and pend.get("tamanho"):
+                p["tamanho"] = pend["tamanho"]
+        # "2 pizzas" + "calabresa" = 2 calabresas; "2 pizzas" + "calabresa e frango" = 1 de cada.
+        if len(prods) == 1 and pend.get("qtd", 1) > 1 and int(prods[0].get("qtd") or 1) == 1:
+            prods[0]["qtd"] = pend["qtd"]
 
     # Itens que o cliente pediu NESTA mensagem — só eles podem ser confirmados
     # como "anotados" (ver a pergunta de entrega/retirada mais abaixo).
