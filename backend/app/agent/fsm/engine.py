@@ -898,6 +898,9 @@ async def processar(
         "acao": "conversar", "fatos": [], "proxima_pergunta": None,
         "enviar_cardapio": False, "dados": {},
     }
+    # Avisos das checagens determinísticas da NLU de comandos (ex.: o cliente
+    # disse "3 sabores" e a pizza aceita 2 — o item não foi anotado).
+    decisao["fatos"].extend(str(f) for f in (dados.get("_fatos_nlu") or []) if f)
 
     # Pedido REAL já feito fora deste estado: pelo cardápio digital (que nunca
     # passa pelo FSM) ou pelo WhatsApp com o estado já expirado (TTL de 2h). Sem

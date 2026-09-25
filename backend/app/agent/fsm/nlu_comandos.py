@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from app.agent.fsm.catalogo import Catalogo, normalizar
@@ -156,6 +157,9 @@ PRODUTOS: use SOMENTE os códigos do CATÁLOGO abaixo (P1, P2...). Nunca escreva
 
 COMANDOS (lista, na ordem em que o cliente falou; vazia se ele não mexeu no pedido):
 - adicionar: item NOVO. produtos = [código] para inteira; 2+ códigos SÓ se ele disse meia/metade/meio a meio.
+  Coloque TODOS os sabores que ele disse, mesmo acima do limite do produto — quem valida é o sistema.
+  Se ele disse um TAMANHO, o produto escolhido tem de ter esse tamanho: entre nomes parecidos, escolha o
+  que tem tamanhos (ex.: "brasa média" é a pizza que tem M, não um lanche sem tamanho).
   qtd = quantas unidades (número inteiro; "uma" = 1). NUNCA coloque a quantidade em outro campo.
 - pedido_generico: ele pediu a categoria sem dizer o sabor ("2 pizzas grandes", "um lanche").
   categoria = a categoria do catálogo, qtd e tamanho se ditos.
@@ -308,6 +312,86 @@ def converter(bruto: dict[str, Any], cat: Catalogo, estado: dict[str, Any]) -> d
 
 
 # ============================================
+# Checagens determinísticas sobre a escolha da IA
+# ============================================
+_GENERICAS = {"pizza", "pizzas", "lanche", "lanches", "de", "da", "do", "com", "e", "a", "o", "the"}
+_NUMEROS = {"2": 2, "3": 3, "4": 4, "5": 5, "dois": 2, "duas": 2, "tres": 3, "quatro": 4, "cinco": 5}
+
+
+def _tokens(nome: str) -> set[str]:
+    return {t for t in normalizar(nome).replace("-", " ").split() if len(t) >= 4 and t not in _GENERICAS}
+
+
+def checar_escolhas(out: dict[str, Any], cat: Catalogo, estado: dict[str, Any], user_input: str) -> None:
+    """Corrige/barra escolhas da IA que o próprio pedido desmente.
+
+    1) Tamanho dito + produto SEM tamanhos: "uma brasa média" escolheu o lanche
+       Brasa Supreme (sem tamanhos) e o M sumia. Se exatamente UM produto de
+       nome parecido tem esse tamanho, é ele; mais de um, pergunta; nenhum, o
+       tamanho não se aplica (ex.: "coca 2l").
+    2) "3 sabores" com menos sabores no item: a IA descartava o excedente em
+       silêncio para caber no limite. O item não é anotado e o cliente escolhe.
+    3) Trocar tamanho de item que não tem tamanhos: não aplica e explica.
+    """
+    dados = out.setdefault("dados", {})
+    fatos: list[str] = dados.setdefault("_fatos_nlu", [])
+    novos: list[dict[str, Any]] = []
+    for p in dados.get("produtos") or []:
+        prod = cat.por_id(p.get("produto_id")) if p.get("produto_id") else None
+        tam = p.get("tamanho")
+        if prod is not None and tam and not prod.tamanhos:
+            base = _tokens(prod.nome)
+            alternativas = [
+                q for q in cat.produtos
+                if q.id != prod.id and q.tamanhos and q.tamanho(tam) and base & _tokens(q.nome)
+            ]
+            if len(alternativas) == 1:
+                q = alternativas[0]
+                p = {**p, "nome": q.nome, "produto_id": q.id}
+            elif len(alternativas) > 1:
+                opcoes = " ou ".join(q.nome for q in alternativas[:4])
+                fatos.append(
+                    f"O cliente pediu '{prod.nome}' no tamanho {tam}, mas isso é ambíguo: {opcoes}? "
+                    "Pergunte qual ele quer. NÃO anote nada ainda."
+                )
+                continue
+            else:
+                p = {**p, "tamanho": None}
+        novos.append(p)
+    dados["produtos"] = novos
+
+    m = re.search(r"\b(\d|dois|duas|tres|quatro|cinco)\s+sabores\b", normalizar(user_input))
+    if m:
+        ditos = _NUMEROS.get(m.group(1), 0)
+        restantes = []
+        for p in dados["produtos"]:
+            ids = p.get("sabores_ids") or []
+            if ids and ditos > len(ids):
+                prods = [cat.por_id(i) for i in ids]
+                limite = min((x.meia_max_sabores for x in prods if x is not None), default=2)
+                fatos.append(
+                    f"O cliente pediu {ditos} sabores numa pizza, mas ela aceita no máximo {limite}. "
+                    f"Explique e pergunte quais {limite} sabores ele quer ou se prefere pizzas separadas. "
+                    "NÃO anote nada ainda."
+                )
+                continue
+            restantes.append(p)
+        dados["produtos"] = restantes
+
+    itens = {str(it.get("iid")): it for it in estado.get("carrinho") or [] if isinstance(it, dict)}
+    ops_ok = []
+    for op in dados.get("_ops_itens") or []:
+        if op.get("op") == "trocar_tamanho":
+            it = itens.get(str(op.get("iid")))
+            prod = cat.por_id(it.get("produto_id")) if it and it.get("produto_id") else None
+            if prod is not None and not prod.tamanhos:
+                fatos.append(f"'{prod.nome}' não tem opção de tamanho. Avise o cliente em uma frase.")
+                continue
+        ops_ok.append(op)
+    dados["_ops_itens"] = ops_ok
+
+
+# ============================================
 # Chamada
 # ============================================
 async def nlu_comandos(
@@ -360,6 +444,7 @@ async def nlu_comandos(
             log.warning("NLU comandos: resposta sem JSON válido (%s)", chave)
             continue
         out = converter(bruto, cat, estado)
+        checar_escolhas(out, cat, estado, user_input)
         out["_usage"] = res.get("usage") or {}
         out["_modo"] = fmt["type"]
         return out

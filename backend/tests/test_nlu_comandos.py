@@ -467,3 +467,38 @@ def test_converter_leva_citados(cat):
     out = converter(_bruto(intencao="duvida_geral", produtos_citados=[_cod(cat, "id-brasa"), "P999"],
                            categoria_citada="bebida"), cat, engine.estado_inicial())
     assert out["dados"]["_citados"] == ["id-brasa"] and out["dados"]["_categoria_citada"] == "bebida"
+
+
+# ---------------- Checagens sobre a escolha da IA (conjunto de referência) ----------------
+from app.agent.fsm.nlu_comandos import checar_escolhas  # noqa: E402
+
+
+class TestChecarEscolhas:
+    def _out(self, *produtos, ops=None):
+        return {"dados": {"produtos": list(produtos), "_ops_itens": ops or []}}
+
+    def test_tamanho_dito_troca_o_lanche_pela_pizza(self, cat):
+        # Produção: "uma brasa media" → Brasa Supreme (lanche, sem tamanhos) → R$ 39,90.
+        out = self._out({"nome": "Brasa Supreme", "produto_id": "id-supreme", "tamanho": "media", "qtd": 1})
+        checar_escolhas(out, cat, engine.estado_inicial(), "uma brasa media")
+        p = out["dados"]["produtos"][0]
+        assert (p["produto_id"], p["nome"]) == ("id-brasa", "Pizza Brasa")
+
+    def test_tamanho_sem_alternativa_e_descartado(self, cat):
+        out = self._out({"nome": "Coca-Cola 2L", "produto_id": "id-coca", "tamanho": "2l", "qtd": 1})
+        checar_escolhas(out, cat, engine.estado_inicial(), "uma coca 2l")
+        assert out["dados"]["produtos"][0]["tamanho"] is None
+
+    def test_sabor_descartado_pela_ia_nao_vira_item(self, cat):
+        # Produção: "G com 3 sabores" virou meia de 2 sem avisar o cliente.
+        out = self._out({"nome": "pizza", "sabores_ids": ["id-brasa", "id-marg"], "tamanho": "G", "qtd": 1})
+        checar_escolhas(out, cat, engine.estado_inicial(), "quero uma G com 3 sabores: brasa, margherita e frango")
+        assert out["dados"]["produtos"] == []
+        assert "3 sabores" in out["dados"]["_fatos_nlu"][0] and "máximo 2" in out["dados"]["_fatos_nlu"][0]
+
+    def test_trocar_tamanho_de_item_sem_tamanho_nao_aplica(self, cat):
+        est = engine.estado_inicial()
+        est["carrinho"] = [{"iid": "I1", "nome": "Coca-Cola 2L", "produto_id": "id-coca", "qtd": 1}]
+        out = self._out(ops=[{"op": "trocar_tamanho", "iid": "I1", "tamanho": "G"}])
+        checar_escolhas(out, cat, est, "aumenta pra grande")
+        assert out["dados"]["_ops_itens"] == [] and "não tem opção de tamanho" in out["dados"]["_fatos_nlu"][0]
