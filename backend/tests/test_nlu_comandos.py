@@ -291,3 +291,89 @@ def test_mesmo_produto_em_tamanhos_diferentes_sao_dois_itens():
     # Repetir o mesmo item (mesmo produto e tamanho) não duplica.
     engine._aplicar_nlu(est, {"produtos": [{"nome": "Pizza Calabresa", "produto_id": "id-calab", "tamanho": "G", "qtd": 1}]})
     assert len(est["carrinho"]) == 2 and est["carrinho"][0]["qtd"] == 2
+
+
+# ---------------- Camada 3: validador (porta do pedido) ----------------
+from app.agent.fsm.validador import validar_pedido, vincular_catalogo  # noqa: E402
+
+
+def _estado_pronto(itens):
+    est = engine.estado_inicial()
+    est.update({"tipo": "retirada", "pagamento": "pix", "carrinho": itens})
+    garantir_ids_itens(est)
+    return est
+
+
+def _calc(*precos, taxa=0.0):
+    itens = [{"nome": "x", "quantidade": q, "preco_unit": p} for p, q in precos]
+    return {"ok": True, "itens": itens, "taxa_entrega": taxa, "valor_total": sum(p * q for p, q in precos) + taxa}
+
+
+class TestValidador:
+    def test_pedido_certo_passa(self, cat):
+        est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 2}])
+        assert validar_pedido(cat, est, _calc((49.9, 2))) == []
+
+    def test_preco_cobrado_diferente_do_catalogo(self, cat):
+        est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 1}])
+        v = validar_pedido(cat, est, _calc((39.9, 1)))
+        assert [x.codigo for x in v] == ["preco_divergente"]
+
+    def test_item_sem_catalogo_tamanho_invalido_e_qtd(self, cat):
+        est = _estado_pronto([
+            {"nome": "strogonoff", "qtd": 1},
+            {"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "P", "qtd": 1},
+            {"nome": "Coca-Cola 2L", "produto_id": "id-coca", "qtd": 99},
+        ])
+        codigos = [x.codigo for x in validar_pedido(cat, est, _calc((1, 1), (1, 1), (1, 1)))]
+        assert codigos == ["item_sem_catalogo", "item_invalido", "qtd_invalida"]
+
+    def test_total_divergente(self, cat):
+        est = _estado_pronto([{"nome": "Coca-Cola 2L", "produto_id": "id-coca", "qtd": 1}])
+        calc = _calc((15.9, 1))
+        calc["valor_total"] = 5.0
+        assert [x.codigo for x in validar_pedido(cat, est, calc)] == ["total_divergente"]
+
+    def test_entrega_sem_endereco_e_sem_pagamento(self, cat):
+        est = _estado_pronto([{"nome": "Coca-Cola 2L", "produto_id": "id-coca", "qtd": 1}])
+        est.update({"tipo": "delivery", "endereco": None, "pagamento": None})
+        assert {x.codigo for x in validar_pedido(cat, est, _calc((15.9, 1)))} == {"sem_endereco", "sem_pagamento"}
+
+    def test_vincula_so_por_nome_exato(self, cat):
+        est = _estado_pronto([
+            {"nome": "Coca-Cola 2L", "qtd": 1},
+            {"nome": "brasa", "nome_congelado": "Pizza Brasa (G) + Queijo extra", "tamanho": "G", "qtd": 1},
+            {"nome": "brasa", "tamanho": "G", "qtd": 1},
+            {"nome": "pizza", "sabores": ["Pizza Brasa", "Pizza Margherita"], "tamanho": "G", "qtd": 1},
+        ])
+        vincular_catalogo(cat, est)
+        c = est["carrinho"]
+        assert c[0]["produto_id"] == "id-coca" and c[1]["produto_id"] == "id-brasa"
+        assert "produto_id" not in c[2]  # "brasa" solto é ambíguo: não liga por aproximação
+        assert c[3]["sabores_ids"] == ["id-brasa", "id-marg"]
+
+
+def _ctx_catalogo():
+    ctx = MagicMock()
+    ctx.pizzaria.id = "pz-1"
+    ctx.pizzaria.configuracoes = {}
+    ctx.pizzaria.formas_pagamento_aceitas = ["pix"]
+    ctx.simulation = True
+    return ctx
+
+
+def test_porta_barra_pedido_invalido_e_nao_registra(cat):
+    est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "P", "qtd": 1}])
+    est.update({"etapa": "AGUARDANDO_CONFIRMACAO", "pagar_agora": False, "apresentou": True})
+    calc = _calc((49.9, 1))
+    registrar = AsyncMock()
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"), \
+         patch("app.agent.tools.registrar_pedido", new=registrar):
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), est,
+                                           {"intencao": "confirmar_resumo", "dados": {}}, user_input="sim"))
+    assert not registrar.await_count
+    assert res["decisao"]["acao"] == "pendencia" and res["decisao"]["validacao"] == ["item_invalido"]
+    assert res["estado"]["validador_recusas"] == 1

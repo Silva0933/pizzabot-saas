@@ -152,25 +152,6 @@ class ClienteContaAtualizarIn(BaseModel):
 # ============================================
 # Helper: recálculo de preços (anti-tampering)
 # ============================================
-def _obter_mapa_adicionais(prod: Any, adicionais_precos_globais: dict[str, Decimal]) -> dict[str, Decimal]:
-    """Combina os adicionais globais da pizzaria com os adicionais específicos
-    definidos nas opções do produto (campo 'opcoes.adicionais')."""
-    mapa = dict(adicionais_precos_globais)
-    if prod and isinstance(getattr(prod, "opcoes", None), dict):
-        prod_ads = prod.opcoes.get("adicionais") or []
-        if isinstance(prod_ads, list):
-            for a in prod_ads:
-                if isinstance(a, dict):
-                    nome = str(a.get("nome") or "").strip().lower()
-                    if nome:
-                        mapa[nome] = Decimal(str(a.get("preco") or 0))
-                elif isinstance(a, str):
-                    nome = a.strip().lower()
-                    if nome and nome not in mapa:
-                        mapa[nome] = Decimal("0")
-    return mapa
-
-
 def _adicionais_globais(adicionais: Any) -> list[dict[str, Any]]:
     """Adicionais da pizzaria que valem para qualquer produto.
 
@@ -186,103 +167,70 @@ def _adicionais_globais(adicionais: Any) -> list[dict[str, Any]]:
 def _recalcular_itens(
     itens: list["ItemPedidoIn"],
     produtos_map: dict[str, Any],
-    adicionais_precos: dict[str, Decimal],
+    adicionais_precos: dict[str, Decimal] | list[Any],
 ) -> tuple[list[dict[str, Any]], Decimal]:
-    """Recalcula itens/subtotal usando SEMPRE o preço do cadastro (Produto +
-    tamanho + adicionais do produto). O preço enviado pelo cliente é ignorado — isso impede
-    adulteração de preço pelo checkout público. Levanta HTTP 400 em item inválido."""
+    """Recalcula itens/subtotal usando SEMPRE o preço do cadastro. O preço enviado
+    pelo cliente é ignorado — isso impede adulteração de preço pelo checkout
+    público. Levanta HTTP 400 em item inválido.
+
+    Preço e validação vêm do catálogo (agent/fsm/catalogo.precificar): a MESMA
+    regra do atendente do WhatsApp — tamanho cadastrado, meio a meio (categoria,
+    permissão, limite, maior valor/média) e adicionais do produto (os próprios;
+    sem próprios, os globais). Antes eram duas implementações que divergiam."""
+    from app.agent.fsm.catalogo import ErroItem, montar_catalogo
+
+    globais = (
+        [{"nome": k, "preco": v} for k, v in adicionais_precos.items()]
+        if isinstance(adicionais_precos, dict) else list(adicionais_precos or [])
+    )
+    cat = montar_catalogo("checkout", list(produtos_map.values()), globais)
     itens_json: list[dict[str, Any]] = []
     subtotal = Decimal("0")
     for item in itens:
-        prod = produtos_map.get(item.produto_id or "")
-        if prod is None or not getattr(prod, "disponivel", False):
+        prod = cat.por_id(item.produto_id)
+        if prod is None:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 f"Item indisponível ou inválido: {item.nome}. Atualize a página e tente novamente.",
             )
-        sabores = [prod]
+        ids = [prod.id]
         for sid in item.sabores_ids or []:
-            outro = produtos_map.get(sid or "")
-            if outro is None or not getattr(outro, "disponivel", False):
+            if cat.por_id(sid) is None:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     f"Um dos sabores de {item.nome} está indisponível. Atualize a página e tente novamente.",
                 )
-            if outro is not prod and outro not in sabores:
-                sabores.append(outro)
-        preco_unit, tamanho_final = _preco_dos_sabores(sabores, item.tamanho)
-        mapa_item = _obter_mapa_adicionais(prod, adicionais_precos)
-        adicionais_validos: list[str] = []
-        for a in (item.adicionais or []):
-            preco_a = mapa_item.get((a or "").strip().lower())
-            if preco_a is not None:
-                adicionais_validos.append(a)
-                preco_unit += preco_a
-        subtotal += preco_unit * item.quantidade
-        nome_base = (
-            " / ".join(f"Meia {s.nome}" for s in sabores) if len(sabores) > 1 else prod.nome
-        )
+            if str(sid) not in ids:
+                ids.append(str(sid))
+        # Adicional que não pertence ao produto é descartado (a tela só oferece os válidos).
+        validos = {cat_norm(a.nome) for a in cat.adicionais_de(prod)}
+        adicionais_validos = [a for a in (item.adicionais or []) if cat_norm(a) in validos]
+        try:
+            pi = cat.precificar(ids, item.tamanho, adicionais_validos)
+        except ErroItem as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+        subtotal += pi.preco_unit * item.quantidade
+        sabores = [cat.por_id(i) for i in ids]
+        nome_base = " / ".join(f"Meia {s.nome}" for s in sabores) if len(sabores) > 1 else prod.nome
         linha: dict[str, Any] = {
-            "produto_id": str(prod.id),
-            "nome": nome_base + (f" ({tamanho_final})" if tamanho_final else ""),
+            "produto_id": prod.id,
+            "nome": nome_base + (f" ({pi.tamanho})" if pi.tamanho else ""),
             "quantidade": item.quantidade,
-            "preco_unit": float(preco_unit),
-            "tamanho": tamanho_final,
+            "preco_unit": float(pi.preco_unit),
+            "tamanho": pi.tamanho,
             "observacao": item.observacao,
             "adicionais": adicionais_validos,
         }
         if len(sabores) > 1:
             linha["sabores"] = [s.nome for s in sabores]
-            linha["sabores_ids"] = [str(s.id) for s in sabores]
+            linha["sabores_ids"] = [s.id for s in sabores]
         itens_json.append(linha)
     return itens_json, subtotal
 
 
-def _regras_meia(prod: Any) -> dict[str, Any]:
-    regras = getattr(prod, "regras", None)
-    meia = regras.get("meia_meia") if isinstance(regras, dict) else None
-    return meia if isinstance(meia, dict) else {}
-
-
-def _preco_dos_sabores(sabores: list[Any], tamanho: str | None) -> tuple[Decimal, str | None]:
-    """Preço unitário de uma pizza inteira (1 sabor) ou meio a meio.
-
-    Mesmas regras que o agente do WhatsApp aplica (tools._calcular_pedido):
-    sabor com meia_meia.permitido = false não entra em meio a meio; limite de
-    max_sabores (padrão 2); cálculo pelo maior valor (padrão) ou pela média. O
-    tamanho precisa existir em TODOS os sabores. Levanta HTTP 400 se inválido.
-    """
-    principal = sabores[0]
-    if len(sabores) > 1:
-        categorias = {(getattr(s, "categoria", None) or "").strip().lower() for s in sabores}
-        if len(categorias) > 1:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Meio a meio só entre sabores da mesma categoria.")
-        regras = [_regras_meia(s) for s in sabores]
-        if any(r.get("permitido") is False for r in regras):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Um dos sabores escolhidos não aceita meio a meio.")
-        limite = min(int(r.get("max_sabores") or 2) for r in regras)
-        if len(sabores) > limite:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Esta pizza aceita no máximo {limite} sabores.")
-
-    precos: list[Decimal] = []
-    tamanho_final = None
-    for s in sabores:
-        tamanhos = s.tamanhos or []
-        if tamanhos:
-            match = next((t for t in tamanhos if str(t.get("tamanho")) == str(tamanho)), None)
-            if not match:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Tamanho inválido para {s.nome}.")
-            precos.append(Decimal(str(match.get("preco") or 0)))
-            tamanho_final = match.get("tamanho")
-        else:
-            precos.append(Decimal(str(s.preco)))
-
-    if len(precos) == 1:
-        return precos[0], tamanho_final
-    calculo = _regras_meia(principal).get("calculo") or "maior_valor"
-    if calculo == "media":
-        return (sum(precos) / len(precos)).quantize(Decimal("0.01")), tamanho_final
-    return max(precos), tamanho_final
+def cat_norm(s: Any) -> str:
+    from app.agent.fsm.catalogo import normalizar
+    return normalizar(s)
 
 
 # ============================================
@@ -651,12 +599,7 @@ async def criar_pedido_digital(
         )).scalars().all()
         produtos_map = {str(p.id): p for p in rows}
 
-    adicionais_precos = {
-        (a.get("nome") or "").strip().lower(): Decimal(str(a.get("preco") or 0))
-        for a in (pizz.adicionais or [])
-    }
-
-    itens_json, subtotal = _recalcular_itens(body.itens, produtos_map, adicionais_precos)
+    itens_json, subtotal = _recalcular_itens(body.itens, produtos_map, pizz.adicionais or [])
     desconto, cupom_codigo = _calcular_desconto(getattr(pizz, "tema_cardapio", None), body.cupom, subtotal)
 
     # Taxa de entrega
@@ -1100,45 +1043,40 @@ async def repetir_pedido_conta(
     produtos = list((await db.execute(
         select(Produto).where(Produto.pizzaria_id == pizzaria.id, Produto.disponivel == True)  # noqa: E712
     )).scalars().all())
-    por_id = {str(produto.id): produto for produto in produtos}
-    por_nome = {produto.nome.strip().lower(): produto for produto in produtos}
-    adicionais_precos = {
-        str(item.get("nome") or "").strip().lower(): Decimal(str(item.get("preco") or 0))
-        for item in (pizzaria.adicionais or [])
-    }
+    # Mesmo catálogo/regra do checkout e do atendente: preço atual, tamanho que
+    # ainda existe, meio a meio e adicionais que ainda pertencem ao produto.
+    from app.agent.fsm.catalogo import ErroItem, montar_catalogo
+    cat = montar_catalogo(pizzaria.id, produtos, pizzaria.adicionais or [])
+    por_nome = {cat_norm(p.nome): p for p in cat.produtos}
     itens_disponiveis: list[dict[str, Any]] = []
     indisponiveis: list[str] = []
     for item in (pedido.itens or []):
         nome_salvo = str(item.get("nome") or "").strip()
-        nome_base = re.sub(r"\s*\([^)]*\)\s*$", "", nome_salvo).strip().lower()
-        produto = por_id.get(str(item.get("produto_id") or "")) or por_nome.get(nome_base)
+        nome_base = re.sub(r"\s*\([^)]*\)\s*$", "", nome_salvo).strip()
+        produto = cat.por_id(item.get("produto_id")) or por_nome.get(cat_norm(nome_base))
         if not produto:
             indisponiveis.append(nome_salvo or "Item removido")
             continue
-        tamanho = item.get("tamanho")
-        preco = Decimal(str(produto.preco))
-        if produto.tamanhos:
-            tamanho_atual = next((t for t in produto.tamanhos if str(t.get("tamanho")) == str(tamanho)), None)
-            if not tamanho_atual:
-                indisponiveis.append(nome_salvo or produto.nome)
-                continue
-            preco = Decimal(str(tamanho_atual.get("preco") or 0))
-        mapa_item = _obter_mapa_adicionais(produto, adicionais_precos)
-        adicionais = [
-            nome for nome in (item.get("adicionais") or [])
-            if str(nome).strip().lower() in mapa_item
-        ]
-        for adicional in adicionais:
-            preco += mapa_item[str(adicional).strip().lower()]
+        ids = [produto.id, *[str(x) for x in (item.get("sabores_ids") or []) if str(x) != produto.id]]
+        validos = {cat_norm(a.nome) for a in cat.adicionais_de(produto)}
+        adicionais = [n for n in (item.get("adicionais") or []) if cat_norm(n) in validos]
+        try:
+            pi = cat.precificar(ids, item.get("tamanho"), adicionais)
+        except ErroItem:
+            indisponiveis.append(nome_salvo or produto.nome)
+            continue
+        original = next((p for p in produtos if str(p.id) == produto.id), None)
         itens_disponiveis.append({
-            "produto_id": str(produto.id),
+            "produto_id": produto.id,
+            # Meio a meio: os OUTROS sabores (o primeiro é produto_id), como o carrinho usa.
+            "sabores": [{"id": i, "nome": cat.por_id(i).nome} for i in ids[1:]],
             "nome": produto.nome,
-            "tamanho": tamanho,
-            "preco": float(preco),
+            "tamanho": pi.tamanho,
+            "preco": float(pi.preco_unit),
             "quantidade": max(1, int(item.get("quantidade") or 1)),
             "observacao": item.get("observacao") or "",
             "adicionais": adicionais,
-            "imagem_url": produto.imagem_url,
+            "imagem_url": getattr(original, "imagem_url", None),
         })
     return {"itens": itens_disponiveis, "indisponiveis": indisponiveis}
 async def _enviar_confirmacao_whatsapp(

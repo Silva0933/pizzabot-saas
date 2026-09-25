@@ -890,6 +890,8 @@ export function CardapioPublico({ slug }: { slug: string }) {
         observacao: item.observacao || "",
         adicionais: item.adicionais || [],
         imgUrl: item.imagem_url || undefined,
+        // Sem os sabores, a meia repetida virava a pizza inteira do 1º sabor no checkout.
+        sabores: item.sabores?.length ? item.sabores : undefined,
       })));
       setCartPulse(true);
       window.setTimeout(() => setCartPulse(false), 700);

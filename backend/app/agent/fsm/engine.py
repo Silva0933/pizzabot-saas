@@ -1399,6 +1399,14 @@ async def processar(
         tipo_calc = estado.get("tipo") or "retirada"
         if tipo_calc == "delivery" and not estado.get("endereco"):
             tipo_calc = "retirada"
+        # Itens que entraram por nome (o "de sempre", sugestão aceita, NLU livre de
+        # reserva) passam a ser do catálogo quando o nome é EXATAMENTE o do cadastro.
+        try:
+            from app.agent.fsm.catalogo import carregar_catalogo
+            from app.agent.fsm.validador import vincular_catalogo
+            vincular_catalogo(await carregar_catalogo(db, ctx.pizzaria), estado)
+        except Exception as e:  # noqa: BLE001
+            log.debug("Vínculo com o catálogo falhou (segue pelo nome): %s", e)
         calc = await _calcular_pedido(
             ctx, db,
             itens=estado["carrinho"],
@@ -1750,6 +1758,60 @@ async def processar(
         and bool(estado.get("pagamento"))
         and not falta_pagar_agora
     )
+
+    # PORTA DO PEDIDO (camada 3): antes de mostrar o resumo ou registrar, o
+    # pedido inteiro é conferido contra o catálogo (validador.py). Preço que mudou
+    # no cardápio durante a conversa → recalcula e mostra o novo; qualquer outra
+    # violação vira pergunta ao cliente — nunca pedido.
+    if tudo_coletado:
+        from app.agent.fsm.catalogo import carregar_catalogo
+        from app.agent.fsm.validador import iids_com_preco_divergente, validar_pedido
+        try:
+            cat_val = await carregar_catalogo(db, ctx.pizzaria)
+        except Exception as e:  # noqa: BLE001
+            log.error("Catálogo indisponível na porta do pedido (pizzaria=%s): %s", getattr(ctx.pizzaria, "id", "?"), e)
+            cat_val = None
+        violacoes = validar_pedido(cat_val, estado, calc) if cat_val is not None else []
+        divergentes = iids_com_preco_divergente(violacoes)
+        if divergentes:
+            for it in estado["carrinho"]:
+                if it.get("iid") in divergentes:
+                    _descongelar(it)
+            calc = await _calcular_pedido(
+                ctx, db, itens=estado["carrinho"], tipo=estado["tipo"],
+                forma_pagamento=estado.get("pagamento") or "dinheiro",
+                pagar_agora=bool(estado.get("pagar_agora")), endereco_entrega=estado.get("endereco"),
+                observacoes=estado.get("observacoes"), bairro_confirmado=estado.get("endereco_bairro"),
+            )
+            if calc.get("ok"):
+                _congelar_precos(estado, calc)
+                violacoes = validar_pedido(cat_val, estado, calc)
+                resumo_dados["itens"] = [f"{i['quantidade']}x {i['nome']} (R$ {i['preco_unit']:.2f})" for i in calc["itens"]]
+                resumo_dados["taxa_entrega"] = round(float(calc["taxa_entrega"]), 2)
+                resumo_dados["total"] = round(float(calc["valor_total"]), 2)
+                if estado.get("etapa") == "AGUARDANDO_CONFIRMACAO":
+                    # O cliente viu outro valor: mostra o resumo de novo antes de fechar.
+                    estado["etapa"] = "PAGAMENTO"
+                decisao["fatos"].append("O preço de um item foi atualizado no cardápio; o resumo mostra o valor atual.")
+        if violacoes:
+            estado["validador_recusas"] = int(estado.get("validador_recusas") or 0) + 1
+            log.warning(
+                "Validador barrou o pedido (pizzaria=%s): %s", getattr(ctx.pizzaria, "id", "?"),
+                "; ".join(f"{v.codigo}: {v.mensagem}" for v in violacoes),
+            )
+            decisao["acao"] = "pendencia"
+            decisao["validacao"] = [v.codigo for v in violacoes]
+            decisao["fatos"].append(
+                "O pedido NÃO pode ser fechado ainda: " + "; ".join(v.mensagem for v in violacoes)
+            )
+            decisao["proxima_pergunta"] = (
+                "Explique em uma frase o que precisa ser ajustado e pergunte ao cliente como ele quer resolver. "
+                "NÃO diga que o pedido foi fechado."
+            )
+            if estado.get("etapa") == "AGUARDANDO_CONFIRMACAO":
+                estado["etapa"] = "PAGAMENTO"
+            return {"decisao": decisao, "estado": estado}
+        estado["validador_recusas"] = 0
 
     # CONFIRMAÇÃO (checada ANTES de reperguntar): se já mostramos o resumo e o
     # cliente confirmou ("sim/pode/ok/fechar"...), REGISTRA o pedido.

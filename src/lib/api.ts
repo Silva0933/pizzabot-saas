@@ -1591,6 +1591,8 @@ export interface ClienteRepetirPedido {
     observacao?: string;
     adicionais: string[];
     imagem_url?: string | null;
+    /** Meio a meio: os OUTROS sabores (o primeiro é produto_id). */
+    sabores?: Array<{ id: string; nome: string }>;
   }>;
   indisponiveis: string[];
 }
