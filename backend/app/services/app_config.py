@@ -307,12 +307,17 @@ async def get_llm_config(db: AsyncSession) -> dict[str, Any]:
     nlu_reasoning = normalizar_reasoning(cfg.get("nlu_reasoning"))
     voz_reasoning = normalizar_reasoning(cfg.get("voz_reasoning"))
 
+    # NLU de comandos (catálogo + esquema estrito) é o padrão de TODAS as
+    # pizzarias; "livre" volta para a NLU antiga sem deploy (chave de emergência).
+    nlu_versao = "livre" if str(cfg.get("nlu_versao") or "").strip().lower() == "livre" else "comandos"
+
     return {
         "provider": provider, "model": model, "keys": keys,
         "modelos_plano": modelos_plano, "transcription_model": transcription_model,
         "fallback_provider": fallback_provider, "fallback_model": fallback_model,
         "nlu_model": nlu_model,
         "nlu_reasoning": nlu_reasoning, "voz_reasoning": voz_reasoning,
+        "nlu_versao": nlu_versao,
     }
 
 

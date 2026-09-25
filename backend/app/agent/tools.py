@@ -861,6 +861,34 @@ async def _calcular_pedido(
             })
             continue
 
+        # Item com ID do catálogo (NLU de comandos): preço e validação saem do
+        # catálogo, por ID — sem busca por nome (a origem do "brasa M" → lanche
+        # Brasa Supreme). Mesmas regras do cardápio digital (catalogo.precificar).
+        ids_item = [str(x) for x in (it.get("sabores_ids") or []) if x] or (
+            [str(it["produto_id"])] if it.get("produto_id") else []
+        )
+        if ids_item:
+            from app.agent.fsm.catalogo import ErroItem, carregar_catalogo
+            cat = await carregar_catalogo(db, ctx.pizzaria)
+            try:
+                pi = cat.precificar(ids_item, tamanho, [str(a) for a in (it.get("adicionais") or [])])
+            except ErroItem as e:
+                if e.tipo == "adicional_invalido":
+                    return {
+                        "ok": False,
+                        "erro": f"Adicional(is) não disponível(is) para este item: {e.extra.get('faltantes')}.",
+                        "adicional_invalido": e.extra.get("faltantes") or [],
+                        "adicionais_validos": e.extra.get("validos") or [],
+                    }
+                if e.tipo == "meia_invalida":
+                    return {"ok": False, "erro": str(e), "meia_invalida": list(it.get("sabores") or [])}
+                if e.tipo == "produto_invalido":
+                    return {"ok": False, "erro": str(e), "produto_invalido": it.get("nome") or ""}
+                return {"ok": False, "erro": str(e)}
+            valor_itens_total += float(pi.preco_unit) * qtd
+            itens_norm.append({"nome": pi.nome, "quantidade": qtd, "preco_unit": float(pi.preco_unit)})
+            continue
+
         # Caso 1: Pizza combinada (sabores múltiplos)
         sabores = it.get("sabores")
         if sabores and isinstance(sabores, list):

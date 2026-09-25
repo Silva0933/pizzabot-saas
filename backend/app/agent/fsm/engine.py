@@ -199,8 +199,55 @@ _PECHINCHA_RE = _re.compile(
 _SO_ISSO_RE = _re.compile(r"(e |eh )?(so|somente|apenas) isso( mesmo| msm| por enquanto)?|nada mais|mais nada|e isso|eh isso")
 
 
+def _novo_iid(estado: dict[str, Any]) -> str:
+    seq = int(estado.get("seq_item") or 0) + 1
+    estado["seq_item"] = seq
+    return f"I{seq}"
+
+
+def _aplicar_ops_itens(estado: dict[str, Any], ops: list[dict[str, Any]]) -> None:
+    """Operações da NLU de comandos sobre itens JÁ no carrinho, pelo ID do item.
+
+    Determinístico e sem adivinhação por nome: "na verdade são 3" chega como
+    definir_qtd(I1, 3); "tira a coca", como remover(I2). Antes o engine deduzia a
+    intenção a partir de "produtos: [...]" e errava (quantidade ignorada, remoção
+    que casava dois itens pelo pedaço do nome)."""
+    for op in ops or []:
+        if not isinstance(op, dict):
+            continue
+        item = next(
+            (it for it in estado.get("carrinho") or [] if isinstance(it, dict) and it.get("iid") == op.get("iid")),
+            None,
+        )
+        if item is None:
+            continue
+        acao = op.get("op")
+        qtd = op.get("qtd")
+        if acao == "remover" or (acao == "definir_qtd" and qtd == 0):
+            estado["carrinho"] = [it for it in estado["carrinho"] if it is not item]
+        elif acao == "definir_qtd" and isinstance(qtd, int) and qtd > 0:
+            item["qtd"] = qtd
+        elif acao == "somar_qtd" and isinstance(qtd, int) and qtd > 0:
+            item["qtd"] = int(item.get("qtd") or 1) + qtd
+        elif acao == "trocar_tamanho" and op.get("tamanho"):
+            item["tamanho"] = op["tamanho"]
+            _descongelar(item)
+        elif acao == "adicionar_adicional" and op.get("adicionais"):
+            atuais = list(item.get("adicionais") or [])
+            for a in op["adicionais"]:
+                if _normalizar_txt(a) not in {_normalizar_txt(x) for x in atuais}:
+                    atuais.append(a)
+            item["adicionais"] = atuais
+            _descongelar(item)
+        elif acao == "remover_adicional" and op.get("adicionais"):
+            tirar = {_normalizar_txt(a) for a in op["adicionais"]}
+            item["adicionais"] = [a for a in (item.get("adicionais") or []) if _normalizar_txt(a) not in tirar]
+            _descongelar(item)
+
+
 def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
     """Funde os dados extraídos pela NLU no estado (carrinho e campos)."""
+    _aplicar_ops_itens(estado, dados.get("_ops_itens") or [])
     # Adicionar produtos — com MERGE: se já existe item com o mesmo nome/sabores,
     # NÃO duplica; só completa o que faltava (tamanho/adicionais). Isso evita o
     # bug de "the pizza" + "quero a GG" virar 2 pizzas.
@@ -212,7 +259,9 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         # qtd 1: o carrinho ficava "1x 3 cheese classico" e cobrava um só. O número
         # que faz parte do nome ("4 queijos", "2 litros") fica onde está.
         m_qtd = _QTD_NO_NOME_RE.match(nome)
-        if m_qtd and int(p.get("qtd") or 1) == 1:
+        # Nome vindo do catálogo (tem produto_id) é exato — "2 Hambúrgueres + Refri"
+        # é o nome do combo, não quantidade.
+        if m_qtd and not p.get("produto_id") and int(p.get("qtd") or 1) == 1:
             p = {**p, "qtd": int(m_qtd.group(1))}
             nome = m_qtd.group(2).strip()
         sabores = [s for s in (p.get("sabores_meia") or []) if s]
@@ -230,10 +279,29 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         adicionais = [a for a in (p.get("adicionais") or []) if a]
         chave = _chave_item(nome, sabores)
 
-        existente = next(
-            (it for it in estado["carrinho"] if _chave_item(it.get("nome"), it.get("sabores") or []) == chave),
-            None,
-        )
+        ids_p = [str(x) for x in (p.get("sabores_ids") or [])] or ([str(p["produto_id"])] if p.get("produto_id") else [])
+        if ids_p:
+            # Item do catálogo: identidade = produto(s) + tamanho. "2 calabresa G e
+            # 1 calabresa M" são DOIS itens — pela chave só de nome viravam um
+            # ("2x calabresa (M)") e "tira a M" apagava tudo. Esclarecer o tamanho
+            # de um item é o comando trocar_tamanho, não um "adicionar" repetido.
+            def _ids(it: dict[str, Any]) -> list[str]:
+                return [str(x) for x in (it.get("sabores_ids") or [])] or (
+                    [str(it["produto_id"])] if it.get("produto_id") else []
+                )
+            existente = next(
+                (
+                    it for it in estado["carrinho"]
+                    if sorted(_ids(it)) == sorted(ids_p)
+                    and (not tamanho or not it.get("tamanho") or _normalizar_txt(it.get("tamanho")) == _normalizar_txt(tamanho))
+                ),
+                None,
+            )
+        else:
+            existente = next(
+                (it for it in estado["carrinho"] if _chave_item(it.get("nome"), it.get("sabores") or []) == chave),
+                None,
+            )
         if existente is None and p.get("qtd_modo") in ("definir", "somar"):
             # Correção de quantidade cita o item pela metade ("muda pra 3 smash"):
             # casa pelo pedaço do nome, desde que só UM item do carrinho case —
@@ -248,6 +316,10 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
         if existente is not None:
             # Esclarecimento do mesmo item: atualiza tamanho/adicionais, não duplica.
             mudou = False
+            for k in ("produto_id", "sabores_ids"):
+                if p.get(k) and existente.get(k) != p[k]:
+                    existente[k] = p[k]
+                    mudou = True
             if tamanho and existente.get("tamanho") != tamanho:
                 existente["tamanho"] = tamanho
                 mudou = True
@@ -271,13 +343,20 @@ def _aplicar_nlu(estado: dict[str, Any], dados: dict[str, Any]) -> None:
                 _descongelar(existente)  # item mudou → re-resolver o preço
             continue
 
-        estado["carrinho"].append({
+        novo = {
+            "iid": _novo_iid(estado),
             "nome": nome or None,
             "sabores": sabores,
             "tamanho": tamanho,
             "qtd": int(p.get("qtd") or 1),
             "adicionais": adicionais,
-        })
+        }
+        # ID do catálogo (NLU de comandos): o preço sai por ID, sem busca por nome.
+        if p.get("produto_id"):
+            novo["produto_id"] = p["produto_id"]
+        if p.get("sabores_ids"):
+            novo["sabores_ids"] = list(p["sabores_ids"])
+        estado["carrinho"].append(novo)
     # Remover produtos. Match flexível: substring em qualquer direção OU termo
     # genérico de bebida (ex.: "refrigerante", "refri") removendo o item que É uma
     # bebida — o cliente quase nunca diz o nome exato "Coca Cola 2L".
@@ -1053,7 +1132,7 @@ async def processar(
     # Robustez de remoção: o cliente quer remover (intent remover_item) mas a NLU não
     # disse O QUÊ → infere do texto qual item do carrinho tirar. Ex.: "não quero mais o
     # refrigerante, só a pizza" deve remover a Coca, mesmo a NLU não devolvendo 'remover'.
-    if intencao == "remover_item" and not dados.get("remover"):
+    if intencao == "remover_item" and not dados.get("remover") and not dados.get("_ops_itens"):
         alvos = _inferir_remocao(user_input, estado.get("carrinho") or [])
         if alvos:
             dados["remover"] = alvos
@@ -1188,7 +1267,8 @@ async def processar(
     from app.agent.tools import eh_termo_generico
     genericos = [
         p for p in (dados.get("produtos") or [])
-        if isinstance(p, dict) and not p.get("sabores_meia") and eh_termo_generico(p.get("nome"))
+        if isinstance(p, dict) and not p.get("sabores_meia")
+        and (p.get("_generico") or eh_termo_generico(p.get("nome")))
     ]
     if genericos:
         dados["produtos"] = [p for p in dados["produtos"] if p not in genericos]
@@ -1220,9 +1300,14 @@ async def processar(
             and not _re.search(r"\b(meia|meio|metade)\b", (user_input or "").lower())
         ):
             base = prods[0]
+            ids_sab = list(base.get("sabores_ids") or [])
             prods = [
-                {"nome": x, "qtd": 1, "tamanho": base.get("tamanho"), "adicionais": list(base.get("adicionais") or [])}
-                for x in sab
+                {
+                    "nome": x, "qtd": 1, "tamanho": base.get("tamanho"),
+                    "adicionais": list(base.get("adicionais") or []),
+                    **({"produto_id": ids_sab[i]} if len(ids_sab) == len(sab) else {}),
+                }
+                for i, x in enumerate(sab)
             ]
             dados["produtos"] = prods
         for p in prods:
@@ -1350,7 +1435,7 @@ async def processar(
             calc = await _calcular_pedido(
                 ctx, db,
                 itens=estado["carrinho"],
-                tipo=estado.get("tipo") or "retirada",
+                tipo=tipo_calc,
                 forma_pagamento=estado.get("pagamento") or "dinheiro",
                 pagar_agora=bool(estado.get("pagar_agora")),
                 endereco_entrega=estado.get("endereco"),

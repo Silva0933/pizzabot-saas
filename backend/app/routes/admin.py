@@ -817,6 +817,8 @@ class LLMConfigIn(BaseModel):
     # Raciocínio por papel: "" (padrão do provedor) | none | low | medium | high.
     nlu_reasoning: str | None = None
     voz_reasoning: str | None = None
+    # "comandos" (padrão) | "livre" (NLU antiga). None = mantém o que está salvo.
+    nlu_versao: str | None = None
 
 
 @router.get("/llm")
@@ -843,6 +845,7 @@ async def get_llm(
         "nlu_model": (raw.get("nlu_model") or "").strip(),
         "nlu_reasoning": cfg.get("nlu_reasoning") or "",
         "voz_reasoning": cfg.get("voz_reasoning") or "",
+        "nlu_versao": cfg.get("nlu_versao") or "comandos",
     }
 
 
@@ -881,6 +884,9 @@ async def put_llm(
     if fallback_provider and fallback_provider not in LLM_PROVIDERS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Fallback provider inválido. Use: {list(LLM_PROVIDERS)}")
     fallback_model = (body.fallback_model or "").strip()
+    nlu_versao = (body.nlu_versao or raw.get("nlu_versao") or "comandos").strip().lower()
+    if nlu_versao not in ("comandos", "livre"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "nlu_versao inválida. Use: comandos ou livre")
 
     await set_config(db, LLM_KEY, {
         "provider": provider, "model": body.model.strip(),
@@ -891,6 +897,7 @@ async def put_llm(
         "nlu_model": (body.nlu_model or "").strip(),
         "nlu_reasoning": normalizar_reasoning(body.nlu_reasoning),
         "voz_reasoning": normalizar_reasoning(body.voz_reasoning),
+        "nlu_versao": nlu_versao,
     })
     return {"ok": True, "provider": provider, "model": body.model.strip(),
             "modelos_plano": modelos_plano,

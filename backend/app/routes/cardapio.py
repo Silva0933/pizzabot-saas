@@ -61,6 +61,14 @@ class ProdutoOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _invalidar_catalogo(pizzaria_id) -> None:
+    """Cardápio mudou: o atendente passa a ver a versão nova já na próxima mensagem
+    (sem esperar o TTL do cache do catálogo). Vale só neste processo; os workers
+    pegam a mudança pelo TTL curto."""
+    from app.agent.fsm.catalogo import invalidar_cache
+    invalidar_cache(pizzaria_id)
+
+
 @router.get("", response_model=list[ProdutoOut])
 async def list_produtos(
     pizzaria_id: uuid.UUID,
@@ -94,6 +102,7 @@ async def create_produto(
     p = Produto(pizzaria_id=pizzaria_id, **data)
     db.add(p)
     await db.commit()
+    _invalidar_catalogo(pizzaria_id)
     await db.refresh(p)
     return p
 
@@ -126,6 +135,7 @@ async def update_produto(
     for k, v in data.items():
         setattr(p, k, v)
     await db.commit()
+    _invalidar_catalogo(pizzaria_id)
     await db.refresh(p)
     return p
 
@@ -146,6 +156,7 @@ async def delete_produto(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Produto não encontrado")
     await db.delete(p)
     await db.commit()
+    _invalidar_catalogo(pizzaria_id)
 
 
 @router.post("/reindex")
@@ -381,6 +392,7 @@ async def importar_confirmar(
         criados += 1
 
     await db.commit()
+    _invalidar_catalogo(pizzaria_id)
     return {"ok": True, "criados": criados}
 
 

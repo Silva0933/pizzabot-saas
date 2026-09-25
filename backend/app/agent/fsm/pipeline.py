@@ -69,6 +69,14 @@ _LOCALIZACAO_RE = re.compile(
 )
 
 
+def _resumo_comandos(res_nlu: dict[str, Any] | None) -> str:
+    try:
+        from app.agent.fsm.nlu_comandos import resumo_para_trace
+        return resumo_para_trace(res_nlu) if (res_nlu or {}).get("dados", {}).get("_nlu") == "comandos" else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _usage_zero() -> dict[str, int]:
     return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -287,7 +295,35 @@ async def run_fsm_agent(
     if res_nlu is None:
         res_nlu = _nlu_deterministica(user_input, estado)
     nlu_provider_usado, nlu_model_usado = provider, nlu_model
+    nlu_modo = "deterministica" if res_nlu is not None else ""
+    # NLU de COMANDOS (padrão, todas as pizzarias): a IA só escolhe códigos do
+    # catálogo da pizzaria e dá ordens sobre itens do carrinho pelo ID. Falhou no
+    # primário e no reserva (ou `nlu_versao` = "livre" na config de IA) → NLU livre.
+    if res_nlu is None and (cfg.get("nlu_versao") or "comandos") == "comandos":
+        try:
+            from app.agent.fsm.catalogo import carregar_catalogo
+            from app.agent.fsm.nlu_comandos import nlu_comandos
+            catalogo = await carregar_catalogo(db, ctx.pizzaria)
+
+            async def _nlu_cmd(prov: str, key: str, mdl: str):
+                r = await nlu_comandos(
+                    provider=prov, api_key=key, model=mdl, cat=catalogo, estado=estado,
+                    estado_resumo=estado_resumo, historico_texto=hist_txt, user_input=user_input,
+                    reasoning=cfg.get("nlu_reasoning") or None,
+                )
+                if r is None:
+                    raise RuntimeError("NLU de comandos sem resposta válida")
+                return r
+
+            res_nlu, nlu_provider_usado, nlu_model_usado = await com_failover(
+                _nlu_cmd, cfg=cfg, model=nlu_model
+            )
+            nlu_modo = f"comandos:{res_nlu.get('_modo')}"
+        except Exception as e:  # noqa: BLE001
+            log.warning("NLU de comandos indisponível (%s) — usando a NLU livre", str(e)[:200])
+            res_nlu = None
     if res_nlu is None:
+        nlu_modo = "livre"
         async def _nlu(prov: str, key: str, mdl: str):
             return await nlu.nlu_extract(
                 provider=prov, api_key=key, model=mdl,
@@ -523,6 +559,8 @@ async def run_fsm_agent(
             "intent": res_nlu.get("intencao"),
             "confidence": confianca,
             "nlu_deterministic": bool(res_nlu.get("_deterministica")),
+            "nlu_mode": nlu_modo,
+            "nlu_commands": _resumo_comandos(res_nlu),
             "state_before": engine.resumo_estado(estado_antes),
             "state_after": engine.resumo_estado(estado),
             "decision": decisao.get("acao"),
