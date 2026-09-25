@@ -121,7 +121,7 @@ def montar_schema(cat: Catalogo, iids: list[str]) -> dict[str, Any]:
         "additionalProperties": False,
         "required": [
             "intencao", "confianca", "comandos", "tipo_entrega", "endereco", "forma_pagamento",
-            "pagar_agora", "quer_cardapio", "nota", "observacoes",
+            "pagar_agora", "quer_cardapio", "nota", "observacoes", "produtos_citados", "categoria_citada",
         ],
         "properties": {
             "intencao": {"type": "string", "enum": list(INTENCOES)},
@@ -134,6 +134,10 @@ def montar_schema(cat: Catalogo, iids: list[str]) -> dict[str, Any]:
             "quer_cardapio": {"type": "boolean"},
             "nota": {"type": ["integer", "null"]},
             "observacoes": {"type": ["string", "null"]},
+            # Gatilho de contexto (camada 4): de QUAIS produtos/categoria o cliente
+            # falou — a voz recebe só os dados reais deles.
+            "produtos_citados": {"type": "array", "items": {"type": "string", "enum": codigos}},
+            "categoria_citada": _nullable_enum(categorias),
         },
     }
 
@@ -174,6 +178,10 @@ Adicional/borda que o produto não tem: adicionais_nao_encontrados = o texto dit
 
 NÃO É PEDIDO: pergunta de preço/disponibilidade ("tem X?", "quanto é X?", "o que vem na X?") → intencao
 duvida_geral e comandos vazio. Pechincha/desconto → duvida_geral.
+
+CITADOS (sempre que o cliente mencionar produtos, pedindo ou perguntando): produtos_citados = códigos
+dos produtos do catálogo de que ele falou; categoria_citada = a categoria quando ele fala do grupo
+("quais bebidas vocês têm?", "tem sobremesa?"). Produto que não existe no catálogo não entra aqui.
 
 DEMAIS CAMPOS (null quando ele não falou disso):
 - tipo_entrega: delivery (entrega, "manda aqui") | retirada ("vou buscar", "retiro").
@@ -292,6 +300,10 @@ def converter(bruto: dict[str, Any], cat: Catalogo, estado: dict[str, Any]) -> d
         dados["nota"] = nota
     if isinstance(bruto.get("observacoes"), str) and bruto["observacoes"].strip():
         dados["observacoes"] = bruto["observacoes"].strip()
+    citados = [cat.por_codigo(c) for c in (bruto.get("produtos_citados") or [])]
+    dados["_citados"] = list(dict.fromkeys(p.id for p in citados if p is not None))
+    if bruto.get("categoria_citada") not in (None, "-") and bruto["categoria_citada"] in cat.categorias():
+        dados["_categoria_citada"] = bruto["categoria_citada"]
     return {"intencao": intencao, "confianca": confianca, "dados": dados}
 
 

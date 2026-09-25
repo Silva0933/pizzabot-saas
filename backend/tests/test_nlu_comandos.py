@@ -392,3 +392,78 @@ def test_config_padrao_da_conferencia():
     assert h.revisar_pedidos is False and h.validador_limite == 2
     h2 = AtendimentoConfig.model_validate({"handoff": {"revisar_pedidos": True, "validador_limite": 3}}).handoff
     assert h2.revisar_pedidos is True and h2.validador_limite == 3
+
+
+# ---------------- Camada 4: confirmação do sistema, gatilhos e guard ----------------
+from app.agent.fsm.confirmacao import confirmacao_do_turno  # noqa: E402
+from app.agent.fsm.guard import produtos_sem_lastro  # noqa: E402
+
+
+class TestConfirmacao:
+    def test_descreve_so_o_que_mudou(self):
+        antes = [
+            {"iid": "I1", "nome": "Smash Duplo", "qtd": 2, "nome_congelado": "Smash Duplo"},
+            {"iid": "I2", "nome": "Coca-Cola 2L", "qtd": 1},
+            {"iid": "I3", "nome": "Pizza Brasa", "tamanho": "G", "qtd": 1},
+        ]
+        depois = [
+            {"iid": "I1", "nome": "Smash Duplo", "qtd": 3, "nome_congelado": "Smash Duplo"},
+            {"iid": "I3", "nome": "Pizza Brasa", "tamanho": "G", "qtd": 1},
+            {"iid": "I4", "nome": "Cheese Clássico", "qtd": 3, "adicionais": ["Bacon crocante"]},
+        ]
+        txt = confirmacao_do_turno(antes, depois)
+        assert txt == "✅ Anotei: 3x Cheese Clássico + Bacon crocante · Ajustei: 3x Smash Duplo · Tirei: Coca-Cola 2L"
+
+    def test_sem_mudanca_nao_confirma(self):
+        itens = [{"iid": "I1", "nome": "Coca-Cola 2L", "qtd": 1}]
+        assert confirmacao_do_turno(itens, [dict(itens[0])]) is None
+
+
+class TestGuardDeProduto:
+    NOMES = ["Pizza Brasa", "Pizza Calabresa", "Brasa Supreme", "Coca-Cola 2L", "Pudim"]
+
+    def test_produto_fora_do_contexto_e_barrado(self):
+        # Caso real: pechincha com a Brasa no carrinho, voz citou a calabresa.
+        fora = produtos_sem_lastro(
+            "A Pizza Calabresa média sai por R$ 46,90.", self.NOMES, "carrinho: 1x Pizza Brasa (G)",
+        )
+        assert fora == ["Pizza Calabresa"]
+
+    def test_produto_do_contexto_pode(self):
+        assert produtos_sem_lastro("Sua Brasa sai rapidinho!", self.NOMES, "1x Pizza Brasa (G)") == []
+
+    def test_nome_curto_nao_da_falso_alarme(self):
+        # "pudim" tem só 5 letras e é o nome inteiro: citar sem contexto é citar o produto.
+        assert produtos_sem_lastro("Quer um pudim?", self.NOMES, "") == ["Pudim"]
+        assert produtos_sem_lastro("Tudo certo por aqui!", self.NOMES, "") == []
+
+
+def test_duvida_usa_os_dados_dos_produtos_citados(cat):
+    estado = engine.estado_inicial()
+    estado["apresentou"] = True
+    nlu = {"intencao": "duvida_geral", "dados": {"_nlu": "comandos", "_citados": ["id-brasa"]}}
+    busca = AsyncMock(return_value={"items": [{"nome": "Pizza Calabresa", "preco": 46.9}]})
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.agent.tools.buscar_cardapio", new=busca):
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), estado, nlu, user_input="o que vem na brasa?"))
+    fatos = " ".join(res["decisao"]["fatos"])
+    assert "Pizza Brasa: M R$ 49,90 · G R$ 64,90" in fatos and "Calabresa" not in fatos
+    assert not busca.await_count
+    assert 64.9 in res["decisao"]["precos_validos"]
+
+
+def test_duvida_de_categoria_lista_a_categoria(cat):
+    estado = engine.estado_inicial()
+    estado["apresentou"] = True
+    nlu = {"intencao": "duvida_geral", "dados": {"_nlu": "comandos", "_citados": [], "_categoria_citada": "bebida"}}
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)):
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), estado, nlu, user_input="quais bebidas?"))
+    assert "Coca-Cola 2L: R$ 15,90" in " ".join(res["decisao"]["fatos"])
+
+
+def test_converter_leva_citados(cat):
+    out = converter(_bruto(intencao="duvida_geral", produtos_citados=[_cod(cat, "id-brasa"), "P999"],
+                           categoria_citada="bebida"), cat, engine.estado_inicial())
+    assert out["dados"]["_citados"] == ["id-brasa"] and out["dados"]["_categoria_citada"] == "bebida"

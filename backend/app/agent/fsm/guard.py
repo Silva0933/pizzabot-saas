@@ -127,3 +127,46 @@ def blindar(texto: str, *, ja_apresentou: bool, precos_validos: Any,
     if precos:
         correcoes["precos_neutralizados"] = precos
     return texto, correcoes
+
+
+# ============================================
+# Pilar 3b — produto citado sem lastro (camada 4 da blindagem)
+# ============================================
+_PREFIXO_CATEGORIA_RE = re.compile(r"^(pizza|lanche|hamburguer|burger|bebida|sobremesa)\s+(de\s+)?", re.IGNORECASE)
+
+
+def _norm(s: Any) -> str:
+    import unicodedata
+    base = unicodedata.normalize("NFD", str(s or "").lower())
+    return re.sub(r"\s+", " ", "".join(c for c in base if unicodedata.category(c) != "Mn")).strip()
+
+
+def _chaves_produto(nome: str) -> list[str]:
+    """Formas de citar o produto no texto: o nome inteiro e, sem o prefixo de
+    categoria ("Pizza Brasa" → "brasa"), o nome distintivo (só se não for curto
+    demais para evitar falso alarme)."""
+    cheio = _norm(nome)
+    curto = _norm(_PREFIXO_CATEGORIA_RE.sub("", nome))
+    chaves = [cheio]
+    if curto and curto != cheio and len(curto) >= 5:
+        chaves.append(curto)
+    return chaves
+
+
+def _cita(texto_norm: str, chave: str) -> bool:
+    return bool(re.search(r"(?<![a-z0-9])" + re.escape(chave) + r"(?![a-z0-9])", texto_norm))
+
+
+def produtos_sem_lastro(texto: str, nomes_catalogo: list[str], contexto: str) -> list[str]:
+    """Produtos do cardápio que a voz citou mas que NÃO estão no contexto do
+    turno (carrinho, confirmação, fatos, opções oferecidas). A voz não pode
+    oferecer ou afirmar sobre produto que o sistema não trouxe — era assim que
+    ela respondia a pechincha com o preço da calabresa."""
+    t = _norm(texto)
+    ctx = _norm(contexto)
+    fora: list[str] = []
+    for nome in nomes_catalogo:
+        chaves = _chaves_produto(nome)
+        if any(_cita(t, c) for c in chaves) and not any(_cita(ctx, c) for c in chaves):
+            fora.append(nome)
+    return fora

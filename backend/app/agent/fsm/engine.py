@@ -1622,7 +1622,26 @@ async def processar(
                 "simpatia que não consegue mudar o valor; só cite cupom/promoção se estiverem nos fatos. "
                 "NÃO cite preço de nenhum produto."
             )
-        if user_input and not pechincha:
+        # GATILHO por produto citado (NLU de comandos): a voz recebe os dados reais
+        # SÓ dos produtos/categoria de que o cliente falou — nada de busca pela
+        # frase inteira (que trazia a "calabresa parecida" numa pechincha).
+        citados = [x for x in (dados.get("_citados") or []) if x]
+        categoria_citada = dados.get("_categoria_citada")
+        usou_gatilho = dados.get("_nlu") == "comandos"
+        if usou_gatilho and not pechincha and (citados or categoria_citada):
+            try:
+                from app.agent.fsm.catalogo import carregar_catalogo
+                cat_f = await carregar_catalogo(db, ctx.pizzaria)
+                prods = [p for p in (cat_f.por_id(i) for i in citados) if p is not None]
+                if not prods and categoria_citada:
+                    prods = cat_f.da_categoria(categoria_citada)[:12]
+                if prods:
+                    txt_f, precos_f = cat_f.fatos_de(prods)
+                    decisao["fatos"].append("Dados REAIS do que o cliente perguntou (use só isto): " + txt_f)
+                    decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *[v for v in precos_f if v > 0]]
+            except Exception as e:  # noqa: BLE001
+                log.debug("Fatos por produto citado falharam: %s", e)
+        if user_input and not pechincha and not usou_gatilho:
             try:
                 from app.agent.tools import buscar_cardapio
                 clean_query = user_input.replace("?", "").replace("!", "").strip()

@@ -256,6 +256,39 @@ class Catalogo:
         """Adicionais válidos do produto: os dele; sem nenhum, os globais."""
         return p.adicionais or self.adicionais_globais
 
+    # ---------- fatos para a voz (gatilho por produto citado) ----------
+    def fatos_de(self, produtos: list[ProdutoCat]) -> tuple[str, list[float]]:
+        """Dados REAIS dos produtos citados: preço (por tamanho), descrição e
+        adicionais. Devolve (texto, preços válidos para o guard)."""
+        linhas: list[str] = []
+        precos: list[float] = []
+
+        def brl(v: Decimal) -> str:
+            return "R$ " + f"{v:.2f}".replace(".", ",")
+
+        for p in produtos:
+            if p.tamanhos:
+                preco_txt = " · ".join(f"{n} {brl(v)}" for n, v in p.tamanhos)
+                precos += [float(v) for _, v in p.tamanhos]
+            else:
+                preco_txt = brl(p.preco)
+                precos.append(float(p.preco))
+            partes = [f"{p.nome}: {preco_txt}"]
+            if p.descricao:
+                partes.append(f"({p.descricao[:160]})")
+            ads = self.adicionais_de(p)
+            if ads:
+                partes.append("adicionais: " + ", ".join(f"{a.nome} +{brl(a.preco)}" for a in ads[:8]))
+                precos += [float(a.preco) for a in ads[:8] if a.preco > 0]
+            if p.aceita_meia():
+                partes.append("aceita meio a meio")
+            linhas.append(" ".join(partes))
+        return "; ".join(linhas), precos
+
+    def da_categoria(self, categoria: str) -> list[ProdutoCat]:
+        alvo = normalizar(categoria)
+        return [p for p in self.produtos if normalizar(p.categoria) == alvo]
+
     # ---------- texto para a NLU ----------
     def texto_para_nlu(self) -> str:
         """Uma linha por produto: código, nome, categoria, tamanhos, meia e adicionais.

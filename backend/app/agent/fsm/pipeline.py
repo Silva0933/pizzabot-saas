@@ -383,9 +383,25 @@ async def run_fsm_agent(
         return None
 
     # 2) Engine (decisão determinística)
+    carrinho_antes_turno = deepcopy(estado.get("carrinho") or [])
     out = await engine.processar(db, ctx, estado, res_nlu, user_input=user_input)
     estado = out["estado"]
     decisao = out["decisao"]
+
+    # Confirmação do que mudou no carrinho: texto do SISTEMA, montado do carrinho
+    # real (confirmacao.py). A voz só faz a próxima pergunta — era ela que dizia
+    # "Anotei 1 Cheese" com 3 no carrinho. Resumo/fechamento/cardápio já mostram
+    # os itens por conta própria.
+    from app.agent.fsm.confirmacao import confirmacao_do_turno
+    confirmacao = None
+    if decisao.get("acao") not in ("resumo_confirmar", "pedido_registrado", "cardapio", "escalado"):
+        confirmacao = confirmacao_do_turno(carrinho_antes_turno, estado.get("carrinho") or [])
+    if confirmacao:
+        decisao.setdefault("fatos", []).insert(0, (
+            f"O SISTEMA JÁ MOSTROU ao cliente, logo antes da sua fala: \"{confirmacao}\". "
+            "NÃO repita itens, quantidades nem tamanhos e IGNORE qualquer instrução de confirmar o que "
+            "foi anotado — escreva SÓ a continuação (a próxima pergunta ou a resposta)."
+        ))
 
     # Incrementa ou reseta contador de pendências
     if decisao.get("acao") == "pendencia":
@@ -473,6 +489,41 @@ async def run_fsm_agent(
         (texto, voz_usage), provider_usado, model_usado = await com_failover(_voz, cfg=cfg, model=model)
         if not texto:
             texto = "Pode repetir, por favor? 😊"
+        # Guard de PRODUTO (camada 4): a voz só cita produto do cardápio que o
+        # sistema trouxe no turno (carrinho, confirmação, fatos, oferta). Citou
+        # outro → refaz uma vez proibindo; se insistir, alerta no painel.
+        try:
+            from app.agent.fsm.catalogo import carregar_catalogo
+            from app.agent.fsm.guard import produtos_sem_lastro
+            nomes_cat = [p.nome for p in (await carregar_catalogo(db, ctx.pizzaria)).produtos]
+            lastro = f"{comando}\n{confirmacao or ''}"
+            fora = produtos_sem_lastro(texto, nomes_cat, lastro)
+            if fora:
+                log.warning("Voz citou produto sem lastro %s — refazendo", fora)
+                comando_2 = comando + (
+                    "\n\nATENÇÃO: NÃO cite estes produtos (o cliente não falou deles e o sistema não os "
+                    f"trouxe): {', '.join(fora)}."
+                )
+
+                async def _voz2(prov: str, key: str, mdl: str):
+                    return await voice.gerar_voz(
+                        provider=prov, api_key=key, model=mdl, comando=comando_2,
+                        reasoning=cfg.get("voz_reasoning") or None,
+                    )
+
+                (texto_2, _u2), _p2, _m2 = await com_failover(_voz2, cfg=cfg, model=model)
+                fora_2 = produtos_sem_lastro(texto_2 or "", nomes_cat, lastro) if texto_2 else fora
+                if texto_2 and not fora_2:
+                    texto = texto_2
+                correcoes["produtos_sem_lastro"] = fora_2 or []
+                if fora_2:
+                    from app.services.alertas import registrar_alerta
+                    await registrar_alerta(
+                        db, tipo="produto_suspeito", pizzaria_id=pizzaria_id, nivel="warning",
+                        detalhe=f"IA citou produto sem lastro {fora_2} mesmo após refazer. input='{user_input[:80]}'",
+                    )
+        except Exception as e:  # noqa: BLE001
+            log.debug("Guard de produto falhou (texto segue): %s", e)
         # BLINDAGEM (Pilar 3): guard-rail determinístico sobre o texto da LLM —
         # remove saudação repetida e neutraliza qualquer preço sem lastro.
         try:
@@ -496,6 +547,8 @@ async def run_fsm_agent(
         except Exception as e:  # noqa: BLE001
             log.debug("Guard FSM falhou (texto segue como veio): %s", e)
     texto = texto.replace(QUEBRA, "\n\n")
+    if confirmacao:
+        texto = f"{confirmacao}\n\n{texto}"
 
     # Quem já falou com o cliente já se apresentou. O engine só marcava isso em
     # alguns ramos; nos de pendência (falta tamanho, item ou borda inexistente) o
