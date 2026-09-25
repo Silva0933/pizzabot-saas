@@ -2327,6 +2327,7 @@ function LLMConfigCard() {
   const [fallbackModel, setFallbackModel] = useState("");
   const [nluModel, setNluModel] = useState("");
   const [nluReasoning, setNluReasoning] = useState("");
+  const [nluVersao, setNluVersao] = useState("comandos");
   const [vozReasoning, setVozReasoning] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -2349,6 +2350,7 @@ function LLMConfigCard() {
     if (c.fallback_model) setFallbackModel(c.fallback_model);
     if (c.nlu_model) setNluModel(c.nlu_model);
     setNluReasoning(c.nlu_reasoning || "");
+    setNluVersao(c.nlu_versao || "comandos");
     setVozReasoning(c.voz_reasoning || "");
   }
 
@@ -2405,6 +2407,7 @@ function LLMConfigCard() {
         fallback_model: fallbackModel.trim(),
         nlu_model: nluModel.trim(),
         nlu_reasoning: nluReasoning,
+        nlu_versao: nluVersao,
         voz_reasoning: vozReasoning,
       });
       setMsg({ ok: true, text: "Configuração de IA salva. O atendimento de todas as pizzarias já está atualizado." });
@@ -2597,6 +2600,18 @@ function LLMConfigCard() {
                         </select>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] text-slate-300 font-medium mb-0.5">Interpretação dos pedidos</label>
+                    <p className="text-[10px] text-slate-500 mb-1">
+                      "Presa ao cardápio" (recomendado): a IA só escolhe produtos, tamanhos e adicionais que existem no cardápio de cada pizzaria. "Livre" é a interpretação antiga — só para emergência.
+                    </p>
+                    <select value={nluVersao} onChange={(e) => setNluVersao(e.target.value)}
+                      className="w-full bg-[#0b0f17] border border-[#1e293b] text-white rounded-xl px-3 py-2 outline-none focus:border-purple-500 text-xs">
+                      <option value="comandos">Presa ao cardápio (comandos)</option>
+                      <option value="livre">Livre (antiga)</option>
+                    </select>
                   </div>
 
                   <div>

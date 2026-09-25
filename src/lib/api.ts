@@ -865,6 +865,8 @@ export interface LLMConfig {
   nlu_model?: string;
   nlu_reasoning?: string;
   voz_reasoning?: string;
+  /** "comandos" (catálogo + esquema estrito, padrão) | "livre" (NLU antiga). */
+  nlu_versao?: string;
 }
 
 export interface AssinaturaItem {
@@ -1109,7 +1111,7 @@ export const adminApi = {
   togglePipeline: (pizzariaId: string, fsm: boolean) =>
     api.patch<{ ok: boolean; pipeline_fsm: boolean }>(`/admin/pizzarias/${pizzariaId}/pipeline`, { fsm }),
   llm: () => api.get<LLMConfig>(`/admin/llm`),
-  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string>; transcription_model?: string; fallback_provider?: string; fallback_model?: string; nlu_model?: string; nlu_reasoning?: string; voz_reasoning?: string }) =>
+  salvarLlm: (body: { provider: string; model: string; keys: Record<string, string>; modelos_plano?: Record<string, string>; transcription_model?: string; fallback_provider?: string; fallback_model?: string; nlu_model?: string; nlu_reasoning?: string; voz_reasoning?: string; nlu_versao?: string }) =>
     api.put<{ ok: boolean }>(`/admin/llm`, body),
   testarLlm: () =>
     api.post<{ ok: boolean; provider: string; model: string; resposta?: string; erro?: string }>(`/admin/llm/test`, {}),

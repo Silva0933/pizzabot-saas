@@ -37,7 +37,19 @@ Infra: Postgres com pgvector + Redis.
   principal **NLU → Engine → Voz**:
   - `fsm/pipeline.py` — orquestrador; `_nlu_deterministica` resolve casos
     óbvios sem LLM; confiança < `CONFIANCA_MINIMA` cai no agente legado.
-  - `fsm/nlu.py` — LLM só extrai intenção + entidades em JSON (modelo barato `nlu_model`).
+  - `fsm/catalogo.py` — catálogo por pizzaria (do banco, cache 60 s, invalidado ao
+    editar o cardápio). `precificar` é a **regra única** de preço/validação por ID
+    (tamanho, meio a meio, adicionais do produto), usada pelo agente e pelo checkout.
+  - `fsm/nlu_comandos.py` — NLU padrão: a IA só escolhe **códigos do catálogo**
+    (P1.., A1.., tamanhos cadastrados) via Structured Outputs estrito e dá
+    **comandos** sobre itens do carrinho pelo ID (`definir_qtd`, `remover`,
+    `trocar_tamanho`...). `checar_escolhas` barra escolha que o pedido desmente.
+    Falhou → NLU livre (`fsm/nlu.py`); `nlu_versao: livre` na config de IA desliga.
+  - `fsm/validador.py` — porta do pedido: nada vira resumo/pedido sem passar
+    (item no catálogo, preço = catálogo, total = itens + taxa, endereço, pagamento).
+  - `fsm/confirmacao.py` — "✅ Anotei/Ajustei/Tirei" montado do carrinho real; a
+    voz só escreve a continuação. `fsm/guard.py` barra preço e produto sem lastro.
+  - `fsm/nlu.py` — NLU livre (reserva): extrai intenção + entidades em JSON.
   - `fsm/engine.py` — regras de negócio determinísticas (carrinho, upsell,
     endereço, taxa, pagamento). Decide a ação e pode fixar `mensagem_pronta`.
   - `fsm/voice.py` — LLM redige a fala; `fsm/guard.py` blinda o texto (preço, saudação, nome).
@@ -73,7 +85,7 @@ Infra: Postgres com pgvector + Redis.
 ```bash
 # Backend (usar o venv do projeto; o Python global não tem as dependências)
 cd backend
-.venv/Scripts/python.exe -m pytest tests -q          # ~450 testes, usam mocks
+.venv/Scripts/python.exe -m pytest tests -q          # ~520 testes, usam mocks
 .venv/Scripts/python.exe -m ruff check app            # B008 (Depends) e E402 são intencionais
 docker compose up -d                                  # stack local completa
 
@@ -123,3 +135,8 @@ Antes de commitar: pytest + `npm run lint` passando.
   maior_valor|media), a mesma no agente (`tools._calcular_pedido`) e no cardápio
   digital (`cardapio_publico._preco_dos_sabores`).
 - Correção de bug do agente vem com teste em `backend/tests/` reproduzindo a conversa.
+- Produto, tamanho e adicional no pedido são sempre **por ID do catálogo**
+  (`produto_id`/`sabores_ids`); nunca adicionar busca por nome aproximado (ILIKE)
+  no caminho de preço. Regra de cardápio nova entra em `catalogo.py`, não no prompt.
+- Conferência humana é opção por pizzaria (`handoff.revisar_pedidos`): pedido da IA
+  fica `novo` + `aguardando_revisao` até a loja aprovar; pagamento não pula isso.
