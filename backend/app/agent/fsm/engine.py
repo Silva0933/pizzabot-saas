@@ -130,10 +130,17 @@ def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: flo
 
 
 def _montar_registro_msg(numero: Any, tempo: str | None, metodo_cobr: str | None,
-                         cobr_ok: bool) -> str:
+                         cobr_ok: bool, revisao: bool = False) -> str:
     """BLINDAGEM (Pilar 2): texto do FECHAMENTO montado pelo backend (verbatim)."""
-    linhas = [f"Pedido #{numero} fechado! 🍕"]
-    if tempo:
+    if revisao:
+        # Conferência da loja ligada: não promete prazo antes de alguém aprovar.
+        linhas = [
+            f"Pedido #{numero} recebido! 🍕",
+            "A equipe vai conferir e já te confirma por aqui.",
+        ]
+    else:
+        linhas = [f"Pedido #{numero} fechado! 🍕"]
+    if tempo and not revisao:
         linhas.append(f"Fica pronto em aproximadamente {tempo}.")
     if cobr_ok and metodo_cobr == "pix":
         linhas.append("O QR e o código Pix estão aí em cima — assim que o pagamento cair, eu confirmo pra você! 😊")
@@ -1862,7 +1869,8 @@ async def processar(
         )
         # BLINDAGEM (Pilar 2): mensagem de fechamento escrita pelo backend (verbatim).
         decisao["mensagem_pronta"] = _montar_registro_msg(
-            reg.get("numero_pedido"), reg.get("tempo_estimado"), metodo_cobr, cobr_ok
+            reg.get("numero_pedido"), reg.get("tempo_estimado"), metodo_cobr, cobr_ok,
+            revisao=bool(reg.get("aguardando_revisao")),
         )
         return {"decisao": decisao, "estado": estado}
 

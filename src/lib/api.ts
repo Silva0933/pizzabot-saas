@@ -255,6 +255,8 @@ export interface BackendPedido {
   forma_pagamento: string | null;
   observacoes: string | null;
   payment_status: string;
+  /** Conferência da loja ligada: pedido da IA esperando alguém aprovar. */
+  aguardando_revisao?: boolean;
   link_pagamento: string | null;
   bot_ativo: boolean;
   nps_nota?: number | null;
@@ -623,6 +625,8 @@ export interface AtendimentoConfig {
     resumo_automatico: boolean;
     falhas_nlu_limite: number;
     pendencias_limite: number;
+    validador_limite: number;
+    revisar_pedidos: boolean;
     mensagem_transicao: string;
   };
   followups: {
@@ -661,6 +665,8 @@ export const DEFAULT_ATENDIMENTO_CONFIG: AtendimentoConfig = {
     resumo_automatico: true,
     falhas_nlu_limite: 3,
     pendencias_limite: 3,
+    validador_limite: 2,
+    revisar_pedidos: false,
     mensagem_transicao:
       "Vou chamar um de nossos atendentes para finalizar seu atendimento. Só um instante que a equipe já responde por aqui! 😊",
   },

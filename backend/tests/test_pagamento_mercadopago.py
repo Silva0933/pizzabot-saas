@@ -102,6 +102,7 @@ def _pedido(pizzaria_id, **kw):
     p.payment_id = kw.get("payment_id", None)
     p.payment_status = kw.get("payment_status", "pending")
     p.status = kw.get("status", "novo")
+    p.aguardando_revisao = kw.get("aguardando_revisao", False)
     p.numero_pedido = 42
     return p
 
@@ -261,6 +262,20 @@ class TestWebhookMP:
         assert ped.payment_status == "approved"
         assert ped.status == "confirmado"
         msg.assert_awaited_once()               # avisou o cliente no WhatsApp
+
+    def test_pagamento_aprovado_nao_pula_a_conferencia_da_loja(self):
+        """Camada 5: com "Conferir pedidos antes da cozinha", o pagamento aprovado
+        não leva o pedido para a cozinha — continua "novo" até a loja aprovar."""
+        pizz = _pizzaria()
+        ped = _pedido(pizz.id, aguardando_revisao=True)
+        db = FakeDB([_Res(None), _Res(pizz), _Res(ped), _Res(ped)])
+        out, _ = _rodar_webhook(
+            db,
+            {"type": "payment", "action": "payment.updated", "data": {"id": "77777"}, "user_id": "9988"},
+            payment={"status": "approved", "external_reference": str(ped.id)},
+        )
+        assert out == {"ok": True, "status": "approved"}
+        assert ped.payment_status == "approved" and ped.status == "novo"
 
     def test_pix_confirma_pelo_payment_id(self):
         pizz = _pizzaria()

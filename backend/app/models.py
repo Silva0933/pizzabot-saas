@@ -365,6 +365,8 @@ class Pedido(Base):
 
     payment_id: Mapped[str | None] = mapped_column(String)
     payment_status: Mapped[str] = mapped_column(String, default="pending", nullable=False)
+    # Conferência da loja (migration 032): pedido da IA esperando alguém aprovar.
+    aguardando_revisao: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     link_pagamento: Mapped[str | None] = mapped_column(Text)
 
     origem: Mapped[str] = mapped_column(String(30), default="whatsapp", nullable=False)

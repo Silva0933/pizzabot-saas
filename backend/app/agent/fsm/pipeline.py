@@ -394,22 +394,29 @@ async def run_fsm_agent(
         estado["pendencias_consecutivas"] = 0
 
     pendencias_limite = behavior.handoff.pendencias_limite
-    if behavior.handoff.habilitado and estado.get("pendencias_consecutivas", 0) >= pendencias_limite:
+    # Porta do pedido (validador) barrou o fechamento de novo: em vez de insistir
+    # com o cliente, a equipe assume com o motivo exato.
+    validador_barrou = (
+        bool(decisao.get("validacao"))
+        and int(estado.get("validador_recusas") or 0) >= behavior.handoff.validador_limite
+    )
+    if behavior.handoff.habilitado and (
+        estado.get("pendencias_consecutivas", 0) >= pendencias_limite or validador_barrou
+    ):
         log.warning("FSM escalando por pendências consecutivas acumuladas para pizzaria=%s tel=%s", pizzaria_id, telefone)
         from app.agent.tools import escalar_humano
 
         erro_pendencia = "Falta de dados/erro no pedido"
         for fato in decisao.get("fatos", []):
-            if "precisa resolver" in fato or "erro" in fato:
+            if "precisa resolver" in fato or "erro" in fato or "NÃO pode ser fechado" in fato:
                 erro_pendencia = fato
 
-        await escalar_humano(
-            ctx, db,
-            motivo_escalonamento=(
-                f"Cliente travou em pendências por {pendencias_limite} vezes "
-                f"consecutivas ({erro_pendencia})"
-            ),
+        motivo = (
+            f"A conferência automática barrou o pedido {estado.get('validador_recusas')} vezes ({erro_pendencia})"
+            if validador_barrou else
+            f"Cliente travou em pendências por {pendencias_limite} vezes consecutivas ({erro_pendencia})"
         )
+        await escalar_humano(ctx, db, motivo_escalonamento=motivo)
 
         msg_transicao = handoff_message(
             ctx.personalidade, pizzaria=ctx.pizzaria, cliente_nome=ctx.cliente_nome

@@ -72,6 +72,14 @@ export function OrderCard({
         </div>
       )}
 
+      {/* Conferência da loja (comportamento da pizzaria): a IA fechou, a equipe aprova */}
+      {p.aguardando_revisao && p.status === "novo" && (
+        <div className="px-4 py-2 bg-violet-50 border-b border-violet-100 flex items-center gap-1.5 text-[11px] font-semibold text-violet-800">
+          <CircleCheck className="w-3.5 h-3.5 shrink-0" />
+          <span>Pedido da IA — confira e confirme para ir à cozinha</span>
+        </div>
+      )}
+
       {p.em_problema && (
         <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-1.5 text-[11px] font-semibold text-rose-700">
           <TriangleAlert className="w-3.5 h-3.5 shrink-0" />

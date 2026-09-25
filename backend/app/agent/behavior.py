@@ -57,6 +57,11 @@ class HandoffConfig(BaseModel):
     resumo_automatico: bool = True
     falhas_nlu_limite: int = Field(3, ge=1, le=5)
     pendencias_limite: int = Field(3, ge=1, le=5)
+    # Porta do pedido (validador) barrou o fechamento N vezes seguidas → equipe.
+    validador_limite: int = Field(2, ge=1, le=5)
+    # Conferência humana: pedido fechado pela IA espera alguém da loja aprovar
+    # no painel antes de ir para a cozinha (e antes de o pagamento confirmar).
+    revisar_pedidos: bool = False
     mensagem_transicao: str = Field(
         "Vou chamar um de nossos atendentes para finalizar seu atendimento. "
         "Só um instante que a equipe já responde por aqui! 😊",

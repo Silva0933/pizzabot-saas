@@ -51,7 +51,9 @@ async def _aplicar_pagamento(
 
     # Se aprovou agora: avisa "Pagamento confirmado" e avança o status.
     if payment_status == "approved" and old_payment != "approved":
-        if pedido.status == "novo":
+        # Pedido esperando a conferência da loja continua "novo": pagamento
+        # aprovado não substitui a aprovação humana.
+        if pedido.status == "novo" and not pedido.aguardando_revisao:
             pedido.status = "confirmado"
         await db.flush()
         await enviar_mensagem_status(db, pedido, "pagamento_aprovado")

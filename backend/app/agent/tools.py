@@ -1352,7 +1352,11 @@ async def registrar_pedido(
         and modo_pag != "desativado"
         and not manual_indisponivel
     )
-    novo_status = "novo" if aguardando_pagamento else "confirmado"
+    # Conferência da loja (comportamento da pizzaria): o pedido fica "novo" com a
+    # marca aguardando_revisao até alguém aprovar no painel.
+    from app.agent.behavior import get_behavior
+    revisar = bool(get_behavior(getattr(ctx, "personalidade", None)).handoff.revisar_pedidos)
+    novo_status = "novo" if (aguardando_pagamento or revisar) else "confirmado"
 
     status_anterior = ped.status if ped else None
     valor_anterior = Decimal(str(ped.valor_total)) if ped and ped.valor_total is not None else Decimal("0")
@@ -1379,6 +1383,7 @@ async def registrar_pedido(
             observacoes=observacoes,
         )
         db.add(ped)
+    ped.aguardando_revisao = revisar
 
     # Coordenadas exatas (pino do mapa do entregador): reusa a localização
     # compartilhada no WhatsApp, se houver uma recente.
@@ -1441,6 +1446,7 @@ async def registrar_pedido(
         ),
         "aguardando_pagamento": aguardando_pagamento,
         "status_pedido": novo_status,
+        "aguardando_revisao": revisar,
     }
     if aguardando_pagamento and modo_pag == "manual":
         resultado["instrucao"] = (

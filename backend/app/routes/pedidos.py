@@ -57,6 +57,8 @@ class PedidoOut(BaseModel):
     forma_pagamento: str | None
     observacoes: str | None
     payment_status: str
+    # Conferência da loja ligada: pedido da IA esperando alguém aprovar.
+    aguardando_revisao: bool = False
     link_pagamento: str | None
     bot_ativo: bool
     nps_nota: int | None = None
@@ -146,6 +148,9 @@ async def apply_status_change(
 
     old_status = p.status
     p.status = novo_status
+    # Saiu de "novo" (a loja aprovou ou cancelou): a conferência acabou.
+    if old_status == "novo":
+        p.aguardando_revisao = False
     if novo_status == "cancelado":
         p.cancelado_at = datetime.now(UTC)
         p.cancelamento_motivo = motivo
@@ -503,7 +508,7 @@ async def confirmar_pagamento(
         return p  # idempotente
 
     p.payment_status = "approved"
-    if p.status == "novo":
+    if p.status == "novo" and not p.aguardando_revisao:
         p.status = "confirmado"
     registrar_evento_pedido(db, p, tipo="pagamento_confirmado",
                             detalhes={"payment_status_anterior": old_payment, "payment_status_novo": p.payment_status})

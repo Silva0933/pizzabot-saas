@@ -742,10 +742,12 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
           <div className="space-y-2 mb-4">
             <ToggleRow label="Handoff automático" description="Transfere quando o fluxo não consegue avançar." checked={state.config_atendimento.handoff.habilitado} onChange={(checked) => updateHandoff({ habilitado: checked })} />
             <ToggleRow label="Resumo automático" description="Entrega etapa, itens, pagamento e últimas mensagens ao operador." checked={state.config_atendimento.handoff.resumo_automatico} onChange={(checked) => updateHandoff({ resumo_automatico: checked })} />
+            <ToggleRow label="Conferir pedidos antes da cozinha" description="O pedido fechado pela IA espera alguém da equipe confirmar no painel (nem o pagamento aprovado pula essa etapa)." checked={state.config_atendimento.handoff.revisar_pedidos ?? false} onChange={(checked) => updateHandoff({ revisar_pedidos: checked })} />
           </div>
           <div className="grid grid-cols-2 gap-3 mb-3">
             <NumberField label="Falhas de compreensão" min={1} max={5} value={state.config_atendimento.handoff.falhas_nlu_limite} onChange={(value) => updateHandoff({ falhas_nlu_limite: value })} />
             <NumberField label="Pendências repetidas" min={1} max={5} value={state.config_atendimento.handoff.pendencias_limite} onChange={(value) => updateHandoff({ pendencias_limite: value })} />
+            <NumberField label="Pedido barrado na conferência" min={1} max={5} value={state.config_atendimento.handoff.validador_limite ?? 2} onChange={(value) => updateHandoff({ validador_limite: value })} />
           </div>
           <label className="block">
             <span className="text-[11px] font-semibold text-slate-400">Mensagem de transição</span>

@@ -377,3 +377,18 @@ def test_porta_barra_pedido_invalido_e_nao_registra(cat):
     assert not registrar.await_count
     assert res["decisao"]["acao"] == "pendencia" and res["decisao"]["validacao"] == ["item_invalido"]
     assert res["estado"]["validador_recusas"] == 1
+
+
+# ---------------- Camada 5: conferência humana ----------------
+def test_mensagem_de_fechamento_com_conferencia_nao_promete_prazo():
+    msg = engine._montar_registro_msg(42, "40 min", None, False, revisao=True)
+    assert "#42 recebido" in msg and "conferir" in msg and "40 min" not in msg
+    assert "fechado" in engine._montar_registro_msg(42, "40 min", None, False)
+
+
+def test_config_padrao_da_conferencia():
+    from app.agent.behavior import AtendimentoConfig
+    h = AtendimentoConfig().handoff
+    assert h.revisar_pedidos is False and h.validador_limite == 2
+    h2 = AtendimentoConfig.model_validate({"handoff": {"revisar_pedidos": True, "validador_limite": 3}}).handoff
+    assert h2.revisar_pedidos is True and h2.validador_limite == 3
