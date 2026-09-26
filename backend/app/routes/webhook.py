@@ -357,6 +357,7 @@ async def evolution_webhook(
     # debounce (vira "Oi\nOi"). Marcamos o id do evento no Redis (SET NX, TTL 10min):
     # se já vimos, ignoramos silenciosamente. Best-effort — se o Redis falhar, segue.
     dedup_key: str | None = None
+    ped_rascunho = None
     if evolution_msg_id:
         from app.redis_client import redis as _redis
         try:
@@ -457,7 +458,24 @@ async def evolution_webhook(
             from app.services.order_audit import registrar_evento_pedido
             registrar_evento_pedido(db, ped_rascunho, tipo="criado", status_novo="novo", ator_nome="WhatsApp", ator_tipo="cliente")
 
-            # Dispara o broadcast de novo pedido rascunho para atualizar o painel
+        await db.commit()
+        await db.refresh(msg)
+    except Exception:
+        if dedup_key:
+            try:
+                from app.redis_client import redis as _redis
+                await _redis.delete(dedup_key)
+            except Exception as e_del:  # noqa: BLE001
+                log.debug("Falha ao soltar a marca de dedup: %s", e_del)
+        raise
+
+    # Aviso do rascunho só DEPOIS do commit: antes, se o commit falhasse o painel
+    # ganhava um card de pedido que não existe; e mesmo dando certo, o painel
+    # podia buscar o pedido antes de ele estar visível. O refresh traz o número,
+    # que é gerado por trigger no INSERT (antes ia vazio no evento).
+    if ped_rascunho is not None:
+        try:
+            await db.refresh(ped_rascunho)
             await broadcaster.publish(
                 pizz.id,
                 {
@@ -470,17 +488,8 @@ async def evolution_webhook(
                     },
                 },
             )
-
-        await db.commit()
-        await db.refresh(msg)
-    except Exception:
-        if dedup_key:
-            try:
-                from app.redis_client import redis as _redis
-                await _redis.delete(dedup_key)
-            except Exception as e_del:  # noqa: BLE001
-                log.debug("Falha ao soltar a marca de dedup: %s", e_del)
-        raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha ao avisar o painel do rascunho de pedido: %s", e)
 
     # ---- Reação ✅ ao comprovante do Pix manual (best-effort, decorativa) ----
     # Se há pedido aguardando conferência e a mensagem parece o comprovante
