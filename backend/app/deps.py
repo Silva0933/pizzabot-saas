@@ -7,7 +7,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import decode_token
+from app.auth import decode_token, sessao_revogada
 from app.db import get_db
 from app.models import Entregador, EquipePizzaria, Pizzaria, Usuario
 
@@ -32,6 +32,8 @@ async def current_user(
     user = (await db.execute(select(Usuario).where(Usuario.id == user_id))).scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário não encontrado")
+    if sessao_revogada(user, payload):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão encerrada. Entre novamente.")
     return user
 
 

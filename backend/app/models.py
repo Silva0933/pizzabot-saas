@@ -42,6 +42,8 @@ class Usuario(Base):
     nome: Mapped[str | None] = mapped_column(String)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Tokens emitidos antes disto são recusados (migration 033).
+    sessoes_validas_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

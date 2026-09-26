@@ -14,7 +14,7 @@ import jwt
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
-from app.auth import decode_token
+from app.auth import decode_token, sessao_revogada
 from app.db import AsyncSessionLocal
 from app.models import Entregador, EquipePizzaria, Usuario
 from app.services.broadcaster import broadcaster
@@ -35,7 +35,7 @@ async def _authorize(token: str, pizzaria_id: uuid.UUID) -> Usuario | None:
 
     async with AsyncSessionLocal() as db:
         user = (await db.execute(select(Usuario).where(Usuario.id == user_id))).scalar_one_or_none()
-        if not user:
+        if not user or sessao_revogada(user, payload):
             return None
         if user.is_platform_admin:
             return user
