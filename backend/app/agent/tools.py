@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import AgentContext
 from app.models import Cliente, Conversa, Mensagem, Pedido, Produto
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 log = logging.getLogger(__name__)
 
@@ -1600,9 +1601,9 @@ async def _notificar_painel_pagamento_manual(
         conv = (await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizzaria_id,
-                Conversa.cliente_telefone == telefone,
-            )
-        )).scalar_one_or_none()
+                mesmo_telefone(Conversa.cliente_telefone, telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, telefone))
+        )).scalars().first()
         if conv:
             m = Mensagem(
                 conversa_id=conv.id, pizzaria_id=pizzaria_id, origem="sistema",
@@ -1682,9 +1683,9 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
     cli = ctx.cliente or (await db.execute(
         select(Cliente).where(
             Cliente.pizzaria_id == ctx.pizzaria.id,
-            Cliente.telefone == ctx.telefone,
-        )
-    )).scalar_one_or_none()
+            mesmo_telefone(Cliente.telefone, ctx.telefone),
+        ).order_by(preferir_exato(Cliente.telefone, ctx.telefone))
+    )).scalars().first()
     if not cli:
         return {"ok": False, "motivo": "sem_cliente"}
 
@@ -1940,10 +1941,10 @@ async def escalar_humano(
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == ctx.pizzaria.id,
-                Conversa.cliente_telefone == ctx.telefone,
-            )
+                mesmo_telefone(Conversa.cliente_telefone, ctx.telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, ctx.telefone))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
 
     if conv:
         conv.bot_ativo = False
@@ -2303,8 +2304,10 @@ async def consultar_adicionais(ctx: AgentContext, db: AsyncSession, *, tipo: str
 
 async def _cliente_do_ctx(ctx: AgentContext, db: AsyncSession) -> Cliente | None:
     return ctx.cliente or (await db.execute(
-        select(Cliente).where(Cliente.pizzaria_id == ctx.pizzaria.id, Cliente.telefone == ctx.telefone)
-    )).scalar_one_or_none()
+        select(Cliente).where(
+            Cliente.pizzaria_id == ctx.pizzaria.id, mesmo_telefone(Cliente.telefone, ctx.telefone),
+        ).order_by(preferir_exato(Cliente.telefone, ctx.telefone))
+    )).scalars().first()
 
 
 async def obter_historico_pedidos(ctx: AgentContext, db: AsyncSession, *, limit: int = 3) -> dict[str, Any]:

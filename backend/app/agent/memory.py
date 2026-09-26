@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.llm import to_content
 from app.models import Mensagem
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 # Quantos turnos carregamos pra contexto (cada turno = 1 linha em agente_memoria).
 # Mantido enxuto para economizar tokens de ENTRADA a cada mensagem.
@@ -102,9 +103,9 @@ async def load_history(
     conv_id = (await db.execute(
         select(Conversa.id).where(
             Conversa.pizzaria_id == pizzaria_id,
-            Conversa.cliente_telefone == telefone,
-        )
-    )).scalar_one_or_none()
+            mesmo_telefone(Conversa.cliente_telefone, telefone),
+        ).order_by(preferir_exato(Conversa.cliente_telefone, telefone))
+    )).scalars().first()
     if conv_id is None:
         return []
 

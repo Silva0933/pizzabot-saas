@@ -12,6 +12,7 @@ import logging
 import uuid
 from datetime import UTC
 
+from app.services.telefones import mesmo_telefone, preferir_exato
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -148,8 +149,8 @@ async def _resgatar_carrinho_async(
 
             conv = (await db.execute(select(Conversa).where(
                 Conversa.pizzaria_id == pizzaria_id,
-                Conversa.cliente_telefone == telefone,
-            ))).scalar_one_or_none()
+                mesmo_telefone(Conversa.cliente_telefone, telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, telefone)))).scalars().first()
             # Humano assumiu → não interfere.
             if conv is not None and not getattr(conv, "bot_ativo", True):
                 return {"ok": False, "motivo": "humano_assumiu"}
@@ -255,8 +256,8 @@ async def _lembrar_confirmacao_async(
 
             conv = (await db.execute(select(Conversa).where(
                 Conversa.pizzaria_id == pizzaria_id,
-                Conversa.cliente_telefone == telefone,
-            ))).scalar_one_or_none()
+                mesmo_telefone(Conversa.cliente_telefone, telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, telefone)))).scalars().first()
             # Se um humano assumiu, não interferimos.
             if conv is not None and not getattr(conv, "bot_ativo", True):
                 return {"ok": False, "motivo": "humano_assumiu"}

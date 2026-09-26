@@ -826,6 +826,7 @@ class TestHumanizacaoEMelhorias:
 
                     res_conv = MagicMock()
                     res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+                    res_conv.scalars.return_value.first.return_value = conv
 
                     db.execute.side_effect = [res_pizz, res_conv]
 
@@ -972,6 +973,7 @@ class TestMelhoriasEspecificas:
                         conv.bot_ativo = True
                         res_conv = MagicMock()
                         res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+                        res_conv.scalars.return_value.first.return_value = conv
 
                         db.execute.side_effect = [res_pizz, res_conv]
 

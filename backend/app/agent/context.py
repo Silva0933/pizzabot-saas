@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Cliente, Pedido, PersonalidadeAtendente, Pizzaria
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 # "O de sempre" só é oferecido quando há um PADRÃO real: o mesmo item aparece
 # nos últimos N pedidos reais do cliente. Assim, quem pediu 1 vez (ou pediu
@@ -103,10 +104,10 @@ async def load_context(
         await db.execute(
             select(Cliente).where(
                 Cliente.pizzaria_id == pizzaria_id,
-                Cliente.telefone == telefone,
-            )
+                mesmo_telefone(Cliente.telefone, telefone),
+            ).order_by(preferir_exato(Cliente.telefone, telefone))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
 
     resumo = None
     # "O de sempre" só quando o mesmo item se repete nos últimos N pedidos reais.

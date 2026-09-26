@@ -48,6 +48,7 @@ class TestLembreteConfirmacao:
         pizz = MagicMock(); pizz.id = "p1"; pizz.instancia = "inst"
 
         res_conv = MagicMock(); res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+        res_conv.scalars.return_value.first.return_value = conv  # busca por telefone equivalente
         res_pizz = MagicMock(); res_pizz.scalar_one_or_none = MagicMock(return_value=pizz)
         db = AsyncMock(); db.execute = AsyncMock(side_effect=[res_conv, res_pizz])
         send = AsyncMock()
@@ -90,6 +91,7 @@ class TestLembreteConfirmacao:
         estado = {"etapa": "AGUARDANDO_CONFIRMACAO"}
         conv = MagicMock(); conv.bot_ativo = False  # operador assumiu
         res_conv = MagicMock(); res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+        res_conv.scalars.return_value.first.return_value = conv  # busca por telefone equivalente
         db = AsyncMock(); db.execute = AsyncMock(return_value=res_conv)
         send = AsyncMock()
 

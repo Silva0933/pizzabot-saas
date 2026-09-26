@@ -23,6 +23,7 @@ from app.db import get_db
 from app.models import Cliente, Conversa, Mensagem, Pedido, Pizzaria, Produto
 from app.services.order_audit import registrar_evento_pedido
 from app.services.rate_limit import allow, client_ip
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/menu", tags=["cardapio_digital"])
@@ -452,10 +453,10 @@ async def acompanhar_pedido(
             .where(
                 Pedido.pizzaria_id == pizz.id,
                 Pedido.numero_pedido == numero,
-                Cliente.telefone == telefone_limpo,
+                mesmo_telefone(Cliente.telefone, telefone_limpo),
             )
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if not pedido:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado. Confira os dados.")
 
@@ -857,8 +858,10 @@ async def cadastrar_conta_cliente(
     if por_email and por_email.conta_ativa:
         raise HTTPException(status.HTTP_409_CONFLICT, "Já existe uma conta com este e-mail.")
     por_telefone = (await db.execute(
-        select(Cliente).where(Cliente.pizzaria_id == pizzaria.id, Cliente.telefone == telefone)
-    )).scalar_one_or_none()
+        select(Cliente).where(
+            Cliente.pizzaria_id == pizzaria.id, mesmo_telefone(Cliente.telefone, telefone),
+        ).order_by(preferir_exato(Cliente.telefone, telefone))
+    )).scalars().first()
     if por_telefone and por_telefone.conta_ativa and por_telefone.email != email:
         raise HTTPException(status.HTTP_409_CONFLICT, "Este WhatsApp já está vinculado a outra conta.")
     if por_email and por_telefone and por_email.id != por_telefone.id:
@@ -947,10 +950,10 @@ async def atualizar_conta_cliente(
     telefone_em_uso = (await db.execute(
         select(Cliente.id).where(
             Cliente.pizzaria_id == pizzaria.id,
-            Cliente.telefone == telefone,
+            mesmo_telefone(Cliente.telefone, telefone),
             Cliente.id != cliente.id,
         )
-    )).scalar_one_or_none()
+    )).scalars().first()
     if telefone_em_uso:
         raise HTTPException(status.HTTP_409_CONFLICT, "Este WhatsApp ja esta vinculado a outra conta.")
 
