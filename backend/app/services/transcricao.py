@@ -124,3 +124,108 @@ async def transcrever_audio(db: AsyncSession, audio_b64: str, mimetype: str = "a
 
     log.warning("Transcrição: nenhum caminho disponível/funcionou (configure uma chave Gemini)")
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Transcrição FORA do webhook
+# --------------------------------------------------------------------------- #
+# Antes o webhook baixava e transcrevia o áudio antes de responder 200 à
+# Evolution. Um áudio longo (ou o provedor lento) estourava o timeout dela, que
+# reentregava o evento. Agora o webhook salva "[áudio]" e responde na hora; quem
+# transcreve é o worker/dispatcher, antes de chamar o agente (ou uma tarefa em
+# segundo plano, quando a mensagem não vai para o agente).
+def referencia_midia(data: dict) -> dict | None:
+    """O mínimo que a Evolution precisa para baixar a mídia (vai para a fila no
+    Redis). Descarta o base64 que alguns webhooks já mandam embutido."""
+    msg = data.get("message") or {}
+    audio = msg.get("audioMessage")
+    if not audio or not data.get("key"):
+        return None
+    return {"key": data["key"], "message": {"audioMessage": audio}}
+
+
+async def transcrever_mensagem_audio(
+    db: AsyncSession, pizzaria_id, mensagem_id, midia: dict
+) -> str | None:
+    """Baixa, transcreve e grava a transcrição na mensagem. Best-effort: devolve
+    None (e a mensagem fica como "[áudio]") se algo falhar."""
+    import uuid as _uuid
+
+    from sqlalchemy import select
+
+    from app.models import Conversa, Mensagem, Pizzaria
+    from app.services.broadcaster import broadcaster
+    from app.services.evolution import evolution
+
+    try:
+        pid = _uuid.UUID(str(pizzaria_id))
+        pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pid))).scalar_one_or_none()
+        if not pizz or not pizz.instancia:
+            return None
+        b64 = await evolution.get_media_base64(instancia=pizz.instancia, message=midia)
+        if not b64:
+            return None
+        audio = (midia.get("message") or {}).get("audioMessage") or {}
+        texto = await transcrever_audio(db, b64, audio.get("mimetype") or "audio/ogg")
+        if not texto:
+            return None
+
+        msg = (await db.execute(select(Mensagem).where(
+            Mensagem.id == _uuid.UUID(str(mensagem_id)), Mensagem.pizzaria_id == pid,
+        ))).scalar_one_or_none()
+        if msg is None:
+            return texto
+        msg.conteudo = texto
+        msg.tipo = "texto"
+        msg.metadata_json = {**(msg.metadata_json or {}), "transcrito_de": "audio"}
+        conv = (await db.execute(select(Conversa).where(Conversa.id == msg.conversa_id))).scalar_one_or_none()
+        if conv is not None and conv.last_message == "[áudio]":
+            conv.last_message = texto
+        await db.commit()
+        await broadcaster.publish(pid, {
+            "tipo": "mensagem.atualizada",
+            "pizzaria_id": str(pid),
+            "payload": {
+                "conversa_id": str(msg.conversa_id),
+                "mensagem_id": str(msg.id),
+                "conteudo": texto,
+                "tipo": "texto",
+            },
+        })
+        return texto
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha na transcrição de áudio (mensagem=%s): %s", mensagem_id, e)
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+
+async def transcrever_pendentes(pizzaria_id, pending: list[dict]) -> None:
+    """Troca "[áudio]" pela transcrição nos itens do lote antes de ir ao agente.
+    Abre a própria sessão: o commit da transcrição não se mistura com o agente."""
+    audios = [
+        p for p in pending
+        if (p.get("metadata") or {}).get("tipo") == "audio" and (p.get("metadata") or {}).get("midia")
+    ]
+    if not audios:
+        return
+    from app.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        for item in audios:
+            texto = await transcrever_mensagem_audio(
+                db, pizzaria_id, item.get("mensagem_id"), item["metadata"]["midia"],
+            )
+            if texto:
+                item["conteudo"] = texto
+
+
+async def transcrever_em_segundo_plano(pizzaria_id, mensagem_id, midia: dict) -> None:
+    """Para áudio que não vai ao agente (bot desligado, fora do horário): a
+    equipe ainda lê a transcrição no painel."""
+    from app.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        await transcrever_mensagem_audio(db, pizzaria_id, mensagem_id, midia)

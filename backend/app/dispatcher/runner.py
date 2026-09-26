@@ -123,6 +123,9 @@ async def _handle(entry_id: str, conv: str | None, sem: asyncio.Semaphore) -> No
             pending = await drain_pending(pid_uuid, tel)
             if pending:
                 t0 = time.monotonic()
+                # Áudio chega como "[áudio]": transcreve aqui, fora do webhook.
+                from app.services.transcricao import transcrever_pendentes
+                await transcrever_pendentes(pid_uuid, pending)
                 conteudo = "\n".join(p["conteudo"] for p in pending if p.get("conteudo"))
                 if conteudo.strip():
                     from app.agent.runner import process_and_reply

@@ -30,6 +30,9 @@ from app.services.queue import enqueue_message
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])
 
+# Tasks disparadas depois da resposta (ex.: transcrição de áudio fora do agente).
+_TAREFAS_FUNDO: set = set()
+
 
 # ============================================
 # Helpers
@@ -376,20 +379,14 @@ async def evolution_webhook(
     # UNIQUE de conversas/clientes), a Evolution reentrega o evento — e sem soltar
     # a marca a reentrega era descartada como duplicada: mensagem perdida.
     try:
-        # ---- áudio: transcreve para o agente entender o pedido por voz ----
+        # ---- áudio: a transcrição NÃO acontece aqui ----
+        # Baixar + transcrever antes do 200 fazia a Evolution estourar o timeout
+        # em áudio longo e reentregar. A mensagem entra como "[áudio]" e o
+        # worker/dispatcher transcreve antes do agente (services/transcricao).
+        midia_audio = None
         if tipo == "audio" and pizz.instancia:
-            try:
-                from app.services.transcricao import transcrever_audio
-                b64 = await evolution.get_media_base64(instancia=pizz.instancia, message=data)
-                if b64:
-                    mtype = (metadata.get("audio") or {}).get("mimetype") or "audio/ogg"
-                    texto = await transcrever_audio(db, b64, mtype)
-                    if texto:
-                        conteudo = texto
-                        tipo = "texto"
-                        metadata["transcrito_de"] = "audio"
-            except Exception as e:  # noqa: BLE001
-                log.warning("Falha na transcrição de áudio: %s", e)
+            from app.services.transcricao import referencia_midia
+            midia_audio = referencia_midia(data)
 
         # ---- persiste ----
         conv = await _get_or_create_conversa(db, pizz.id, telefone, push_name)
@@ -529,8 +526,9 @@ async def evolution_webhook(
                 telefone=telefone,
                 mensagem_id=msg.id,
                 conteudo=conteudo,
-                metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
+                metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo, "midia": midia_audio},
             )
+            midia_audio = None  # quem transcreve agora é o worker/dispatcher
             if getattr(pizz, "usar_dispatcher", False):
                 # Etapa 1: arma no ZSET de prazos; o serviço dispatcher drena.
                 from app.services.queue import arm_dispatcher
@@ -543,6 +541,17 @@ async def evolution_webhook(
                     args=[str(pizz.id), telefone],
                     countdown=DEBOUNCE_SECONDS + 0.5,
                 )
+
+    if midia_audio:
+        # Não foi para o agente (bot desligado / fora do horário): transcreve em
+        # segundo plano só para a equipe ler no painel.
+        import asyncio
+
+        from app.services.transcricao import transcrever_em_segundo_plano
+        tarefa = asyncio.create_task(transcrever_em_segundo_plano(pizz.id, msg.id, midia_audio))
+        # Sem guardar a referência, o GC pode matar a task no meio.
+        _TAREFAS_FUNDO.add(tarefa)
+        tarefa.add_done_callback(_TAREFAS_FUNDO.discard)
 
     await broadcaster.publish(
         pizz.id,

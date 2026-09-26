@@ -1154,6 +1154,7 @@ export interface LLMUsage {
 export interface WsEvent {
   tipo:
     | "mensagem.nova"
+    | "mensagem.atualizada"
     | "conversa.atualizada"
     | "pedido.novo"
     | "pedido.atualizado"

@@ -403,6 +403,10 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
         if not pending:
             return {"empty": True}
 
+        # Áudio chega como "[áudio]": transcreve aqui, fora do webhook.
+        from app.services.transcricao import transcrever_pendentes
+        await transcrever_pendentes(pizzaria_id, pending)
+
         # Concatena as msgs batched
         conteudo = "\n".join(item["conteudo"] for item in pending if item.get("conteudo"))
         if not conteudo.strip():
