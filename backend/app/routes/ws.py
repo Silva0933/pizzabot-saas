@@ -7,6 +7,7 @@ Conexão:
 Validamos JWT + vínculo de equipe antes de aceitar.
 Eventos chegam via Broadcaster (pub/sub Redis).
 """
+import asyncio
 import logging
 import uuid
 
@@ -14,19 +15,35 @@ import jwt
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
-from app.auth import decode_token, sessao_revogada
+from app.auth import sessao_revogada
+from app.config import get_settings
 from app.db import AsyncSessionLocal
-from app.models import Entregador, EquipePizzaria, Usuario
+from app.models import Entregador, EquipePizzaria, Pizzaria, Usuario
 from app.services.broadcaster import broadcaster
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["ws"])
 
 
-async def _authorize(token: str, pizzaria_id: uuid.UUID) -> Usuario | None:
-    """Valida JWT e checa se o usuário pode acessar essa pizzaria."""
+# De quanto em quanto tempo a conexão aberta é reavaliada. Antes o acesso só era
+# checado ao conectar: usuário removido da equipe, entregador desativado, sessão
+# revogada ou pizzaria suspensa seguiam recebendo os eventos até desconectar.
+REVALIDAR_A_CADA_S = 60
+
+
+async def _authorize(
+    token: str, pizzaria_id: uuid.UUID, *, verificar_exp: bool = True
+) -> Usuario | None:
+    """Valida JWT e checa se o usuário pode acessar essa pizzaria (e se ela não
+    está suspensa). Na revalidação periódica a expiração do token não conta: o
+    que importa é o acesso atual, conferido no banco — senão a conexão cairia de
+    hora em hora só porque o access token venceu."""
     try:
-        payload = decode_token(token)
+        cfg = get_settings()
+        payload = jwt.decode(
+            token, cfg.app_secret_key, algorithms=[cfg.jwt_algorithm],
+            options={"verify_exp": verificar_exp},
+        )
         if payload.get("typ") != "access":
             return None
         user_id = uuid.UUID(payload["sub"])
@@ -39,6 +56,11 @@ async def _authorize(token: str, pizzaria_id: uuid.UUID) -> Usuario | None:
             return None
         if user.is_platform_admin:
             return user
+        suspensa = (await db.execute(
+            select(Pizzaria.suspensa).where(Pizzaria.id == pizzaria_id)
+        )).scalar_one_or_none()
+        if suspensa:
+            return None
         link = (
             await db.execute(
                 select(EquipePizzaria).where(
@@ -95,9 +117,16 @@ async def _handle_ws(websocket: WebSocket, token: str, pizzaria_id: uuid.UUID) -
             "pizzaria_id": str(pizzaria_id),
             "payload": {"user": user.email},
         })
-        # Loop: aceita pings/pongs do cliente (não esperamos mensagens reais)
+        # Loop: aceita pings/pongs do cliente (não esperamos mensagens reais) e
+        # reavalia o acesso periodicamente.
         while True:
-            await websocket.receive_text()
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=REVALIDAR_A_CADA_S)
+            except TimeoutError:
+                if not await _authorize(token, pizzaria_id, verificar_exp=False):
+                    log.info("WS encerrado (acesso revogado): user=%s pizzaria=%s", user.email, pizzaria_id)
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
     except WebSocketDisconnect:
         pass
     except Exception as e:
