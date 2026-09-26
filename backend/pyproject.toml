@@ -67,6 +67,10 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["app*"]
 
+[tool.pytest.ini_options]
+# Fixa o escopo atual (o pytest-asyncio avisava que o padrão vai mudar).
+asyncio_default_fixture_loop_scope = "function"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

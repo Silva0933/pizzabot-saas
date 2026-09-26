@@ -280,6 +280,7 @@ class TestBuscarCardapioPayload:
     def _db_com_linhas(self, linhas):
         from unittest.mock import AsyncMock, MagicMock
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
         res = MagicMock()
         res.fetchall = MagicMock(return_value=linhas)
         db.execute = AsyncMock(return_value=res)
@@ -424,6 +425,7 @@ class TestPedidoDeSempre:
         res = MagicMock()
         res.scalars = MagicMock(return_value=scal)
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
         db.execute = AsyncMock(return_value=res)
         return db
 
@@ -772,6 +774,7 @@ class TestHumanizacaoEMelhorias:
         ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
         res = MagicMock()
         res.fetchall = MagicMock(return_value=[("Calabresa G", "Pizzas"), ("Coca-Cola 2L", "Bebidas")])
         db.execute = AsyncMock(return_value=res)
@@ -788,6 +791,7 @@ class TestHumanizacaoEMelhorias:
         from unittest.mock import AsyncMock, MagicMock
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
         res = MagicMock()
         tamanhos = [{"tamanho": "G", "preco": 55.0}, {"tamanho": "M", "preco": 45.0}]
         res.first = MagicMock(return_value=("Calabresa", 50.0, tamanhos))
@@ -804,6 +808,7 @@ class TestHumanizacaoEMelhorias:
         from app.agent.runner import process_and_reply
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
         # Simula erro de IA
         with patch("app.agent.runner.run_agent", side_effect=RuntimeError("API Error")):
             with patch("app.services.evolution.evolution.send_text", new_callable=AsyncMock) as mock_send:
@@ -854,6 +859,7 @@ class TestHumanizacaoEMelhorias:
         res_prod = MagicMock()
         res_prod.first = MagicMock(return_value=("Calabresa", 50.0, None))
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
         db.execute = AsyncMock(return_value=res_prod)
 
         r = asyncio.run(registrar_pedido(
@@ -893,6 +899,7 @@ class TestMelhoriasEspecificas:
         ctx.pizzaria.adicionais = []
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
 
         # Simulamos que _obter_preco_produto retorna "Calabresa (G)" e "Frango (G)"
         with patch("app.agent.tools._obter_preco_produto") as mock_obter_preco:
@@ -924,6 +931,7 @@ class TestMelhoriasEspecificas:
         ctx.pizzaria.adicionais = []
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
 
         with patch("app.agent.tools._obter_preco_produto") as mock_obter_preco:
             # "Frango" tem a letra "g"
@@ -947,6 +955,7 @@ class TestMelhoriasEspecificas:
         from app.agent.runner import process_and_reply
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
 
         # Mock de run_fsm_agent para demorar e dar timeout
         async def mock_run_fsm_delay(*args, **kwargs):
@@ -1029,6 +1038,7 @@ class TestCardapioRelacional:
         ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
 
         db = AsyncMock()
+        db.add = MagicMock()  # Session.add é síncrono
 
         # 1. Caso com adicional válido
         res_ok = MagicMock()
