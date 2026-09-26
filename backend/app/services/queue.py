@@ -118,6 +118,25 @@ async def should_flush_now(pizzaria_id: uuid.UUID, telefone: str) -> tuple[bool,
     return False, delta
 
 
+# KEYS: pending, inflight, flush_at, batch_start. Junta o inflight órfão (de um
+# crash anterior) com as pendentes, regrava tudo no inflight (TTL 1h) e limpa
+# pending + marcadores de debounce. Devolve o lote completo.
+_DRAIN_LUA = """
+local itens = redis.call('LRANGE', KEYS[2], 0, -1)
+local pendentes = redis.call('LRANGE', KEYS[1], 0, -1)
+for _, p in ipairs(pendentes) do table.insert(itens, p) end
+redis.call('DEL', KEYS[1], KEYS[3], KEYS[4])
+if #itens > 0 then
+  redis.call('DEL', KEYS[2])
+  for i = 1, #itens, 5000 do
+    redis.call('RPUSH', KEYS[2], unpack(itens, i, math.min(i + 4999, #itens)))
+  end
+  redis.call('EXPIRE', KEYS[2], 3600)
+end
+return itens
+"""
+
+
 async def drain_pending(pizzaria_id: uuid.UUID, telefone: str) -> list[dict[str, Any]]:
     """Tira as msgs pendentes (atômico), limpa o flush_at e move o lote para um
     "inflight" durável.
@@ -132,29 +151,20 @@ async def drain_pending(pizzaria_id: uuid.UUID, telefone: str) -> list[dict[str,
     Também reincorpora qualquer `inflight` deixado por uma execução anterior que
     falhou (recuperação automática).
     """
-    pkey = _pending_key(pizzaria_id, telefone)
-    ikey = _inflight_key(pizzaria_id, telefone)
-
-    # 1) Lê inflight órfão (de um crash anterior) + pendentes novas, e remove a
-    #    lista de pendentes + os marcadores de debounce — tudo atômico.
-    pipe = redis.pipeline()
-    pipe.lrange(ikey, 0, -1)
-    pipe.lrange(pkey, 0, -1)
-    pipe.delete(pkey)
-    pipe.delete(_flush_key(pizzaria_id, telefone))
-    pipe.delete(_first_seen_key(pizzaria_id, telefone))
-    inflight_raw, pending_raw, *_ = await pipe.execute()
-
-    itens_raw = list(inflight_raw) + list(pending_raw)
+    # Um script Lua só: o Redis executa tudo de uma vez. Antes eram duas
+    # pipelines (1: lê e apaga pending; 2: regrava o inflight). Se o processo
+    # caísse entre elas, as pendentes já tinham saído de `pending` sem entrar no
+    # `inflight` — mensagens perdidas.
+    itens_raw = await redis.eval(
+        _DRAIN_LUA,
+        4,
+        _pending_key(pizzaria_id, telefone),
+        _inflight_key(pizzaria_id, telefone),
+        _flush_key(pizzaria_id, telefone),
+        _first_seen_key(pizzaria_id, telefone),
+    )
     if not itens_raw:
         return []
-
-    # 2) Regrava o lote completo no inflight (durável até o envio ser confirmado).
-    pipe2 = redis.pipeline()
-    pipe2.delete(ikey)
-    pipe2.rpush(ikey, *itens_raw)
-    pipe2.expire(ikey, 3600)
-    await pipe2.execute()
 
     return [json.loads(item) for item in itens_raw]
 
