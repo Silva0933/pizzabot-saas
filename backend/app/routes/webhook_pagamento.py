@@ -50,7 +50,20 @@ async def _aplicar_pagamento(
     pedido.payment_status = payment_status
 
     # Se aprovou agora: avisa "Pagamento confirmado" e avança o status.
-    if payment_status == "approved" and old_payment != "approved":
+    if payment_status == "approved" and old_payment != "approved" and pedido.status == "cancelado":
+        # Pagou um pedido já cancelado (ex.: Pix pago depois do cancelamento). A
+        # mensagem padrão diria "enviado pro preparo" — mentira. Não avisa o
+        # cliente e alerta a loja: o dinheiro entrou e precisa de estorno/contato.
+        from app.services.alertas import registrar_alerta
+        await registrar_alerta(
+            db, tipo="pagamento_pedido_cancelado", nivel="error",
+            pizzaria_id=pedido.pizzaria_id,
+            detalhe=(
+                f"Pagamento {payment_id} aprovado para o pedido #{pedido.numero_pedido}, "
+                "que está cancelado. Verifique estorno ou reabertura com o cliente."
+            ),
+        )
+    elif payment_status == "approved" and old_payment != "approved":
         # Pedido esperando a conferência da loja continua "novo": pagamento
         # aprovado não substitui a aprovação humana.
         if pedido.status == "novo" and not pedido.aguardando_revisao:
@@ -304,6 +317,16 @@ async def webhook_asaas(request: Request, db: AsyncSession = Depends(get_db)) ->
     except Exception as e:  # noqa: BLE001
         log.exception("Falha consultando Asaas: %s", e)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Asaas indisponível") from e
+
+    # O pagamento consultado precisa ser DESTE pedido. Sem isto, bastava pagar um
+    # pedido barato e forjar o webhook com o payment_id dele e o externalReference
+    # de outro pedido (caro, do mesmo cliente) para o caro virar "pago".
+    if str(pago.get("externalReference") or "").strip() != str(pedido_id):
+        log.warning(
+            "Asaas webhook: pagamento %s não pertence ao pedido %s (externalReference=%r)",
+            payment_id, pedido_id, pago.get("externalReference"),
+        )
+        return {"ignored": "pagamento_de_outro_pedido"}
 
     novo_status = asaas_status_para_interno(pago.get("status", "PENDING"))
     await _aplicar_pagamento(db, pedido_id, payment_id=str(payment_id), payment_status=novo_status)

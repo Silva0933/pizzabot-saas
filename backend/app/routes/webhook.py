@@ -356,6 +356,7 @@ async def evolution_webhook(
     # a mesma mensagem é persistida 2x e o conteúdo entra duplicado na fila de
     # debounce (vira "Oi\nOi"). Marcamos o id do evento no Redis (SET NX, TTL 10min):
     # se já vimos, ignoramos silenciosamente. Best-effort — se o Redis falhar, segue.
+    dedup_key: str | None = None
     if evolution_msg_id:
         from app.redis_client import redis as _redis
         try:
@@ -365,108 +366,121 @@ async def evolution_webhook(
             if not primeiro:
                 log.info("Webhook duplicado ignorado (evolution_id=%s)", evolution_msg_id)
                 return {"ignored": "duplicate", "evolution_id": evolution_msg_id}
+            dedup_key = f"wh:seen:{payload.instance}:{evolution_msg_id}"
         except Exception as e:  # noqa: BLE001
             log.debug("Falha no dedup de webhook (seguindo sem dedup): %s", e)
 
-    # ---- áudio: transcreve para o agente entender o pedido por voz ----
-    if tipo == "audio" and pizz.instancia:
-        try:
-            from app.services.transcricao import transcrever_audio
-            b64 = await evolution.get_media_base64(instancia=pizz.instancia, message=data)
-            if b64:
-                mtype = (metadata.get("audio") or {}).get("mimetype") or "audio/ogg"
-                texto = await transcrever_audio(db, b64, mtype)
-                if texto:
-                    conteudo = texto
-                    tipo = "texto"
-                    metadata["transcrito_de"] = "audio"
-        except Exception as e:  # noqa: BLE001
-            log.warning("Falha na transcrição de áudio: %s", e)
+    # A marca do dedup é gravada ANTES de persistir. Se a persistência falhar
+    # (ex.: duas primeiras mensagens de um contato novo chegando juntas batem no
+    # UNIQUE de conversas/clientes), a Evolution reentrega o evento — e sem soltar
+    # a marca a reentrega era descartada como duplicada: mensagem perdida.
+    try:
+        # ---- áudio: transcreve para o agente entender o pedido por voz ----
+        if tipo == "audio" and pizz.instancia:
+            try:
+                from app.services.transcricao import transcrever_audio
+                b64 = await evolution.get_media_base64(instancia=pizz.instancia, message=data)
+                if b64:
+                    mtype = (metadata.get("audio") or {}).get("mimetype") or "audio/ogg"
+                    texto = await transcrever_audio(db, b64, mtype)
+                    if texto:
+                        conteudo = texto
+                        tipo = "texto"
+                        metadata["transcrito_de"] = "audio"
+            except Exception as e:  # noqa: BLE001
+                log.warning("Falha na transcrição de áudio: %s", e)
 
-    # ---- persiste ----
-    conv = await _get_or_create_conversa(db, pizz.id, telefone, push_name)
-    msg = Mensagem(
-        conversa_id=conv.id,
-        pizzaria_id=pizz.id,
-        origem="cliente",
-        tipo=tipo,
-        conteudo=conteudo,
-        metadata_json=metadata,
-    )
-    db.add(msg)
-
-    # Atualiza conversa
-    conv.last_message = conteudo
-    conv.last_timestamp = datetime.now(UTC)
-    conv.unread_count = (conv.unread_count or 0) + 1
-    if push_name and not conv.cliente_nome:
-        conv.cliente_nome = push_name
-
-    # ---- Garante rascunho de pedido em 'Novos' se não houver pedido ativo ----
-    from decimal import Decimal
-
-    from app.models import Cliente, Pedido
-
-    from app.services.telefones import telefones_equivalentes
-    stmt_cli = select(Cliente).where(
-        Cliente.pizzaria_id == pizz.id,
-        Cliente.telefone.in_(sorted(telefones_equivalentes(telefone) | {telefone})),
-    ).order_by(case((Cliente.telefone == telefone, 0), else_=1))
-    cli = (await db.execute(stmt_cli)).scalars().first()
-    if not cli:
-        cli = Cliente(
+        # ---- persiste ----
+        conv = await _get_or_create_conversa(db, pizz.id, telefone, push_name)
+        msg = Mensagem(
+            conversa_id=conv.id,
             pizzaria_id=pizz.id,
-            telefone=telefone,
-            nome=push_name,
+            origem="cliente",
+            tipo=tipo,
+            conteudo=conteudo,
+            metadata_json=metadata,
         )
-        db.add(cli)
-        await db.flush()
-    else:
-        if push_name and not cli.nome:
-            cli.nome = push_name
+        db.add(msg)
+
+        # Atualiza conversa
+        conv.last_message = conteudo
+        conv.last_timestamp = datetime.now(UTC)
+        conv.unread_count = (conv.unread_count or 0) + 1
+        if push_name and not conv.cliente_nome:
+            conv.cliente_nome = push_name
+
+        # ---- Garante rascunho de pedido em 'Novos' se não houver pedido ativo ----
+        from decimal import Decimal
+
+        from app.models import Cliente, Pedido
+        from app.services.telefones import telefones_equivalentes
+        stmt_cli = select(Cliente).where(
+            Cliente.pizzaria_id == pizz.id,
+            Cliente.telefone.in_(sorted(telefones_equivalentes(telefone) | {telefone})),
+        ).order_by(case((Cliente.telefone == telefone, 0), else_=1))
+        cli = (await db.execute(stmt_cli)).scalars().first()
+        if not cli:
+            cli = Cliente(
+                pizzaria_id=pizz.id,
+                telefone=telefone,
+                nome=push_name,
+            )
+            db.add(cli)
             await db.flush()
+        else:
+            if push_name and not cli.nome:
+                cli.nome = push_name
+                await db.flush()
 
-    # Lead em "Novos": cria um card de rascunho para CADA conversa/contato novo
-    # (mesmo que a 1ª mensagem seja só "oi"), desde que não exista um pedido ativo
-    # do cliente. Assim a equipe vê todo contato que chega no Kanban. Como o card
-    # só nasce quando NÃO há pedido ativo, mensagens repetidas não duplicam o card.
-    stmt_ped = select(Pedido).where(
-        Pedido.pizzaria_id == pizz.id,
-        Pedido.cliente_id == cli.id,
-        Pedido.status.in_(["novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho"]),
-    )
-    ped_ativo = (await db.execute(stmt_ped)).scalars().first()
-
-    if not ped_ativo:
-        ped_rascunho = Pedido(
-            pizzaria_id=pizz.id,
-            cliente_id=cli.id,
-            itens=[],
-            valor_total=Decimal("0.00"),
-            status="novo",
-            tipo="delivery",
+        # Lead em "Novos": cria um card de rascunho para CADA conversa/contato novo
+        # (mesmo que a 1ª mensagem seja só "oi"), desde que não exista um pedido ativo
+        # do cliente. Assim a equipe vê todo contato que chega no Kanban. Como o card
+        # só nasce quando NÃO há pedido ativo, mensagens repetidas não duplicam o card.
+        stmt_ped = select(Pedido).where(
+            Pedido.pizzaria_id == pizz.id,
+            Pedido.cliente_id == cli.id,
+            Pedido.status.in_(["novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho"]),
         )
-        db.add(ped_rascunho)
-        await db.flush()
-        from app.services.order_audit import registrar_evento_pedido
-        registrar_evento_pedido(db, ped_rascunho, tipo="criado", status_novo="novo", ator_nome="WhatsApp", ator_tipo="cliente")
+        ped_ativo = (await db.execute(stmt_ped)).scalars().first()
 
-        # Dispara o broadcast de novo pedido rascunho para atualizar o painel
-        await broadcaster.publish(
-            pizz.id,
-            {
-                "tipo": "pedido.novo",
-                "pizzaria_id": str(pizz.id),
-                "payload": {
-                    "pedido_id": str(ped_rascunho.id),
-                    "numero_pedido": ped_rascunho.numero_pedido,
-                    "status": ped_rascunho.status,
+        if not ped_ativo:
+            ped_rascunho = Pedido(
+                pizzaria_id=pizz.id,
+                cliente_id=cli.id,
+                itens=[],
+                valor_total=Decimal("0.00"),
+                status="novo",
+                tipo="delivery",
+            )
+            db.add(ped_rascunho)
+            await db.flush()
+            from app.services.order_audit import registrar_evento_pedido
+            registrar_evento_pedido(db, ped_rascunho, tipo="criado", status_novo="novo", ator_nome="WhatsApp", ator_tipo="cliente")
+
+            # Dispara o broadcast de novo pedido rascunho para atualizar o painel
+            await broadcaster.publish(
+                pizz.id,
+                {
+                    "tipo": "pedido.novo",
+                    "pizzaria_id": str(pizz.id),
+                    "payload": {
+                        "pedido_id": str(ped_rascunho.id),
+                        "numero_pedido": ped_rascunho.numero_pedido,
+                        "status": ped_rascunho.status,
+                    },
                 },
-            },
-        )
+            )
 
-    await db.commit()
-    await db.refresh(msg)
+        await db.commit()
+        await db.refresh(msg)
+    except Exception:
+        if dedup_key:
+            try:
+                from app.redis_client import redis as _redis
+                await _redis.delete(dedup_key)
+            except Exception as e_del:  # noqa: BLE001
+                log.debug("Falha ao soltar a marca de dedup: %s", e_del)
+        raise
 
     # ---- Reação ✅ ao comprovante do Pix manual (best-effort, decorativa) ----
     # Se há pedido aguardando conferência e a mensagem parece o comprovante

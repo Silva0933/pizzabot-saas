@@ -73,4 +73,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
-ignore = ["E501"]
+# B008: `Depends(...)` em default é o idioma do FastAPI. E402: imports tardios
+# de propósito (evitam ciclo entre agent/, services/ e workers/).
+# UP038: regra depreciada no próprio ruff (isinstance com tupla é mais rápido).
+ignore = ["E501", "B008", "E402", "UP038"]

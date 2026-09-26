@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 async def geocode_address(endereco: str) -> dict[str, Any]:
     """
     Geocodifica um endereço usando a API gratuita Nominatim do OpenStreetMap.
-    
+
     Retorna um dicionário contendo:
       - ok: bool
       - bairro: str | None

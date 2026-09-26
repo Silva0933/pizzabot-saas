@@ -93,7 +93,7 @@ def _congelar_precos(estado: dict[str, Any], calc: dict[str, Any]) -> None:
 
 def _fmt_brl(v: float) -> str:
     """Formata em Real no padrão BR (vírgula decimal)."""
-    return ("R$ %0.2f" % float(v)).replace(".", ",")
+    return f"R$ {float(v):.2f}".replace(".", ",")
 
 
 def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: float,

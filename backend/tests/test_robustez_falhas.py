@@ -169,6 +169,31 @@ class TestWebhookDedup:
         # Garante que foi um SET NX (não um set comum).
         assert mock_set.call_args.kwargs.get("nx") is True
 
+    def test_falha_ao_persistir_solta_a_marca_para_a_reentrega(self):
+        """REGRESSÃO: a marca do dedup era gravada antes de persistir. Se o commit
+        falhasse (ex.: 2 primeiras mensagens de um contato novo batendo no UNIQUE
+        de conversas), a reentrega da Evolution era descartada como duplicada e a
+        mensagem do cliente sumia."""
+        from app.routes.webhook import evolution_webhook
+
+        request = MagicMock()
+        request.query_params.get = MagicMock(return_value=None)
+        db = self._pizz_db()
+        db.add = MagicMock()
+        db.commit = AsyncMock(side_effect=RuntimeError("UNIQUE violado"))
+
+        conv = MagicMock()
+        conv.id = "00000000-0000-0000-0000-0000000000c1"
+        conv.unread_count = 0
+        with patch("app.redis_client.redis.set", new=AsyncMock(return_value=True)), \
+             patch("app.redis_client.redis.delete", new=AsyncMock()) as mock_del, \
+             patch("app.routes.webhook._get_or_create_conversa", new=AsyncMock(return_value=conv)), \
+             patch("app.routes.webhook.broadcaster.publish", new=AsyncMock()), \
+             pytest.raises(RuntimeError):
+            asyncio.run(evolution_webhook(self._payload(), request, db))
+
+        mock_del.assert_awaited_once_with("wh:seen:inst1:MSG123")
+
 
 # ============================================================
 # #5 — Inflight: mensagem não se perde se o worker crashar no flush
