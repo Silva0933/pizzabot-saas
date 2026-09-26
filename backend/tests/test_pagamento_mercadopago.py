@@ -432,3 +432,82 @@ class TestStatus:
         assert mp_status_para_interno("cancelled") == "rejected"
         assert mp_status_para_interno("expired") == "expired"
         assert mp_status_para_interno("coisa_nova_do_mp") == "pending"
+
+
+# ============================================================
+# Pagamento aprovado em pedido já cancelado
+# ============================================================
+class TestPagamentoPedidoCancelado:
+    def test_nao_avisa_preparo_e_alerta_a_loja(self):
+        """REGRESSÃO: Pix pago depois do cancelamento mandava "enviado pro
+        preparo" ao cliente de um pedido que ninguém vai preparar."""
+        pizz = _pizzaria()
+        ped = _pedido(pizz.id, payment_id="123", status="cancelado")
+        db = FakeDB([_Res(ped), _Res(pizz), _Res(ped)])
+        with patch("app.services.alertas.registrar_alerta", AsyncMock()) as alerta:
+            out, msg = _rodar_webhook(
+                db,
+                {"type": "payment", "data": {"id": "123"}, "user_id": "9988"},
+                payment={"status": "approved", "external_reference": str(ped.id)},
+            )
+        assert out == {"ok": True, "status": "approved"}
+        assert ped.payment_status == "approved"
+        assert ped.status == "cancelado"        # não ressuscita o pedido
+        msg.assert_not_awaited()                # nada de "enviado pro preparo"
+        alerta.assert_awaited_once()
+        assert alerta.await_args.kwargs["tipo"] == "pagamento_pedido_cancelado"
+
+
+# ============================================================
+# Asaas (cobrança da pizzaria): o pagamento consultado tem de ser do pedido
+# ============================================================
+def _rodar_webhook_asaas(db, body, pagamento_consultado):
+    from app.routes import webhook_pagamento as wh
+
+    with patch.object(wh, "decrypt_secret", side_effect=lambda v: v), \
+         patch.object(wh, "enviar_mensagem_status", AsyncMock()) as msg, \
+         patch.object(wh.broadcaster, "publish", AsyncMock()), \
+         patch.object(
+             wh.AsaasClient, "consultar_pagamento",
+             AsyncMock(return_value=pagamento_consultado),
+         ):
+        out = asyncio.run(wh.webhook_asaas(_request(body), db))
+    return out, msg
+
+
+class TestWebhookAsaas:
+    def test_pagamento_de_outro_pedido_e_recusado(self):
+        """SEGURANÇA: pagar um pedido barato e forjar o webhook com o payment_id
+        dele apontando o externalReference para outro pedido não pode marcar o
+        outro como pago."""
+        pizz = _pizzaria()
+        pizz.asaas_api_key = "asaas-key"
+        caro = _pedido(pizz.id)
+        barato_id = uuid.uuid4()
+        db = FakeDB([_Res(caro), _Res(pizz)])
+        out, msg = _rodar_webhook_asaas(
+            db,
+            {"event": "PAYMENT_RECEIVED",
+             "payment": {"id": "pay_barato", "externalReference": str(caro.id)}},
+            {"id": "pay_barato", "status": "RECEIVED", "externalReference": str(barato_id)},
+        )
+        assert out == {"ignored": "pagamento_de_outro_pedido"}
+        assert caro.payment_status == "pending"
+        assert caro.status == "novo"
+        msg.assert_not_awaited()
+
+    def test_pagamento_do_proprio_pedido_confirma(self):
+        pizz = _pizzaria()
+        pizz.asaas_api_key = "asaas-key"
+        ped = _pedido(pizz.id)
+        db = FakeDB([_Res(ped), _Res(pizz), _Res(ped)])
+        out, msg = _rodar_webhook_asaas(
+            db,
+            {"event": "PAYMENT_RECEIVED",
+             "payment": {"id": "pay_1", "externalReference": str(ped.id)}},
+            {"id": "pay_1", "status": "RECEIVED", "externalReference": str(ped.id)},
+        )
+        assert out["ok"] is True
+        assert ped.payment_status == "approved"
+        assert ped.status == "confirmado"
+        msg.assert_awaited_once()
