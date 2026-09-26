@@ -511,3 +511,29 @@ class TestWebhookAsaas:
         assert ped.payment_status == "approved"
         assert ped.status == "confirmado"
         msg.assert_awaited_once()
+
+
+class TestAplicarPagamentoTrava:
+    def test_pedido_e_lido_com_for_update(self):
+        """REGRESSÃO: notificações simultâneas do mesmo pagamento mandavam
+        "Pagamento confirmado" duas vezes. O pedido tem de ser lido travado."""
+        from sqlalchemy.dialects import postgresql
+
+        from app.routes import webhook_pagamento as wh
+
+        pizz = _pizzaria()
+        ped = _pedido(pizz.id)
+        capturados = []
+
+        class _DB(FakeDB):
+            async def execute(self, stmt, *a, **k):
+                capturados.append(stmt)
+                return await super().execute(stmt, *a, **k)
+
+        db = _DB([_Res(ped)])
+        with patch.object(wh, "enviar_mensagem_status", AsyncMock()), \
+             patch.object(wh.broadcaster, "publish", AsyncMock()):
+            asyncio.run(wh._aplicar_pagamento(db, ped.id, payment_id="1", payment_status="approved"))
+
+        sql = str(capturados[0].compile(dialect=postgresql.dialect()))
+        assert "FOR UPDATE" in sql

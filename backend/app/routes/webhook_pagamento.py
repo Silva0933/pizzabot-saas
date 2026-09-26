@@ -38,8 +38,12 @@ async def _aplicar_pagamento(
     payment_status: str,
 ) -> Pedido | None:
     """Aplica o status do pagamento ao pedido + dispara confirmação se aprovado."""
+    # FOR UPDATE: o MP manda várias notificações do mesmo pagamento, às vezes ao
+    # mesmo tempo. Sem trava, as duas liam "pending", passavam juntas pela
+    # checagem de idempotência e o cliente recebia "Pagamento confirmado" 2x.
+    # Com a trava, a segunda espera o commit da primeira e já lê "approved".
     pedido = (
-        await db.execute(select(Pedido).where(Pedido.id == pedido_id))
+        await db.execute(select(Pedido).where(Pedido.id == pedido_id).with_for_update())
     ).scalar_one_or_none()
     if not pedido:
         log.warning("Webhook para pedido inexistente: %s", pedido_id)
