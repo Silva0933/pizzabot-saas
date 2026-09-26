@@ -24,7 +24,33 @@ Cada correção de bug veio com um teste que falha no código antigo.
 
 ---
 
-## Em aberto (não mexi sozinho)
+## Segunda rodada: pendências resolvidas
+
+| Item | O que mudou | Commit |
+|---|---|---|
+| Telefone com/sem 9º dígito | Helper `mesmo_telefone`/`preferir_exato` em todas as buscas de conversa/cliente (status, NPS, resgate, lembrete, agente, acompanhar pedido) | `fix(telefones)` |
+| "Pagamento confirmado" em dobro | `SELECT ... FOR UPDATE` no pedido em `_aplicar_pagamento` | `fix(pagamentos): trava` |
+| `pedido.novo` antes do commit | Evento sai depois do commit, com o número (gerado por trigger) | `fix(webhook): avisa o painel` |
+| Transcrição no webhook | Worker/dispatcher transcreve antes do agente; evento `mensagem.atualizada` no painel | `perf(webhook)` |
+| Bundle de 1,39 MB | `React.lazy` por tela; cardápio público ~400 kB | `perf(painel)` |
+| Duas pipelines no drain | Script Lua atômico | `fix(fila)` |
+| Tokens com `==`/`in` | `secrets.token_confere` (`hmac.compare_digest`) | `fix(seguranca)` |
+| Sessões irrevogáveis | Migration 033 `sessoes_validas_desde`; troca de senha do entregador revoga; `POST /auth/sair-de-todos`; rate limit no refresh | `feat(auth)` |
+| WebSocket sem reavaliação | Reavalia a cada 60 s; pizzaria suspensa não conecta | `fix(ws)` |
+| Suspensão por substring | Comparação por segmento | `fix(assinaturas)` |
+| Telas legadas | Removidas as sem uso; as em uso movidas para `v2/` | `refactor(painel)` |
+| UNIQUE no contato novo | `INSERT ... ON CONFLICT DO NOTHING` + teste com Postgres real | `fix(webhook): contato novo` |
+| Testes | Postgres no CI (migrations do zero + integração), mocks sem RuntimeWarning | `test(ci)` |
+
+**Ainda em aberto:** cards vazios no Kanban para qualquer mensagem sem pedido
+ativo (decisão de produto), JWT do WebSocket na query string (o navegador não
+permite header no WebSocket; mitigado pela reavaliação periódica) e botão
+"Sair de todos os dispositivos" no painel (o endpoint já existe).
+
+---
+
+## Pendências da primeira rodada (histórico)
+
 
 ### Robustez e dados
 
