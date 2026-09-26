@@ -47,21 +47,29 @@ async def require_platform_admin(user: Usuario = Depends(current_user)) -> Usuar
 # viraria armadilha: a pizzaria inadimplente não conseguiria nem ver o próprio
 # estado nem pagar para voltar. São, propositalmente, só leitura do cadastro e o
 # fluxo de assinatura/fatura.
+# Comparação por SEGMENTO do caminho /pizzarias/{id}/..., não por pedaço de
+# texto: antes `"/uso" in caminho` liberaria também uma rota futura como
+# /usos-extras, furando o bloqueio sem ninguém perceber.
+_PREFIXOS_LIBERADOS_SUSPENSA = (
+    ("assinatura",),          # ver, assinar, cancelar e pagar a fatura (e subrotas)
+)
 _ROTAS_LIBERADAS_SUSPENSA = (
-    "/assinatura",
-    "/uso",
-    "/whatsapp/status",
+    ("uso",),
+    ("whatsapp", "status"),
 )
 
 
 def _liberada_com_suspensao(request: Request) -> bool:
-    caminho = request.url.path.rstrip("/")
-    if any(trecho in caminho for trecho in _ROTAS_LIBERADAS_SUSPENSA):
+    partes = [p for p in request.url.path.split("/") if p]
+    if len(partes) < 2 or partes[0] != "pizzarias":
+        return False
+    resto = tuple(partes[2:])
+    if resto in _ROTAS_LIBERADAS_SUSPENSA:
+        return True
+    if any(resto[: len(pref)] == pref for pref in _PREFIXOS_LIBERADOS_SUSPENSA):
         return True
     # GET do próprio cadastro: /pizzarias/{uuid} e nada além disso.
-    if request.method == "GET" and caminho.count("/") == 2 and caminho.startswith("/pizzarias/"):
-        return True
-    return False
+    return request.method == "GET" and not resto
 
 
 async def membership(
