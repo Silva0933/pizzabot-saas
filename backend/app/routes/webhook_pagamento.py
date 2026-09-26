@@ -362,7 +362,8 @@ async def webhook_asaas_plataforma(
         token = ((await carregar_config(db)).get("webhook_token") or "").strip()
     except Exception:  # noqa: BLE001
         token = (_settings.asaas_platform_webhook_token or "").strip()
-    if token and asaas_access_token != token:
+    from app.services.secrets import token_confere
+    if token and not token_confere(asaas_access_token, token):
         log.warning("Webhook plataforma rejeitado: token inválido")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido")
     if not token:

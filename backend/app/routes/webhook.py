@@ -291,7 +291,8 @@ async def evolution_webhook(
     except Exception:  # noqa: BLE001
         _tokens = {_gs().evolution_webhook_token or ""}
     _tokens.discard("")
-    if _tokens and request.query_params.get("token") not in _tokens:
+    from app.services.secrets import token_confere
+    if _tokens and not token_confere(request.query_params.get("token"), _tokens):
         log.warning("Webhook rejeitado: token inválido (instance=%s)", payload.instance)
         return {"ignored": "bad_token"}
 
