@@ -8,7 +8,7 @@
  *  4. AppShell com 5 navs: Início, Conversas, Pedidos, Cardápio, Meu Negócio
  *  5. WebSocket pra updates ao vivo
  */
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock, Sparkles } from "lucide-react";
 import {
   AppShell, NAV_PAGE_META,
@@ -16,19 +16,32 @@ import {
 // LandingPage desconectada por opção do dono (vai direto pro login). O componente
 // continua existindo em ./components/v2 — pra reativar, reimporte-o aqui.
 import type { NavKey } from "./components/v2/Sidebar";
-import { ConversasViewV2 } from "./components/v2/ConversasViewV2";
-import { PedidosViewV2 } from "./components/v2/PedidosViewV2";
-import { CardapioViewV2 } from "./components/v2/CardapioViewV2";
-import { CardapioPublico } from "./components/v2/CardapioPublico";
-import { ClientesView } from "./components/v2/ClientesView";
-import { TemasView } from "./components/v2/TemasView";
-import { DriverApp } from "./components/driver/DriverApp";
-import { MeuNegocioViewV2, NegocioTab } from "./components/v2/MeuNegocioViewV2";
-import { EntregadoresView } from "./components/v2/EntregadoresView";
-import { PlatformAdminView } from "./components/v2/PlatformAdminView";
-import { MetricasView } from "./components/v2/MetricasView";
-import { AjudaView } from "./components/v2/AjudaView";
-import { AssinaturaView } from "./components/v2/AssinaturaView";
+import type { NegocioTab } from "./components/v2/MeuNegocioViewV2";
+
+// Telas carregadas sob demanda: antes tudo ia num bundle único de 1,4 MB, que o
+// navegador baixava inteiro mesmo para abrir uma tela só. Cada aba vira um
+// pedaço separado, baixado na primeira vez que é aberta.
+const ConversasViewV2 = lazy(() => import("./components/v2/ConversasViewV2").then((m) => ({ default: m.ConversasViewV2 })));
+const PedidosViewV2 = lazy(() => import("./components/v2/PedidosViewV2").then((m) => ({ default: m.PedidosViewV2 })));
+const CardapioViewV2 = lazy(() => import("./components/v2/CardapioViewV2").then((m) => ({ default: m.CardapioViewV2 })));
+const ClientesView = lazy(() => import("./components/v2/ClientesView").then((m) => ({ default: m.ClientesView })));
+const TemasView = lazy(() => import("./components/v2/TemasView").then((m) => ({ default: m.TemasView })));
+const DriverApp = lazy(() => import("./components/driver/DriverApp").then((m) => ({ default: m.DriverApp })));
+const MeuNegocioViewV2 = lazy(() => import("./components/v2/MeuNegocioViewV2").then((m) => ({ default: m.MeuNegocioViewV2 })));
+const EntregadoresView = lazy(() => import("./components/v2/EntregadoresView").then((m) => ({ default: m.EntregadoresView })));
+const PlatformAdminView = lazy(() => import("./components/v2/PlatformAdminView").then((m) => ({ default: m.PlatformAdminView })));
+const MetricasView = lazy(() => import("./components/v2/MetricasView").then((m) => ({ default: m.MetricasView })));
+const AjudaView = lazy(() => import("./components/v2/AjudaView").then((m) => ({ default: m.AjudaView })));
+const AssinaturaView = lazy(() => import("./components/v2/AssinaturaView").then((m) => ({ default: m.AssinaturaView })));
+
+function TelaCarregando() {
+  return (
+    <div className="flex items-center justify-center py-24 text-slate-400">
+      <Loader2 className="w-6 h-6 animate-spin" />
+    </div>
+  );
+}
+
 import {
   authApi, pizzariasApi, cardapioApi, pedidosApi, conversasApi, personalityApi,
   connectWebSocket, BackendPizzaria, UserMe, WsEvent, type ConexaoAoVivo,
@@ -112,19 +125,9 @@ function playNotificationSound(type: "novo" | "confirmado") {
   }
 }
 
+// A rota pública do cardápio digital (/m/:slug) é resolvida em main.tsx, antes
+// de carregar este módulo: o cliente final não baixa o painel.
 export default function App() {
-  // ============================================
-  // Rota pública do Cardápio Digital (/m/:slug)
-  // ============================================
-  const path = typeof window !== "undefined" ? window.location.pathname : "";
-  const menuMatch = path.match(/^\/m\/([a-z0-9-]+)/i);
-  if (menuMatch) {
-    return <CardapioPublico slug={menuMatch[1]} />;
-  }
-
-  // ============================================
-  // Painel Admin (continua normalmente)
-  // ============================================
   return <AdminApp />;
 }
 
@@ -596,13 +599,18 @@ function AdminApp() {
   // Render: painel do entregador (conta de entregador)
   // ============================================
   if (user.entregador) {
-    return <DriverApp user={user} onLogout={handleLogout} />;
+    return (
+      <Suspense fallback={<TelaCarregando />}>
+        <DriverApp user={user} onLogout={handleLogout} />
+      </Suspense>
+    );
   }
 
   // ============================================
   // Render: painel da plataforma (admin sem pizzaria ativa)
   // ============================================
   if (user.is_platform_admin && !pizzaria) return (
+    <Suspense fallback={<TelaCarregando />}>
     <PlatformAdminView
       userName={user.nome}
       pizzarias={pizzarias}
@@ -615,6 +623,7 @@ function AdminApp() {
       }}
       onLogout={handleLogout}
     />
+    </Suspense>
   );
 
   // ============================================
@@ -696,6 +705,7 @@ function AdminApp() {
         onAssinar={() => setNav("assinatura")}
       />
 
+      <Suspense fallback={<TelaCarregando />}>
       {nav === "conversas" && (
         <ConversasViewV2
           pizzariaId={pizzaria.id}
@@ -767,6 +777,7 @@ function AdminApp() {
       {nav === "entregadores" && <EntregadoresView pizzariaId={pizzaria.id}/>}
       {nav === "assinatura" && <AssinaturaView pizzariaId={pizzaria.id}/>}
       {nav === "ajuda"     && <AjudaView/>}
+      </Suspense>
       {nav === "admin" && user.is_platform_admin && (
         <div className="p-6 text-center text-slate-500">
           Painel SaaS admin — em breve via API nova.
