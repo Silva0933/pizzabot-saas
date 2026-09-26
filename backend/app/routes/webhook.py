@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import case, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -164,14 +165,16 @@ async def _get_or_create_conversa(
     if conv:
         return conv
 
-    conv = Conversa(
-        pizzaria_id=pizzaria_id,
-        cliente_telefone=telefone,
-        cliente_nome=nome,
+    # ON CONFLICT: as duas primeiras mensagens de um contato novo chegam quase
+    # juntas; as duas não acham a conversa e tentam criar. Com INSERT simples a
+    # segunda estourava o UNIQUE (pizzaria_id, cliente_telefone) e o webhook
+    # dava 500. Agora a segunda só não insere e usa a que a primeira criou.
+    await db.execute(
+        pg_insert(Conversa)
+        .values(pizzaria_id=pizzaria_id, cliente_telefone=telefone, cliente_nome=nome)
+        .on_conflict_do_nothing(index_elements=["pizzaria_id", "cliente_telefone"])
     )
-    db.add(conv)
-    await db.flush()
-    return conv
+    return (await db.execute(stmt)).scalars().first()
 
 
 async def _handle_presence(payload: EvolutionWebhookPayload, db: AsyncSession) -> dict[str, Any]:
@@ -419,13 +422,13 @@ async def evolution_webhook(
         ).order_by(case((Cliente.telefone == telefone, 0), else_=1))
         cli = (await db.execute(stmt_cli)).scalars().first()
         if not cli:
-            cli = Cliente(
-                pizzaria_id=pizz.id,
-                telefone=telefone,
-                nome=push_name,
+            # Mesmo motivo da conversa: contato novo com mensagens simultâneas.
+            await db.execute(
+                pg_insert(Cliente)
+                .values(pizzaria_id=pizz.id, telefone=telefone, nome=push_name)
+                .on_conflict_do_nothing(index_elements=["pizzaria_id", "telefone"])
             )
-            db.add(cli)
-            await db.flush()
+            cli = (await db.execute(stmt_cli)).scalars().first()
         else:
             if push_name and not cli.nome:
                 cli.nome = push_name
