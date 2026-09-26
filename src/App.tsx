@@ -13,8 +13,6 @@ import { Pizza, Loader2, AlertCircle, LogOut, Mail, Lock, Sparkles } from "lucid
 import {
   AppShell, NAV_PAGE_META,
 } from "./components/v2";
-// LandingPage desconectada por opção do dono (vai direto pro login). O componente
-// continua existindo em ./components/v2 — pra reativar, reimporte-o aqui.
 import type { NavKey } from "./components/v2/Sidebar";
 import type { NegocioTab } from "./components/v2/MeuNegocioViewV2";
 

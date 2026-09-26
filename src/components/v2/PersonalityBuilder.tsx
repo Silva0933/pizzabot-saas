@@ -42,7 +42,7 @@ import {
   NivelEmoji,
   Personalidade,
   personalityApi,
-} from "../lib/api";
+} from "../../lib/api";
 
 function mergePersonalidade(data?: Personalidade | null): Personalidade {
   const incoming = data?.config_atendimento;

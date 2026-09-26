@@ -19,7 +19,7 @@ import {
   ChevronDown,
   ShieldCheck,
 } from "lucide-react";
-import { AgentTrace, personalityApi } from "../lib/api";
+import { AgentTrace, personalityApi } from "../../lib/api";
 
 interface Mensagem {
   id: string;
