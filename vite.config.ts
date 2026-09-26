@@ -11,6 +11,17 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          // Com as telas carregadas sob demanda, cada ícone do lucide virava um
+          // arquivo de ~0,4 kB (dezenas de requisições). Agrupa num chunk só.
+          manualChunks(id: string) {
+            if (id.includes('node_modules/lucide-react')) return 'icones';
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

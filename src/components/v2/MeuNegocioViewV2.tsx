@@ -13,7 +13,7 @@ import {
   RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
   Bike, ChevronDown, Copy, ExternalLink, Volume2,
 } from "lucide-react";
-import { AttendantPage } from "../AttendantPage";
+import { AttendantPage } from "./AttendantPage";
 import {
   BackendPizzaria, BackendPedido, pizzariasApi, pedidosApi, conversasApi, WhatsAppConnect,
   MP_WEBHOOK_URL,

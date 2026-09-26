@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -52,3 +53,19 @@ def mask_secret(value: str | None) -> str:
 
 def looks_masked(value: str | None) -> bool:
     return bool(value and ("••••" in value or "****" in value))
+
+
+def token_confere(recebido: str | None, esperados) -> bool:
+    """Compara o token recebido com um ou mais esperados em tempo constante.
+
+    `==`/`in` param na primeira diferença: o tempo de resposta vaza quantos
+    caracteres do começo acertaram, o que permite descobrir o token aos poucos.
+    """
+    if isinstance(esperados, str):
+        esperados = (esperados,)
+    rec = (recebido or "").encode()
+    ok = False
+    for esperado in esperados:
+        if esperado and hmac.compare_digest(rec, esperado.encode()):
+            ok = True   # sem break: o tempo não depende de qual token casou
+    return ok

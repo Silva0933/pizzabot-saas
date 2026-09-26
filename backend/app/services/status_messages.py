@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Cliente, Conversa, Mensagem, Pedido, Pizzaria
 from app.services.broadcaster import broadcaster
 from app.services.evolution import evolution
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 log = logging.getLogger(__name__)
 
@@ -84,10 +85,10 @@ async def enviar_pesquisa_nps(db: AsyncSession, pedido: Pedido) -> bool:
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizz.id,
-                Conversa.cliente_telefone == cliente.telefone,
-            )
+                mesmo_telefone(Conversa.cliente_telefone, cliente.telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, cliente.telefone))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if conv:
         msg = Mensagem(
             conversa_id=conv.id,
@@ -188,10 +189,10 @@ async def enviar_mensagem_status(
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizz.id,
-                Conversa.cliente_telefone == cliente.telefone,
-            )
+                mesmo_telefone(Conversa.cliente_telefone, cliente.telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, cliente.telefone))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if conv:
         msg = Mensagem(
             conversa_id=conv.id,

@@ -38,8 +38,12 @@ async def _aplicar_pagamento(
     payment_status: str,
 ) -> Pedido | None:
     """Aplica o status do pagamento ao pedido + dispara confirmação se aprovado."""
+    # FOR UPDATE: o MP manda várias notificações do mesmo pagamento, às vezes ao
+    # mesmo tempo. Sem trava, as duas liam "pending", passavam juntas pela
+    # checagem de idempotência e o cliente recebia "Pagamento confirmado" 2x.
+    # Com a trava, a segunda espera o commit da primeira e já lê "approved".
     pedido = (
-        await db.execute(select(Pedido).where(Pedido.id == pedido_id))
+        await db.execute(select(Pedido).where(Pedido.id == pedido_id).with_for_update())
     ).scalar_one_or_none()
     if not pedido:
         log.warning("Webhook para pedido inexistente: %s", pedido_id)
@@ -358,7 +362,8 @@ async def webhook_asaas_plataforma(
         token = ((await carregar_config(db)).get("webhook_token") or "").strip()
     except Exception:  # noqa: BLE001
         token = (_settings.asaas_platform_webhook_token or "").strip()
-    if token and asaas_access_token != token:
+    from app.services.secrets import token_confere
+    if token and not token_confere(asaas_access_token, token):
         log.warning("Webhook plataforma rejeitado: token inválido")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido")
     if not token:

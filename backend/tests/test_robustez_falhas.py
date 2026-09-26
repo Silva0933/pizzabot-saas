@@ -194,6 +194,86 @@ class TestWebhookDedup:
 
         mock_del.assert_awaited_once_with("wh:seen:inst1:MSG123")
 
+    def test_rascunho_so_e_anunciado_depois_do_commit(self):
+        """REGRESSÃO: o 'pedido.novo' do rascunho saía antes do commit — se o
+        commit falhasse, o painel mostrava um pedido que não existe."""
+        from app.routes.webhook import evolution_webhook
+
+        request = MagicMock()
+        request.query_params.get = MagicMock(return_value=None)
+        pizz = MagicMock()
+        pizz.id = "00000000-0000-0000-0000-000000000001"
+        pizz.instancia = "inst1"
+        pizz.suspensa = False
+        pizz.bot_ativo_global = False          # não entra na fila (fora do escopo)
+
+        def _res(valor):
+            r = MagicMock()
+            r.scalar_one_or_none = MagicMock(return_value=valor)
+            r.scalars.return_value.first.return_value = valor
+            return r
+
+        cli = MagicMock()
+        cli.nome = "Cliente"
+        ordem = []
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.execute = AsyncMock(side_effect=[_res(pizz), _res(cli), _res(None), _res(None)])
+        db.commit = AsyncMock(side_effect=lambda: ordem.append("commit"))
+
+        async def _publish(_pid, evento):
+            ordem.append(evento["tipo"])
+
+        conv = MagicMock()
+        conv.id = "00000000-0000-0000-0000-0000000000c1"
+        conv.unread_count = 0
+        with patch("app.redis_client.redis.set", new=AsyncMock(return_value=True)), \
+             patch("app.routes.webhook._get_or_create_conversa", new=AsyncMock(return_value=conv)), \
+             patch("app.services.order_audit.registrar_evento_pedido", new=MagicMock()), \
+             patch("app.routes.webhook.broadcaster.publish", new=_publish):
+            asyncio.run(evolution_webhook(self._payload(), request, db))
+
+        assert "pedido.novo" in ordem
+        assert ordem.index("commit") < ordem.index("pedido.novo")
+
+    def test_commit_falhou_nao_anuncia_rascunho(self):
+        from app.routes.webhook import evolution_webhook
+
+        request = MagicMock()
+        request.query_params.get = MagicMock(return_value=None)
+        pizz = MagicMock()
+        pizz.id = "00000000-0000-0000-0000-000000000001"
+        pizz.instancia = "inst1"
+        pizz.suspensa = False
+        pizz.bot_ativo_global = False
+
+        def _res(valor):
+            r = MagicMock()
+            r.scalar_one_or_none = MagicMock(return_value=valor)
+            r.scalars.return_value.first.return_value = valor
+            return r
+
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.execute = AsyncMock(side_effect=[_res(pizz), _res(MagicMock()), _res(None)])
+        db.commit = AsyncMock(side_effect=RuntimeError("banco fora"))
+        publicados = []
+
+        async def _publish(_pid, evento):
+            publicados.append(evento["tipo"])
+
+        conv = MagicMock()
+        conv.unread_count = 0
+        with patch("app.redis_client.redis.set", new=AsyncMock(return_value=True)), \
+             patch("app.redis_client.redis.delete", new=AsyncMock()), \
+             patch("app.routes.webhook._get_or_create_conversa", new=AsyncMock(return_value=conv)), \
+             patch("app.services.order_audit.registrar_evento_pedido", new=MagicMock()), \
+             patch("app.routes.webhook.broadcaster.publish", new=_publish), \
+             pytest.raises(RuntimeError):
+            asyncio.run(evolution_webhook(self._payload(), request, db))
+
+        assert "pedido.novo" not in publicados
+
 
 # ============================================================
 # #5 — Inflight: mensagem não se perde se o worker crashar no flush

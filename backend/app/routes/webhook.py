@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import case, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -29,6 +30,9 @@ from app.services.queue import enqueue_message
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])
+
+# Tasks disparadas depois da resposta (ex.: transcrição de áudio fora do agente).
+_TAREFAS_FUNDO: set = set()
 
 
 # ============================================
@@ -161,14 +165,16 @@ async def _get_or_create_conversa(
     if conv:
         return conv
 
-    conv = Conversa(
-        pizzaria_id=pizzaria_id,
-        cliente_telefone=telefone,
-        cliente_nome=nome,
+    # ON CONFLICT: as duas primeiras mensagens de um contato novo chegam quase
+    # juntas; as duas não acham a conversa e tentam criar. Com INSERT simples a
+    # segunda estourava o UNIQUE (pizzaria_id, cliente_telefone) e o webhook
+    # dava 500. Agora a segunda só não insere e usa a que a primeira criou.
+    await db.execute(
+        pg_insert(Conversa)
+        .values(pizzaria_id=pizzaria_id, cliente_telefone=telefone, cliente_nome=nome)
+        .on_conflict_do_nothing(index_elements=["pizzaria_id", "cliente_telefone"])
     )
-    db.add(conv)
-    await db.flush()
-    return conv
+    return (await db.execute(stmt)).scalars().first()
 
 
 async def _handle_presence(payload: EvolutionWebhookPayload, db: AsyncSession) -> dict[str, Any]:
@@ -288,7 +294,8 @@ async def evolution_webhook(
     except Exception:  # noqa: BLE001
         _tokens = {_gs().evolution_webhook_token or ""}
     _tokens.discard("")
-    if _tokens and request.query_params.get("token") not in _tokens:
+    from app.services.secrets import token_confere
+    if _tokens and not token_confere(request.query_params.get("token"), _tokens):
         log.warning("Webhook rejeitado: token inválido (instance=%s)", payload.instance)
         return {"ignored": "bad_token"}
 
@@ -357,6 +364,7 @@ async def evolution_webhook(
     # debounce (vira "Oi\nOi"). Marcamos o id do evento no Redis (SET NX, TTL 10min):
     # se já vimos, ignoramos silenciosamente. Best-effort — se o Redis falhar, segue.
     dedup_key: str | None = None
+    ped_rascunho = None
     if evolution_msg_id:
         from app.redis_client import redis as _redis
         try:
@@ -375,20 +383,14 @@ async def evolution_webhook(
     # UNIQUE de conversas/clientes), a Evolution reentrega o evento — e sem soltar
     # a marca a reentrega era descartada como duplicada: mensagem perdida.
     try:
-        # ---- áudio: transcreve para o agente entender o pedido por voz ----
+        # ---- áudio: a transcrição NÃO acontece aqui ----
+        # Baixar + transcrever antes do 200 fazia a Evolution estourar o timeout
+        # em áudio longo e reentregar. A mensagem entra como "[áudio]" e o
+        # worker/dispatcher transcreve antes do agente (services/transcricao).
+        midia_audio = None
         if tipo == "audio" and pizz.instancia:
-            try:
-                from app.services.transcricao import transcrever_audio
-                b64 = await evolution.get_media_base64(instancia=pizz.instancia, message=data)
-                if b64:
-                    mtype = (metadata.get("audio") or {}).get("mimetype") or "audio/ogg"
-                    texto = await transcrever_audio(db, b64, mtype)
-                    if texto:
-                        conteudo = texto
-                        tipo = "texto"
-                        metadata["transcrito_de"] = "audio"
-            except Exception as e:  # noqa: BLE001
-                log.warning("Falha na transcrição de áudio: %s", e)
+            from app.services.transcricao import referencia_midia
+            midia_audio = referencia_midia(data)
 
         # ---- persiste ----
         conv = await _get_or_create_conversa(db, pizz.id, telefone, push_name)
@@ -420,13 +422,13 @@ async def evolution_webhook(
         ).order_by(case((Cliente.telefone == telefone, 0), else_=1))
         cli = (await db.execute(stmt_cli)).scalars().first()
         if not cli:
-            cli = Cliente(
-                pizzaria_id=pizz.id,
-                telefone=telefone,
-                nome=push_name,
+            # Mesmo motivo da conversa: contato novo com mensagens simultâneas.
+            await db.execute(
+                pg_insert(Cliente)
+                .values(pizzaria_id=pizz.id, telefone=telefone, nome=push_name)
+                .on_conflict_do_nothing(index_elements=["pizzaria_id", "telefone"])
             )
-            db.add(cli)
-            await db.flush()
+            cli = (await db.execute(stmt_cli)).scalars().first()
         else:
             if push_name and not cli.nome:
                 cli.nome = push_name
@@ -457,7 +459,24 @@ async def evolution_webhook(
             from app.services.order_audit import registrar_evento_pedido
             registrar_evento_pedido(db, ped_rascunho, tipo="criado", status_novo="novo", ator_nome="WhatsApp", ator_tipo="cliente")
 
-            # Dispara o broadcast de novo pedido rascunho para atualizar o painel
+        await db.commit()
+        await db.refresh(msg)
+    except Exception:
+        if dedup_key:
+            try:
+                from app.redis_client import redis as _redis
+                await _redis.delete(dedup_key)
+            except Exception as e_del:  # noqa: BLE001
+                log.debug("Falha ao soltar a marca de dedup: %s", e_del)
+        raise
+
+    # Aviso do rascunho só DEPOIS do commit: antes, se o commit falhasse o painel
+    # ganhava um card de pedido que não existe; e mesmo dando certo, o painel
+    # podia buscar o pedido antes de ele estar visível. O refresh traz o número,
+    # que é gerado por trigger no INSERT (antes ia vazio no evento).
+    if ped_rascunho is not None:
+        try:
+            await db.refresh(ped_rascunho)
             await broadcaster.publish(
                 pizz.id,
                 {
@@ -470,17 +489,8 @@ async def evolution_webhook(
                     },
                 },
             )
-
-        await db.commit()
-        await db.refresh(msg)
-    except Exception:
-        if dedup_key:
-            try:
-                from app.redis_client import redis as _redis
-                await _redis.delete(dedup_key)
-            except Exception as e_del:  # noqa: BLE001
-                log.debug("Falha ao soltar a marca de dedup: %s", e_del)
-        raise
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha ao avisar o painel do rascunho de pedido: %s", e)
 
     # ---- Reação ✅ ao comprovante do Pix manual (best-effort, decorativa) ----
     # Se há pedido aguardando conferência e a mensagem parece o comprovante
@@ -520,8 +530,9 @@ async def evolution_webhook(
                 telefone=telefone,
                 mensagem_id=msg.id,
                 conteudo=conteudo,
-                metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo},
+                metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo, "midia": midia_audio},
             )
+            midia_audio = None  # quem transcreve agora é o worker/dispatcher
             if getattr(pizz, "usar_dispatcher", False):
                 # Etapa 1: arma no ZSET de prazos; o serviço dispatcher drena.
                 from app.services.queue import arm_dispatcher
@@ -534,6 +545,17 @@ async def evolution_webhook(
                     args=[str(pizz.id), telefone],
                     countdown=DEBOUNCE_SECONDS + 0.5,
                 )
+
+    if midia_audio:
+        # Não foi para o agente (bot desligado / fora do horário): transcreve em
+        # segundo plano só para a equipe ler no painel.
+        import asyncio
+
+        from app.services.transcricao import transcrever_em_segundo_plano
+        tarefa = asyncio.create_task(transcrever_em_segundo_plano(pizz.id, msg.id, midia_audio))
+        # Sem guardar a referência, o GC pode matar a task no meio.
+        _TAREFAS_FUNDO.add(tarefa)
+        tarefa.add_done_callback(_TAREFAS_FUNDO.discard)
 
     await broadcaster.publish(
         pizz.id,

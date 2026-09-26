@@ -1,11 +1,21 @@
-import {StrictMode} from 'react';
+import {lazy, StrictMode, Suspense} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
 import './index.css';
+
+// Rota pública do cardápio digital (/m/:slug) decidida ANTES de carregar o
+// painel: o cliente final, no celular, baixa só o código do cardápio — antes
+// baixava o painel administrativo inteiro junto.
+const menuMatch = window.location.pathname.match(/^\/m\/([a-z0-9-]+)/i);
+const CardapioPublico = lazy(() =>
+  import('./components/v2/CardapioPublico').then((m) => ({default: m.CardapioPublico})),
+);
+const App = lazy(() => import('./App.tsx'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Suspense fallback={null}>
+      {menuMatch ? <CardapioPublico slug={menuMatch[1]} /> : <App />}
+    </Suspense>
   </StrictMode>,
 );
 

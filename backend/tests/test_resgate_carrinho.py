@@ -42,6 +42,7 @@ def _setup(monkeypatch, *, estado, updated_age_s=None, conv=None, pizz="default"
 
         res_conv = MagicMock()
         res_conv.scalar_one_or_none.return_value = conv
+        res_conv.scalars.return_value.first.return_value = conv  # busca por telefone equivalente
         resultados.append(res_conv)
 
         if pizz == "default":

@@ -11,6 +11,8 @@ from app.auth import (
     create_refresh_token,
     decode_token,
     hash_password,
+    revogar_sessoes,
+    sessao_revogada,
     verify_password,
 )
 from app.db import get_db
@@ -120,7 +122,10 @@ async def login(body: LoginIn, request: Request, db: AsyncSession = Depends(get_
 
 
 @router.post("/refresh", response_model=TokenOut)
-async def refresh(body: RefreshIn, db: AsyncSession = Depends(get_db)) -> TokenOut:
+async def refresh(body: RefreshIn, request: Request, db: AsyncSession = Depends(get_db)) -> TokenOut:
+    # O painel renova a cada ~60 min; 30/min por IP só barra abuso.
+    if not await allow(f"refresh:{client_ip(request)}", max_hits=30, window_seconds=60):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Muitas renovações. Aguarde 1 minuto.")
     try:
         payload = decode_token(body.refresh_token)
         if payload.get("typ") != "refresh":
@@ -131,12 +136,23 @@ async def refresh(body: RefreshIn, db: AsyncSession = Depends(get_db)) -> TokenO
     user = (await db.execute(select(Usuario).where(Usuario.id == payload["sub"]))).scalar_one_or_none()
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Usuário não encontrado")
+    if sessao_revogada(user, payload):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sessão encerrada. Entre novamente.")
 
     return TokenOut(
         access_token=create_access_token(str(user.id)),
         refresh_token=create_refresh_token(str(user.id)),
         user=await _build_user_payload(db, user),
     )
+
+
+@router.post("/sair-de-todos")
+async def sair_de_todos(user: Usuario = Depends(current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """Derruba todas as sessões do usuário (celular perdido, senha vazada...).
+    Inclusive esta: o painel volta para o login."""
+    revogar_sessoes(user)
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/me")

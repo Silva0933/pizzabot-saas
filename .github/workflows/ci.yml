@@ -1,6 +1,6 @@
 # CI — roda em todo push/PR: testes do backend (pytest) + type-check do frontend (tsc).
-# Os testes não precisam de Postgres/Redis reais (mocks); os 2 testes de fila
-# que exigem Redis pulam automaticamente sem REDIS_URL.
+# A maioria dos testes usa mocks. Os de fila usam o Redis e os de integração o
+# Postgres (com as migrations aplicadas do zero, o que também valida as migrations).
 name: CI
 
 on:
@@ -22,7 +22,23 @@ jobs:
       # Com REDIS_URL setado, os testes de integração do dispatcher (Lua do
       # scheduler, consumer group, XAUTOCLAIM, carga) rodam de verdade.
       REDIS_URL: redis://localhost:6379/0
+      # Postgres real para os testes de integração (corrida de banco que mock
+      # não pega, ex.: duas mensagens simultâneas de contato novo).
+      PG_INTEGRACAO: "1"
     services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
       redis:
         image: redis:7
         ports:
@@ -42,6 +58,8 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Lint (ruff)
         run: ruff check app
+      - name: Migrations (banco limpo)
+        run: python migrations/apply.py
       - name: Testes
         run: pytest tests -q
 

@@ -32,6 +32,7 @@ from app.services.evolution import evolution
 from app.services.humanized_delivery import send_humanized_text
 from app.services.price_check import coletar_precos_tool, precos_sem_lastro
 from app.services.response_guard import guard_response
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 log = logging.getLogger(__name__)
 
@@ -318,10 +319,10 @@ async def process_and_reply(
         await db.execute(
             select(Conversa).where(
                 Conversa.pizzaria_id == pizzaria_id,
-                Conversa.cliente_telefone == telefone,
-            )
+                mesmo_telefone(Conversa.cliente_telefone, telefone),
+            ).order_by(preferir_exato(Conversa.cliente_telefone, telefone))
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     try:
         personalidade = (await db.execute(
             select(PersonalidadeAtendente).where(

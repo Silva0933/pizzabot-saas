@@ -41,3 +41,31 @@ async def test_enqueue_and_drain():
 
     can_after, _ = await should_flush_now(pid, phone)
     assert can_after, "Após drain, deveria liberar flush"
+
+
+class TestDrainAtomico:
+    def test_drain_e_uma_operacao_unica_no_redis(self):
+        """REGRESSÃO: o drain eram duas pipelines (lê/apaga pending; regrava o
+        inflight). Um crash entre elas perdia as mensagens. Agora é um EVAL só."""
+        import asyncio
+        import json
+        import uuid
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.services import queue
+
+        pid = uuid.uuid4()
+        lote = [json.dumps({"mensagem_id": "1", "conteudo": "oi"}),
+                json.dumps({"mensagem_id": "2", "conteudo": "quero pizza"})]
+        with patch.object(queue.redis, "eval", new=AsyncMock(return_value=lote)) as ev, \
+             patch.object(queue.redis, "pipeline", new=MagicMock()) as pipe:
+            out = asyncio.run(queue.drain_pending(pid, "5511999999999"))
+
+        assert [i["conteudo"] for i in out] == ["oi", "quero pizza"]
+        ev.assert_awaited_once()
+        pipe.assert_not_called()
+        chaves = ev.await_args.args[2:]
+        assert chaves == (
+            f"pending:{pid}:5511999999999", f"inflight:{pid}:5511999999999",
+            f"flush_at:{pid}:5511999999999", f"batch_start:{pid}:5511999999999",
+        )

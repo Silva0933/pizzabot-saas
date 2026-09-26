@@ -96,6 +96,21 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: P
       });
     }
 
+    // Áudio: a transcrição chega depois (worker), trocando o "[áudio]" na tela.
+    if (liveEvent.tipo === "mensagem.atualizada") {
+      const p = liveEvent.payload;
+      setMensagens((prev) =>
+        prev.map((m) =>
+          m.id === p?.mensagem_id ? { ...m, conteudo: p.conteudo ?? m.conteudo, tipo: p.tipo ?? m.tipo } : m,
+        ),
+      );
+      setConversas((prev) =>
+        prev.map((c) =>
+          c.id === p?.conversa_id && c.last_message === "[áudio]" ? { ...c, last_message: p.conteudo } : c,
+        ),
+      );
+    }
+
     if (liveEvent.tipo === "conversa.atualizada") {
       const p = liveEvent.payload;
       setConversas((prev) =>

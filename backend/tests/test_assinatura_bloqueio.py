@@ -88,6 +88,18 @@ class TestRotasLiberadas:
         assert not _liberada_com_suspensao(_request(f"/cardapio/{pid}/produtos", "POST"))
         assert not _liberada_com_suspensao(_request(f"/agente/{pid}/testar", "POST"))
 
+    def test_rota_com_nome_parecido_nao_passa(self):
+        """REGRESSÃO: a checagem era por pedaço de texto ('/uso' in caminho) e
+        liberaria rotas como /usos-extras ou /assinaturas-exportar."""
+        from app.deps import _liberada_com_suspensao
+
+        pid = str(uuid.uuid4())
+        assert not _liberada_com_suspensao(_request(f"/pizzarias/{pid}/usos-extras"))
+        assert not _liberada_com_suspensao(_request(f"/pizzarias/{pid}/assinaturas-exportar"))
+        assert not _liberada_com_suspensao(_request(f"/pizzarias/{pid}/pedidos/uso"))
+        assert not _liberada_com_suspensao(_request(f"/pizzarias/{pid}/whatsapp/status/forcar", "POST"))
+        assert _liberada_com_suspensao(_request(f"/pizzarias/{pid}/whatsapp/status"))
+
 
 # ============================================================
 # membership()

@@ -32,3 +32,21 @@ def telefones_equivalentes(tel: str) -> set[str]:
         com_nono = nacional[:2] + "9" + nacional[2:]
         variantes.update({com_nono, "55" + com_nono})
     return {numero for numero in variantes if numero}
+
+
+def mesmo_telefone(coluna, tel: str):
+    """Filtro SQL: `coluna` é o mesmo número que `tel`, em qualquer das formas.
+
+    Comparar com `==` só acha o formato exato — e o mesmo cliente chega com e sem
+    o 9º dígito (cardápio × JID do WhatsApp). Use junto com `preferir_exato` e
+    `.scalars().first()`: se houver dois cadastros antigos do mesmo número, o
+    `scalar_one_or_none` estouraria.
+    """
+    return coluna.in_(sorted(telefones_equivalentes(tel) | {tel}))
+
+
+def preferir_exato(coluna, tel: str):
+    """ORDER BY que põe primeiro o registro com o telefone exatamente igual."""
+    from sqlalchemy import case
+
+    return case((coluna == tel, 0), else_=1)

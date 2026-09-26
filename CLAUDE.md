@@ -63,7 +63,8 @@ Infra: Postgres com pgvector + Redis.
 - `routes/` — API. Rotas de pizzaria usam `Depends(membership)` (deps.py), que
   também devolve **402** para pizzaria suspensa. Admin da plataforma usa `require_platform_admin`.
 - `services/telefones.py` — o mesmo número chega com e sem o 9º dígito (cardápio ×
-  JID do WhatsApp): busca de cliente/conversa/pedido sempre por `telefones_equivalentes`.
+  JID do WhatsApp): busca de cliente/conversa/pedido sempre por `mesmo_telefone`
+  + `preferir_exato` (+ `.scalars().first()`), nunca `==`.
 - `services/` — Evolution, pagamentos (Mercado Pago/Asaas), billing da
   plataforma, horário, geocoding, transcrição, alertas, `prontidao.py` (auditoria de config).
 - `workers/` — Celery (`tasks.py`) e jobs do beat (`periodic.py`).
@@ -72,9 +73,12 @@ Infra: Postgres com pgvector + Redis.
 
 **Frontend (`src/`)** — React 19 + Vite + TS + Tailwind.
 - `App.tsx` — roteamento, sessão, WebSocket, alertas sonoros.
-- `components/v2/` — telas atuais (Início, Conversas, Pedidos, Cardápio, Meu
-  Negócio, Assinatura, Ajuda, `PlatformAdminView`, `CardapioPublico`).
-  `components/` fora do `v2` é legado.
+- `components/v2/` — telas (Pedidos, Análise, Conversas, Clientes, Cardápio,
+  Temas, Meu Negócio, Entregadores, Assinatura, Ajuda, `PlatformAdminView`,
+  `CardapioPublico`). Fora do `v2` só ficam `ui/` (componentes base) e
+  `driver/` (app do entregador).
+- Telas carregam sob demanda (`React.lazy` em `App.tsx`); a rota pública
+  `/m/:slug` é decidida em `main.tsx`, para o cardápio não baixar o painel.
 - `lib/api.ts` — **todo** acesso ao backend e os tipos da API.
 
 **Docs:** `Guia_Arquitetura_LLM.md` (mapa detalhado), `docs/auditoria-*.md`
@@ -85,7 +89,9 @@ Infra: Postgres com pgvector + Redis.
 ```bash
 # Backend (usar o venv do projeto; o Python global não tem as dependências)
 cd backend
-.venv/Scripts/python.exe -m pytest tests -q          # ~520 testes, usam mocks
+.venv/Scripts/python.exe -m pytest tests -q          # ~550 testes; a maioria com mocks
+# Integração (Redis/Postgres reais, como no CI): REDIS_URL=... PG_INTEGRACAO=1
+# com as migrations aplicadas (python migrations/apply.py).
 .venv/Scripts/python.exe -m ruff check app            # B008 (Depends) e E402 são intencionais
 docker compose up -d                                  # stack local completa
 

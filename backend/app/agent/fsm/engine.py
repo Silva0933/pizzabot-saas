@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.context import AgentContext
+from app.services.telefones import mesmo_telefone, preferir_exato
 
 log = logging.getLogger(__name__)
 
@@ -821,8 +822,8 @@ async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dic
         if not cli:
             cli = (await db.execute(select(Cliente).where(
                 Cliente.pizzaria_id == ctx.pizzaria.id,
-                Cliente.telefone == ctx.telefone,
-            ))).scalar_one_or_none()
+                mesmo_telefone(Cliente.telefone, ctx.telefone),
+            ).order_by(preferir_exato(Cliente.telefone, ctx.telefone)))).scalars().first()
         if not cli:
             return
 

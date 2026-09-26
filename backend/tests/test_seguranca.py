@@ -171,3 +171,26 @@ class TestProntidao:
             lambda: self._settings(is_production=False, cors_origins_list=["http://localhost:5173"]),
         )
         assert p.auditar() == []
+
+
+class TestTokenConfere:
+    """Tokens de webhook comparados em tempo constante (hmac.compare_digest)."""
+
+    def test_confere(self):
+        from app.services.secrets import token_confere
+        assert token_confere("abc", "abc")
+        assert token_confere("novo", {"antigo", "novo"})
+
+    def test_recusa(self):
+        from app.services.secrets import token_confere
+        assert not token_confere("ab", "abc")
+        assert not token_confere(None, "abc")
+        assert not token_confere("", {""})       # esperado vazio nunca confere
+
+    def test_usa_compare_digest(self):
+        from unittest.mock import patch
+
+        from app.services import secrets
+        with patch.object(secrets.hmac, "compare_digest", return_value=True) as cd:
+            assert secrets.token_confere("x", "y")
+        cd.assert_called_once()

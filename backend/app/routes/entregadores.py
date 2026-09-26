@@ -18,7 +18,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import delete, desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import hash_password
+from app.auth import hash_password, revogar_sessoes
 from app.db import get_db
 from app.deps import current_entregador, membership
 from app.models import Entregador, EquipePizzaria, Pedido, Pizzaria, Usuario
@@ -199,6 +199,8 @@ async def atualizar_entregador(
         ent.ativo = body.ativo
     if body.nova_senha and ent.usuario:
         ent.usuario.senha_hash = hash_password(body.nova_senha)
+        # Senha trocada pelo dono: quem estava logado com a antiga cai.
+        revogar_sessoes(ent.usuario)
 
     await db.commit()
     await db.refresh(ent)

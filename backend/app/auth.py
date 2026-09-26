@@ -57,6 +57,24 @@ def create_refresh_token(subject: str) -> str:
     return jwt.encode(payload, _settings.app_secret_key, algorithm=_settings.jwt_algorithm)
 
 
+def sessao_revogada(user: Any, payload: dict[str, Any]) -> bool:
+    """True se o token foi emitido antes de `usuarios.sessoes_validas_desde`
+    (troca de senha, "sair de todos os dispositivos"). Compara em segundos
+    inteiros, a resolução do `iat`."""
+    desde = getattr(user, "sessoes_validas_desde", None)
+    if desde is None:
+        return False
+    try:
+        return int(payload.get("iat") or 0) < int(desde.timestamp())
+    except (TypeError, ValueError):
+        return True
+
+
+def revogar_sessoes(user: Any) -> None:
+    """Invalida todos os tokens já emitidos para o usuário (vale ao commitar)."""
+    user.sessoes_validas_desde = datetime.now(UTC).replace(microsecond=0)
+
+
 def decode_token(token: str) -> dict[str, Any]:
     """Levanta jwt.InvalidTokenError se inválido/expirado."""
     return jwt.decode(token, _settings.app_secret_key, algorithms=[_settings.jwt_algorithm])
