@@ -34,7 +34,13 @@ def split_balloons(texto: str, *, max_balloons: int = 6, max_chars: int = 320) -
         return []
     explicit = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     if len(explicit) > 1:
-        return explicit[:max_balloons]
+        # Acima do teto, o excedente vai junto no último balão. Antes era
+        # descartado: o resumo do pedido (4 blocos, teto 2) chegava no WhatsApp
+        # só até o total, sem endereço, pagamento, troco e o "Posso fechar?".
+        teto = max(1, max_balloons)
+        if len(explicit) > teto:
+            explicit = [*explicit[:teto - 1], "\n\n".join(explicit[teto - 1:])]
+        return explicit
     if len(text) <= max_chars:
         return [text]
 

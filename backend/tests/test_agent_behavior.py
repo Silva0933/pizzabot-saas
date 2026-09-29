@@ -81,9 +81,24 @@ def test_ritmo_calmo_e_limites_de_baloes_sao_aplicados():
     }) >= 850
 
 
-def test_quebra_de_baloes_respeita_teto():
+def test_quebra_de_baloes_respeita_teto_sem_perder_texto():
+    """O teto de balões não pode cortar a mensagem: o resumo do pedido (4 blocos,
+    teto padrão 2) chegava no WhatsApp só até o total — sem endereço, pagamento,
+    troco e o "Posso fechar?". O excedente vai junto no último balão."""
     texto = "Primeiro assunto.\n\nSegundo assunto.\n\nTerceiro assunto."
     assert split_balloons(texto, max_balloons=2) == [
         "Primeiro assunto.",
-        "Segundo assunto.",
+        "Segundo assunto.\n\nTerceiro assunto.",
     ]
+
+
+def test_resumo_do_pedido_chega_inteiro():
+    resumo = (
+        "Fechando seu pedido 📝\n\n• 1x Portuguesa (G) — R$ 42,00\n*Total: R$ 57,00*\n\n"
+        "📍 Entrega: José Castro, 2\n💳 Pagamento: Dinheiro\n💵 Troco para R$ 100,00\n\n"
+        "Posso fechar o pedido? 😊"
+    )
+    baloes = split_balloons(resumo, max_balloons=2)
+    assert len(baloes) == 2
+    juntos = "\n\n".join(baloes)
+    assert "Troco para R$ 100,00" in juntos and "Posso fechar o pedido?" in juntos
