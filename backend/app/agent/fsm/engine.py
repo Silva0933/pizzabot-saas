@@ -958,6 +958,63 @@ async def _pos_venda(
     return None
 
 
+# ============================================
+# Negativa determinística ("tem fanta?" → "não temos Fanta; temos...")
+# ============================================
+# A voz respondia "Não tenho essa informação no cardápio disponível agora" e "não
+# tenho informação sobre a versão de 600 ml" (teste com o agente real, 29/09): soa
+# robótico e inseguro. Produto fora do catálogo é um fato do sistema — a resposta
+# sai daqui, com as alternativas REAIS da mesma categoria.
+def _rotulo_categoria(categoria: str) -> str:
+    c = (categoria or "").strip().lower()
+    return c if c.endswith("s") else f"{c}s"
+
+
+async def _negativa_catalogo(
+    db: AsyncSession, ctx: AgentContext, nao_encontrados: list[dict[str, Any]], *, cardapio_enviado: bool,
+) -> str | None:
+    from app.agent.fsm.catalogo import carregar_catalogo, normalizar
+    try:
+        cat = await carregar_catalogo(db, ctx.pizzaria)
+    except Exception as e:  # noqa: BLE001
+        log.debug("Negativa: catálogo indisponível: %s", e)
+        return None
+    try:
+        from sqlalchemy import text as _text
+        indisponiveis = [r[0] for r in (await db.execute(_text(
+            "SELECT nome FROM public.produtos WHERE pizzaria_id = :pid AND disponivel = false"
+        ), {"pid": str(ctx.pizzaria.id)})).fetchall() if r[0]]
+    except Exception:  # noqa: BLE001
+        indisponiveis = []
+
+    partes: list[str] = []
+    categoria = None
+    for x in nao_encontrados[:2]:
+        texto = str(x.get("texto") or "").strip()
+        if not texto:
+            continue
+        tn = normalizar(texto)
+        # "tem coca?" com a Coca desligada: está em falta (existe, mas não hoje).
+        em_falta = next((n for n in indisponiveis if tn and (normalizar(n) == tn or tn in normalizar(n))), None)
+        partes.append(f"a {em_falta} está em falta no momento" if em_falta else f"não temos {texto}")
+        categoria = categoria or x.get("categoria")
+    if not partes:
+        return None
+
+    frase = "Poxa, " + " e ".join(partes) + " 😕"
+    alternativas = cat.da_categoria(categoria)[:4] if categoria else []
+    if alternativas:
+        def _preco(p) -> str:
+            if p.tamanhos:
+                return "a partir de " + _fmt_brl(min(float(v) for _, v in p.tamanhos))
+            return _fmt_brl(float(p.preco))
+        lista = ", ".join(f"{p.nome} ({_preco(p)})" for p in alternativas)
+        frase += f" [QUEBRA] Das {_rotulo_categoria(categoria)}, temos: {lista}. Quer alguma?"
+    elif not cardapio_enviado:
+        frase += " [QUEBRA] Quer que eu te mande o cardápio?"
+    return frase
+
+
 async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dict[str, Any], calc: dict[str, Any]) -> None:
     """Espelha o pedido EM CONSTRUÇÃO no rascunho (card do Kanban "Novos"), pra o
     painel mostrar itens/total/entrega/pagamento em tempo real — sem esperar o
@@ -1779,6 +1836,33 @@ async def processar(
                 "simpatia que não consegue mudar o valor; só cite cupom/promoção se estiverem nos fatos. "
                 "NÃO cite preço de nenhum produto."
             )
+        # Produto que não existe no catálogo ("tem fanta?"): resposta do sistema.
+        nao_enc = [x for x in (dados.get("_nao_encontrados") or []) if isinstance(x, dict)]
+        if nao_enc and not pechincha and intencao == "duvida_geral":
+            negativa = await _negativa_catalogo(
+                db, ctx, nao_enc, cardapio_enviado=bool(estado.get("cardapio_enviado")),
+            )
+            if negativa:
+                from app.agent.fsm.catalogo import carregar_catalogo
+                cats_neg = {x.get("categoria") for x in nao_enc}
+                try:
+                    cat_n = await carregar_catalogo(db, ctx.pizzaria)
+                    outros = [
+                        p for p in (cat_n.por_id(i) for i in (dados.get("_citados") or []))
+                        if p is not None and p.categoria not in cats_neg
+                    ]
+                except Exception:  # noqa: BLE001
+                    outros = []
+                if not outros:
+                    decisao["mensagem_pronta"] = negativa
+                    decisao["mensagem_pronta_acao"] = "responder_duvida"
+                    estado["apresentou"] = True
+                    return {"decisao": decisao, "estado": estado}
+                # Perguntou também de outro produto que existe: a voz responde as
+                # duas coisas, com a negativa como fato obrigatório.
+                decisao["fatos"].append(
+                    "Sobre o que NÃO temos, diga exatamente isto: " + negativa.replace("[QUEBRA]", "")
+                )
         # GATILHO por produto citado (NLU de comandos): a voz recebe os dados reais
         # SÓ dos produtos/categoria de que o cliente falou — nada de busca pela
         # frase inteira (que trazia a "calabresa parecida" numa pechincha).

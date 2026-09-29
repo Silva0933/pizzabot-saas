@@ -123,6 +123,7 @@ def montar_schema(cat: Catalogo, iids: list[str]) -> dict[str, Any]:
         "required": [
             "intencao", "confianca", "comandos", "tipo_entrega", "endereco", "forma_pagamento",
             "pagar_agora", "quer_cardapio", "nota", "observacoes", "produtos_citados", "categoria_citada",
+            "produtos_nao_encontrados",
         ],
         "properties": {
             "intencao": {"type": "string", "enum": list(INTENCOES)},
@@ -139,6 +140,14 @@ def montar_schema(cat: Catalogo, iids: list[str]) -> dict[str, Any]:
             # falou — a voz recebe só os dados reais deles.
             "produtos_citados": {"type": "array", "items": {"type": "string", "enum": codigos}},
             "categoria_citada": _nullable_enum(categorias),
+            # O que o cliente citou e NÃO existe no catálogo ("tem fanta?"): o
+            # sistema responde "não temos X" com alternativas reais da categoria.
+            "produtos_nao_encontrados": {"type": "array", "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["texto", "categoria"],
+                "properties": {"texto": {"type": "string"}, "categoria": _nullable_enum(categorias)},
+            }},
         },
     }
 
@@ -186,6 +195,9 @@ duvida_geral e comandos vazio. Pechincha/desconto → duvida_geral.
 CITADOS (sempre que o cliente mencionar produtos, pedindo ou perguntando): produtos_citados = códigos
 dos produtos do catálogo de que ele falou; categoria_citada = a categoria quando ele fala do grupo
 ("quais bebidas vocês têm?", "tem sobremesa?"). Produto que não existe no catálogo não entra aqui.
+NÃO ENCONTRADOS: produtos_nao_encontrados = cada produto que o cliente citou (pedindo OU perguntando) e que
+NÃO está no catálogo, com texto = como ele disse ("fanta", "coca 600ml") e categoria = a categoria do
+catálogo a que ele pertenceria (bebida, pizza...). Vazio se tudo o que ele citou existe.
 
 DEMAIS CAMPOS (null quando ele não falou disso):
 - tipo_entrega: delivery (entrega, "manda aqui") | retirada ("vou buscar", "retiro").
@@ -308,6 +320,12 @@ def converter(bruto: dict[str, Any], cat: Catalogo, estado: dict[str, Any]) -> d
     dados["_citados"] = list(dict.fromkeys(p.id for p in citados if p is not None))
     if bruto.get("categoria_citada") not in (None, "-") and bruto["categoria_citada"] in cat.categorias():
         dados["_categoria_citada"] = bruto["categoria_citada"]
+    nao_enc = []
+    for x in bruto.get("produtos_nao_encontrados") or []:
+        if isinstance(x, dict) and str(x.get("texto") or "").strip():
+            categoria = x.get("categoria") if x.get("categoria") in cat.categorias() else None
+            nao_enc.append({"texto": str(x["texto"]).strip()[:60], "categoria": categoria})
+    dados["_nao_encontrados"] = nao_enc[:3]
     return {"intencao": intencao, "confianca": confianca, "dados": dados}
 
 
