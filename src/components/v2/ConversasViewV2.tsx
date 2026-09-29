@@ -10,6 +10,21 @@ import {
 } from "../../lib/api";
 import { ChatInterno, useChamadosAbertos } from "./ChamadosInternos";
 
+/** Formatação do WhatsApp no painel: *negrito* e _itálico_ como o cliente vê,
+ *  em vez dos asteriscos crus do resumo ("*Total: R$ 57,00*"). */
+function TextoWhatsApp({ texto }: { texto: string }) {
+  const partes = (texto || "").split(/(\*[^*\n]+\*|_[^_\n]+_)/g);
+  return (
+    <>
+      {partes.map((p, i) => {
+        if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <strong key={i}>{p.slice(1, -1)}</strong>;
+        if (p.length > 2 && p.startsWith("_") && p.endsWith("_")) return <em key={i}>{p.slice(1, -1)}</em>;
+        return <React.Fragment key={i}>{p}</React.Fragment>;
+      })}
+    </>
+  );
+}
+
 interface Props {
   pizzariaId: string;
   liveEvent?: { tipo: string; payload: any } | null;
@@ -430,11 +445,41 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abr
                 {mensagens.map((m) => {
                   const isCliente = m.origem === "cliente";
                   const isSistema = m.origem === "sistema";
+                  // Marcador de cota do pedido do cardápio digital ("[Pedido #2 via
+                  // Cardápio Digital]"): não é fala da atendente, é um aviso.
+                  const marcador = /^\[Pedido #(\d+) via Card[aá]pio Digital\]$/.exec((m.conteudo || "").trim());
+                  if (marcador) {
+                    return (
+                      <div key={m.id} className="flex justify-center my-3">
+                        <span className="bg-[#161f30] border border-[#1e293b] text-slate-300 text-[11px] px-3.5 py-1 rounded-full font-medium">
+                          🧾 Pedido #{marcador[1]} feito pelo cardápio digital
+                        </span>
+                      </div>
+                    );
+                  }
+                  if (isSistema && (m.conteudo || "").includes("\n")) {
+                    // Mensagem automática que o cliente RECEBEU (confirmação do pedido
+                    // do cardápio, avisos de status): antes virava uma pílula de uma
+                    // linha só, sem quebras e com os *asteriscos* do WhatsApp à mostra.
+                    return (
+                      <div key={m.id} className="flex justify-end">
+                        <div className="max-w-[75%] px-4 py-2.5 text-sm whitespace-pre-wrap shadow-sm leading-relaxed bg-[#161f30] border border-[#1e293b] text-slate-100 rounded-2xl rounded-tr-sm">
+                          <div className="text-[10px] font-bold uppercase tracking-wider opacity-75 mb-1">
+                            📋 Mensagem automática
+                          </div>
+                          <TextoWhatsApp texto={m.conteudo} />
+                          <div className="text-[10px] mt-1 text-right font-medium text-slate-400">
+                            {new Date(m.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
                   if (isSistema) {
                     return (
                       <div key={m.id} className="flex justify-center my-3">
                         <span className="bg-[#161f30] border border-[#1e293b] text-slate-400 text-[11px] px-3.5 py-1 rounded-full font-medium">
-                          {m.conteudo}
+                          <TextoWhatsApp texto={m.conteudo} />
                         </span>
                       </div>
                     );
@@ -455,7 +500,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abr
                             {m.origem === "bot" ? "🤖 Atendente IA" : "👤 Você"}
                           </div>
                         )}
-                        {m.conteudo}
+                        <TextoWhatsApp texto={m.conteudo} />
                         <div className={`text-[10px] mt-1 text-right font-medium ${isCliente ? "text-slate-400" : "text-white/70"}`}>
                           {new Date(m.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                         </div>

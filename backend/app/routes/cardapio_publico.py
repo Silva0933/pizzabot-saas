@@ -572,14 +572,14 @@ async def criar_pedido_digital(
 
 
     # Monta endereço
-    endereco_parts = [body.endereco_rua]
-    if body.endereco_numero:
-        endereco_parts.append(f"nº {body.endereco_numero}")
+    # "Rua Jerusalém, nº 3 - Vila Cascavel (Ref: ...)". Antes o bairro entrava na
+    # lista separada por vírgula e saía "Rua Jerusalém, nº 3, - Vila Cascavel".
+    endereco = ", ".join(p for p in (body.endereco_rua, f"nº {body.endereco_numero}" if body.endereco_numero else None) if p)
     if body.endereco_bairro:
-        endereco_parts.append(f"- {body.endereco_bairro}")
+        endereco += f" - {body.endereco_bairro}"
     if body.endereco_referencia:
-        endereco_parts.append(f"(Ref: {body.endereco_referencia})")
-    endereco = ", ".join(filter(None, endereco_parts)) if body.tipo == "delivery" else None
+        endereco += f" (Ref: {body.endereco_referencia})"
+    endereco = endereco.strip(" -") if body.tipo == "delivery" else None
 
     # Calcula valor total — SEMPRE recalculado no servidor a partir do cadastro.
     # NUNCA confia no preço enviado pelo cliente (anti-tampering de preço).
@@ -1114,7 +1114,7 @@ async def _enviar_confirmacao_whatsapp(
         obs = item.get("observacao")
         adicionais = item.get("adicionais", [])
 
-        linha = f"  {qtd}x {nome}"
+        linha = f"• {qtd}x {nome}"
         # O nome já sai do recálculo com o tamanho ("Pizza Calabresa (G)"); somar
         # de novo mandava "Pizza Calabresa (G) (G)" no WhatsApp do cliente.
         if tamanho and f"({tamanho})" not in nome:
@@ -1146,13 +1146,13 @@ async def _enviar_confirmacao_whatsapp(
     ]
 
     if taxa_a_confirmar:
-        msg_parts.append("  🚚 Taxa de entrega — a loja confirma com você em instantes")
+        msg_parts.append("🛵 Entrega: a loja confirma a taxa com você em instantes")
     elif taxa_entrega > 0:
-        msg_parts.append(f"  🚚 Taxa de entrega — R$ {float(taxa_entrega):.2f}".replace(".", ","))
+        msg_parts.append(f"🛵 Entrega: R$ {float(taxa_entrega):.2f}".replace(".", ","))
 
     msg_parts.extend([
-        "",
         f"💰 *Total: R$ {float(pedido.valor_total):.2f}*".replace(".", ","),
+        "",
     ])
 
     if pedido.tipo == "delivery" and pedido.endereco_entrega:
@@ -1160,8 +1160,14 @@ async def _enviar_confirmacao_whatsapp(
     elif pedido.tipo == "retirada":
         msg_parts.append("🏪 *Retirada no balcão*")
 
+    # "dinheiro" cru, minúsculo, destoava do resumo do WhatsApp ("Pagamento: Dinheiro").
+    rotulos_pagamento = {"pix": "Pix", "cartao": "Cartão", "dinheiro": "Dinheiro"}
+    forma = rotulos_pagamento.get(str(pedido.forma_pagamento or "").lower(), str(pedido.forma_pagamento or "-"))
+    msg_parts.append(f"💳 *Pagamento:* {forma}")
+    if pedido.observacoes:
+        # É onde o cliente escreve o troco ("troco pra R$ 100") no checkout.
+        msg_parts.append(f"📝 *Obs.:* {pedido.observacoes}")
     msg_parts.extend([
-        f"💳 *Pagamento:* {pedido.forma_pagamento}",
         f"⏰ *Previsão:* {tempo}",
         "",
         "Qualquer dúvida, é só responder aqui! 😊",
