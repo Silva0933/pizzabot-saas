@@ -36,6 +36,8 @@ def estado_inicial() -> dict[str, Any]:
         # Id do fechamento em curso (criado no resumo): a chave de idempotência do
         # registro. Um "sim" repetido após o turno cair acha o MESMO pedido.
         "fechamento_id": None,
+        # Troco do pagamento em dinheiro: None = não perguntado; 0 = não precisa.
+        "troco": None,
     }
 
 
@@ -103,7 +105,7 @@ def _fmt_brl(v: float) -> str:
 def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: float,
                        tipo: str | None, endereco: str | None,
                        pagamento: str | None, pagar_agora: bool | None,
-                       observacoes: str | None) -> str:
+                       observacoes: str | None, troco: float | None = None) -> str:
     """BLINDAGEM (Pilar 2): texto do RESUMO montado 100% pelo backend (verbatim).
     A LLM não toca nesses números."""
     linhas = ["Fechando seu pedido 📝", ""]
@@ -126,6 +128,12 @@ def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: flo
             else:
                 quando = " (na retirada)" if tipo == "retirada" else " (na entrega)"
         linhas.append(f"💳 Pagamento: {nomes.get(pagamento, pagamento)}{quando}")
+    if pagamento == "dinheiro" and troco is not None:
+        linhas.append(f"💵 Troco para {_fmt_brl(troco)}" if troco > 0 else "💵 Sem troco")
+        # A NLU às vezes também põe "troco pra 50" nas observações: sem isto o
+        # resumo mostrava o troco duas vezes.
+        if observacoes:
+            observacoes = _re.sub(r"[,;·]?\s*(sem\s+)?troco[^,;·]*", "", observacoes, flags=_re.IGNORECASE).strip(" ,;·") or None
     if observacoes:
         linhas.append(f"📝 Obs: {observacoes}")
     linhas.append("")
@@ -959,6 +967,41 @@ async def _pos_venda(
 
 
 # ============================================
+# Troco (dinheiro na entrega)
+# ============================================
+_SEM_TROCO_RE = _re.compile(
+    r"\b(n[aã]o|sem troco|tenho trocado|trocado|valor certo|certinho|exato|n[aã]o precisa)\b", _re.IGNORECASE,
+)
+
+
+def _ler_troco(texto: str, *, so_valor: bool = False) -> float | None:
+    """Valor do troco na frase ("pra 100", "troco de 50,00"); 0.0 = não precisa;
+    None = a frase não fala de troco. `so_valor`: só aceita "troco ... <valor>"
+    (para ler das observações sem confundir com número de casa)."""
+    t = texto or ""
+    padrao = r"troco\D{0,15}(\d{1,4}(?:[.,]\d{1,2})?)" if so_valor else r"(\d{1,4}(?:[.,]\d{1,2})?)"
+    m = _re.search(padrao, t, _re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1).replace(",", "."))
+        except ValueError:
+            return None
+    if not so_valor and _SEM_TROCO_RE.search(t):
+        return 0.0
+    return None
+
+
+def _obs_com_troco(estado: dict[str, Any]) -> str | None:
+    """Observações do pedido com o troco (a equipe e o motoboy leem daqui)."""
+    obs = estado.get("observacoes")
+    troco = estado.get("troco")
+    if estado.get("pagamento") != "dinheiro" or not troco or (obs and "troco" in obs.lower()):
+        return obs
+    linha = f"Troco para {_fmt_brl(troco)}"
+    return f"{obs} · {linha}" if obs else linha
+
+
+# ============================================
 # Negativa determinística ("tem fanta?" → "não temos Fanta; temos...")
 # ============================================
 # A voz respondia "Não tenho essa informação no cardápio disponível agora" e "não
@@ -1170,6 +1213,16 @@ async def processar(
             # O carrinho sumiu por reset, não por remoção: sem isto a confirmação
             # automática anunciava "✅ Tirei: Pizza Brasa (M)" do pedido fechado.
             decisao["carrinho_resetado"] = True
+
+    # Resposta à pergunta do troco ("pra 100", "não precisa"). Se o cliente falou
+    # de outra coisa, a pergunta volta quando o funil chegar de novo nela.
+    if estado.get("aguardando_troco") and intencao not in (
+        "cancelar", "falar_humano", "reclamar", "remover_item", "adicionar_item",
+    ):
+        troco = _ler_troco(user_input)
+        if troco is not None:
+            estado["troco"] = troco
+            estado.pop("aguardando_troco", None)
 
     # Reclamação / pedir atendente humano → escala (desliga o bot na conversa).
     if intencao in ("reclamar", "falar_humano") or _eh_grosseria(user_input):
@@ -2091,7 +2144,7 @@ async def processar(
             forma_pagamento=estado["pagamento"],
             pagar_agora=bool(estado.get("pagar_agora")),
             endereco_entrega=estado.get("endereco"),
-            observacoes=estado.get("observacoes"),
+            observacoes=_obs_com_troco(estado),
             confirmado=True,  # FSM já validou a confirmação
             bairro_confirmado=estado.get("endereco_bairro"),
             chave_idempotencia=(f"wa:{estado['fechamento_id']}" if estado.get("fechamento_id") else None),
@@ -2338,6 +2391,32 @@ async def processar(
         decisao["proxima_pergunta"] = f"Pergunte SÓ se quer pagar AGORA pela conversa ou {momento}. Não repita o total."
         return {"decisao": decisao, "estado": estado}
 
+    # 5) troco (dinheiro na entrega). O motoboy saía sem saber quanto levar: o
+    # agente nunca perguntava, e só ficava registrado se o cliente falasse sozinho.
+    total_pedido = float(calc.get("valor_total") or 0) if calc else 0.0
+    if estado.get("tipo") == "delivery" and estado.get("pagamento") == "dinheiro" and estado.get("troco") is None:
+        ja_dito = _ler_troco(estado.get("observacoes") or "", so_valor=True)
+        if ja_dito is not None and ja_dito >= total_pedido:
+            estado["troco"] = ja_dito
+        else:
+            estado["etapa"] = "PAGAMENTO"
+            estado["aguardando_troco"] = True
+            decisao["acao"] = "pedir_info"
+            decisao["mensagem_pronta"] = "Vai precisar de troco? Se sim, pra quanto? 💵"
+            decisao["mensagem_pronta_acao"] = "pedir_info"
+            return {"decisao": decisao, "estado": estado}
+    if estado.get("troco") and estado["troco"] < total_pedido:
+        # "troco pra 50" num pedido de R$ 66,80: não dá para levar troco de 50.
+        estado["troco"] = None
+        estado["aguardando_troco"] = True
+        estado["etapa"] = "PAGAMENTO"
+        decisao["acao"] = "pedir_info"
+        decisao["mensagem_pronta"] = (
+            f"O total ficou {_fmt_brl(total_pedido)} 😊 Pra quanto você vai precisar de troco?"
+        )
+        decisao["mensagem_pronta_acao"] = "pedir_info"
+        return {"decisao": decisao, "estado": estado}
+
     # tudo coletado, mas ainda não confirmado → mostra o resumo UMA vez e pede confirmação
     estado["etapa"] = "AGUARDANDO_CONFIRMACAO"
     # Reseta o controle do lembrete: cada vez que (re)entramos no resumo, um novo
@@ -2359,5 +2438,6 @@ async def processar(
         calc["itens"], float(calc["taxa_entrega"]), float(calc["valor_total"]),
         estado.get("tipo"), estado.get("endereco"),
         estado.get("pagamento"), estado.get("pagar_agora"), estado.get("observacoes"),
+        troco=estado.get("troco"),
     )
     return {"decisao": decisao, "estado": estado}
