@@ -239,6 +239,31 @@ async def _checar_comprovante_manual(db: AsyncSession, ctx, telefone: str, user_
     )
 
 
+async def refazer_voz_pelo_preco(texto, correcoes, *, comando, validos, gerar, blindar_fn):
+    """Preço inventado pela voz: refaz UMA vez, com os valores válidos explícitos,
+    antes de mandar "(valor a confirmar)" — o marcador soava robótico mesmo quando
+    o sistema sabia o preço (R$ 40,90 citado para uma pizza de R$ 66,90). Se a 2ª
+    tentativa também errar (ou falhar), fica o texto já neutralizado."""
+    errados = correcoes.get("precos_neutralizados") or []
+    lista = ", ".join(f"R$ {float(v):.2f}".replace(".", ",") for v in validos)
+    comando_2 = comando + (
+        f"\n\nATENÇÃO: você citou valor(es) que NÃO existem ({', '.join(map(str, errados))}). "
+        + (f"Os ÚNICOS valores válidos são: {lista}. Use exatamente um deles."
+           if validos else "NÃO cite nenhum valor em R$.")
+    )
+    try:
+        novo = await gerar(comando_2)
+    except Exception as e:  # noqa: BLE001
+        log.debug("Refazer a voz pelo preço falhou: %s", e)
+        return texto, correcoes
+    if not novo:
+        return texto, correcoes
+    t2, c2 = blindar_fn(novo)
+    if c2.get("precos_neutralizados"):
+        return texto, correcoes
+    return t2, {**c2, "preco_refeito": errados}
+
+
 async def run_fsm_agent(
     db: AsyncSession,
     pizzaria_id: uuid.UUID,
@@ -534,11 +559,28 @@ async def run_fsm_agent(
         # remove saudação repetida e neutraliza qualquer preço sem lastro.
         try:
             from app.agent.fsm.guard import blindar, remover_eco_confirmacao
-            texto, correcoes_blindagem = blindar(
-                texto, ja_apresentou=ja_apresentou,
-                precos_validos=decisao.get("precos_validos") or [],
-                persona_nome=getattr(ctx.personalidade, "nome", None) or "Camila",
+            persona = getattr(ctx.personalidade, "nome", None) or "Camila"
+            validos = decisao.get("precos_validos") or []
+            texto_voz, correcoes_blindagem = blindar(
+                texto, ja_apresentou=ja_apresentou, precos_validos=validos, persona_nome=persona,
             )
+            if correcoes_blindagem.get("precos_neutralizados"):
+                async def _gerar(cmd: str) -> str:
+                    async def _voz3(prov: str, key: str, mdl: str):
+                        return await voice.gerar_voz(
+                            provider=prov, api_key=key, model=mdl, comando=cmd,
+                            reasoning=cfg.get("voz_reasoning") or None,
+                        )
+                    (t, _u), _p, _m = await com_failover(_voz3, cfg=cfg, model=model)
+                    return t
+
+                texto_voz, correcoes_blindagem = await refazer_voz_pelo_preco(
+                    texto_voz, correcoes_blindagem, comando=comando, validos=validos, gerar=_gerar,
+                    blindar_fn=lambda t: blindar(
+                        t, ja_apresentou=ja_apresentou, precos_validos=validos, persona_nome=persona,
+                    ),
+                )
+            texto = texto_voz
             # Antes o retorno sobrescrevia `correcoes` e o trace perdia o produto sem lastro.
             correcoes.update(correcoes_blindagem)
             # O sistema já mostrou "✅ Anotei: 1x Fanta 1L": a voz não repete ("Fanta

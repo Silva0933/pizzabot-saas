@@ -772,7 +772,10 @@ def _fatos_taxa_entrega(pizz, user_input: str) -> tuple[str | None, list[float]]
         return (f"Taxas de entrega cadastradas por bairro — {lista}.{extra} Se o cliente citou um bairro "
                 "que não está aqui, NÃO invente valor.", [v for _, v in tabela] + ([fixa] if fixa else []))
     if fixa:
-        return (f"Taxa de entrega (qualquer bairro): {_fmt_brl(fixa)}.", [fixa])
+        # Sem tabela de bairros não há como saber a área atendida: a voz dizia
+        # "Entregamos no Cohatrac" para qualquer bairro (teste com o agente real).
+        return (f"Taxa de entrega padrão: {_fmt_brl(fixa)}. A loja não cadastrou os bairros atendidos: "
+                "informe a taxa, mas NÃO afirme nem negue que entrega num bairro específico.", [fixa])
     return (None, [])
 
 
