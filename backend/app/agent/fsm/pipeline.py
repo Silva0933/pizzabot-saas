@@ -533,12 +533,19 @@ async def run_fsm_agent(
         # BLINDAGEM (Pilar 3): guard-rail determinístico sobre o texto da LLM —
         # remove saudação repetida e neutraliza qualquer preço sem lastro.
         try:
-            from app.agent.fsm.guard import blindar
-            texto, correcoes = blindar(
+            from app.agent.fsm.guard import blindar, remover_eco_confirmacao
+            texto, correcoes_blindagem = blindar(
                 texto, ja_apresentou=ja_apresentou,
                 precos_validos=decisao.get("precos_validos") or [],
                 persona_nome=getattr(ctx.personalidade, "nome", None) or "Camila",
             )
+            # Antes o retorno sobrescrevia `correcoes` e o trace perdia o produto sem lastro.
+            correcoes.update(correcoes_blindagem)
+            # O sistema já mostrou "✅ Anotei: 1x Fanta 1L": a voz não repete ("Fanta
+            # 1L anotada.", "Tirei, sim.") — teste com o agente real, 29/09.
+            texto, removeu_eco = remover_eco_confirmacao(texto, confirmacao)
+            if removeu_eco:
+                correcoes["eco_removido"] = True
             if correcoes.get("precos_neutralizados"):
                 # Pilar 5: preço inventado é sinal grave → alerta no painel.
                 from app.services.alertas import registrar_alerta

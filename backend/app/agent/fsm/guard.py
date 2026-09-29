@@ -75,6 +75,57 @@ def strip_nome_proprio(texto: str, persona_nome: str | None, ja_apresentou: bool
     return (texto, True) if (texto and texto != original) else (original, False)
 
 
+# Frase que só ecoa a confirmação do sistema ("Fanta 1L anotada.", "Tirei, sim.").
+_VERBO_ECO_RE = re.compile(
+    r"\b(anot\w*|tirei|tirad[oa]s?|remov\w*|ajust\w*|adicion\w*|inclu\w*|coloquei|tá anotad\w*)\b",
+    re.IGNORECASE,
+)
+_FRASE_RE = re.compile(r"[^.!?…]+[.!?…]*\s*")
+
+
+def remover_eco_confirmacao(texto: str, confirmacao: str | None) -> tuple[str, bool]:
+    """Remove do INÍCIO da fala as frases que só repetem a confirmação que o
+    sistema já mostrou ("✅ Anotei: 1x Fanta 1L" + "Fanta 1L anotada. Vai ser
+    entrega?"). Só frases curtas, sem pergunta, com verbo de anotar/tirar ou com
+    o nome de um item confirmado. Nunca apaga tudo."""
+    if not texto or not confirmacao:
+        return texto, False
+    itens = [
+        _norm(re.sub(r"^\s*\d+x\s+", "", pedaco))
+        for pedaco in re.split(r"[,·]", re.sub(r"^✅\s*", "", confirmacao))
+    ]
+    itens = [re.sub(r"^(anotei|ajustei|tirei):\s*", "", i).strip() for i in itens]
+    itens = [re.sub(r"\s*\(.*$", "", i) for i in itens if i]  # "pizza brasa (m)" → "pizza brasa"
+    frases = _FRASE_RE.findall(texto)
+    removidas = 0
+    for frase in frases:
+        f = frase.strip()
+        fn = _norm(f)
+        eco = (
+            f and "?" not in f and len(f) <= 60
+            and (_VERBO_ECO_RE.search(f) or any(i and i in fn for i in itens))
+        )
+        if not eco:
+            break
+        removidas += 1
+    if removidas == 0 or removidas >= len(frases):
+        return texto, False
+    resto = "".join(frases[removidas:]).strip()
+    return resto[0].upper() + resto[1:], True
+
+
+def strip_apresentacao(texto: str, persona_nome: str | None, ja_apresentou: bool) -> tuple[str, bool]:
+    """Remove "Sou a Camila, da Fornalha..." depois que a atendente já se apresentou."""
+    if not texto or not persona_nome or not ja_apresentou:
+        return texto, False
+    nome = re.escape(persona_nome.strip())
+    novo = re.sub(rf"(^|(?<=[.!?…]\s))\s*(aqui [eé]|sou|eu sou)\s+(a|o)\s+{nome}\b[^.!?…]*[.!?…]?\s*", r"\1",
+                  texto, count=1, flags=re.IGNORECASE).strip()
+    if not novo or novo == texto:
+        return texto, False
+    return novo[0].upper() + novo[1:], True
+
+
 def neutralizar_precos(texto: str, validos: Any) -> tuple[str, list[float]]:
     """Troca por marcador neutro todo valor R$ citado que NÃO tem lastro no que o
     backend calculou (lista/conjunto `validos`). Retorna (texto, [removidos]).
@@ -120,6 +171,9 @@ def blindar(texto: str, *, ja_apresentou: bool, precos_validos: Any,
     texto, removeu_saud = strip_saudacao(texto, ja_apresentou)
     if removeu_saud:
         correcoes["saudacao_removida"] = True
+    texto, removeu_apres = strip_apresentacao(texto, persona_nome, ja_apresentou)
+    if removeu_apres:
+        correcoes["apresentacao_removida"] = True
     texto, removeu_nome = strip_nome_proprio(texto, persona_nome, ja_apresentou)
     if removeu_nome:
         correcoes["nome_proprio_removido"] = True
