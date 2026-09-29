@@ -333,6 +333,27 @@ async def run_fsm_agent(
     if res_comprovante is not None:
         return res_comprovante
 
+    # "Pare de me mandar mensagem": sai das mensagens automáticas (lembrete,
+    # resgate, pesquisa). Quem se irrita e não tem como sair denuncia o número.
+    from app.services.protecao_whatsapp import (
+        MSG_DESCADASTRO,
+        eh_pedido_para_parar,
+        marcar_nao_perturbe,
+    )
+    if eh_pedido_para_parar(user_input):
+        if not simulation:
+            await marcar_nao_perturbe(db, pizzaria_id, telefone)
+        try:
+            await append_turn(db, pizzaria_id, telefone, role="user", content=user_input)
+            await append_turn(db, pizzaria_id, telefone, role="assistant", content=MSG_DESCADASTRO)
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha ao salvar memória (descadastro): %s", e)
+        await db.commit()
+        return AgentResult(
+            texto=MSG_DESCADASTRO, iteracoes=1, tool_calls=["fsm:descadastro"], precos_tool=set(),
+            trace={"pipeline": "fsm", "simulation": simulation, "decision": "descadastro"},
+        )
+
     # Estado (carrinho/etapa). Se não for FSM ainda, inicia.
     estado = await load_state(db, pizzaria_id, telefone)
     if not isinstance(estado, dict) or estado.get("pipeline") != "fsm":
