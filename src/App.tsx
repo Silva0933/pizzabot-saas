@@ -240,6 +240,16 @@ function AdminApp() {
   }
   const [liveEvent, setLiveEvent] = useState<WsEvent | null>(null);
   const [pendingOrderAlerts, setPendingOrderAlerts] = useState(0);
+  const [ultimoPedidoAlerta, setUltimoPedidoAlerta] = useState<{ numero: number | null; origem: string } | null>(null);
+  // Pedido fechado toca SEM PARAR (a cada 4 s) até alguém ver ou silenciar. Um
+  // bipe só passava despercebido com a cozinha cheia — teste real, 29/09.
+  useEffect(() => {
+    if (pendingOrderAlerts <= 0) return;
+    const timer = window.setInterval(() => {
+      if (alertasSonorosRef.current) playNotificationSound("novo");
+    }, 4_000);
+    return () => window.clearInterval(timer);
+  }, [pendingOrderAlerts > 0]);
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() =>
     typeof Notification !== "undefined" ? Notification.permission : "denied",
   );
@@ -274,6 +284,7 @@ function AdminApp() {
 
   function acknowledgeOrderAlerts() {
     setPendingOrderAlerts(0);
+    setUltimoPedidoAlerta(null);
     if (orderAlertStorageKey) localStorage.removeItem(orderAlertStorageKey);
     desktopNotificationsRef.current.forEach((notification) => notification.close());
     desktopNotificationsRef.current = [];
@@ -299,6 +310,10 @@ function AdminApp() {
     }
     if (!markOrderAlerted(`fechado:${payload.pedido_id}`)) return;
     if (alertasSonorosRef.current) playNotificationSound("novo");
+    setUltimoPedidoAlerta({
+      numero: payload.numero_pedido ?? null,
+      origem: payload.origem === "cardapio_digital" ? "cardápio digital" : "WhatsApp",
+    });
     const eventId = payload.pedido_id;
     setPendingOrderAlerts((current) => {
       const next = current + 1;
@@ -811,6 +826,15 @@ function AdminApp() {
         setNav("pedidos");
       }}
     >
+      <FaixaPedidoNovo
+        quantidade={pendingOrderAlerts}
+        ultimo={ultimoPedidoAlerta}
+        onVer={() => {
+          acknowledgeOrderAlerts();
+          setNav("pedidos");
+        }}
+        onSilenciar={acknowledgeOrderAlerts}
+      />
       <FaixaAtencao alertas={alertasAtencao} onAbrir={abrirAtencao} onDispensar={dispensarAtencao} />
 
       <AssinaturaAviso
@@ -931,6 +955,39 @@ const ESTILO_ATENCAO: Record<AlertaAtencao["tipo"], { caixa: string; titulo: str
   chamado: { caixa: "border-amber-500/40 bg-amber-500/15", titulo: "text-amber-200", botao: "bg-amber-600 hover:bg-amber-500", acao: "Responder" },
   pagamento: { caixa: "border-emerald-500/40 bg-emerald-500/15", titulo: "text-emerald-200", botao: "bg-emerald-600 hover:bg-emerald-500", acao: "Conferir pedido" },
 };
+
+/** Faixa do pedido novo: fica enquanto o alarme toca, com "Ver pedido" e "Silenciar". */
+function FaixaPedidoNovo({ quantidade, ultimo, onVer, onSilenciar }: {
+  quantidade: number;
+  ultimo: { numero: number | null; origem: string } | null;
+  onVer: () => void;
+  onSilenciar: () => void;
+}) {
+  if (quantidade <= 0) return null;
+  const titulo = quantidade > 1
+    ? `🔔 ${quantidade} pedidos novos esperando`
+    : `🔔 Pedido novo${ultimo?.numero ? ` #${ultimo.numero}` : ""}`;
+  return (
+    <div className="sticky top-0 z-30 mx-4 mt-3 md:mx-6 flex flex-col gap-2 rounded-2xl border border-orange-500/50 bg-orange-500/20 px-4 py-3 shadow-lg sm:flex-row sm:items-center animate-pulse" role="alert">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-orange-100">{titulo}</p>
+        <p className="truncate text-xs text-slate-200">
+          {ultimo ? `Chegou pelo ${ultimo.origem}. ` : ""}O alarme toca até alguém ver o pedido.
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <button type="button" onClick={onVer}
+          className="rounded-xl bg-orange-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-500">
+          Ver pedido
+        </button>
+        <button type="button" onClick={onSilenciar}
+          className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+          Silenciar
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function FaixaAtencao({ alertas, onAbrir, onDispensar }: {
   alertas: AlertaAtencao[];
