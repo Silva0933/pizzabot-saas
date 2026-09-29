@@ -369,7 +369,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abr
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-1">
-                      <span className="text-xs text-slate-400 truncate">{c.last_message || "—"}</span>
+                      <span className="text-xs text-slate-400 truncate">{(c.last_message || "—").replace(/[*_]([^*_\n]+)[*_]/g, "$1")}</span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {isHumanNeeded && (
                           <span className="relative flex h-2 w-2">
