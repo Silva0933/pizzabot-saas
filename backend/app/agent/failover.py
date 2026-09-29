@@ -49,9 +49,10 @@ async def com_failover(
         if fb is None or (fb[0] == provider and fb[2] == model):
             raise
         fb_provider, fb_key, fb_model = fb
+        # Timeout do httpx não tem mensagem: sem o tipo o log saía "falhou (...):  —".
         log.warning(
-            "LLM primário falhou (%s/%s): %s — tentando reserva %s/%s",
-            provider, model, str(e)[:200], fb_provider, fb_model,
+            "LLM primário falhou (%s/%s): %s: %s — tentando reserva %s/%s",
+            provider, model, type(e).__name__, str(e)[:200], fb_provider, fb_model,
         )
         resultado = await chamada(fb_provider, fb_key, fb_model)
         log.info("Reserva %s/%s respondeu com sucesso.", fb_provider, fb_model)
