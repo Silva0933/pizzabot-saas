@@ -147,6 +147,29 @@ ROTEIROS: list[Roteiro] = [
         ],
     ),
     Roteiro(
+        "negativa_com_alternativas",
+        "'tem fanta?' → 'não temos' + bebidas reais, nunca 'não tenho essa informação' (29/09)",
+        [
+            Turno("oi"),
+            Turno("tem fanta laranja?", nao_pode=["nao tenho essa informacao", "nao tenho informacao"],
+                  espera_algum=["nao temos", "em falta"]),
+            Turno("e coca de 600ml?", nao_pode=["nao tenho essa informacao", "nao tenho informacao"]),
+        ],
+    ),
+    Roteiro(
+        "troco_na_entrega",
+        "Dinheiro na entrega pergunta o troco e ele aparece no resumo (29/09)",
+        [
+            Turno("oi"),
+            Turno("quero uma calabresa grande"),
+            Turno("não, só isso"),
+            Turno("entrega"),
+            Turno("rua das flores 120, centro"),
+            Turno("dinheiro", espera_algum=["troco"]),
+            Turno("pra 100", espera_algum=["troco para r$ 100"]),
+        ],
+    ),
+    Roteiro(
         "item_indisponivel",
         "Pede um item que não existe/está desligado — deve avisar, não ignorar",
         [
