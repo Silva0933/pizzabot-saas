@@ -140,8 +140,10 @@ ROTEIROS: list[Roteiro] = [
             Turno("quero pagar agora"),
             Turno("sim"),
             Turno("já paguei o pix", nao_pode=["reenviei", "qr code"], nao_pode_acao=["gerar_pagamento"]),
+            # Ou pergunta a forma, ou mantém a já escolhida só mudando o momento
+            # ("fica pra pagar no Pix na retirada") — nunca cobra de novo.
             Turno("vou pagar na hora de buscar, pode ser?", nao_pode=["reenviei"],
-                  nao_pode_acao=["gerar_pagamento"], espera_algum=["dinheiro", "cartao"]),
+                  nao_pode_acao=["gerar_pagamento"], espera_algum=["dinheiro", "cartao", "na retirada"]),
         ],
     ),
     Roteiro(
