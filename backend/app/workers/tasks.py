@@ -174,6 +174,11 @@ async def _resgatar_carrinho_async(
             ):
                 return {"ok": False, "motivo": "fora_do_horario"}
 
+            from app.services.protecao_whatsapp import pode_enviar_ativo
+            pode, motivo = await pode_enviar_ativo(db, pizz, telefone, tipo="resgate_carrinho")
+            if not pode:
+                return {"ok": False, "motivo": motivo}
+
             texto = render_template(
                 cfg_resgate.mensagem,
                 pizzaria=pizz,
@@ -181,7 +186,7 @@ async def _resgatar_carrinho_async(
                 atendente_nome=getattr(personalidade, "nome", None),
             )
             try:
-                await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
+                await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto, categoria="ativa")
             except Exception as e_send:  # noqa: BLE001
                 log.warning("Falha ao enviar resgate de carrinho: %s", e_send)
                 return {"ok": False, "erro": str(e_send)}
@@ -281,6 +286,11 @@ async def _lembrar_confirmacao_async(
             ):
                 return {"ok": False, "motivo": "fora_do_horario"}
 
+            from app.services.protecao_whatsapp import pode_enviar_ativo
+            pode, motivo = await pode_enviar_ativo(db, pizz, telefone, tipo="lembrete_confirmacao")
+            if not pode:
+                return {"ok": False, "motivo": motivo}
+
             texto = render_template(
                 cfg_confirmacao.mensagem,
                 pizzaria=pizz,
@@ -288,7 +298,7 @@ async def _lembrar_confirmacao_async(
                 atendente_nome=getattr(personalidade, "nome", None),
             )
             try:
-                await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto)
+                await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=texto, categoria="ativa")
             except Exception as e_send:  # noqa: BLE001
                 log.warning("Falha ao enviar lembrete de confirmação: %s", e_send)
                 return {"ok": False, "erro": str(e_send)}

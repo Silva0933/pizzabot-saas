@@ -61,6 +61,14 @@ async def enviar_pesquisa_nps(db: AsyncSession, pedido: Pedido) -> bool:
     if not cliente:
         return False
 
+    # Pesquisa é mensagem ATIVA: só na janela de 24 h da última mensagem do
+    # cliente, nunca para quem pediu para parar nem com o número em aquecimento.
+    from app.services.protecao_whatsapp import pode_enviar_ativo
+    pode, motivo = await pode_enviar_ativo(db, pizz, cliente.telefone, tipo="nps")
+    if not pode:
+        log.info("NPS não enviado (pedido=%s): %s", pedido.numero_pedido, motivo)
+        return False
+
     template = (pizz.mensagens_status or {}).get("nps") or DEFAULT_NPS_MESSAGE
     texto = _interpolar(template, {
         "numero_pedido": pedido.numero_pedido or "",
@@ -73,7 +81,9 @@ async def enviar_pesquisa_nps(db: AsyncSession, pedido: Pedido) -> bool:
             await evolution.send_presence(instancia=pizz.instancia, numero=cliente.telefone, tipo="composing")
         except Exception:  # noqa: BLE001
             pass
-        await evolution.send_text(instancia=pizz.instancia, numero=cliente.telefone, texto=texto, delay_ms=delay_ms)
+        await evolution.send_text(
+            instancia=pizz.instancia, numero=cliente.telefone, texto=texto, delay_ms=delay_ms, categoria="ativa",
+        )
     except Exception as e:  # noqa: BLE001
         log.exception("Falha ao enviar NPS: %s", e)
         return False
@@ -179,6 +189,9 @@ async def enviar_mensagem_status(
             numero=cliente.telefone,
             texto=texto,
             delay_ms=delay_ms,
+            # Status do pedido do próprio cliente: sem porteiro, mas espaçado —
+            # o dono avança vários pedidos de uma vez e isso virava rajada.
+            categoria="transacional",
         )
     except Exception as e:
         log.exception("Falha ao enviar mensagem de status: %s", e)

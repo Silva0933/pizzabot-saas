@@ -71,6 +71,9 @@ def _setup(monkeypatch, *, estado, updated_age_s=None, conv=None, pizz="default"
     evolution.close = AsyncMock()
     monkeypatch.setattr(evo_mod, "evolution", evolution)
     monkeypatch.setattr(broadcaster_mod.broadcaster, "publish", AsyncMock())
+    # Porteiro das mensagens ativas testado em test_protecao_whatsapp.
+    import app.services.protecao_whatsapp as protecao
+    monkeypatch.setattr(protecao, "pode_enviar_ativo", AsyncMock(return_value=(True, "ok")))
 
     def run():
         return asyncio.run(tasks._resgatar_carrinho_async(uuid.uuid4(), "5511999990000"))

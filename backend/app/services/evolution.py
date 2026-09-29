@@ -278,12 +278,19 @@ class EvolutionClient:
         numero: str,
         texto: str,
         delay_ms: int | None = None,
+        categoria: str = "resposta",
     ) -> dict[str, Any]:
-        """Envia mensagem de texto para o cliente."""
+        """Envia mensagem de texto para o cliente.
+
+        `categoria` define o ritmo do número (protecao_whatsapp): 'resposta' (ao
+        que o cliente escreveu), 'transacional' (status do pedido dele) ou
+        'ativa' (lembrete, resgate, pesquisa)."""
         body: dict[str, Any] = {"number": numero, "text": texto}
         if delay_ms:
             body["delay"] = delay_ms
 
+        from app.services.protecao_whatsapp import aguardar_vez
+        await aguardar_vez(instancia, categoria)
         c = await self._http()
         r = await c.post(f"/message/sendText/{instancia}", json=body)
         return self._unwrap(r)
@@ -298,8 +305,11 @@ class EvolutionClient:
         mimetype: str | None = None,
         filename: str | None = None,
         caption: str | None = None,
+        categoria: str = "resposta",
     ) -> dict[str, Any]:
         """Envia um arquivo (documento/imagem) por URL para o cliente."""
+        from app.services.protecao_whatsapp import aguardar_vez
+        await aguardar_vez(instancia, categoria)
         body: dict[str, Any] = {
             "number": numero,
             "mediatype": mediatype,   # 'image' | 'document' | 'video' | 'audio'

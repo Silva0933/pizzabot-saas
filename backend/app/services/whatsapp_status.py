@@ -23,6 +23,10 @@ async def aplicar_estado_conexao(db, pizz, estado: str) -> None:
     anterior = pizz.whatsapp_estado
     pizz.whatsapp_estado = estado
     pizz.whatsapp_estado_em = datetime.now(UTC)
+    # Primeira conexão do número: começa o aquecimento de 14 dias
+    # (protecao_whatsapp). Reconectar o mesmo número não reinicia a contagem.
+    if estado == "open" and getattr(pizz, "whatsapp_conectado_desde", None) is None:
+        pizz.whatsapp_conectado_desde = pizz.whatsapp_estado_em
 
     try:
         await broadcaster.publish(pizz.id, {

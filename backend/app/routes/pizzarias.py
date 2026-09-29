@@ -788,7 +788,10 @@ async def whatsapp_conectar(
         )
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Evolution: {e}") from e
 
-    # Persiste a instância na pizzaria.
+    # Persiste a instância na pizzaria. Instância nova = número possivelmente novo:
+    # o aquecimento recomeça quando ela conectar (whatsapp_status).
+    if pizz.instancia != instancia:
+        pizz.whatsapp_conectado_desde = None
     pizz.instancia = instancia
     await db.commit()
 

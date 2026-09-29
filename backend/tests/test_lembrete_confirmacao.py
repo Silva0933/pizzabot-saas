@@ -35,7 +35,9 @@ def _mock_ambiente(db, estado, send_text):
             patch("app.services.evolution.evolution.send_text", new=send_text), \
             patch("app.services.evolution.evolution.close", new=AsyncMock()), \
             patch("app.services.broadcaster.broadcaster.publish", new=AsyncMock()), \
-            patch("app.agent.memory.append_turn", new=AsyncMock()):
+            patch("app.agent.memory.append_turn", new=AsyncMock()), \
+            patch("app.services.protecao_whatsapp.pode_enviar_ativo",
+                  new=AsyncMock(return_value=(True, "ok"))):  # porteiro: test_protecao_whatsapp
         yield
 
 

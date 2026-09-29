@@ -1192,6 +1192,7 @@ async def _enviar_confirmacao_whatsapp(
             numero=cliente_telefone,
             texto=texto,
             delay_ms=delay_ms,
+            categoria="transacional",  # confirmação do pedido que o cliente fez
         )
     except Exception as e:
         log.warning("Falha ao enviar confirmação WhatsApp do pedido digital: %s", e)

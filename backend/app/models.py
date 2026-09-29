@@ -123,6 +123,8 @@ class Pizzaria(Base):
     # Atualizado pelo webhook CONNECTION_UPDATE e pelo poll periódico do Beat.
     whatsapp_estado: Mapped[str | None] = mapped_column(String)
     whatsapp_estado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Início do uso do número no sistema: define o aquecimento (migration 036).
+    whatsapp_conectado_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     gateway_pagamento: Mapped[str] = mapped_column(String, default="mercadopago", nullable=False)
     mp_access_token: Mapped[str | None] = mapped_column(Text)
     # Id da conta vendedora no Mercado Pago (GET /users/me). É o que liga o
@@ -335,6 +337,9 @@ class Cliente(Base):
     total_pedidos: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_gasto: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0, nullable=False)
     ultima_visita: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Pediu para não receber mensagens automáticas (migration 036).
+    nao_perturbe: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    nao_perturbe_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
