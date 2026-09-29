@@ -204,6 +204,7 @@ async def entregar_resposta(db: AsyncSession, chamado_id: uuid.UUID) -> dict[str
     await _limpar_pendente(db, pizz.id, ch.telefone)
     if conv is not None and not conv.bot_ativo:
         # Um humano assumiu a conversa: ele fala direto com o cliente.
+        ch.contexto = {**(ch.contexto or {}), "mensagem_ao_cliente": None, "humano_assumiu": True}
         await db.commit()
         return {"ok": False, "motivo": "humano_assumiu"}
     personalidade = (await db.execute(
@@ -248,6 +249,9 @@ async def entregar_resposta(db: AsyncSession, chamado_id: uuid.UUID) -> dict[str
     if pizz.instancia:
         await evolution.send_text(instancia=pizz.instancia, numero=ch.telefone, texto=texto)
     await append_turn(db, pizz.id, ch.telefone, role="assistant", content=texto)
+    # O chat interno mostra o que a atendente disse ao cliente com a resposta da
+    # equipe: o dono vê que ela resolveu (reatribui o dict: JSONB não rastreia mutação).
+    ch.contexto = {**(ch.contexto or {}), "mensagem_ao_cliente": texto}
     msg = None
     if conv is not None:
         msg = Mensagem(conversa_id=conv.id, pizzaria_id=pizz.id, origem="bot", tipo="texto", conteudo=texto,

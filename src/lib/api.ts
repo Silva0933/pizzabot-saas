@@ -600,7 +600,12 @@ export interface Chamado {
   cliente_nome: string | null;
   pergunta: string;
   motivo: "sem_resposta" | "falha_operacao" | string;
-  contexto: { etapa?: string; itens?: string[]; tipo?: string | null; pagamento?: string | null };
+  contexto: {
+    etapa?: string; itens?: string[]; tipo?: string | null; pagamento?: string | null;
+    /** O que a atendente disse ao cliente com a resposta da equipe. */
+    mensagem_ao_cliente?: string | null;
+    humano_assumiu?: boolean;
+  };
   status: "aberto" | "respondido" | "expirado" | "cancelado" | string;
   resposta: string | null;
   respondido_em: string | null;
@@ -1206,6 +1211,8 @@ export interface WsEvent {
     | "chamado.novo"
     | "chamado.respondido"
     | "chamado.expirado"
+    | "pagamento.comprovante"
+    | "pagamento.manual_pendente"
     | "conversas.limpas"
     | "pedidos.limpos"
     | "whatsapp.status"

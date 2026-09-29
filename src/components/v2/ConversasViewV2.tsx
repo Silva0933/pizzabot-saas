@@ -8,15 +8,26 @@ import {
   BackendConversa,
   BackendMensagem,
 } from "../../lib/api";
-import { ChamadosAbertos } from "./ChamadosInternos";
+import { ChatInterno, useChamadosAbertos } from "./ChamadosInternos";
 
 interface Props {
   pizzariaId: string;
   liveEvent?: { tipo: string; payload: any } | null;
   onConversationOpen?: (conversationId: string) => void;
+  /** Abrir direto na aba do chat interno (ex.: clique no alerta de chamado). */
+  abrirChatInterno?: boolean;
+  onChatInternoAberto?: () => void;
 }
 
-export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: Props) {
+export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abrirChatInterno, onChatInternoAberto }: Props) {
+  const [aba, setAba] = useState<"conversas" | "interno">(abrirChatInterno ? "interno" : "conversas");
+  const chamadosAbertos = useChamadosAbertos(pizzariaId, liveEvent);
+  useEffect(() => {
+    if (abrirChatInterno) {
+      setAba("interno");
+      onChatInternoAberto?.();
+    }
+  }, [abrirChatInterno]);
   const [conversas, setConversas] = useState<BackendConversa[]>([]);
   const [active, setActive] = useState<BackendConversa | null>(null);
   const [mensagens, setMensagens] = useState<BackendMensagem[]>([]);
@@ -246,14 +257,36 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: P
       )}
 
       <div className="p-4 md:p-6 pb-24 md:pb-6">
-        <ChamadosAbertos
-          pizzariaId={pizzariaId}
-          liveEvent={liveEvent}
-          onAbrirConversa={(conversaId) => {
-            const c = conversas.find((x) => x.id === conversaId);
-            if (c) { setActive(c); onConversationOpen?.(c.id); }
-          }}
-        />
+        {/* Abas: conversas com clientes × chat interno com a atendente */}
+        <div className="mb-3 inline-flex rounded-xl border border-[#1e293b] bg-[#111622] p-1">
+          <button type="button" onClick={() => setAba("conversas")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold transition-colors ${
+              aba === "conversas" ? "bg-orange-500 text-white" : "text-slate-400 hover:text-white"}`}>
+            <MessageSquare className="h-3.5 w-3.5" /> Conversas
+          </button>
+          <button type="button" onClick={() => setAba("interno")}
+            className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-1.5 text-xs font-bold transition-colors ${
+              aba === "interno" ? "bg-amber-600 text-white" : "text-slate-400 hover:text-white"}`}>
+            <Bot className="h-3.5 w-3.5" /> Chat interno
+            {chamadosAbertos > 0 && (
+              <span className="grid h-[18px] min-w-[18px] animate-pulse place-items-center rounded-full bg-amber-400 px-1 text-[10px] font-black text-black">
+                {chamadosAbertos}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {aba === "interno" ? (
+          <ChatInterno
+            pizzariaId={pizzariaId}
+            liveEvent={liveEvent}
+            onAbrirConversa={(conversaId) => {
+              const c = conversas.find((x) => x.id === conversaId);
+              setAba("conversas");
+              if (c) { setActive(c); onConversationOpen?.(c.id); }
+            }}
+          />
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-[360px_1fr] h-[calc(100vh-140px)] min-h-[500px] bg-[#0b0e14] rounded-2xl border border-[#1e293b] overflow-hidden shadow-sm">
         {/* Lista de Conversas */}
         <aside className={`border-r border-[#1e293b] flex flex-col bg-[#0d1117] ${active ? "hidden md:flex" : "flex"}`}>
@@ -496,6 +529,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: P
           )}
         </section>
       </div>
+        )}
       </div>
     </>
   );

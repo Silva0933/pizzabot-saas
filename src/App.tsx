@@ -335,6 +335,7 @@ function AdminApp() {
   // alerta só existia dentro de Conversas e o som era um WAV vazio (mudo) — à
   // noite, com o dono em Pedidos, o cliente ficava sem resposta.
   const [alertasAtencao, setAlertasAtencao] = useState<AlertaAtencao[]>([]);
+  const [abrirChatInterno, setAbrirChatInterno] = useState(false);
 
   function registrarAtencao(alerta: AlertaAtencao) {
     setAlertasAtencao((atual) => [
@@ -344,7 +345,7 @@ function AdminApp() {
     if (alertasSonorosRef.current) playNotificationSound("atencao");
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       const n = new Notification(
-        alerta.tipo === "chamado" ? "🔔 A atendente precisa de você" : "🔴 Atendimento humano solicitado",
+        TITULO_ATENCAO[alerta.tipo],
         { body: `${alerta.nome}: ${alerta.motivo}`, tag: `atencao-${alerta.tipo}-${alerta.conversaId}`, requireInteraction: true },
       );
       n.onclick = () => {
@@ -361,6 +362,12 @@ function AdminApp() {
 
   function abrirAtencao(alerta: AlertaAtencao) {
     dispensarAtencao(alerta);
+    if (alerta.tipo === "pagamento") {
+      setNav("pedidos");
+      return;
+    }
+    // Chamado da atendente abre direto no chat interno.
+    if (alerta.tipo === "chamado") setAbrirChatInterno(true);
     setNav("conversas");
   }
 
@@ -376,6 +383,8 @@ function AdminApp() {
   // conversas no topo). Chamado da atendente só sai quando é respondido.
   useEffect(() => {
     if (nav === "conversas") setAlertasAtencao((atual) => atual.filter((a) => a.tipo !== "humano"));
+    // Em Pedidos o card do Pix manual já aparece como "Conferir".
+    if (nav === "pedidos") setAlertasAtencao((atual) => atual.filter((a) => a.tipo !== "pagamento"));
   }, [nav]);
 
   async function handleEnableNotifications() {
@@ -565,6 +574,15 @@ function AdminApp() {
           conversaId: String(ev.payload?.conversa_id ?? ev.payload?.chamado_id ?? ""),
           nome: ev.payload?.cliente_nome || ev.payload?.telefone || "Cliente",
           motivo: ev.payload?.pergunta || "A atendente precisa de uma resposta",
+        });
+      }
+      // Pix manual: o cliente mandou o comprovante → alguém precisa conferir se caiu.
+      if (ev.tipo === "pagamento.comprovante") {
+        registrarAtencao({
+          tipo: "pagamento",
+          conversaId: String(ev.payload?.pedido_id ?? ev.payload?.telefone ?? ""),
+          nome: ev.payload?.numero_pedido ? `Pedido #${ev.payload.numero_pedido}` : "Pedido",
+          motivo: "O cliente mandou o comprovante do Pix — confira se o pagamento caiu e confirme no card",
         });
       }
       if (ev.tipo === "chamado.respondido" || ev.tipo === "chamado.expirado") {
@@ -806,6 +824,8 @@ function AdminApp() {
           pizzariaId={pizzaria.id}
           liveEvent={liveEvent}
           onConversationOpen={acknowledgeOrderAlerts}
+          abrirChatInterno={abrirChatInterno}
+          onChatInternoAberto={() => setAbrirChatInterno(false)}
         />
       )}
       {nav === "analise"   && <MetricasView pizzariaId={pizzaria.id}/>}
@@ -886,11 +906,23 @@ function AdminApp() {
 // Faixa de atenção: alguém precisa responder um cliente agora.
 // ============================================
 interface AlertaAtencao {
-  tipo: "humano" | "chamado";
+  tipo: "humano" | "chamado" | "pagamento";
   conversaId: string;
   nome: string;
   motivo: string;
 }
+
+const TITULO_ATENCAO: Record<AlertaAtencao["tipo"], string> = {
+  humano: "🔴 Atendimento humano solicitado",
+  chamado: "🔔 A atendente precisa de você",
+  pagamento: "💸 Confira o pagamento (Pix manual)",
+};
+
+const ESTILO_ATENCAO: Record<AlertaAtencao["tipo"], { caixa: string; titulo: string; botao: string; acao: string }> = {
+  humano: { caixa: "border-rose-500/40 bg-rose-500/15", titulo: "text-rose-200", botao: "bg-rose-600 hover:bg-rose-500", acao: "Abrir conversa" },
+  chamado: { caixa: "border-amber-500/40 bg-amber-500/15", titulo: "text-amber-200", botao: "bg-amber-600 hover:bg-amber-500", acao: "Responder" },
+  pagamento: { caixa: "border-emerald-500/40 bg-emerald-500/15", titulo: "text-emerald-200", botao: "bg-emerald-600 hover:bg-emerald-500", acao: "Conferir pedido" },
+};
 
 function FaixaAtencao({ alertas, onAbrir, onDispensar }: {
   alertas: AlertaAtencao[];
@@ -899,14 +931,12 @@ function FaixaAtencao({ alertas, onAbrir, onDispensar }: {
 }) {
   if (!alertas.length) return null;
   const a = alertas[alertas.length - 1];
-  const chamado = a.tipo === "chamado";
+  const estilo = ESTILO_ATENCAO[a.tipo];
   return (
-    <div className={`sticky top-0 z-30 mx-4 mt-3 md:mx-6 flex flex-col gap-2 rounded-2xl border px-4 py-3 shadow-lg sm:flex-row sm:items-center ${
-      chamado ? "border-amber-500/40 bg-amber-500/15" : "border-rose-500/40 bg-rose-500/15"
-    }`} role="alert">
+    <div className={`sticky top-0 z-30 mx-4 mt-3 md:mx-6 flex flex-col gap-2 rounded-2xl border px-4 py-3 shadow-lg sm:flex-row sm:items-center ${estilo.caixa}`} role="alert">
       <div className="min-w-0 flex-1">
-        <p className={`text-sm font-bold ${chamado ? "text-amber-200" : "text-rose-200"}`}>
-          {chamado ? "🔔 A atendente precisa de você" : "🔴 Atendimento humano solicitado"}
+        <p className={`text-sm font-bold ${estilo.titulo}`}>
+          {TITULO_ATENCAO[a.tipo]}
           {alertas.length > 1 && <span className="ml-2 text-xs font-semibold opacity-80">+{alertas.length - 1}</span>}
         </p>
         <p className="truncate text-xs text-slate-200">
@@ -915,8 +945,8 @@ function FaixaAtencao({ alertas, onAbrir, onDispensar }: {
       </div>
       <div className="flex shrink-0 gap-2">
         <button type="button" onClick={() => onAbrir(a)}
-          className={`rounded-xl px-3 py-1.5 text-xs font-bold text-white ${chamado ? "bg-amber-600 hover:bg-amber-500" : "bg-rose-600 hover:bg-rose-500"}`}>
-          {chamado ? "Responder" : "Abrir conversa"}
+          className={`rounded-xl px-3 py-1.5 text-xs font-bold text-white ${estilo.botao}`}>
+          {estilo.acao}
         </button>
         <button type="button" onClick={() => onDispensar(a)}
           className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">

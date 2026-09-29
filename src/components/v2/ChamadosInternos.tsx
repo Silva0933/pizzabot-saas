@@ -1,67 +1,174 @@
-import { useEffect, useState } from "react";
-import { BellRing, BookOpen, Loader2, MessageSquare, Plus, Send, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, BookOpen, Bot, Clock3, Loader2, MessageSquare, Plus, Send, Trash2, UserRound } from "lucide-react";
 import { Chamado, ItemConhecimento, chamadosApi, conhecimentoApi } from "../../lib/api";
 
 // ============================================
-// Chamados abertos pela atendente (topo da tela Conversas)
+// Chat interno: a atendente traz dúvidas e problemas para a equipe
 // ============================================
-// A atendente não tinha a resposta (ou uma operação no pedido falhou) e perguntou
-// à equipe. Quem responde aqui responde ao cliente: a atendente transmite a
-// resposta na conversa. "Salvar como conhecimento" ensina a próxima vez.
+// A atendente não tinha a resposta (ou uma operação no pedido falhou) e abriu um
+// chamado. Aqui é uma conversa com ela: a pergunta dela, a sua resposta e o que
+// ela disse ao cliente com a informação nova. "Salvar como conhecimento" ensina
+// a próxima vez.
 const ROTULO_MOTIVO: Record<string, string> = {
-  sem_resposta: "Pergunta sem resposta cadastrada",
+  sem_resposta: "Pergunta que não sei responder",
   falha_operacao: "Não consegui fazer no pedido",
 };
 
-function haQuanto(iso: string): string {
-  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
-  return min < 1 ? "agora" : `há ${min} min`;
+function hora(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ChamadosAbertos({ pizzariaId, liveEvent, onAbrirConversa }: {
+function haQuanto(iso: string): string {
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (min < 1) return "agora";
+  if (min < 60) return `há ${min} min`;
+  return `há ${Math.round(min / 60)} h`;
+}
+
+/** Quantos chamados estão esperando resposta (badge da aba). */
+export function useChamadosAbertos(pizzariaId: string, liveEvent?: { tipo: string } | null): number {
+  const [n, setN] = useState(0);
+  function carregar() {
+    chamadosApi.list(pizzariaId, "aberto").then((l) => setN(l.length)).catch(() => {});
+  }
+  useEffect(carregar, [pizzariaId]);
+  useEffect(() => {
+    if (liveEvent?.tipo?.startsWith("chamado.")) carregar();
+  }, [liveEvent]);
+  return n;
+}
+
+export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
   pizzariaId: string;
   liveEvent?: { tipo: string; payload: any } | null;
   onAbrirConversa: (conversaId: string) => void;
 }) {
   const [chamados, setChamados] = useState<Chamado[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [ativoId, setAtivoId] = useState<string | null>(null);
 
   function carregar() {
-    chamadosApi.list(pizzariaId, "aberto").then(setChamados).catch(() => {});
+    return chamadosApi.list(pizzariaId).then(setChamados).catch(() => {});
   }
 
-  useEffect(carregar, [pizzariaId]);
+  useEffect(() => {
+    setCarregando(true);
+    carregar().finally(() => setCarregando(false));
+  }, [pizzariaId]);
   useEffect(() => {
     if (liveEvent?.tipo?.startsWith("chamado.")) carregar();
   }, [liveEvent]);
 
-  if (!chamados.length) return null;
+  // Abertos primeiro (mais antigo no topo: é quem espera há mais tempo); depois o histórico.
+  const ordenados = useMemo(() => {
+    const abertos = chamados.filter((c) => c.status === "aberto")
+      .sort((a, b) => +new Date(a.created_at) - +new Date(b.created_at));
+    const resto = chamados.filter((c) => c.status !== "aberto");
+    return [...abertos, ...resto];
+  }, [chamados]);
+
+  const ativo = ordenados.find((c) => c.id === ativoId) ?? null;
+  useEffect(() => {
+    if (!ativoId && ordenados.length && typeof window !== "undefined" && window.innerWidth >= 768) {
+      setAtivoId(ordenados[0].id);
+    }
+  }, [ordenados, ativoId]);
+
+  if (carregando) {
+    return <div className="flex justify-center py-24"><Loader2 className="h-8 w-8 animate-spin text-orange-500" /></div>;
+  }
+
   return (
-    <section className="mb-4 space-y-3">
-      <h3 className="flex items-center gap-2 text-sm font-bold text-amber-300">
-        <BellRing className="h-4 w-4 animate-pulse" />
-        A atendente precisa de você ({chamados.length})
-      </h3>
-      {chamados.map((c) => (
-        <div key={c.id}>
-          <CartaoChamado pizzariaId={pizzariaId} chamado={c}
-            onRespondido={() => setChamados((atual) => atual.filter((x) => x.id !== c.id))}
-            onAbrirConversa={onAbrirConversa} />
+    <div className="grid h-[calc(100vh-190px)] min-h-[500px] grid-cols-1 overflow-hidden rounded-2xl border border-[#1e293b] bg-[#0b0e14] shadow-sm md:grid-cols-[340px_1fr]">
+      <aside className={`flex-col border-r border-[#1e293b] bg-[#0d1117] ${ativo ? "hidden md:flex" : "flex"}`}>
+        <div className="border-b border-[#1e293b] bg-[#111622] p-4">
+          <h2 className="flex items-center gap-2 text-base font-bold text-white">
+            <Bot className="h-4 w-4 text-amber-400" /> Chat com a atendente
+          </h2>
+          <p className="mt-1 text-xs text-slate-400">Dúvidas e problemas que ela trouxe para você resolver.</p>
         </div>
-      ))}
-    </section>
+        <div className="flex-1 divide-y divide-[#1e293b]/40 overflow-y-auto">
+          {ordenados.length === 0 && (
+            <div className="p-8 text-center text-sm text-slate-400">
+              <Bot className="mx-auto mb-2 h-8 w-8 opacity-30" />
+              Nenhuma dúvida da atendente por enquanto.
+            </div>
+          )}
+          {ordenados.map((c) => {
+            const aberto = c.status === "aberto";
+            return (
+              <button key={c.id} type="button" onClick={() => setAtivoId(c.id)}
+                className={`flex w-full gap-3 px-4 py-3.5 text-left transition-colors ${
+                  c.id === ativo?.id ? "border-l-2 border-l-amber-500 bg-[#161f30]" : aberto ? "bg-amber-950/20 hover:bg-amber-950/30" : "hover:bg-[#131926]"
+                }`}>
+                <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+                  aberto ? "animate-pulse bg-amber-400" : c.status === "respondido" ? "bg-emerald-500" : "bg-slate-600"
+                }`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-xs font-semibold text-white">{c.cliente_nome || c.telefone}</span>
+                    <span className="shrink-0 text-[10px] text-slate-400">{haQuanto(c.created_at)}</span>
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-slate-400">{c.pergunta}</p>
+                  <p className={`mt-0.5 text-[10px] font-semibold ${aberto ? "text-amber-300" : c.status === "respondido" ? "text-emerald-400" : "text-slate-500"}`}>
+                    {aberto ? "Esperando sua resposta" : c.status === "respondido" ? "Resolvido" : "Expirou — foi para atendimento humano"}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+
+      <section className={`h-full min-h-0 min-w-0 flex-col ${ativo ? "flex" : "hidden md:flex"}`}>
+        {!ativo ? (
+          <div className="grid flex-1 place-items-center text-sm text-slate-500">Selecione uma conversa com a atendente.</div>
+        ) : (
+          <div key={ativo.id} className="flex h-full min-h-0 flex-col">
+            <FioChamado pizzariaId={pizzariaId} chamado={ativo}
+              onVoltar={() => setAtivoId(null)} onAbrirConversa={onAbrirConversa} onRespondido={() => { carregar(); }} />
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
-function CartaoChamado({ pizzariaId, chamado, onRespondido, onAbrirConversa }: {
+function Balao({ lado, cor, icone, titulo, horario, children }: {
+  lado: "esq" | "dir"; cor: string; icone: ReactNode; titulo: string; horario?: string; children: ReactNode;
+}) {
+  return (
+    <div className={`flex gap-2.5 ${lado === "dir" ? "flex-row-reverse" : ""}`}>
+      <span className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full ${cor}`}>{icone}</span>
+      <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm ${lado === "dir" ? "rounded-tr-sm bg-orange-600/90 text-white" : "rounded-tl-sm border border-slate-800 bg-[#161f30] text-slate-100"}`}>
+        <p className={`text-[11px] font-bold ${lado === "dir" ? "text-orange-100" : "text-amber-300"}`}>{titulo}</p>
+        <div className="mt-0.5 whitespace-pre-wrap text-sm">{children}</div>
+        {horario && <p className={`mt-1 text-right text-[10px] ${lado === "dir" ? "text-orange-100/80" : "text-slate-500"}`}>{horario}</p>}
+      </div>
+    </div>
+  );
+}
+
+function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondido }: {
   pizzariaId: string;
   chamado: Chamado;
-  onRespondido: () => void;
+  onVoltar: () => void;
   onAbrirConversa: (conversaId: string) => void;
+  onRespondido: () => void;
 }) {
   const [resposta, setResposta] = useState("");
   const [salvar, setSalvar] = useState(chamado.motivo === "sem_resposta");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const fimRef = useRef<HTMLDivElement>(null);
+  const aberto = chamado.status === "aberto";
+  const itens = chamado.contexto?.itens ?? [];
+  const cliente = chamado.cliente_nome || chamado.telefone;
+
+  useEffect(() => {
+    fimRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chamado.status, chamado.contexto?.mensagem_ao_cliente]);
 
   async function responder() {
     if (!resposta.trim()) return;
@@ -69,57 +176,89 @@ function CartaoChamado({ pizzariaId, chamado, onRespondido, onAbrirConversa }: {
     setErro(null);
     try {
       await chamadosApi.responder(pizzariaId, chamado.id, resposta.trim(), salvar);
+      setResposta("");
       onRespondido();
     } catch (e: any) {
-      setErro(e?.status === 409 ? "Esse chamado já foi encerrado (respondido ou expirado)." : (e?.message || "Não foi possível responder."));
+      setErro(e?.status === 409 ? "Essa dúvida já foi encerrada (respondida ou expirada)." : (e?.message || "Não foi possível enviar."));
     } finally {
       setEnviando(false);
     }
   }
 
-  const itens = chamado.contexto?.itens ?? [];
+  const iconeBot = <Bot className="h-4 w-4 text-amber-300" />;
   return (
-    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-bold text-white">{chamado.cliente_nome || chamado.telefone}</p>
-        <span className="text-[11px] text-amber-300/80">
-          {ROTULO_MOTIVO[chamado.motivo] ?? chamado.motivo} · {haQuanto(chamado.created_at)}
-        </span>
-      </div>
-      <p className="mt-2 rounded-xl border border-slate-800 bg-[#0b0e14] px-3 py-2 text-sm text-slate-100">
-        “{chamado.pergunta}”
-      </p>
-      {itens.length > 0 && (
-        <p className="mt-1.5 text-[11px] text-slate-400">Pedido em andamento: {itens.join(", ")}</p>
-      )}
-      <textarea
-        value={resposta}
-        onChange={(e) => setResposta(e.target.value)}
-        rows={2}
-        placeholder="Escreva a resposta — a atendente passa para o cliente"
-        className="mt-3 w-full rounded-xl border border-slate-800 bg-[#111622] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-amber-500"
-      />
-      {erro && <p className="mt-1 text-xs text-rose-300">{erro}</p>}
-      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-300">
-          <input type="checkbox" checked={salvar} onChange={(e) => setSalvar(e.target.checked)} className="h-4 w-4 accent-amber-500" />
-          Salvar como conhecimento (a atendente responde sozinha da próxima vez)
-        </label>
-        <div className="flex gap-2">
-          {chamado.conversa_id && (
-            <button type="button" onClick={() => onAbrirConversa(chamado.conversa_id!)}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
-              <MessageSquare className="h-3.5 w-3.5" /> Conversa
-            </button>
-          )}
-          <button type="button" onClick={responder} disabled={enviando || !resposta.trim()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-500 disabled:opacity-50">
-            {enviando ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-            Responder
-          </button>
+    <>
+      <div className="flex items-center gap-3 border-b border-[#1e293b] bg-[#111622] px-4 py-3">
+        <button type="button" onClick={onVoltar} className="text-slate-400 hover:text-white md:hidden"><ArrowLeft className="h-5 w-5" /></button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-bold text-white">Cliente: {cliente}</p>
+          <p className="text-[11px] text-slate-400">{ROTULO_MOTIVO[chamado.motivo] ?? chamado.motivo}</p>
         </div>
+        {chamado.conversa_id && (
+          <button type="button" onClick={() => onAbrirConversa(chamado.conversa_id!)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+            <MessageSquare className="h-3.5 w-3.5" /> Ver conversa do cliente
+          </button>
+        )}
       </div>
-    </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <Balao lado="esq" cor="bg-amber-500/15 border border-amber-500/30" icone={iconeBot} titulo="Atendente" horario={hora(chamado.created_at)}>
+          {chamado.motivo === "falha_operacao"
+            ? <>Preciso de ajuda com o pedido de <strong>{cliente}</strong>:{"\n"}{chamado.pergunta}</>
+            : <>O cliente <strong>{cliente}</strong> perguntou:{"\n"}“{chamado.pergunta}”{"\n\n"}Não tenho essa informação. O que respondo?</>}
+          {itens.length > 0 && <p className="mt-2 text-[11px] text-slate-400">Pedido em andamento: {itens.join(", ")}</p>}
+        </Balao>
+
+        {chamado.resposta && (
+          <Balao lado="dir" cor="bg-orange-500/20 border border-orange-500/30" icone={<UserRound className="h-4 w-4 text-orange-300" />}
+            titulo="Você" horario={hora(chamado.respondido_em)}>
+            {chamado.resposta}
+          </Balao>
+        )}
+
+        {chamado.status === "respondido" && (
+          chamado.contexto?.mensagem_ao_cliente ? (
+            <Balao lado="esq" cor="bg-amber-500/15 border border-amber-500/30" icone={iconeBot} titulo="Atendente">
+              Obrigada! Passei para o cliente:{"\n"}“{chamado.contexto.mensagem_ao_cliente}”
+            </Balao>
+          ) : chamado.contexto?.humano_assumiu ? (
+            <p className="text-center text-[11px] text-slate-500">Um atendente já tinha assumido a conversa — responda o cliente por lá.</p>
+          ) : (
+            <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-400">
+              <Loader2 className="h-3 w-3 animate-spin" /> A atendente está passando a resposta para o cliente…
+            </p>
+          )
+        )}
+
+        {chamado.status === "expirado" && (
+          <p className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-[#111622] px-3 py-2 text-center text-[11px] text-slate-400">
+            <Clock3 className="h-3.5 w-3.5" /> Ninguém respondeu a tempo: o cliente foi avisado e a conversa passou para atendimento humano.
+          </p>
+        )}
+        <div ref={fimRef} />
+      </div>
+
+      {aberto && (
+        <div className="border-t border-[#1e293b] bg-[#111622] p-3">
+          {erro && <p className="mb-2 text-xs text-rose-300">{erro}</p>}
+          <div className="flex items-end gap-2">
+            <textarea value={resposta} onChange={(e) => setResposta(e.target.value)} rows={2}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); responder(); } }}
+              placeholder="Responda a atendente — ela resolve com o cliente"
+              className="flex-1 resize-none rounded-xl border border-slate-800 bg-[#0b0e14] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-amber-500" />
+            <button type="button" onClick={responder} disabled={enviando || !resposta.trim()}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50" title="Enviar">
+              {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+            <input type="checkbox" checked={salvar} onChange={(e) => setSalvar(e.target.checked)} className="h-4 w-4 accent-amber-500" />
+            Salvar como conhecimento (da próxima vez ela responde sozinha)
+          </label>
+        </div>
+      )}
+    </>
   );
 }
 
