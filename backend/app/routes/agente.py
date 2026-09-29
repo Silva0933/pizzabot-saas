@@ -281,6 +281,27 @@ async def agent_health(
         "Agenda configurada." if pizz.horario_funcionamento else "Cadastre horários para evitar atendimento fora da operação.")
     add("pagamentos", "Pagamentos", "ok" if pizz.formas_pagamento_aceitas else "warning",
         "Formas de pagamento configuradas." if pizz.formas_pagamento_aceitas else "Nenhuma forma de pagamento cadastrada.")
+
+    # Pagamento online coerente com o modo escolhido. Caso real (Palazio): modo
+    # "manual" sem o copia-e-cola → o sistema trata como pagamento na entrega (para
+    # nunca prometer um Pix que não vai mandar) e a atendente não pede comprovante.
+    modo = getattr(pizz, "modo_pagamento_online", None) or "automatico"
+    if modo == "manual":
+        tem_pix = bool((getattr(pizz, "pix_manual_copia_cola", None) or "").strip())
+        add("pagamento_online", "Pix próprio (manual)", "ok" if tem_pix else "error",
+            "Código Pix cadastrado: a atendente envia o Pix e pede o comprovante."
+            if tem_pix else
+            "Modo Pix manual escolhido, mas o código copia-e-cola não foi cadastrado: a atendente não "
+            "consegue cobrar e trata como pagamento na entrega. Cadastre o código em Meu Negócio → Pagamentos.")
+    elif modo == "automatico":
+        gw = getattr(pizz, "gateway_pagamento", None)
+        tem_chave = bool(getattr(pizz, "mp_access_token", None)) if gw == "mercadopago" else bool(getattr(pizz, "asaas_api_key", None))
+        nome_gw = "Mercado Pago" if gw == "mercadopago" else "Asaas"
+        add("pagamento_online", f"Pagamento online ({nome_gw})", "ok" if tem_chave else "error",
+            f"{nome_gw} configurado: a atendente gera o Pix/link e o pagamento confirma sozinho."
+            if tem_chave else
+            f"{nome_gw} escolhido, mas sem chave cadastrada: a atendente não consegue gerar a cobrança. "
+            "Cadastre a chave em Meu Negócio → Pagamentos.")
     taxa_ok = bool(pizz.taxa_entrega_fixa is not None or pizz.taxas_bairro or pizz.taxa_entrega_info)
     add("entrega", "Taxa de entrega", "ok" if taxa_ok else "warning",
         "Regra de entrega configurada." if taxa_ok else "Sem taxa cadastrada; casos de delivery podem exigir humano.")
