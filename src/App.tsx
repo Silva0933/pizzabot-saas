@@ -66,12 +66,38 @@ function unlockNotificationSound() {
   if (ctx?.state === "suspended") ctx.resume().catch(() => {});
 }
 
-function playNotificationSound(type: "novo" | "confirmado") {
+function playNotificationSound(type: "novo" | "confirmado" | "atencao") {
   try {
     const ctx = getNotificationAudioContext();
     if (!ctx) return;
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
     const now = ctx.currentTime;
+
+    if (type === "atencao") {
+      // Alguém precisa responder (atendimento humano / chamado da atendente):
+      // dois tons alternados, bem diferentes do bipe de pedido. O som antigo era
+      // um WAV sem amostras de áudio (não tocava) e só existia na tela Conversas.
+      const master = ctx.createGain();
+      master.gain.setValueAtTime(0.25, now);
+      master.connect(ctx.destination);
+      [0, 0.5].forEach((base) => {
+        [{ at: 0, freq: 880 }, { at: 0.22, freq: 659.25 }].forEach(({ at, freq }) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startsAt = now + base + at;
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(freq, startsAt);
+          gain.gain.setValueAtTime(0.0001, startsAt);
+          gain.gain.exponentialRampToValueAtTime(0.9, startsAt + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.2);
+          osc.connect(gain);
+          gain.connect(master);
+          osc.start(startsAt);
+          osc.stop(startsAt + 0.22);
+        });
+      });
+      return;
+    }
 
     if (type === "novo") {
       // Alerta de pedido: três bipes curtos, altos e bem diferentes do som de confirmação.
@@ -302,6 +328,56 @@ function AdminApp() {
     }
   }
 
+  // ============================================
+  // Alertas de ATENÇÃO (atendimento humano / chamado da atendente)
+  // ============================================
+  // Ficam até alguém ver: o som repete a cada 15 s em qualquer tela. Antes o
+  // alerta só existia dentro de Conversas e o som era um WAV vazio (mudo) — à
+  // noite, com o dono em Pedidos, o cliente ficava sem resposta.
+  const [alertasAtencao, setAlertasAtencao] = useState<AlertaAtencao[]>([]);
+
+  function registrarAtencao(alerta: AlertaAtencao) {
+    setAlertasAtencao((atual) => [
+      ...atual.filter((a) => !(a.tipo === alerta.tipo && a.conversaId === alerta.conversaId)),
+      alerta,
+    ]);
+    if (alertasSonorosRef.current) playNotificationSound("atencao");
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification(
+        alerta.tipo === "chamado" ? "🔔 A atendente precisa de você" : "🔴 Atendimento humano solicitado",
+        { body: `${alerta.nome}: ${alerta.motivo}`, tag: `atencao-${alerta.tipo}-${alerta.conversaId}`, requireInteraction: true },
+      );
+      n.onclick = () => {
+        window.focus();
+        abrirAtencao(alerta);
+        n.close();
+      };
+    }
+  }
+
+  function dispensarAtencao(alerta: AlertaAtencao) {
+    setAlertasAtencao((atual) => atual.filter((a) => a !== alerta));
+  }
+
+  function abrirAtencao(alerta: AlertaAtencao) {
+    dispensarAtencao(alerta);
+    setNav("conversas");
+  }
+
+  useEffect(() => {
+    if (!alertasAtencao.length) return;
+    const timer = window.setInterval(() => {
+      if (alertasSonorosRef.current) playNotificationSound("atencao");
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [alertasAtencao.length]);
+
+  // Abrir Conversas é "ver" o pedido de atendimento humano (a lista já põe essas
+  // conversas no topo). Chamado da atendente só sai quando é respondido.
+  useEffect(() => {
+    if (nav === "conversas") setAlertasAtencao((atual) => atual.filter((a) => a.tipo !== "humano"));
+  }, [nav]);
+
   async function handleEnableNotifications() {
     unlockNotificationSound();
     if (typeof Notification === "undefined") return;
@@ -472,8 +548,14 @@ function AdminApp() {
           })
         );
       }
-      // Atendimento humano → refresh conversas (para badge) 
+      // Atendimento humano → alerta global que toca até alguém ver + refresh das conversas
       if (ev.tipo === "atendimento.humano") {
+        registrarAtencao({
+          tipo: "humano",
+          conversaId: String(ev.payload?.conversa_id ?? ev.payload?.telefone ?? ""),
+          nome: ev.payload?.cliente_nome || ev.payload?.telefone || "Cliente",
+          motivo: ev.payload?.motivo || "Pediu atendimento humano",
+        });
         conversasApi.list(pizzaria.id).then((c) => setConversations(c.map(backendToConversation))).catch(() => {});
       }
       // Conversas limpas → esvaziar tudo
@@ -690,6 +772,8 @@ function AdminApp() {
         setNav("pedidos");
       }}
     >
+      <FaixaAtencao alertas={alertasAtencao} onAbrir={abrirAtencao} onDispensar={dispensarAtencao} />
+
       <AssinaturaAviso
         venceEm={pizzaria.plano_vence_em ?? null}
         suspensa={pizzaria.suspensa ?? false}
@@ -782,6 +866,51 @@ function AdminApp() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+// ============================================
+// Faixa de atenção: alguém precisa responder um cliente agora.
+// ============================================
+interface AlertaAtencao {
+  tipo: "humano" | "chamado";
+  conversaId: string;
+  nome: string;
+  motivo: string;
+}
+
+function FaixaAtencao({ alertas, onAbrir, onDispensar }: {
+  alertas: AlertaAtencao[];
+  onAbrir: (a: AlertaAtencao) => void;
+  onDispensar: (a: AlertaAtencao) => void;
+}) {
+  if (!alertas.length) return null;
+  const a = alertas[alertas.length - 1];
+  const chamado = a.tipo === "chamado";
+  return (
+    <div className={`sticky top-0 z-30 mx-4 mt-3 md:mx-6 flex flex-col gap-2 rounded-2xl border px-4 py-3 shadow-lg sm:flex-row sm:items-center ${
+      chamado ? "border-amber-500/40 bg-amber-500/15" : "border-rose-500/40 bg-rose-500/15"
+    }`} role="alert">
+      <div className="min-w-0 flex-1">
+        <p className={`text-sm font-bold ${chamado ? "text-amber-200" : "text-rose-200"}`}>
+          {chamado ? "🔔 A atendente precisa de você" : "🔴 Atendimento humano solicitado"}
+          {alertas.length > 1 && <span className="ml-2 text-xs font-semibold opacity-80">+{alertas.length - 1}</span>}
+        </p>
+        <p className="truncate text-xs text-slate-200">
+          <strong>{a.nome}</strong> — {a.motivo}
+        </p>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <button type="button" onClick={() => onAbrir(a)}
+          className={`rounded-xl px-3 py-1.5 text-xs font-bold text-white ${chamado ? "bg-amber-600 hover:bg-amber-500" : "bg-rose-600 hover:bg-rose-500"}`}>
+          {chamado ? "Responder" : "Abrir conversa"}
+        </button>
+        <button type="button" onClick={() => onDispensar(a)}
+          className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+          Dispensar
+        </button>
+      </div>
+    </div>
   );
 }
 

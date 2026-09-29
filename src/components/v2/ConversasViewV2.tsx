@@ -148,20 +148,11 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: P
 
     if (liveEvent.tipo === "atendimento.humano") {
       const p = liveEvent.payload;
+      // Som e notificação do navegador ficam no App (valem em qualquer tela).
       setHumanAlert({
         nome: p?.cliente_nome || p?.telefone || "Cliente",
         motivo: p?.motivo || "Solicitação de atendimento humano",
       });
-      try {
-        const audio = new Audio("data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQ==");
-        if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("🔴 Atendimento humano solicitado", {
-            body: `${p?.cliente_nome || "Cliente"}: ${p?.motivo || "Precisa de ajuda"}`,
-            icon: "🍕",
-          });
-        }
-        audio.play().catch(() => {});
-      } catch {}
     }
 
     if (liveEvent.tipo === "conversas.limpas") {
