@@ -26,14 +26,24 @@ def _int_env(name: str, default: int) -> int:
 # alta concorrência — a sessão fica aberta durante a chamada do LLM, então cada
 # conversa em voo segura 1 conexão; o pool acompanha DISPATCHER_CONCURRENCY.
 # Tudo tunável por env (Coolify): DB_POOL_SIZE / DB_MAX_OVERFLOW.
+#
+# ORÇAMENTO: a soma dos pools no pior caso tem de caber no max_connections do
+# Postgres (100 por padrão, 3 reservadas). Antes: dispatcher 40+10, API 10+20,
+# worker 8 processos × (2+3), beat 2+3 = ~125 — num pico, "too many connections"
+# no meio do atendimento. Agora, com os padrões:
+#   API 10+10 = 20 · worker 8 × (1+2) = 24 · beat 1+2 = 3  → "outros" ≈ 47
+#   dispatcher 40 + 5 = 45                                  → total ≈ 92 de 97
+# O dispatcher ainda confere o max_connections real no boot e reduz a própria
+# concorrência se não couber (dispatcher/runner.py: concorrencia_segura).
 _role = (os.getenv("APP_ROLE") or "api").lower()
 if _role in ("worker", "beat"):
-    _default_pool, _default_overflow = 2, 3
+    # Cada task do Celery usa um loop novo e uma sessão por vez.
+    _default_pool, _default_overflow = 1, 2
 elif _role == "dispatcher":
     _conc = _int_env("DISPATCHER_CONCURRENCY", 40)
-    _default_pool, _default_overflow = _conc, max(10, _conc // 4)
+    _default_pool, _default_overflow = _conc, max(5, _conc // 8)
 else:  # api
-    _default_pool, _default_overflow = 10, 20
+    _default_pool, _default_overflow = 10, 10
 _pool_size = _int_env("DB_POOL_SIZE", _default_pool)
 _max_overflow = _int_env("DB_MAX_OVERFLOW", _default_overflow)
 

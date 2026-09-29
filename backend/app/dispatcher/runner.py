@@ -46,6 +46,11 @@ RECLAIM_INTERVAL = float(os.getenv("DISPATCHER_RECLAIM_INTERVAL") or 30.0)
 RECLAIM_MIN_IDLE_MS = _int_env("DISPATCHER_RECLAIM_MIN_IDLE_MS", 60000)
 METRICS_INTERVAL = float(os.getenv("DISPATCHER_METRICS_INTERVAL") or 30.0)
 LOCK_TTL = 90  # igual ao FLUSH_LOCK_TTL do worker — mesmo namespace de lock
+# Conexões que os OUTROS serviços podem usar no pior caso (API 20 + worker 24 +
+# beat 3, ver db.py). O dispatcher fica com o que sobra do max_connections.
+CONEXOES_OUTROS = _int_env("DB_CONEXOES_OUTROS", 50)
+# Réplicas do dispatcher dividem o que sobra (cada uma confere no próprio boot).
+REPLICAS = max(1, _int_env("DISPATCHER_REPLICAS", 1))
 
 # Nome único por réplica (o consumer group exige consumers distintos por réplica,
 # senão dois processos compartilhariam o mesmo PEL).
@@ -247,13 +252,47 @@ async def _metrics_loop(sem: asyncio.Semaphore) -> None:
             log.warning("Dispatcher metrics falhou: %s", e)
 
 
+def concorrencia_segura(desejada: int, max_conn: int, reservadas: int, outros: int, replicas: int = 1) -> int:
+    """Quantas conversas em voo cabem no Postgres. Cada uma segura 1 conexão
+    durante a chamada do LLM; sobra uma folga por réplica (sessões auxiliares)."""
+    folga = max(5, desejada // 8)
+    disponivel = (max_conn - reservadas - outros) // max(1, replicas) - folga
+    return max(5, min(desejada, disponivel))
+
+
+async def _concorrencia_efetiva() -> int:
+    """DISPATCHER_CONCURRENCY limitado ao que o Postgres aceita de verdade.
+    Subir para 80 sem antes subir o max_connections derrubava atendimento com
+    "too many connections"; agora vira só um aviso no log."""
+    try:
+        from sqlalchemy import text
+
+        from app.db import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            max_conn = int((await db.execute(text("SHOW max_connections"))).scalar())
+            reservadas = int((await db.execute(text("SHOW superuser_reserved_connections"))).scalar())
+    except Exception as e:  # noqa: BLE001
+        log.warning("Dispatcher: não consegui ler max_connections (%s) — usando %s", e, CONCURRENCY)
+        return CONCURRENCY
+    efetiva = concorrencia_segura(CONCURRENCY, max_conn, reservadas, CONEXOES_OUTROS, REPLICAS)
+    if efetiva < CONCURRENCY:
+        log.warning(
+            "Dispatcher: DISPATCHER_CONCURRENCY=%s não cabe no Postgres (max_connections=%s, "
+            "reservadas=%s, outros serviços=%s, réplicas=%s) — usando %s. Suba o max_connections "
+            "do Postgres para liberar mais conversas simultâneas.",
+            CONCURRENCY, max_conn, reservadas, CONEXOES_OUTROS, REPLICAS, efetiva,
+        )
+    return efetiva
+
+
 async def run_dispatcher() -> None:
     init_sentry("dispatcher")
     await streams.ensure_group()
-    sem = asyncio.Semaphore(CONCURRENCY)
+    concorrencia = await _concorrencia_efetiva()
+    sem = asyncio.Semaphore(concorrencia)
     log.info(
-        "Dispatcher iniciando (host=%s): concurrency=%s readers=%s tenant_cap=%s",
-        _HOST, CONCURRENCY, READERS, TENANT_CAP,
+        "Dispatcher iniciando (host=%s): concurrency=%s (pedido=%s) readers=%s tenant_cap=%s",
+        _HOST, concorrencia, CONCURRENCY, READERS, TENANT_CAP,
     )
     tasks = [
         asyncio.create_task(_scheduler_loop()),
