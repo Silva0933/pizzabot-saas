@@ -66,6 +66,13 @@ class Turno:
     espera_tool: list[str] = field(default_factory=list)
     # Falha se a intenção detectada não for uma destas.
     espera_intencao: list[str] = field(default_factory=list)
+    # Falha se o CARRINHO (estado depois do turno) citar um destes. Texto da
+    # resposta não basta: "é isso mesmo" virava Fanta no carrinho e o script,
+    # olhando só a fala, reportava 0 falhas.
+    nao_pode_no_carrinho: list[str] = field(default_factory=list)
+    # Falha se o turno disparar uma destas ações (eventos do modo simulação,
+    # ex.: "gerar_pagamento" num "já paguei o pix").
+    nao_pode_acao: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -104,7 +111,37 @@ ROTEIROS: list[Roteiro] = [
             Turno("Eu vou querer uma the pizza tamanho M",
                   espera_intencao=["adicionar_item"],
                   nao_pode=["cardapio enviado"]),
-            Turno("é isso mesmo", nao_pode=["cardapio enviado"]),
+            Turno("é isso mesmo", nao_pode=["cardapio enviado", "anotei"],
+                  nao_pode_no_carrinho=["fanta", "coca", "guarana"]),
+        ],
+    ),
+    Roteiro(
+        "status_pos_fechamento",
+        "'Já ficou pronto?' logo após fechar: status do pedido, nunca 'Tirei' (bug de 29/09)",
+        [
+            Turno("oi"),
+            Turno("quero uma calabresa grande", espera_intencao=["adicionar_item"]),
+            Turno("não, só isso"),
+            Turno("vou retirar"),
+            Turno("dinheiro"),
+            Turno("sim, pode fechar", espera_algum=["pedido #"]),
+            Turno("já ficou pronto meu pedido?", nao_pode=["tirei"], espera_algum=["pedido #"]),
+        ],
+    ),
+    Roteiro(
+        "pos_venda_pagamento",
+        "Depois de fechar com Pix: 'já paguei' e 'pago na retirada' não geram cobrança (bug de 29/09)",
+        [
+            Turno("oi"),
+            Turno("quero uma calabresa grande"),
+            Turno("não"),
+            Turno("retirada"),
+            Turno("pix"),
+            Turno("quero pagar agora"),
+            Turno("sim"),
+            Turno("já paguei o pix", nao_pode=["reenviei", "qr code"], nao_pode_acao=["gerar_pagamento"]),
+            Turno("vou pagar na hora de buscar, pode ser?", nao_pode=["reenviei"],
+                  nao_pode_acao=["gerar_pagamento"], espera_algum=["dinheiro", "cartao"]),
         ],
     ),
     Roteiro(
@@ -258,6 +295,16 @@ async def roda_roteiro(pizzaria_id, roteiro: Roteiro, *, verbose: bool) -> dict:
 
             if turno.espera_intencao and intencao not in turno.espera_intencao:
                 falhas.append(f"turno {i}: intent={intencao}, esperado um de {turno.espera_intencao}")
+
+            carrinho = _norm(estado)
+            for proibido in turno.nao_pode_no_carrinho:
+                if _norm(proibido) in carrinho:
+                    falhas.append(f"turno {i}: carrinho ganhou {proibido!r} sem o cliente pedir ({estado[:80]})")
+
+            acoes = [str(e.get("action")) for e in (tr.get("events") or []) if isinstance(e, dict)]
+            for proibida in turno.nao_pode_acao:
+                if proibida in acoes:
+                    falhas.append(f"turno {i}: disparou {proibida!r} quando não devia")
 
         # 3) Estado que nunca muda ao longo do roteiro = não está progredindo.
         if len(set(estados)) == 1 and len(estados) > 2:
