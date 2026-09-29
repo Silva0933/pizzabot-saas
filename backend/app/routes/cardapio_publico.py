@@ -698,6 +698,11 @@ async def criar_pedido_digital(
         bot_ativo=False,  # Pedidos digitais não passam pelo bot
     )
     db.add(pedido)
+    # Contadores do cliente, como no pedido do WhatsApp (registrar_pedido): o
+    # pedido do cardápio não contava e o cliente seguia "0 pedidos · R$ 0,00".
+    cli.total_pedidos = int(cli.total_pedidos or 0) + 1
+    cli.total_gasto = (cli.total_gasto or Decimal("0")) + Decimal(str(valor_total))
+    cli.ultima_visita = datetime.now(UTC)
     await db.flush()
     # Recarrega o numero_pedido atribuído pelo trigger (não vem por padrão no flush).
     await db.refresh(pedido, ["numero_pedido"])

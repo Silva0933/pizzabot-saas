@@ -499,13 +499,28 @@ export interface ClientePainelPedido {
   status: string;
   status_label: string;
   tipo: string;
-  itens: Array<{ nome?: string; quantidade?: number; tamanho?: string }>;
+  itens: Array<{ nome?: string; quantidade?: number; tamanho?: string; preco_unit?: number; adicionais?: string[] }>;
   valor_total: number;
+  taxa_entrega?: number;
+  forma_pagamento?: string | null;
+  origem?: string | null;
+  endereco_entrega?: string | null;
   criado_em: string;
+}
+
+export interface ClientePainelResumo {
+  pedidos: number;
+  total_gasto: number;
+  ticket_medio: number;
+  primeiro_pedido: string | null;
+  favoritos: Array<{ nome: string; quantidade: number }>;
+  pagamento_preferido: string | null;
+  cancelados: number;
 }
 
 export interface ClientePainelDetalhe {
   cliente: ClientePainel;
+  resumo?: ClientePainelResumo;
   pedidos: ClientePainelPedido[];
 }
 
