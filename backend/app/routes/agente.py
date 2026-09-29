@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends
@@ -277,6 +278,15 @@ async def agent_health(
     add("whatsapp", "WhatsApp", "ok" if pizz.instancia and pizz.whatsapp_estado == "open" else "error",
         "Instância conectada." if pizz.instancia and pizz.whatsapp_estado == "open"
         else "A instância precisa estar configurada e conectada.")
+    if pizz.instancia:
+        from app.services.protecao_whatsapp import AQUECIMENTO_DIAS, em_aquecimento
+        desde = getattr(pizz, "whatsapp_conectado_desde", None)
+        if em_aquecimento(pizz):
+            ate = (desde + timedelta(days=AQUECIMENTO_DIAS)).strftime("%d/%m") if isinstance(desde, datetime) else None
+            add("aquecimento", "Número em aquecimento", "warning",
+                (f"Até {ate}: " if ate else "Nos primeiros 14 dias: ")
+                + "o sistema não manda resgate de carrinho nem pesquisa de satisfação e limita as mensagens "
+                "automáticas, para proteger o número contra bloqueio. O atendimento funciona normalmente.")
     add("horarios", "Horários", "ok" if pizz.horario_funcionamento else "warning",
         "Agenda configurada." if pizz.horario_funcionamento else "Cadastre horários para evitar atendimento fora da operação.")
     add("pagamentos", "Pagamentos", "ok" if pizz.formas_pagamento_aceitas else "warning",
