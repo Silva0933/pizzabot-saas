@@ -1428,6 +1428,10 @@ async def registrar_pedido(
         )
         db.add(ped)
     ped.aguardando_revisao = revisar
+    # A taxa ia só dentro do total: o pedido #1 do teste de 29/09 (R$ 54 de itens
+    # + R$ 3 de entrega) ficou com taxa_entrega = 0 — painel, entregador e
+    # relatórios mostravam entrega grátis.
+    ped.taxa_entrega = Decimal(str(round(taxa_entrega, 2)))
     if chave_idempotencia:
         ped.chave_idempotencia = chave_idempotencia
 

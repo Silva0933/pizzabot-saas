@@ -1148,6 +1148,7 @@ async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dic
 
         ped.itens = calc.get("itens") or []
         ped.valor_total = Decimal(str(calc.get("valor_total") or 0))
+        ped.taxa_entrega = Decimal(str(calc.get("taxa_entrega") or 0))
         if estado.get("tipo"):
             ped.tipo = estado["tipo"]
         if estado.get("endereco"):

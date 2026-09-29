@@ -166,7 +166,8 @@ class TestAvisoDoPainelDepoisDoCommit:
             ordem.append("gateway")
             return {"ok": True, "metodo": "pix"}
 
-        with patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=_calc())), \
+        calc = {**_calc(), "taxa_entrega": 3.0, "valor_total": 67.9}
+        with patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=calc)), \
              patch("app.agent.tools._coords_localizacao_recente", new=AsyncMock(return_value=None)), \
              patch("app.services.order_audit.registrar_evento_pedido", new=MagicMock()), \
              patch("app.services.broadcaster.broadcaster.publish", new=AsyncMock(side_effect=_publish)), \
@@ -183,3 +184,5 @@ class TestAvisoDoPainelDepoisDoCommit:
         assert ordem[:3] == ["commit", "broadcast", "gateway"]
         novo = db.add.call_args_list[0].args[0]
         assert novo.chave_idempotencia == "wa:novo"
+        # Taxa gravada no pedido, não só somada ao total (teste real de 29/09).
+        assert float(novo.taxa_entrega) == 3.0
