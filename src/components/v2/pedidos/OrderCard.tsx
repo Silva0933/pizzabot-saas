@@ -45,6 +45,12 @@ export function OrderCard({
   const ringCls = aguardandoConferencia
     ? "border-amber-300 ring-1 ring-amber-200"
     : urg ? cn("border-line", URGENCY_STYLE[urg.level].ring) : "border-line";
+  // Compacto por padrão: aberto, o card media ~490 px e a coluna "Recebido"
+  // mostrava UM pedido por tela — com 3 ou 4 a equipe perdia os outros.
+  const [aberto, setAberto] = React.useState(false);
+  const resumoItens = (p.itens || [])
+    .map((it) => `${Number(it.quantidade ?? 1)}× ${it.nome}`)
+    .join(", ");
 
   return (
     <article className={cn("relative bg-surface border rounded-2xl shadow-card overflow-hidden flex flex-col", ringCls)}>
@@ -101,6 +107,28 @@ export function OrderCard({
           )}
         </div>
 
+        {!aberto && (
+          <>
+            <p className="flex items-center gap-1.5 text-xs text-ink-muted min-w-0">
+              {delivery ? <MapPin className="w-3.5 h-3.5 shrink-0 text-brand-600" /> : <Store className="w-3.5 h-3.5 shrink-0 text-blue-600" />}
+              <span className="truncate">
+                {delivery ? (p.endereco_entrega || <span className="text-rose-500 font-medium">Endereço não informado</span>) : "Retirada no balcão"}
+              </span>
+            </p>
+            <p className="text-xs text-ink truncate" title={resumoItens}>
+              {resumoItens || <span className="italic text-ink-subtle">Rascunho (sem itens)</span>}
+            </p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-base font-extrabold text-emerald-600">{brl(p.valor_total)}</span>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-ink">
+                <pay.icon className="w-3.5 h-3.5 text-ink-subtle" /> {pay.methodLabel}
+                {pay.stateLabel && <Badge tone={pay.stateTone} dot>{pay.stateLabel}</Badge>}
+              </span>
+            </div>
+          </>
+        )}
+
+        {aberto && (<>
         {/* Entrega/Retirada — bloco destacado (dado de despacho) */}
         <div className={cn(
           "rounded-xl px-3 py-2 flex items-start gap-2 text-sm",
@@ -179,12 +207,13 @@ export function OrderCard({
             <Phone className="w-3.5 h-3.5" /> {tel}
           </a>
         )}
+        </>)}
       </div>
 
       {/* Footer: ações */}
       <div className="px-4 py-3 border-t border-line bg-surface-muted/60 space-y-2">
         {/* Atribuição de entregador (apenas delivery) */}
-        {delivery && onAtribuir && (
+        {aberto && delivery && onAtribuir && (
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-muted shrink-0">
               <Bike className="w-3.5 h-3.5" /> Entregador
@@ -231,11 +260,18 @@ export function OrderCard({
           ) : (
             <span className="flex-1 text-xs text-ink-subtle italic">Pedido finalizado</span>
           )}
-          <Button variant="outline" size="sm" icon={Wrench} disabled={moving} onClick={onCorrect}>
-            Corrigir
-          </Button>
+          {aberto ? (
+            <Button variant="outline" size="sm" icon={Wrench} disabled={moving} onClick={onCorrect}>
+              Corrigir
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setAberto(true)} title="Ver endereço, itens, entregador e mais ações">
+              Detalhes
+            </Button>
+          )}
         </div>
 
+        {aberto && (<>
         {/* Whatsapp e acoes auditaveis. Pedidos nao podem mais ser excluidos. */}
         <div className="flex items-center gap-2">
           {tel && (
@@ -262,10 +298,16 @@ export function OrderCard({
           )}
         </div>
 
-        <p className="text-[10px] text-ink-subtle flex items-center gap-1 pt-0.5">
-          <Clock className="w-3 h-3" />
-          {new Date(p.created_at).toLocaleString("pt-BR")}
-        </p>
+        <div className="flex items-center justify-between gap-2 pt-0.5">
+          <p className="text-[10px] text-ink-subtle flex items-center gap-1">
+            <Clock className="w-3 h-3" />
+            {new Date(p.created_at).toLocaleString("pt-BR")}
+          </p>
+          <button type="button" onClick={() => setAberto(false)} className="text-[11px] font-semibold text-ink-muted hover:text-ink">
+            Recolher
+          </button>
+        </div>
+        </>)}
       </div>
     </article>
   );

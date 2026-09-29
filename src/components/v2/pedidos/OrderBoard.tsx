@@ -54,7 +54,10 @@ export function OrderBoard({ pedidos, statusLabel, renderCard }: OrderBoardProps
       </div>
 
       {/* Grid do Kanban */}
-      <div className="flex flex-col xl:flex-row xl:gap-4 xl:overflow-x-auto gap-5">
+      {/* No desktop o quadro ocupa a altura da tela e CADA coluna rola sozinha:
+          antes a página inteira rolava e, com 3-4 pedidos em "Recebido", as outras
+          colunas e os cabeçalhos sumiam de vista. */}
+      <div className="flex flex-col xl:flex-row xl:gap-4 xl:overflow-x-auto xl:items-stretch xl:h-[calc(100vh-240px)] xl:min-h-[420px] gap-5">
         {colunas.map((status) => {
           const itens = grupos.get(status) || [];
           const meta = ORDER_STATUS_META[status];
@@ -64,7 +67,7 @@ export function OrderBoard({ pedidos, statusLabel, renderCard }: OrderBoardProps
             <section
               key={status}
               className={cn(
-                "xl:w-[340px] xl:shrink-0 flex-col",
+                "xl:w-[340px] xl:shrink-0 flex-col xl:min-h-0",
                 isMobileActive ? "flex" : "hidden xl:flex"
               )}
             >
@@ -83,7 +86,7 @@ export function OrderBoard({ pedidos, statusLabel, renderCard }: OrderBoardProps
                   Sem pedidos
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 xl:content-start gap-3 xl:flex-1 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
                   {itens.map((p) => (
                     <div key={p.id}>{renderCard(p)}</div>
                   ))}
