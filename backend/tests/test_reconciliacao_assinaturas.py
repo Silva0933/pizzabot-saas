@@ -80,21 +80,26 @@ def cenario(monkeypatch):
     import app.services.billing_plataforma as billing_mod
     from app.workers.periodic import _reconciliar_assinaturas_asaas_async
 
-    def rodar(assinaturas, ids_no_banco, *, configurado=True, erro_ao_cancelar=None):
+    def rodar(assinaturas, ids_no_banco, *, configurado=True, erro_ao_cancelar=None,
+              erro_ao_listar=None):
         cancelar = AsyncMock(side_effect=erro_ao_cancelar)
         cliente = MagicMock()
-        cliente.listar_assinaturas = AsyncMock(return_value=assinaturas)
+        cliente.listar_assinaturas = AsyncMock(return_value=assinaturas, side_effect=erro_ao_listar)
         cliente.cancelar_assinatura = cancelar
         carregar = AsyncMock()
+        engine = MagicMock()
+        engine.dispose = AsyncMock()
 
         monkeypatch.setattr(billing_mod, "billing_configurado", lambda: configurado)
         monkeypatch.setattr(billing_mod, "carregar_config", carregar)
         monkeypatch.setattr(billing_mod, "PlatformAsaasClient", lambda *a, **k: cliente)
         monkeypatch.setattr(alertas_mod, "registrar_alerta", AsyncMock())
         monkeypatch.setattr(db_mod, "AsyncSessionLocal", _FakeSessionMaker(_FakeDB(ids_no_banco)))
+        monkeypatch.setattr(db_mod, "engine", engine)
 
-        resultado = asyncio.run(_reconciliar_assinaturas_asaas_async())
         rodar.carregar_config = carregar
+        rodar.engine = engine
+        resultado = asyncio.run(_reconciliar_assinaturas_asaas_async())
         return resultado, cancelar
 
     return rodar
@@ -198,6 +203,24 @@ class TestTravas:
             [_assinatura("sub_orfa", f"{uuid.uuid4()}|basico")], ids_no_banco=[str(uuid.uuid4())]
         )
         cenario.carregar_config.assert_awaited_once()
+
+    def test_libera_o_pool_ao_terminar(self, cenario):
+        """Regressao: sem o dispose, a conexao ficava no pool presa ao loop do
+        asyncio.run ja fechado. A proxima task do mesmo processo
+        (verificar_conexoes_whatsapp, 06:33) herdava a conexao morta: "Event loop
+        is closed" no log e falso alerta de Evolution INACESSIVEL todo dia."""
+        cenario([_assinatura("sub_viva", None)], ids_no_banco=[str(uuid.uuid4())])
+        cenario.engine.dispose.assert_awaited_once()
+
+    def test_libera_o_pool_tambem_no_retorno_antecipado(self, cenario):
+        cenario([], ids_no_banco=[], configurado=False)
+        cenario.engine.dispose.assert_awaited_once()
+
+    def test_libera_o_pool_mesmo_quando_a_task_quebra(self, cenario):
+        with pytest.raises(RuntimeError):
+            cenario([], ids_no_banco=[str(uuid.uuid4())],
+                    erro_ao_listar=RuntimeError("falha inesperada"))
+        cenario.engine.dispose.assert_awaited_once()
 
     def test_modo_so_alerta_nao_cancela(self, cenario, monkeypatch):
         import app.workers.periodic as periodic_mod

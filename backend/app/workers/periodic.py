@@ -303,6 +303,24 @@ def reconciliar_assinaturas_asaas() -> dict:
 
 
 async def _reconciliar_assinaturas_asaas_async() -> dict:
+    # Como nas demais tasks: asyncio.run fecha o loop ao terminar, e a conexão que
+    # ficasse no pool morreria presa a ele. Sem o dispose, a PRÓXIMA task deste
+    # processo (verificar_conexoes_whatsapp, 3 min depois) herdava essa conexão:
+    # "Event loop is closed" no log, a leitura do app_config falhava calada e a
+    # URL da Evolution caía no fallback do .env — falso alerta de Evolution
+    # INACESSÍVEL todo dia às 06:33.
+    from app.db import engine
+
+    try:
+        return await _reconciliar_assinaturas_asaas()
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+async def _reconciliar_assinaturas_asaas() -> dict:
     import uuid as _uuid
 
     from sqlalchemy import text
