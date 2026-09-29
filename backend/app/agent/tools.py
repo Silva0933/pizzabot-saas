@@ -568,6 +568,21 @@ def _parse_nome_e_tamanho(nome: str, tamanho: str | None = None) -> tuple[str, s
     return q, tam
 
 
+_VOLUME_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*(ml|lts?|litros?|l)\b")
+
+
+def _volumes_ml(texto: str | None) -> set[int]:
+    """Volumes citados no texto, em ml: "Coca 2L" → {2000}, "1,5 litro" → {1500}."""
+    vols: set[int] = set()
+    for m in _VOLUME_RE.finditer((texto or "").lower()):
+        try:
+            valor = float(m.group(1).replace(",", "."))
+        except ValueError:
+            continue
+        vols.add(round(valor if m.group(2) == "ml" else valor * 1000))
+    return vols
+
+
 def _regex_palavra(termo: str) -> str:
     """Regex (Postgres ~*) que casa `termo` como palavra inteira no texto."""
     return r"(^|[^[:alnum:]])" + re.escape(str(termo).strip()) + r"($|[^[:alnum:]])"
@@ -696,7 +711,10 @@ async def _obter_preco_produto(
         # tokens da query (e, em empate, a categoria/tamanho preferidos e o nome
         # mais curto).
         _STOP = {"de", "da", "do", "com", "sem", "a", "o", "e", "pizza", "sabor", "uma", "um"}
-        tokens = [t for t in re.split(r"[^0-9a-zà-ÿ]+", q.lower()) if len(t) >= 3 and t not in _STOP]
+        # O volume ("2 litros") sai dos tokens: é conferido à parte, em ml, contra
+        # o nome do produto ("2L").
+        sem_volume = _VOLUME_RE.sub(" ", q.lower())
+        tokens = [t for t in re.split(r"[^0-9a-zà-ÿ]+", sem_volume) if len(t) >= 3 and t not in _STOP]
         tokens_norm = [_normalizar(t) for t in tokens]
         if tokens_norm:
             cands = (await db.execute(text(
@@ -729,6 +747,14 @@ async def _obter_preco_produto(
         return 42.0, nome_sabor
 
     db_nome, db_preco, db_tamanhos = row
+    # Volume dito × volume do cadastro: "coca cola de 1l" (a casa só tem a 2L) caía
+    # na busca por palavra-chave ("coca" + "cola") e era cobrada como Coca Cola 2L.
+    # Volume diferente é outro produto: vira "não encontrado" e o fluxo de negativa
+    # oferece as bebidas que existem.
+    vol_pedido = _volumes_ml(f"{q} {tamanho or ''}")
+    vol_produto = _volumes_ml(db_nome)
+    if vol_pedido and vol_produto and not (vol_pedido & vol_produto):
+        raise ValueError(f"Sabor ou produto '{nome_sabor}' nao encontrado no cardapio.")
     preco_calculado = float(db_preco) if db_preco is not None else 0.0
 
     if db_tamanhos:
