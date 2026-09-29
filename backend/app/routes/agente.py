@@ -285,6 +285,17 @@ async def agent_health(
     add("entrega", "Taxa de entrega", "ok" if taxa_ok else "warning",
         "Regra de entrega configurada." if taxa_ok else "Sem taxa cadastrada; casos de delivery podem exigir humano.")
 
+    # Erro de cadastro que a atendente repete ao cliente (ex.: descrição copiada
+    # de outro produto, produto sem preço).
+    from app.services.cardapio_qualidade import problemas_cardapio
+    todos_produtos = list((await db.execute(
+        select(Produto).where(Produto.pizzaria_id == pizzaria_id)
+    )).scalars().all())
+    problemas = problemas_cardapio(todos_produtos)
+    add("cardapio_qualidade", "Qualidade do cardápio", "warning" if problemas else "ok",
+        " ".join(problemas[:3]) + (f" (+{len(problemas) - 3})" if len(problemas) > 3 else "")
+        if problemas else "Nenhum problema de cadastro encontrado.")
+
     errors = sum(1 for item in checks if item["status"] == "error")
     warnings = sum(1 for item in checks if item["status"] == "warning")
     return {
