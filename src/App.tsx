@@ -558,6 +558,19 @@ function AdminApp() {
         });
         conversasApi.list(pizzaria.id).then((c) => setConversations(c.map(backendToConversation))).catch(() => {});
       }
+      // Chamado interno da atendente → alerta até alguém responder (sai ao responder/expirar)
+      if (ev.tipo === "chamado.novo") {
+        registrarAtencao({
+          tipo: "chamado",
+          conversaId: String(ev.payload?.conversa_id ?? ev.payload?.chamado_id ?? ""),
+          nome: ev.payload?.cliente_nome || ev.payload?.telefone || "Cliente",
+          motivo: ev.payload?.pergunta || "A atendente precisa de uma resposta",
+        });
+      }
+      if (ev.tipo === "chamado.respondido" || ev.tipo === "chamado.expirado") {
+        const conversaId = String(ev.payload?.conversa_id ?? ev.payload?.chamado_id ?? "");
+        setAlertasAtencao((atual) => atual.filter((a) => !(a.tipo === "chamado" && a.conversaId === conversaId)));
+      }
       // Conversas limpas → esvaziar tudo
       if (ev.tipo === "conversas.limpas") {
         setConversations([]);

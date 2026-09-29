@@ -9,6 +9,7 @@
 import React, { useState } from "react";
 import { PersonalityBuilder } from "./PersonalityBuilder";
 import { AgentTestPanel } from "./AgentTestPanel";
+import { BaseConhecimento } from "./ChamadosInternos";
 
 export interface AttendantPageProps {
   pizzariaId: string;
@@ -23,6 +24,9 @@ export function AttendantPage({ pizzariaId }: AttendantPageProps) {
         pizzariaId={pizzariaId}
         onOpenTest={() => setTestOpen(true)}
       />
+      <div className="mx-auto max-w-7xl px-4 pb-6 md:px-6">
+        <BaseConhecimento pizzariaId={pizzariaId} />
+      </div>
       <AgentTestPanel
         pizzariaId={pizzariaId}
         open={testOpen}

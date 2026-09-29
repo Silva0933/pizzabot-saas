@@ -591,6 +591,48 @@ export const conversasApi = {
 };
 
 // ============================================
+// Chamados internos da atendente + base de conhecimento
+// ============================================
+export interface Chamado {
+  id: string;
+  conversa_id: string | null;
+  telefone: string;
+  cliente_nome: string | null;
+  pergunta: string;
+  motivo: "sem_resposta" | "falha_operacao" | string;
+  contexto: { etapa?: string; itens?: string[]; tipo?: string | null; pagamento?: string | null };
+  status: "aberto" | "respondido" | "expirado" | "cancelado" | string;
+  resposta: string | null;
+  respondido_em: string | null;
+  created_at: string;
+}
+
+export interface ItemConhecimento {
+  id: string;
+  pergunta: string;
+  resposta: string;
+  ativo: boolean;
+  created_at: string;
+}
+
+export const chamadosApi = {
+  list: (pizzariaId: string, status?: string) =>
+    api.get<Chamado[]>(`/pizzarias/${pizzariaId}/chamados${status ? `?status=${status}` : ""}`),
+  responder: (pizzariaId: string, chamadoId: string, resposta: string, salvarConhecimento: boolean) =>
+    api.post<{ ok: boolean }>(`/pizzarias/${pizzariaId}/chamados/${chamadoId}/responder`, {
+      resposta, salvar_conhecimento: salvarConhecimento,
+    }),
+};
+
+export const conhecimentoApi = {
+  list: (pizzariaId: string) => api.get<ItemConhecimento[]>(`/pizzarias/${pizzariaId}/conhecimento`),
+  criar: (pizzariaId: string, pergunta: string, resposta: string) =>
+    api.post<ItemConhecimento>(`/pizzarias/${pizzariaId}/conhecimento`, { pergunta, resposta }),
+  remover: (pizzariaId: string, itemId: string) =>
+    api.delete(`/pizzarias/${pizzariaId}/conhecimento/${itemId}`),
+};
+
+// ============================================
 // Personalidade do atendente (Fase 4)
 // ============================================
 export type EstiloAtendente = "casual" | "profissional" | "proximo";
@@ -1161,6 +1203,9 @@ export interface WsEvent {
     | "bot.toggled"
     | "bot.digitando"
     | "atendimento.humano"
+    | "chamado.novo"
+    | "chamado.respondido"
+    | "chamado.expirado"
     | "conversas.limpas"
     | "pedidos.limpos"
     | "whatsapp.status"

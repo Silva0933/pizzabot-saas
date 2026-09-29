@@ -8,6 +8,7 @@ import {
   BackendConversa,
   BackendMensagem,
 } from "../../lib/api";
+import { ChamadosAbertos } from "./ChamadosInternos";
 
 interface Props {
   pizzariaId: string;
@@ -245,6 +246,14 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen }: P
       )}
 
       <div className="p-4 md:p-6 pb-24 md:pb-6">
+        <ChamadosAbertos
+          pizzariaId={pizzariaId}
+          liveEvent={liveEvent}
+          onAbrirConversa={(conversaId) => {
+            const c = conversas.find((x) => x.id === conversaId);
+            if (c) { setActive(c); onConversationOpen?.(c.id); }
+          }}
+        />
         <div className="grid grid-cols-1 md:grid-cols-[360px_1fr] h-[calc(100vh-140px)] min-h-[500px] bg-[#0b0e14] rounded-2xl border border-[#1e293b] overflow-hidden shadow-sm">
         {/* Lista de Conversas */}
         <aside className={`border-r border-[#1e293b] flex flex-col bg-[#0d1117] ${active ? "hidden md:flex" : "flex"}`}>
