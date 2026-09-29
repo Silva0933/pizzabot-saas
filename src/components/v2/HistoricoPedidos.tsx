@@ -490,9 +490,22 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                         )}
                       </div>
                     </div>
-                    <span className="font-black text-sm text-slate-200 shrink-0">
-                      {brl(Number(item.preco_total || item.preco_unitario || 0))}
-                    </span>
+                    {(() => {
+                      // O item gravado tem `preco_unit` (agente, cardápio digital e
+                      // checkout); `preco_total`/`preco_unitario` não existem e a
+                      // tela mostrava R$ 0,00 em todo item.
+                      const qtd = Number(item.quantidade || 1);
+                      const unit = Number(item.preco_unit ?? item.preco_unitario ?? 0);
+                      const total = Number(item.preco_total ?? unit * qtd);
+                      return (
+                        <div className="text-right shrink-0">
+                          <span className="font-black text-sm text-slate-200">{brl(total)}</span>
+                          {qtd > 1 && unit > 0 && (
+                            <p className="text-[10px] text-slate-500 font-medium">{brl(unit)} cada</p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
