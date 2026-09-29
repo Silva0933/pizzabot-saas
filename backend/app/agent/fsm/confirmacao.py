@@ -26,8 +26,28 @@ def rotulo(it: dict[str, Any]) -> str:
     return nome
 
 
+def _reconhecido(it: dict[str, Any]) -> bool:
+    """Item ligado ao catálogo (ID) ou já resolvido pelo cálculo (nome_congelado).
+
+    Conversa real (29/09): "uma coca cola de 1l" — a IA não achou no catálogo,
+    o item entrou só com o texto do cliente e o sistema respondeu "✅ Anotei: 1x
+    coca cola de 1l", produto que a casa não tem. Item sem lastro não é anunciado
+    (nem ao entrar, nem ao sair): o cálculo o resolve ou o recusa com a negativa."""
+    return bool(it.get("produto_id") or it.get("sabores_ids") or it.get("nome_congelado"))
+
+
 def _por_iid(itens: list[Any]) -> dict[str, dict[str, Any]]:
-    return {str(it["iid"]): it for it in itens or [] if isinstance(it, dict) and it.get("iid")}
+    return {
+        str(it["iid"]): it for it in itens or []
+        if isinstance(it, dict) and it.get("iid") and _reconhecido(it)
+    }
+
+
+def itens_do_pedido(carrinho: list[Any]) -> str:
+    """"1x Portuguesa (G), 1x Coca Cola 2L" — o que já está no pedido, para a voz."""
+    return ", ".join(
+        f"{int(it.get('qtd') or 1)}x {rotulo(it)}" for it in carrinho or [] if isinstance(it, dict)
+    )
 
 
 def confirmacao_do_turno(antes: list[Any], depois: list[Any]) -> str | None:

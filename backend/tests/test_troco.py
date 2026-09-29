@@ -98,7 +98,9 @@ class TestFluxoDoTroco:
 
     def test_troco_menor_que_o_total_pergunta_de_novo(self, cat):
         out = _turno(cat, _estado(aguardando_troco=True), "informar_pagamento", "pra 10")
-        assert out["decisao"]["mensagem_pronta"] == "O total ficou R$ 20,90 😊 Pra quanto você vai precisar de troco?"
+        assert out["decisao"]["mensagem_pronta"] == (
+            "Com R$ 10,00 não dá: o total ficou R$ 20,90 😊 Pra quanto você vai precisar de troco?"
+        )
 
     def test_troco_dito_antes_nao_pergunta_de_novo(self, cat):
         out = _turno(cat, _estado(observacoes="troco pra 100"), "informar_pagamento", "dinheiro")

@@ -239,6 +239,41 @@ async def _checar_comprovante_manual(db: AsyncSession, ctx, telefone: str, user_
     )
 
 
+def contextualizar_voz(
+    decisao: dict[str, Any], estado: dict[str, Any], *, intencao: str | None, user_input: str | None,
+    msg_pronta: str | None,
+) -> tuple[str | None, str | None]:
+    """Devolve (mensagem_pronta, pergunta_fixa) e põe o pedido atual nos fatos da voz.
+
+    Conversa real (29/09), com a Coca já no carrinho e o bot esperando o troco:
+      "Qual o valor da coca cola" → "custa R$ 12,00. Quer incluir no pedido?"
+      "Mas você já incluiu"       → "Vai precisar de troco? Se sim, pra quanto?"
+    A voz não sabia o que estava no pedido, e a pergunta fixa ignorava o que o
+    cliente disse. Agora, num comentário fora da pergunta pendente, a voz responde
+    em uma frase e a pergunta fixa (`pergunta_fixa`) vem logo depois, intacta.
+    """
+    from app.agent.fsm.confirmacao import itens_do_pedido
+    carrinho_txt = itens_do_pedido(estado.get("carrinho") or [])
+    pergunta_fixa = None
+    if (
+        msg_pronta and decisao.get("mensagem_pronta_acao") == "pedir_info"
+        and intencao == "conversa_fiada" and carrinho_txt and len((user_input or "").strip()) > 3
+    ):
+        pergunta_fixa = str(msg_pronta)
+        msg_pronta = None
+        decisao["proxima_pergunta"] = (
+            "Responda em UMA frase curta e simpática ao que o cliente acabou de dizer, usando o pedido "
+            "atual. NÃO faça pergunta nenhuma e NÃO cite valores — o sistema faz a próxima pergunta "
+            "logo depois da sua frase."
+        )
+    if carrinho_txt and (pergunta_fixa or decisao.get("acao") == "responder_duvida"):
+        decisao.setdefault("fatos", []).append(
+            f"O pedido do cliente JÁ TEM: {carrinho_txt}. Se ele falar de um item que já está aí, "
+            "diga que já está anotado no pedido — NUNCA ofereça incluir de novo."
+        )
+    return msg_pronta, pergunta_fixa
+
+
 async def refazer_voz_pelo_preco(texto, correcoes, *, comando, validos, gerar, blindar_fn):
     """Preço inventado pela voz: refaz UMA vez, com os valores válidos explícitos,
     antes de mandar "(valor a confirmar)" — o marcador soava robótico mesmo quando
@@ -498,6 +533,9 @@ async def run_fsm_agent(
         # com ela seria responder a outra pergunta. Deixa a voz gerar a resposta.
         log.info("Mensagem pronta de '%s' descartada: ação final é '%s'", dona, decisao.get("acao"))
         msg_pronta = None
+    msg_pronta, pergunta_fixa = contextualizar_voz(
+        decisao, estado, intencao=res_nlu.get("intencao"), user_input=user_input, msg_pronta=msg_pronta,
+    )
     if msg_pronta:
         # BLINDAGEM (Pilar 2): mensagens CRÍTICAS (resumo/fechamento) vêm prontas do
         # backend — não passam pela LLM, então os valores nunca divergem. Economiza
@@ -519,7 +557,7 @@ async def run_fsm_agent(
 
         (texto, voz_usage), provider_usado, model_usado = await com_failover(_voz, cfg=cfg, model=model)
         if not texto:
-            texto = "Pode repetir, por favor? 😊"
+            texto = "" if pergunta_fixa else "Pode repetir, por favor? 😊"
         # Guard de PRODUTO (camada 4): a voz só cita produto do cardápio que o
         # sistema trouxe no turno (carrinho, confirmação, fatos, oferta). Citou
         # outro → refaz uma vez proibindo; se insistir, alerta no painel.
@@ -601,6 +639,8 @@ async def run_fsm_agent(
                 )
         except Exception as e:  # noqa: BLE001
             log.debug("Guard FSM falhou (texto segue como veio): %s", e)
+    if pergunta_fixa:
+        texto = f"{texto.strip()}\n\n{pergunta_fixa}" if texto.strip() else pergunta_fixa
     texto = texto.replace(QUEBRA, "\n\n")
     if confirmacao:
         texto = f"{confirmacao}\n\n{texto}"

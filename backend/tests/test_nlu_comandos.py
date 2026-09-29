@@ -403,16 +403,27 @@ class TestConfirmacao:
     def test_descreve_so_o_que_mudou(self):
         antes = [
             {"iid": "I1", "nome": "Smash Duplo", "qtd": 2, "nome_congelado": "Smash Duplo"},
-            {"iid": "I2", "nome": "Coca-Cola 2L", "qtd": 1},
-            {"iid": "I3", "nome": "Pizza Brasa", "tamanho": "G", "qtd": 1},
+            {"iid": "I2", "nome": "Coca-Cola 2L", "qtd": 1, "produto_id": "p2"},
+            {"iid": "I3", "nome": "Pizza Brasa", "tamanho": "G", "qtd": 1, "produto_id": "p3"},
         ]
         depois = [
             {"iid": "I1", "nome": "Smash Duplo", "qtd": 3, "nome_congelado": "Smash Duplo"},
-            {"iid": "I3", "nome": "Pizza Brasa", "tamanho": "G", "qtd": 1},
-            {"iid": "I4", "nome": "Cheese Clássico", "qtd": 3, "adicionais": ["Bacon crocante"]},
+            {"iid": "I3", "nome": "Pizza Brasa", "tamanho": "G", "qtd": 1, "produto_id": "p3"},
+            {"iid": "I4", "nome": "Cheese Clássico", "qtd": 3, "adicionais": ["Bacon crocante"], "produto_id": "p4"},
         ]
         txt = confirmacao_do_turno(antes, depois)
         assert txt == "✅ Anotei: 3x Cheese Clássico + Bacon crocante · Ajustei: 3x Smash Duplo · Tirei: Coca-Cola 2L"
+
+    def test_item_sem_lastro_no_catalogo_nao_e_anunciado(self):
+        """Conversa real: "✅ Anotei: 1x Portuguesa, 1x coca cola de 1l" — a casa
+        só tem Coca 2L. Item que a IA não achou não entra no "Anotei"."""
+        depois = [
+            {"iid": "I1", "nome": "Portuguesa", "qtd": 1, "produto_id": "p1"},
+            {"iid": "I2", "nome": "coca cola de 1l", "qtd": 1},
+        ]
+        assert confirmacao_do_turno([], depois) == "✅ Anotei: 1x Portuguesa"
+        # ...nem o "Tirei" quando o cálculo o recusa depois.
+        assert confirmacao_do_turno(depois, depois[:1]) is None
 
     def test_sem_mudanca_nao_confirma(self):
         itens = [{"iid": "I1", "nome": "Coca-Cola 2L", "qtd": 1}]

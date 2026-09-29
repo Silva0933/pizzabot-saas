@@ -2496,12 +2496,16 @@ async def processar(
             return {"decisao": decisao, "estado": estado}
     if estado.get("troco") and estado["troco"] < total_pedido:
         # "troco pra 50" num pedido de R$ 66,80: não dá para levar troco de 50.
+        # A mensagem diz o porquê: "O total ficou R$ 57" sozinho soava como se o
+        # bot não tivesse lido o "50" (conversa real, 29/09).
+        troco_dito = float(estado["troco"])
         estado["troco"] = None
         estado["aguardando_troco"] = True
         estado["etapa"] = "PAGAMENTO"
         decisao["acao"] = "pedir_info"
         decisao["mensagem_pronta"] = (
-            f"O total ficou {_fmt_brl(total_pedido)} 😊 Pra quanto você vai precisar de troco?"
+            f"Com {_fmt_brl(troco_dito)} não dá: o total ficou {_fmt_brl(total_pedido)} 😊 "
+            "Pra quanto você vai precisar de troco?"
         )
         decisao["mensagem_pronta_acao"] = "pedir_info"
         return {"decisao": decisao, "estado": estado}
