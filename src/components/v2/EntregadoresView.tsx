@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, Bike, CircleDot, Clock3, Copy, Loader2, Lock, Mail, Navigation,
+  AlertCircle, Bike, CircleDot, Clock3, Copy, ExternalLink, Link2, Loader2, Lock, Mail, Navigation,
   PackageCheck, Pencil, Phone, Plus, Radio, RefreshCw, Search, ShieldCheck,
   SlidersHorizontal, Trash2, User, Users,
 } from "lucide-react";
@@ -350,6 +350,8 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
 
         {/* Aside Sidebar */}
         <aside className="space-y-4">
+          <LinkAcessoEntregador />
+
           {/* Distribuição de pedidos */}
           <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
             <div className="flex items-start gap-3">
@@ -466,6 +468,64 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
           )}
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// Link da área do entregador. Morava em Meu Negócio → Logística, longe de onde
+// o dono cria os acessos; aqui fica ao lado do cadastro que ele usa.
+function LinkAcessoEntregador() {
+  const [copied, setCopied] = useState(false);
+  const link = `${typeof window !== "undefined" ? window.location.origin : ""}/entregador`;
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copie o link da área do entregador:", link);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="grid w-9 h-9 shrink-0 place-items-center rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
+          <Link2 className="w-4.5 h-4.5" />
+        </span>
+        <div>
+          <h2 className="font-bold text-white text-sm">Link do entregador</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
+            Envie para cada entregador entrar com o e-mail e a senha cadastrados aqui.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 select-all truncate rounded-xl border border-[#1e293b] bg-[#161f30] px-3 py-2 font-mono text-xs text-slate-300">
+        {link}
+      </div>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={copyLink}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs font-semibold text-sky-300 hover:bg-sky-500/20 transition-colors"
+        >
+          <Copy className="w-3.5 h-3.5" />
+          {copied ? "Copiado!" : "Copiar"}
+        </button>
+        <a
+          href="/entregador"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500 transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          Abrir
+        </a>
+      </div>
+      <p className="mt-3 border-t border-[#1e293b] pt-3 text-[11px] leading-relaxed text-slate-500">
+        Para testar sem sair do seu painel, abra o link numa janela anônima ou em outro aparelho.
+      </p>
     </div>
   );
 }

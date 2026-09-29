@@ -11,7 +11,7 @@ import {
   Bot, Settings as SettingsIcon, Sparkles, Save, Loader2,
   Store, Smartphone, CreditCard, Clock, X, QrCode, CheckCircle2,
   RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
-  Bike, ChevronDown, Copy, ExternalLink, Volume2,
+  Bike, ChevronDown, Volume2,
 } from "lucide-react";
 import { AttendantPage } from "./AttendantPage";
 import {
@@ -183,7 +183,15 @@ function ConfigGeral({
     setSaving(true);
     setErr(null);
     try {
-      const r = await pizzariasApi.update(pizzaria.id, form);
+      // Linha de bairro em branco não é bairro: uma tabela só com linhas vazias
+      // faria o agente e o cardápio acharem que há tabela e tratarem a taxa
+      // fixa como "estimada".
+      const taxas = Array.isArray(form.taxas_bairro)
+        ? form.taxas_bairro
+            .map((t) => ({ bairro: (t.bairro || "").trim(), taxa: Number(t.taxa) || 0 }))
+            .filter((t) => t.bairro)
+        : form.taxas_bairro;
+      const r = await pizzariasApi.update(pizzaria.id, { ...form, taxas_bairro: taxas });
       onUpdated(r);
       setSavedAt(Date.now());
     } catch (e: any) { setErr(e.message); }
@@ -427,11 +435,9 @@ function ConfigGeral({
         </ConfigAccordion>
 
         {/* Logística e entregas */}
-        <ConfigAccordion icon={<Bike className="w-4 h-4" />} title="Logística e entregas" description="Configure acesso da equipe, prazos e taxas de delivery.">
+        <ConfigAccordion icon={<Bike className="w-4 h-4" />} title="Logística e entregas" description="Configure prazos e taxas de delivery.">
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-slate-300 ml-1">Logística & Entregas</h3>
-
-            <EntregadorAccessCard />
 
             <Card icon={<Clock className="w-4 h-4" />} title="Tempos de preparo e rota (minutos)" accent="sky">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -461,10 +467,13 @@ function ConfigGeral({
                     value={form.taxa_entrega_fixa ?? ""}
                     onChange={(e) => setField("taxa_entrega_fixa", Number(e.target.value))} className={inputCls}/>
                 </Field>
-                <p className="text-xs text-slate-400">
-                  Cadastre as taxas por bairro em formato tabela (se preferir por distância,
-                  use o campo de raio nas opções avançadas).
-                </p>
+                {/* A tabela sumiu da tela na padronização visual da v2 (o editor ficou
+                    no arquivo, sem uso): quem só tinha a taxa fixa não conseguia
+                    cadastrar bairro nenhum. */}
+                <TaxasBairroEditor
+                  taxas={(form.taxas_bairro as TaxaBairro[]) || []}
+                  onChange={(t) => setField("taxas_bairro", t)}
+                />
               </div>
             </Card>
           </div>
@@ -492,71 +501,6 @@ function ConfigGeral({
           {savedAt && Date.now() - savedAt < 2500 && <span className="text-xs text-orange-200">✓ salvo</span>}
         </button>
       </div>
-    </div>
-  );
-}
-
-// ============================================
-// Card: acesso da equipe de entregadores
-// ============================================
-function EntregadorAccessCard() {
-  const [copied, setCopied] = useState(false);
-  const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
-  const link = `${baseUrl}/entregador`;
-
-  async function copyLink() {
-    try {
-      await navigator.clipboard.writeText(link);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      window.prompt("Copie o link da área do entregador:", link);
-    }
-  }
-
-  return (
-    <div className="rounded-2xl border border-sky-900/40 bg-[#161f30]/60 p-5 shadow-sm space-y-3.5">
-      <div className="flex items-center gap-4">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
-          <Bike className="h-6 w-6" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-white">Área do entregador</p>
-          <p className="text-xs text-sky-300/80">
-            Envie este link para cada entregador acessar com o próprio e-mail e senha.
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2 rounded-xl border border-slate-800 bg-[#0b0e14] p-3 sm:flex-row sm:items-center">
-        <div className="min-w-0 flex-1 select-all truncate font-mono text-xs text-slate-300">
-          {link}
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            onClick={copyLink}
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 px-3 py-1.5 text-xs font-semibold text-sky-300 transition-colors hover:bg-sky-500/20 sm:flex-none"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            {copied ? "Copiado!" : "Copiar"}
-          </button>
-          <a
-            href="/entregador"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-sky-500 sm:flex-none"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Abrir
-          </a>
-        </div>
-      </div>
-
-      <p className="text-[11px] leading-snug text-slate-400">
-        O acesso é individual e usa as credenciais criadas na aba <strong>Entregadores</strong>.
-        Para testar sem sair do painel do dono, abra o link em uma janela anônima ou em outro dispositivo.
-      </p>
     </div>
   );
 }

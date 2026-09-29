@@ -133,6 +133,7 @@ const CONFIG_ITEMS: HelpItem[] = [
       { titulo: "Identidade e endereço", descricao: "Nome, telefone, endereço, link do Google Maps e banners da pizzaria." },
       { titulo: "Horários de funcionamento", descricao: "Defina abertura e fechamento por dia da semana e a mensagem automática de fora do horário." },
       { titulo: "Atendente IA", descricao: "Personalize o tom de voz, nome da atendente, nível de emojis e regras estritas do bot." },
+      { titulo: "Taxas de entrega", descricao: "Em Logística e entregas: taxa fixa padrão e a tabela de taxas por bairro que a atendente e o cardápio usam." },
     ],
   },
   {
