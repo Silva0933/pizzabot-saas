@@ -137,6 +137,13 @@ async def enviar_manual(
     db.add(msg)
     conv.last_message = body.conteudo
     conv.last_timestamp = datetime.now(UTC)
+    # O que o atendente disse entra no histórico do agente: ao devolver a conversa
+    # ao bot, ele sabia só o que ELE tinha falado e respondia fora de contexto.
+    from app.agent.memory import append_turn
+    await append_turn(
+        db, pizz.id, conv.cliente_telefone, role="assistant",
+        content=f"(atendente da loja) {body.conteudo}",
+    )
     await db.commit()
     await db.refresh(msg)
 

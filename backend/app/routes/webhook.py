@@ -545,6 +545,16 @@ async def evolution_webhook(
                     args=[str(pizz.id), telefone],
                     countdown=DEBOUNCE_SECONDS + 0.5,
                 )
+    elif conteudo:
+        # Conversa com um humano: a IA não responde, mas o que o cliente disse
+        # entra no histórico dela. Sem isso, ao devolver a conversa ao bot, ele
+        # voltava sem saber o que foi combinado com o atendente.
+        try:
+            from app.agent.memory import append_turn
+            await append_turn(db, pizz.id, telefone, role="user", content=conteudo)
+            await db.commit()
+        except Exception as e:  # noqa: BLE001
+            log.debug("Memória do atendimento humano (cliente) falhou: %s", e)
 
     if midia_audio:
         # Não foi para o agente (bot desligado / fora do horário): transcreve em
