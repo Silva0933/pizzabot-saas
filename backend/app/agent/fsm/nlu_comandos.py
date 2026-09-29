@@ -410,7 +410,7 @@ async def nlu_comandos(
     (o pipeline cai na NLU livre)."""
     if not cat.produtos:
         return None
-    from app.agent.providers import openai_chat
+    from app.agent.providers import FSM_LLM_TIMEOUT_S, erro_de_suporte, openai_chat
 
     garantir_ids_itens(estado)
     iids = [str(it["iid"]) for it in estado.get("carrinho") or [] if isinstance(it, dict) and it.get("iid")]
@@ -431,8 +431,14 @@ async def nlu_comandos(
             res = await openai_chat(
                 provider=provider, api_key=api_key, model=model, messages=messages,
                 temperature=0.0, max_tokens=1500, reasoning=reasoning, response_format=fmt,
+                timeout_s=FSM_LLM_TIMEOUT_S,
             )
         except Exception as e:  # noqa: BLE001
+            if not erro_de_suporte(e):
+                # Timeout/rede/5xx: sobe para o com_failover tentar o reserva. Antes
+                # um soluço do provedor punha o modelo em _SEM_SCHEMA e a NLU perdia o
+                # modo estrito até o container reiniciar.
+                raise
             if fmt["type"] == "json_schema":
                 log.info("NLU comandos: %s recusou json_schema, seguindo com json_object: %s", chave, str(e)[:200])
                 _SEM_SCHEMA.add(chave)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -68,6 +69,28 @@ def openai_tools() -> list[dict[str, Any]]:
     return tools
 
 
+# Teto por chamada de LLM no FSM (NLU/voz): primário + reserva cabem nos 15 s do turno.
+FSM_LLM_TIMEOUT_S = 7.0
+
+_STATUS_ERRO_RE = re.compile(r"^\w+ (\d{3}):")
+_SEM_SUPORTE_KW = ("unsupported", "not support", "response_format", "json_schema", "json_object",
+                   "structured output", "json mode", "invalid schema")
+
+
+def erro_de_suporte(e: BaseException) -> bool:
+    """True se o erro diz que o MODELO não aceita o formato pedido (json_schema /
+    JSON mode) — aí vale lembrar e não tentar de novo. Timeout, rede, 429 e 5xx
+    são passageiros: marcar o modelo por eles desligava o modo estrito da NLU até
+    o container reiniciar, por causa de um soluço do provedor."""
+    if isinstance(e, (httpx.TimeoutException, httpx.TransportError)):
+        return False
+    msg = str(e).lower()
+    m = _STATUS_ERRO_RE.match(msg)
+    if m and int(m.group(1)) not in (400, 404, 415, 422):
+        return False
+    return any(k in msg for k in _SEM_SUPORTE_KW)
+
+
 def _base_and_headers(provider: str, api_key: str) -> tuple[str, dict[str, str]]:
     # Header HTTP só aceita ASCII. Uma chave com caractere invisível (colada com
     # formatação, aspas tipográficas, ou a própria máscara "••••" da tela) explode
@@ -104,10 +127,14 @@ async def openai_chat(
     max_tokens: int = 1024,
     response_format: dict[str, Any] | None = None,
     reasoning: str | None = None,
+    timeout_s: float = 20.0,
 ) -> dict[str, Any]:
     """
     Chama chat completions (OpenAI/OpenRouter). Retorna formato normalizado:
         {"content": str|None, "tool_calls": [{"id","name","args"}]}
+
+    `timeout_s`: o FSM passa ~7 s — com 20 s, um provedor pendurado estourava o
+    teto de 15 s do turno antes de o failover tentar o reserva.
     """
     base, headers = _base_and_headers(provider, api_key)
     payload: dict[str, Any] = {
@@ -139,7 +166,7 @@ async def openai_chat(
     # Timeout agressivo de propósito: o pipeline FSM tem teto de 15s e o legado de
     # 40s. Um provedor lento (OpenRouter/OpenAI instável) não pode segurar o worker
     # por 60s — falha rápido pra liberar a vaga de concorrência (--concurrency=4).
-    timeout = httpx.Timeout(20.0, connect=5.0)
+    timeout = httpx.Timeout(timeout_s, connect=min(5.0, timeout_s))
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{base}/chat/completions", headers=headers, json=payload)
         # Auto-cura: alguns modelos/endpoints não conhecem reasoning_effort → 400.

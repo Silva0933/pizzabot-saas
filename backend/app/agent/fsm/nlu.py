@@ -120,8 +120,13 @@ async def nlu_extract(
     user_input: str,
     reasoning: str | None = None,
 ) -> dict[str, Any]:
-    """Roda a extração NLU. Retorna {intencao, confianca, dados}. Nunca lança."""
-    from app.agent.providers import openai_chat
+    """Roda a extração NLU. Retorna {intencao, confianca, dados}.
+
+    Erro do PROVEDOR (timeout, rede, 5xx) sobe: o pipeline chama via com_failover,
+    que só troca para o reserva quando recebe exceção. Engolir o erro aqui (como
+    antes) fazia o reserva nunca ser acionado. Resposta sem JSON válido não é
+    erro de provedor: vira 'duvida_geral' com confiança 0."""
+    from app.agent.providers import FSM_LLM_TIMEOUT_S, erro_de_suporte, openai_chat
 
     contexto = (
         f"ESTADO ATUAL DO ATENDIMENTO:\n{estado_resumo}\n\n"
@@ -133,38 +138,35 @@ async def nlu_extract(
         {"role": "user", "content": contexto},
     ]
     chave_modelo = f"{provider}:{model}"
-    try:
-        # Só tenta JSON Mode se este modelo ainda não falhou nele antes.
-        usar_json = chave_modelo not in _SEM_JSON_MODE
-        if usar_json:
-            try:
-                res = await openai_chat(
-                    provider=provider, api_key=api_key, model=model,
-                    messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning,
-                    response_format={"type": "json_object"},
-                )
-            except Exception as e_json:
-                log.info(
-                    "NLU: modelo %s não suporta JSON Mode; desativando p/ próximas chamadas: %s",
-                    chave_modelo, e_json,
-                )
-                _SEM_JSON_MODE.add(chave_modelo)
-                res = await openai_chat(
-                    provider=provider, api_key=api_key, model=model,
-                    messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning,
-                )
-        else:
+    # Só tenta JSON Mode se este modelo ainda não provou que não o suporta.
+    if chave_modelo not in _SEM_JSON_MODE:
+        try:
             res = await openai_chat(
                 provider=provider, api_key=api_key, model=model,
-                messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning,
+                messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning, timeout_s=FSM_LLM_TIMEOUT_S,
+                response_format={"type": "json_object"},
             )
-        usage = res.get("usage") or {}
-        parsed = _extrair_json(res.get("content") or "")
-        if parsed:
-            out = _normalizar_saida(parsed)
-            out["_usage"] = usage
-            return out
-        return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": usage}
-    except Exception as e:  # noqa: BLE001
-        log.warning("NLU falhou criticamente (caindo p/ duvida_geral): %s", e)
-    return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": {}}
+        except Exception as e_json:
+            if not erro_de_suporte(e_json):
+                raise  # passageiro: o failover tenta o reserva; não marca o modelo
+            log.info(
+                "NLU: modelo %s não suporta JSON Mode; desativando p/ próximas chamadas: %s",
+                chave_modelo, e_json,
+            )
+            _SEM_JSON_MODE.add(chave_modelo)
+            res = await openai_chat(
+                provider=provider, api_key=api_key, model=model,
+                messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning, timeout_s=FSM_LLM_TIMEOUT_S,
+            )
+    else:
+        res = await openai_chat(
+            provider=provider, api_key=api_key, model=model,
+            messages=messages, temperature=0.0, max_tokens=1500, reasoning=reasoning, timeout_s=FSM_LLM_TIMEOUT_S,
+        )
+    usage = res.get("usage") or {}
+    parsed = _extrair_json(res.get("content") or "")
+    if parsed:
+        out = _normalizar_saida(parsed)
+        out["_usage"] = usage
+        return out
+    return {"intencao": "duvida_geral", "confianca": 0.0, "dados": {}, "_usage": usage}

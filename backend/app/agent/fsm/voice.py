@@ -139,53 +139,58 @@ async def gerar_voz(
     comando: str,
     reasoning: str | None = None,
 ) -> tuple[str, dict]:
-    """Retorna (texto, usage). Refaz UMA vez se a 1ª resposta vier truncada."""
-    from app.agent.providers import openai_chat
-    try:
-        # max_tokens FOLGADO de propósito: modelos "thinking" (ex.: gemini-2.5-flash-lite)
-        # gastam tokens pensando ANTES do texto visível. Com teto baixo (300) a resposta
-        # saía cortada no meio quase sempre. max_tokens é só um TETO — resposta curta não
-        # gasta mais; só evita o corte.
-        res = await openai_chat(
-            provider=provider, api_key=api_key, model=model, reasoning=reasoning,
-            messages=[{"role": "user", "content": comando}],
-            temperature=0.6, max_tokens=1200,
-        )
-        texto = (res.get("content") or "").strip()
-        usage = res.get("usage") or {}
+    """Retorna (texto, usage). Refaz UMA vez se a 1ª resposta vier truncada.
 
-        # Se mesmo assim vier truncada, refaz UMA vez com mais espaço e um empurrão
-        # pra completar a frase.
-        if _parece_truncado(texto):
-            log.warning("Voz FSM veio truncada (%r) — refazendo", texto[:60])
+    Erro do provedor na 1ª chamada SOBE: o pipeline chama via com_failover, que só
+    troca para o reserva ao receber exceção. Antes o erro era engolido e virava
+    "" → com o provedor principal fora, TODA resposta era "Pode repetir, por favor?"."""
+    from app.agent.providers import FSM_LLM_TIMEOUT_S, openai_chat
+
+    # max_tokens FOLGADO de propósito: modelos "thinking" (ex.: gemini-2.5-flash-lite)
+    # gastam tokens pensando ANTES do texto visível. Com teto baixo (300) a resposta
+    # saía cortada no meio quase sempre. max_tokens é só um TETO — resposta curta não
+    # gasta mais; só evita o corte.
+    res = await openai_chat(
+        provider=provider, api_key=api_key, model=model, reasoning=reasoning,
+        messages=[{"role": "user", "content": comando}],
+        temperature=0.6, max_tokens=1200, timeout_s=FSM_LLM_TIMEOUT_S,
+    )
+    texto = (res.get("content") or "").strip()
+    usage = res.get("usage") or {}
+
+    # Se mesmo assim vier truncada, refaz UMA vez com mais espaço e um empurrão
+    # pra completar a frase. Falha nesta 2ª tentativa não derruba: fica a 1ª.
+    if _parece_truncado(texto):
+        log.warning("Voz FSM veio truncada (%r) — refazendo", texto[:60])
+        texto2 = ""
+        try:
             res2 = await openai_chat(
                 provider=provider, api_key=api_key, model=model, reasoning=reasoning,
                 messages=[{
                     "role": "user",
                     "content": comando + "\n\nIMPORTANTE: responda a frase COMPLETA, terminando o pensamento (não corte no meio). Seja breve.",
                 }],
-                temperature=0.4, max_tokens=2048,
+                temperature=0.4, max_tokens=2048, timeout_s=FSM_LLM_TIMEOUT_S,
             )
             texto2 = (res2.get("content") or "").strip()
             u2 = res2.get("usage") or {}
             for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
                 usage[k] = int(usage.get(k, 0) or 0) + int(u2.get(k, 0) or 0)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Voz FSM: retentativa da resposta truncada falhou: %s", e)
 
-            # Escolhe a melhor: prioriza uma resposta COMPLETA (retry primeiro).
-            completas = [c for c in (texto2, texto) if c and not _parece_truncado(c)]
-            if completas:
-                texto = completas[0]
-            else:
-                # Nenhuma completa → NUNCA envia o fragmento. Salva a mais longa
-                # cortando na última frase fechada; se não der, devolve "" (o
-                # pipeline manda um 'pode repetir?' seguro).
-                candidatas = [c for c in (texto2, texto) if c]
-                base = max(candidatas, key=len) if candidatas else ""
-                salvo = _salvar_truncado(base)
-                log.warning("Voz FSM truncada nas 2 tentativas — salvando: %r", salvo[:60])
-                texto = salvo
+        # Escolhe a melhor: prioriza uma resposta COMPLETA (retry primeiro).
+        completas = [c for c in (texto2, texto) if c and not _parece_truncado(c)]
+        if completas:
+            texto = completas[0]
+        else:
+            # Nenhuma completa → NUNCA envia o fragmento. Salva a mais longa
+            # cortando na última frase fechada; se não der, devolve "" (o
+            # pipeline manda um 'pode repetir?' seguro).
+            candidatas = [c for c in (texto2, texto) if c]
+            base = max(candidatas, key=len) if candidatas else ""
+            salvo = _salvar_truncado(base)
+            log.warning("Voz FSM truncada nas 2 tentativas — salvando: %r", salvo[:60])
+            texto = salvo
 
-        return texto, usage
-    except Exception as e:  # noqa: BLE001
-        log.warning("Voz FSM falhou: %s", e)
-        return "", {}
+    return texto, usage
