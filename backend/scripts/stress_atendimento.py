@@ -159,6 +159,17 @@ ROTEIROS: list[Roteiro] = [
         ],
     ),
     Roteiro(
+        "chamado_interno",
+        "Pergunta que nenhum dado cobre abre chamado para a equipe, sem transferir nem inventar",
+        [
+            Turno("oi"),
+            Turno("vocês têm estacionamento pra carro aí?", espera_algum=["equipe"],
+                  nao_pode=["atendente", "transfer"]),
+            Turno("e vocês fazem festa de aniversário?", espera_algum=["confirmando", "equipe"]),
+            Turno("tá, então quero uma calabresa grande", espera_intencao=["adicionar_item"]),
+        ],
+    ),
+    Roteiro(
         "troco_na_entrega",
         "Dinheiro na entrega pergunta o troco e ele aparece no resumo (29/09)",
         [
