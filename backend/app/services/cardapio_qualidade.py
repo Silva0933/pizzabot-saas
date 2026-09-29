@@ -47,18 +47,37 @@ def problemas_cardapio(produtos: list[Any]) -> list[str]:
         if not precos or any(v <= 0 for v in precos):
             problemas.append(f"'{p.nome}' está disponível sem preço (ou com um tamanho de preço zero).")
 
+    # Descrição de pizza lista ingredientes que são nomes de outros sabores
+    # ("mussarela, bacon, calabresa"): isso é normal. Os sinais fortes são a cópia
+    # literal (Fanta e Coca com "Uma Coca-Cola de 2 l") e a descrição que não fala
+    # do próprio produto e cita um de OUTRA categoria.
+    def _desc(p: Any) -> str:
+        return re.sub(r"\s+", " ", normalizar(getattr(p, "descricao", None) or "").replace("-", " ")).strip()
+
     todos = [(p, _nome_distintivo(p.nome)) for p in produtos if getattr(p, "nome", None)]
     for p in disp:
-        desc = normalizar(getattr(p, "descricao", None) or "").replace("-", " ")
-        if not desc:
+        desc = _desc(p)
+        if len(desc) < 10:
+            continue
+        igual = next((o for o, _ in todos if o is not p and _desc(o) == desc), None)
+        if igual is not None:
+            problemas.append(
+                f"A descrição de '{p.nome}' é igual à de '{igual.nome}' — parece copiada. "
+                "A atendente repete isso para o cliente."
+            )
             continue
         proprio = _nome_distintivo(p.nome)
+        if proprio and proprio in desc:
+            continue
+        categoria = normalizar(getattr(p, "categoria", None) or "")
         for outro, chave in todos:
             if outro is p or len(chave) < 5 or chave in proprio or proprio in chave:
                 continue
+            if normalizar(getattr(outro, "categoria", None) or "") == categoria:
+                continue
             if re.search(rf"(?<![a-z0-9]){re.escape(chave)}(?![a-z0-9])", desc):
                 problemas.append(
-                    f"A descrição de '{p.nome}' cita '{outro.nome}' — a atendente repete isso "
+                    f"A descrição de '{p.nome}' fala de '{outro.nome}' — a atendente repete isso "
                     "para o cliente. Confira se não foi copiada de outro produto."
                 )
                 break
