@@ -820,6 +820,7 @@ class TestHumanizacaoEMelhorias:
                     # Bot ligado: o flush só deve responder se passar na re-checagem.
                     pizz.suspensa = False
                     pizz.bot_ativo_global = True
+                    pizz.pipeline_fsm = False  # caminho do agente legado (sem FSM)
 
                     res_pizz = MagicMock()
                     res_pizz.scalar_one = MagicMock(return_value=pizz)
@@ -949,7 +950,8 @@ class TestMelhoriasEspecificas:
             # Deve conter o (G) no final mesmo que "g" exista na palavra "Frango"
             assert r["itens"][0]["nome"] == "Frango (G)"
 
-    def test_timeout_fsm_aciona_fallback_com_max_iterations(self):
+    def _rodar_fsm_que_falha(self, *, primeira: bool):
+        """process_and_reply com o FSM estourando o tempo."""
         import asyncio
         from unittest.mock import AsyncMock, patch, MagicMock
         from app.agent.runner import process_and_reply
@@ -957,48 +959,53 @@ class TestMelhoriasEspecificas:
         db = AsyncMock()
         db.add = MagicMock()  # Session.add é síncrono
 
-        # Mock de run_fsm_agent para demorar e dar timeout
         async def mock_run_fsm_delay(*args, **kwargs):
-            await asyncio.sleep(20)
+            await asyncio.sleep(1)
             return MagicMock()
 
-        with patch("app.agent.fsm.pipeline.run_fsm_agent", side_effect=mock_run_fsm_delay):
-            with patch("app.agent.runner.run_agent", new_callable=AsyncMock) as mock_run_agent:
-                with patch("app.services.broadcaster.broadcaster.publish", new_callable=AsyncMock):
-                    with patch("app.services.humanized_delivery.send_humanized_text", new_callable=AsyncMock):
-                        pizz = MagicMock()
-                        pizz.pipeline_fsm = True
-                        pizz.instancia = "inst_test"
-                        pizz.id = "00000000-0000-0000-0000-000000000001"
-                        # Bot ligado: passa na re-checagem antes de processar.
-                        pizz.suspensa = False
-                        pizz.bot_ativo_global = True
+        pizz = MagicMock()
+        pizz.pipeline_fsm = True
+        pizz.instancia = "inst_test"
+        pizz.id = "00000000-0000-0000-0000-000000000001"
+        pizz.suspensa = False
+        pizz.bot_ativo_global = True
+        res_pizz = MagicMock()
+        res_pizz.scalar_one = MagicMock(return_value=pizz)
+        conv = MagicMock()
+        conv.id = "00000000-0000-0000-0000-000000000002"
+        conv.bot_ativo = True
+        conv.cliente_nome = "Jailson"
+        res_conv = MagicMock()
+        res_conv.scalar_one_or_none = MagicMock(return_value=conv)
+        res_conv.scalars.return_value.first.return_value = conv
+        db.execute.side_effect = [res_pizz, res_conv] + [MagicMock()] * 5
 
-                        res_pizz = MagicMock()
-                        res_pizz.scalar_one = MagicMock(return_value=pizz)
+        with patch("app.agent.runner.FSM_TIMEOUT_SECONDS", 0.05), \
+             patch("app.agent.fsm.pipeline.run_fsm_agent", side_effect=mock_run_fsm_delay), \
+             patch("app.agent.runner._primeira_falha_recente", new=AsyncMock(return_value=primeira)), \
+             patch("app.agent.runner.run_agent", new_callable=AsyncMock) as mock_run_agent, \
+             patch("app.services.evolution.evolution.send_text", new_callable=AsyncMock) as mock_send, \
+             patch("app.services.alertas.registrar_alerta_seguro", new_callable=AsyncMock), \
+             patch("app.services.broadcaster.broadcaster.publish", new_callable=AsyncMock):
+            r = asyncio.run(process_and_reply(db, pizz.id, "5511999999999", "sim"))
+        return r, conv, mock_run_agent, mock_send
 
-                        conv = MagicMock()
-                        conv.id = "00000000-0000-0000-0000-000000000002"
-                        conv.bot_ativo = True
-                        res_conv = MagicMock()
-                        res_conv.scalar_one_or_none = MagicMock(return_value=conv)
-                        res_conv.scalars.return_value.first.return_value = conv
+    def test_timeout_fsm_pede_para_repetir_sem_agente_legado(self):
+        """O legado não conhece o carrinho do FSM e, no turno de fechamento, podia
+        gerar outro pedido/Pix. Agora: 1ª falha → pede para repetir, bot segue ativo."""
+        from app.agent.runner import MSG_REPETIR
+        r, conv, mock_run_agent, mock_send = self._rodar_fsm_que_falha(primeira=True)
+        mock_run_agent.assert_not_called()
+        assert r["motivo"] == "fsm_falhou_retentativa"
+        assert mock_send.call_args[1]["texto"] == MSG_REPETIR
+        assert conv.bot_ativo is True
 
-                        db.execute.side_effect = [res_pizz, res_conv]
-
-                        mock_result = MagicMock()
-                        mock_result.texto = "Resposta do legado"
-                        mock_result.iteracoes = 2
-                        mock_result.tool_calls = []
-                        mock_run_agent.return_value = mock_result
-
-                        # Executamos o process_and_reply
-                        r = asyncio.run(process_and_reply(db, pizz.id, "5511999999999", "Oi"))
-
-                        assert r["ok"] is True
-                        # Deve ter chamado o run_agent legado com max_iterations=3 devido ao timeout
-                        mock_run_agent.assert_called_once()
-                        assert mock_run_agent.call_args[1]["max_iterations"] == 3
+    def test_segunda_falha_seguida_vai_para_a_equipe(self):
+        r, conv, mock_run_agent, mock_send = self._rodar_fsm_que_falha(primeira=False)
+        mock_run_agent.assert_not_called()
+        assert r["fallback_acionado"] is True
+        assert conv.bot_ativo is False
+        assert conv.status == "humano_necessario"
 
 
 class TestCardapioRelacional:

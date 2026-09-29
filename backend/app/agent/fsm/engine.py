@@ -33,6 +33,9 @@ def estado_inicial() -> dict[str, Any]:
         "apresentou": False, "upsell_feito": False,
         "upsell_ofertas": 0, "upsell_ultimo_tamanho": 0,
         "observacoes": None,
+        # Id do fechamento em curso (criado no resumo): a chave de idempotência do
+        # registro. Um "sim" repetido após o turno cair acha o MESMO pedido.
+        "fechamento_id": None,
     }
 
 
@@ -978,14 +981,17 @@ async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dic
         if not cli:
             return
 
-        # Só atualiza um rascunho ABERTO (status 'novo', ainda não pago). Não cria
-        # um novo aqui — se não houver rascunho, o registro final cuida disso.
-        ped = (await db.execute(select(Pedido).where(
+        # Só atualiza o RASCUNHO (status 'novo', sem cobrança nem conferência). Não
+        # cria um novo aqui — se não houver rascunho, o registro final cuida disso.
+        # Antes valia qualquer 'novo' não pago: um pedido já fechado esperando o
+        # Pix tinha os itens sobrescritos pela conversa seguinte do cliente.
+        from app.agent.tools import eh_rascunho
+        candidatos = (await db.execute(select(Pedido).where(
             Pedido.pizzaria_id == ctx.pizzaria.id,
             Pedido.cliente_id == cli.id,
             Pedido.status == "novo",
-            Pedido.payment_status != "approved",
-        ).order_by(Pedido.created_at.desc()))).scalars().first()
+        ).order_by(Pedido.created_at.desc()))).scalars().all()
+        ped = next((p for p in candidatos if eh_rascunho(p)), None)
         if not ped:
             return
 
@@ -2004,6 +2010,7 @@ async def processar(
             observacoes=estado.get("observacoes"),
             confirmado=True,  # FSM já validou a confirmação
             bairro_confirmado=estado.get("endereco_bairro"),
+            chave_idempotencia=(f"wa:{estado['fechamento_id']}" if estado.get("fechamento_id") else None),
         )
         if not reg.get("ok"):
             decisao["acao"] = "pendencia"
@@ -2252,6 +2259,11 @@ async def processar(
     # Reseta o controle do lembrete: cada vez que (re)entramos no resumo, um novo
     # lembrete de confirmação pode ser enviado se o cliente sumir sem confirmar.
     estado["confirmacao_lembrada"] = False
+    # Criado AQUI (turno que termina e salva o estado), não no da confirmação: se
+    # a confirmação cair no meio, a retentativa reusa o mesmo id.
+    if not estado.get("fechamento_id"):
+        import uuid as _uuid
+        estado["fechamento_id"] = _uuid.uuid4().hex
     decisao["acao"] = "resumo_confirmar"
     decisao["dados"] = resumo_dados
     decisao["dados"]["tipo"] = estado["tipo"]

@@ -377,10 +377,12 @@ async def run_fsm_agent(
             },
         )
 
-    # Rede de segurança: baixa confiança em algo que não seja pedido → agente legado.
-    if res_nlu["confianca"] < CONFIANCA_MINIMA and res_nlu["intencao"] in ("duvida_geral",):
-        log.info("FSM fallback p/ legado (confianca=%.2f)", res_nlu["confianca"])
-        return None
+    # Baixa confiança NÃO vai mais para o agente legado: ele não conhece o carrinho
+    # do FSM (resposta desconexa) e custa ~7,7 mil tokens por chamada. A dúvida
+    # segue para o engine, que responde com os fatos reais da loja; a confiança
+    # baixa repetida já escala acima (falhas_nlu_limite).
+    if res_nlu["confianca"] < CONFIANCA_MINIMA:
+        log.info("NLU com confiança baixa (%.2f) em '%s' — segue no FSM", res_nlu["confianca"], res_nlu["intencao"])
 
     # 2) Engine (decisão determinística)
     carrinho_antes_turno = deepcopy(estado.get("carrinho") or [])

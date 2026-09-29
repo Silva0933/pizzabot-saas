@@ -145,9 +145,16 @@ class TestRascunhoAoVivo:
         ped.id = "00000000-0000-0000-0000-0000000000p1"
         ped.numero_pedido = 1
         ped.status = "novo"
+        # Rascunho de verdade: sem cobrança, sem Pix manual, sem conferência.
+        ped.payment_id = None
+        ped.link_pagamento = None
+        ped.pix_copia_cola = None
+        ped.payment_status = "pending"
+        ped.aguardando_revisao = False
 
         res = MagicMock()
         res.scalars.return_value.first.return_value = ped
+        res.scalars.return_value.all.return_value = [ped]
         db = AsyncMock()
         db.execute = AsyncMock(return_value=res)
 
@@ -166,6 +173,38 @@ class TestRascunhoAoVivo:
         assert ped.endereco_entrega == "Rua X, 10"
         assert ped.forma_pagamento == "pix"
         mock_pub.assert_awaited_once()
+
+    def test_nao_sobrescreve_pedido_fechado_esperando_o_pix(self):
+        """Um pedido já fechado (com cobrança) não é rascunho: a conversa seguinte
+        do cliente não pode sobrescrever os itens dele."""
+        from app.agent.fsm import engine
+
+        ctx = MagicMock()
+        ctx.pizzaria.id = "00000000-0000-0000-0000-000000000001"
+        ctx.telefone = "5511999999999"
+        ctx.cliente = MagicMock()
+
+        fechado = MagicMock()
+        fechado.status = "novo"
+        fechado.payment_id = "pay_123"
+        fechado.link_pagamento = None
+        fechado.pix_copia_cola = "000201PIX"
+        fechado.payment_status = "pending"
+        fechado.aguardando_revisao = False
+        fechado.itens = [{"nome": "Pizza Brasa (G)"}]
+
+        res = MagicMock()
+        res.scalars.return_value.all.return_value = [fechado]
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=res)
+
+        with patch("app.services.broadcaster.broadcaster.publish", new=AsyncMock()) as mock_pub:
+            asyncio.run(engine._sincronizar_rascunho(
+                db, ctx, {"tipo": "retirada"}, {"itens": [{"nome": "Coca"}], "valor_total": 10},
+            ))
+
+        assert fechado.itens == [{"nome": "Pizza Brasa (G)"}]
+        mock_pub.assert_not_awaited()
 
 
 class TestVozTruncada:

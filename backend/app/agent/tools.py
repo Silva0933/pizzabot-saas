@@ -1228,6 +1228,7 @@ async def registrar_pedido(
     nome_cliente: str | None = None,
     confirmado: bool = False,
     bairro_confirmado: str | None = None,
+    chave_idempotencia: str | None = None,
 ) -> dict[str, Any]:
     try:
         _vt = float(valor_total)
@@ -1311,6 +1312,21 @@ async def registrar_pedido(
     taxa_entrega = float(calculo["taxa_entrega"])
     valor_total_real = float(calculo["valor_total"])
 
+    # Retentativa do MESMO fechamento (o turno anterior caiu depois de gravar o
+    # pedido, ex.: timeout no gateway): devolve o pedido já gravado e reenvia a
+    # cobrança que existir — nunca um segundo pedido nem uma segunda cobrança.
+    if chave_idempotencia:
+        existente = (await db.execute(
+            select(Pedido).where(
+                Pedido.pizzaria_id == ctx.pizzaria.id,
+                Pedido.chave_idempotencia == chave_idempotencia,
+            )
+        )).scalars().first()
+        if existente is not None:
+            return await _registro_repetido(
+                ctx, db, existente, tipo=tipo, forma_pagamento=forma_pagamento, pagar_agora=pagar_agora,
+            )
+
     # garante cliente
     cli = ctx.cliente
     if not cli:
@@ -1326,17 +1342,18 @@ async def registrar_pedido(
         if nome_cliente and not cli.nome:
             cli.nome = nome_cliente
 
-    # Reaproveita o pedido atual do cliente
+    # Reaproveita SÓ o rascunho do funil (card "Novos" em construção). Antes valia
+    # qualquer pedido 'novo'/'confirmado' não pago: o 2º pedido da noite
+    # sobrescrevia os itens do 1º, já confirmado e na cozinha.
     stmt = (
         select(Pedido).where(
             Pedido.pizzaria_id == ctx.pizzaria.id,
             Pedido.cliente_id == cli.id,
-            Pedido.status.in_(["novo", "confirmado"]),
-            Pedido.payment_status != "approved",
+            Pedido.status == "novo",
         )
         .order_by(Pedido.created_at.desc())
     )
-    ped = (await db.execute(stmt)).scalars().first()
+    ped = next((p for p in (await db.execute(stmt)).scalars().all() if eh_rascunho(p)), None)
 
     # Confirmação condicionada ao pagamento: se for PAGAR AGORA via pix/cartão,
     # o pedido fica "novo" (aguardando pagamento) e só vira "confirmado" quando o
@@ -1385,6 +1402,8 @@ async def registrar_pedido(
         )
         db.add(ped)
     ped.aguardando_revisao = revisar
+    if chave_idempotencia:
+        ped.chave_idempotencia = chave_idempotencia
 
     # Coordenadas exatas (pino do mapa do entregador): reusa a localização
     # compartilhada no WhatsApp, se houver uma recente.
@@ -1413,7 +1432,14 @@ async def registrar_pedido(
     elif status_anterior != ped.status:
         registrar_evento_pedido(db, ped, tipo="status_alterado", status_anterior=status_anterior, status_novo=ped.status, ator_nome="Assistente IA", ator_tipo="ia")
 
-    # Dispara o broadcast WebSocket de atualização do pedido
+    # Grava o pedido ANTES de chamar o gateway e de avisar o painel. Se o turno
+    # cair depois daqui (timeout no gateway), o pedido existe e a retentativa o
+    # acha pela chave de idempotência; antes o flush ficava pendurado na sessão,
+    # o painel já tinha tocado um pedido que podia não ser gravado e o agente
+    # legado assumia o turno pela metade (podendo gerar outro Pix).
+    await db.commit()
+
+    # Dispara o broadcast WebSocket de atualização do pedido (já gravado)
     from app.services.broadcaster import broadcaster
     await broadcaster.publish(
         ctx.pizzaria.id,
@@ -1464,22 +1490,25 @@ async def registrar_pedido(
             "é automática do sistema."
         )
 
-    try:
-        from app.services.conversation_state import save_state
-        await save_state(db, ctx.pizzaria.id, ctx.telefone, {
-            "etapa": "pedido_confirmado",
-            "pedido_id": str(ped.id),
-            "numero_pedido": ped.numero_pedido,
-            "itens": itens_norm,
-            "tipo": tipo,
-            "endereco_entrega": endereco_entrega,
-            "forma_pagamento": forma_pagamento,
-            "valor_itens": round(valor_itens_total, 2),
-            "taxa_entrega": round(taxa_entrega, 2),
-            "total": round(valor_total_real, 2),
-        })
-    except Exception as e:  # noqa: BLE001
-        log.debug("Falha ao salvar estado curto da conversa: %s", e)
+    # Estado curto do fluxo de tool-calling. O FSM (confirmado=True) grava o dele
+    # no fim do turno — gravar este aqui apagava o estado do FSM se o turno caísse.
+    if not confirmado:
+        try:
+            from app.services.conversation_state import save_state
+            await save_state(db, ctx.pizzaria.id, ctx.telefone, {
+                "etapa": "pedido_confirmado",
+                "pedido_id": str(ped.id),
+                "numero_pedido": ped.numero_pedido,
+                "itens": itens_norm,
+                "tipo": tipo,
+                "endereco_entrega": endereco_entrega,
+                "forma_pagamento": forma_pagamento,
+                "valor_itens": round(valor_itens_total, 2),
+                "taxa_entrega": round(taxa_entrega, 2),
+                "total": round(valor_total_real, 2),
+            })
+        except Exception as e:  # noqa: BLE001
+            log.debug("Falha ao salvar estado curto da conversa: %s", e)
 
     # Cobrança só é gerada se o cliente escolheu PAGAR AGORA via pix/cartão.
     metodo = _metodo_online(forma_pagamento)
@@ -1490,6 +1519,47 @@ async def registrar_pedido(
         resultado["pagamento"] = await _gerar_cobranca(ctx, db, ped, metodo)
     # 'desativado' ou manual-indisponível: sem cobrança online (pagamento na entrega).
 
+    return resultado
+
+
+async def _registro_repetido(
+    ctx: AgentContext, db: AsyncSession, ped: Pedido, *,
+    tipo: str, forma_pagamento: str, pagar_agora: bool,
+) -> dict[str, Any]:
+    """Resultado de registrar_pedido para um fechamento que JÁ foi gravado.
+
+    Cobrança: reenvia a existente; só gera se o pedido online ficou sem nenhuma
+    (o turno anterior caiu entre gravar o pedido e chamar o gateway)."""
+    tipo_final = ped.tipo or tipo
+    resultado: dict[str, Any] = {
+        "ok": True,
+        "pedido_id": str(ped.id),
+        "numero_pedido": ped.numero_pedido,
+        "valor_total": float(ped.valor_total or 0),
+        "taxa_entrega": float(ped.taxa_entrega or 0),
+        "tempo_estimado": (
+            f"{ctx.pizzaria.tempo_entrega_min}-{ctx.pizzaria.tempo_entrega_max} min"
+            if tipo_final == "delivery"
+            else f"{ctx.pizzaria.tempo_retirada_min}-{ctx.pizzaria.tempo_retirada_max} min"
+        ),
+        "status_pedido": ped.status,
+        "aguardando_revisao": bool(ped.aguardando_revisao),
+        "repetido": True,
+    }
+    if ped.payment_status == "approved":
+        return resultado
+    enviado = await _enviar_cobranca_existente(ctx, ped)
+    if enviado:
+        resultado["pagamento"] = {"ok": True, "metodo": enviado["metodo"], "reenviada": True}
+        return resultado
+    metodo = _metodo_online(forma_pagamento)
+    modo_pag = getattr(ctx.pizzaria, "modo_pagamento_online", None) or "automatico"
+    pix_manual_cfg = (getattr(ctx.pizzaria, "pix_manual_copia_cola", None) or "").strip()
+    if metodo and pagar_agora and ped.status == "novo":
+        if modo_pag == "manual" and pix_manual_cfg:
+            resultado["pagamento"] = await _enviar_pix_manual(ctx, db, ped, pix_manual_cfg)
+        elif modo_pag == "automatico" and not ped.payment_id:
+            resultado["pagamento"] = await _gerar_cobranca(ctx, db, ped, metodo)
     return resultado
 
 
@@ -1705,6 +1775,40 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
     return await _gerar_cobranca(ctx, db, ped, metodo)
 
 
+def eh_rascunho(ped: Pedido | None) -> bool:
+    """Rascunho do funil (card "Novos" em construção): 'novo', sem cobrança, sem
+    Pix manual e sem conferência pendente. Só ele pode ser reaproveitado ou
+    sobrescrito — antes qualquer pedido 'novo'/'confirmado' não pago do cliente
+    servia, e o 2º pedido da noite sobrescrevia os itens do 1º (já na cozinha)."""
+    return bool(
+        ped is not None
+        and ped.status == "novo"
+        and not (ped.payment_id or ped.link_pagamento or getattr(ped, "pix_copia_cola", None))
+        and ped.payment_status not in ("approved", "em_analise")
+        and not getattr(ped, "aguardando_revisao", False)
+    )
+
+
+async def _enviar_cobranca_existente(ctx: AgentContext, ped: Pedido) -> dict[str, Any] | None:
+    """Reenvia o link ou o copia-e-cola já guardados no pedido. None se não há o que reenviar."""
+    if not ctx.pizzaria.instancia:
+        return None
+    from app.services.evolution import evolution
+    if ped.link_pagamento:
+        await evolution.send_text(
+            instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+            texto=f"💳 Pague pelo link: {ped.link_pagamento}",
+        )
+        return {"ok": True, "metodo": "link", "reenviada": True, "numero_pedido": ped.numero_pedido}
+    if getattr(ped, "pix_copia_cola", None):
+        await evolution.send_text(
+            instancia=ctx.pizzaria.instancia, numero=ctx.telefone, texto=ped.pix_copia_cola,
+        )
+        metodo = "pix_manual" if ped.payment_status == "em_analise" else "pix"
+        return {"ok": True, "metodo": metodo, "reenviada": True, "numero_pedido": ped.numero_pedido}
+    return None
+
+
 async def reenviar_cobranca(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
     """Reenvia a cobrança JÁ EXISTENTE do pedido ativo ("manda o pix de novo").
 
@@ -1725,18 +1829,9 @@ async def reenviar_cobranca(ctx: AgentContext, db: AsyncSession) -> dict[str, An
     # hora"). O pós-venda nunca cria cobrança do zero.
     if not (ped.payment_id or ped.link_pagamento or ped.pix_copia_cola):
         return {"ok": False, "motivo": "pagamento_na_entrega", "numero_pedido": ped.numero_pedido}
-    from app.services.evolution import evolution
-    if ped.link_pagamento and ctx.pizzaria.instancia:
-        await evolution.send_text(
-            instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
-            texto=f"💳 Pague pelo link: {ped.link_pagamento}",
-        )
-        return {"ok": True, "metodo": "link", "reenviada": True, "numero_pedido": ped.numero_pedido}
-    if ped.pix_copia_cola and ctx.pizzaria.instancia:
-        await evolution.send_text(
-            instancia=ctx.pizzaria.instancia, numero=ctx.telefone, texto=ped.pix_copia_cola,
-        )
-        return {"ok": True, "metodo": "pix", "reenviada": True, "numero_pedido": ped.numero_pedido}
+    enviado = await _enviar_cobranca_existente(ctx, ped)
+    if enviado:
+        return enviado
     # Cobrança existe no gateway, mas o código não foi guardado (pedido anterior
     # à 034): gera de novo — é o único caso.
     pag = await _gerar_cobranca(ctx, db, ped, _metodo_online(ped.forma_pagamento) or "pix")

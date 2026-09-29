@@ -298,6 +298,77 @@ async def _run_openai_agent(
     )
 
 
+# Falhas do FSM por conversa: a 1ª em FALHAS_JANELA_S pede para repetir; a 2ª vai
+# para a equipe (caminho de exceção do process_and_reply).
+FALHAS_JANELA_S = 900
+MSG_REPETIR = "Opa, me enrolei aqui 😅 Pode me mandar sua última mensagem de novo?"
+
+
+def _chave_falhas(pizzaria_id: uuid.UUID, telefone: str) -> str:
+    return f"fsm:falhas:{pizzaria_id}:{telefone}"
+
+
+async def _primeira_falha_recente(pizzaria_id: uuid.UUID, telefone: str) -> bool:
+    """Conta a falha; True se é a primeira na janela. Sem Redis, trata como
+    primeira (melhor pedir para repetir do que desligar o bot à toa)."""
+    try:
+        from app.redis_client import redis
+        chave = _chave_falhas(pizzaria_id, telefone)
+        n = await redis.incr(chave)
+        await redis.expire(chave, FALHAS_JANELA_S)
+        return int(n) <= 1
+    except Exception as e:  # noqa: BLE001
+        log.debug("Contador de falhas do FSM indisponível: %s", e)
+        return True
+
+
+async def _limpar_falhas(pizzaria_id: uuid.UUID, telefone: str) -> None:
+    try:
+        from app.redis_client import redis
+        await redis.delete(_chave_falhas(pizzaria_id, telefone))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def _pedir_para_repetir(
+    db: AsyncSession, pizz: Any, conv: Conversa | None,
+    pizzaria_id: uuid.UUID, telefone: str, erro: BaseException,
+) -> dict[str, Any]:
+    """1ª falha do FSM: pede para o cliente repetir, sem desligar o bot."""
+    try:
+        from app.services.alertas import registrar_alerta_seguro
+        await registrar_alerta_seguro(
+            tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="warning",
+            detalhe=f"FSM falhou ({type(erro).__name__}: {str(erro)[:200]}); cliente convidado a repetir.",
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        if pizz.instancia:
+            await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=MSG_REPETIR)
+    except Exception as e_send:  # noqa: BLE001
+        log.warning("Falha ao enviar o pedido de repetição: %s", e_send)
+    if conv:
+        msg = Mensagem(
+            conversa_id=conv.id, pizzaria_id=pizzaria_id, origem="bot", tipo="texto",
+            conteudo=MSG_REPETIR, metadata_json={"erro_ia": f"{type(erro).__name__}", "retentativa": True},
+        )
+        db.add(msg)
+        conv.last_message = MSG_REPETIR
+        conv.last_timestamp = datetime.now(UTC)
+        await db.commit()
+        await broadcaster.publish(pizzaria_id, {
+            "tipo": "mensagem.nova",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {
+                "conversa_id": str(conv.id), "mensagem_id": str(msg.id), "telefone": telefone,
+                "conteudo": MSG_REPETIR, "origem": "bot",
+                "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(UTC).isoformat(),
+            },
+        })
+    return {"ok": False, "motivo": "fsm_falhou_retentativa", "erro": f"{type(erro).__name__}"}
+
+
 async def process_and_reply(
     db: AsyncSession,
     pizzaria_id: uuid.UUID,
@@ -411,31 +482,34 @@ async def process_and_reply(
     import asyncio
     try:
         result = None
-        fallback_iterations = None
         if getattr(pizz, "pipeline_fsm", False):
+            from app.agent.fsm.pipeline import run_fsm_agent
             try:
-                from app.agent.fsm.pipeline import run_fsm_agent
                 result = await asyncio.wait_for(
                     run_fsm_agent(db, pizzaria_id, telefone, user_input),
                     timeout=FSM_TIMEOUT_SECONDS,
                 )
-            except TimeoutError:
-                log.warning(
-                    "Pipeline FSM estourou o timeout de %.0fs, caindo p/ agente legado com limites reduzidos",
-                    FSM_TIMEOUT_SECONDS,
-                )
-                result = None
-                fallback_iterations = 3
-            except Exception as e_fsm:  # noqa: BLE001
-                log.exception("Pipeline FSM falhou, caindo p/ agente legado: %s", e_fsm)
-                result = None
-                fallback_iterations = 3
-        if result is None:  # flag off OU fallback do FSM
+            except Exception as e_fsm:  # noqa: BLE001  (inclui TimeoutError)
+                # Sem agente legado como plano B: ele não conhece o carrinho do FSM
+                # e, entrando no turno de fechamento pela metade, podia gerar outro
+                # pedido/Pix. 1ª falha → pede para repetir (o registro é idempotente,
+                # o "sim" repetido acha o mesmo pedido); 2ª seguida → equipe.
+                log.exception("Pipeline FSM falhou (%s): %s", type(e_fsm).__name__, e_fsm)
+                if await _primeira_falha_recente(pizzaria_id, telefone):
+                    try:
+                        await db.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return await _pedir_para_repetir(db, pizz, conv, pizzaria_id, telefone, e_fsm)
+                raise
+            if result is not None:
+                await _limpar_falhas(pizzaria_id, telefone)
+        if result is None:  # flag off, ou provedor de LLM sem suporte ao FSM
             # Teto de tempo no agente legado também: sem isso uma única chamada de
             # LLM lenta (timeout HTTP de 60s) já estouraria o lock de flush e
             # abriria brecha pra resposta duplicada por outro worker.
             result = await asyncio.wait_for(
-                run_agent(db, pizzaria_id, telefone, user_input, max_iterations=fallback_iterations),
+                run_agent(db, pizzaria_id, telefone, user_input),
                 timeout=LEGACY_TIMEOUT_SECONDS,
             )
     except Exception as e:
