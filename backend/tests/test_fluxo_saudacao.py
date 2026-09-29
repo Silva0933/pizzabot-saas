@@ -151,6 +151,8 @@ class TestRascunhoAoVivo:
         ped.pix_copia_cola = None
         ped.payment_status = "pending"
         ped.aguardando_revisao = False
+        from datetime import UTC, datetime
+        ped.created_at = datetime.now(UTC)  # rascunho recente (vale 12 h)
 
         res = MagicMock()
         res.scalars.return_value.first.return_value = ped

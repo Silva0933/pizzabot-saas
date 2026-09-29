@@ -442,8 +442,18 @@ async def evolution_webhook(
             Pedido.pizzaria_id == pizz.id,
             Pedido.cliente_id == cli.id,
             Pedido.status.in_(["novo", "confirmado", "no_forno", "pronto_entrega", "a_caminho"]),
-        )
-        ped_ativo = (await db.execute(stmt_ped)).scalars().first()
+        ).order_by(Pedido.created_at.desc())
+        # Rascunho antigo (o cliente sumiu sem fechar) não é pedido ativo: é
+        # encerrado e o contato de hoje ganha um card novo. Antes o rascunho de
+        # 23/09 foi reaproveitado em 29/09 — o pedido do dia nasceu com data velha
+        # e sumiu do quadro "de hoje".
+        from app.agent.tools import eh_rascunho, encerrar_rascunho, rascunho_recente
+        ped_ativo = None
+        for ped_existente in (await db.execute(stmt_ped)).scalars().all():
+            if eh_rascunho(ped_existente) and not rascunho_recente(ped_existente):
+                await encerrar_rascunho(db, ped_existente)
+                continue
+            ped_ativo = ped_ativo or ped_existente
 
         if not ped_ativo:
             ped_rascunho = Pedido(

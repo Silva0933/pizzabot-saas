@@ -1353,7 +1353,7 @@ async def registrar_pedido(
         )
         .order_by(Pedido.created_at.desc())
     )
-    ped = next((p for p in (await db.execute(stmt)).scalars().all() if eh_rascunho(p)), None)
+    ped = next((p for p in (await db.execute(stmt)).scalars().all() if rascunho_recente(p)), None)
 
     # Confirmação condicionada ao pagamento: se for PAGAR AGORA via pix/cartão,
     # o pedido fica "novo" (aguardando pagamento) e só vira "confirmado" quando o
@@ -1787,6 +1787,34 @@ def eh_rascunho(ped: Pedido | None) -> bool:
         and ped.payment_status not in ("approved", "em_analise")
         and not getattr(ped, "aguardando_revisao", False)
     )
+
+
+# Rascunho vale por uma "sessão" de atendimento. O de 23/09 foi reaproveitado em
+# 29/09: o pedido do dia nasceu com data antiga e sumiu do quadro "de hoje".
+RASCUNHO_VALIDADE_HORAS = 12
+
+
+def rascunho_recente(ped: Pedido | None) -> bool:
+    """Rascunho (ver eh_rascunho) criado nas últimas RASCUNHO_VALIDADE_HORAS."""
+    if not eh_rascunho(ped):
+        return False
+    criado = getattr(ped, "created_at", None)
+    if criado is None:
+        return True
+    if criado.tzinfo is None:
+        criado = criado.replace(tzinfo=UTC)
+    return criado >= datetime.now(UTC) - timedelta(hours=RASCUNHO_VALIDADE_HORAS)
+
+
+async def encerrar_rascunho(db: AsyncSession, ped: Pedido) -> None:
+    """Rascunho abandonado sai do funil (cancelado, com evento de auditoria)."""
+    from app.services.order_audit import registrar_evento_pedido
+    anterior = ped.status
+    ped.status = "cancelado"
+    ped.cancelado_at = datetime.now(UTC)
+    ped.cancelamento_motivo = "Rascunho abandonado (o cliente não fechou o pedido)"
+    registrar_evento_pedido(db, ped, tipo="status_alterado", status_anterior=anterior, status_novo="cancelado",
+                            motivo=ped.cancelamento_motivo, ator_nome="Sistema", ator_tipo="sistema")
 
 
 async def _enviar_cobranca_existente(ctx: AgentContext, ped: Pedido) -> dict[str, Any] | None:

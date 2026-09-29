@@ -1136,13 +1136,13 @@ async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dic
         # cria um novo aqui — se não houver rascunho, o registro final cuida disso.
         # Antes valia qualquer 'novo' não pago: um pedido já fechado esperando o
         # Pix tinha os itens sobrescritos pela conversa seguinte do cliente.
-        from app.agent.tools import eh_rascunho
+        from app.agent.tools import rascunho_recente
         candidatos = (await db.execute(select(Pedido).where(
             Pedido.pizzaria_id == ctx.pizzaria.id,
             Pedido.cliente_id == cli.id,
             Pedido.status == "novo",
         ).order_by(Pedido.created_at.desc()))).scalars().all()
-        ped = next((p for p in candidatos if eh_rascunho(p)), None)
+        ped = next((p for p in candidatos if rascunho_recente(p)), None)
         if not ped:
             return
 

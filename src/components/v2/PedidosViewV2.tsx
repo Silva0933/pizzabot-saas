@@ -29,7 +29,7 @@ interface Props {
   onNavigate?: (key: string) => void;
 }
 
-export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, onboardingKey }: Props) {
+export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, onboardingKey, onNavigate }: Props) {
   const [pedidos, setPedidos] = useState<BackendPedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -121,10 +121,21 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
     }
   }, [liveEvent, modoProblemas]);
 
+  // Rascunho sem nenhum item = contato que ainda não pediu nada: virava um card
+  // "Cliente novo · R$ 0,00" por conversa e empurrava os pedidos de verdade.
+  // O card aparece quando o primeiro item entra; a conversa fica em Conversas.
+  const ehRascunhoVazio = (p: BackendPedido) =>
+    (p.status === "novo" || p.status === "cancelado") && !(p.itens || []).length && !Number(p.valor_total);
+  const contatosSemPedido = useMemo(
+    () => (modoProblemas ? 0 : pedidos.filter((p) => p.status === "novo" && ehRascunhoVazio(p)).length),
+    [pedidos, modoProblemas],
+  );
+
   // Lista filtrada por status apenas — data já é filtrada no backend (hoje).
   const filtrados = useMemo(() => {
     const origem = modoProblemas ? pedidosProblema : pedidos;
     return origem.filter((p) => {
+      if (!modoProblemas && ehRascunhoVazio(p)) return false;
       if (statusFiltro && p.status !== statusFiltro) return false;
       return true;
     });
@@ -334,6 +345,13 @@ export function PedidosViewV2({ pizzariaId, columnNames, liveEvent, onboarding, 
             ))}
           </select>
         </div>
+
+        {contatosSemPedido > 0 && (
+          <button type="button" onClick={() => onNavigate?.("conversas")}
+            className="mx-4 mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-white">
+            💬 {contatosSemPedido} {contatosSemPedido === 1 ? "conversa ainda sem pedido" : "conversas ainda sem pedido"} — ver em Conversas
+          </button>
+        )}
 
         {/* Quadro de pedidos */}
         <div className="p-4">

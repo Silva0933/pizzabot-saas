@@ -778,7 +778,8 @@ function AdminApp() {
       pageSubtitle={meta.subtitle}
       badges={{
         conversas: conversations.filter((c) => (c.unreadCount ?? 0) > 0).length,
-        pedidos: orders.filter((o) => o.status === "novo").length,
+        // Rascunho sem itens (contato que ainda não pediu) não é pedido a atender.
+        pedidos: orders.filter((o) => o.status === "novo" && (o.items.length > 0 || o.totalValue > 0)).length,
       }}
       pizzariaNome={pizzaria.nome}
       pizzariaLogo={pizzaria.logo_url ?? undefined}

@@ -255,6 +255,45 @@ async def _expirar_chamados_async() -> dict:
             pass
 
 
+@celery_app.task(name="pizzabot.encerrar_rascunhos_abandonados")
+def encerrar_rascunhos_abandonados() -> dict:
+    return asyncio.run(_encerrar_rascunhos_async())
+
+
+async def _encerrar_rascunhos_async() -> dict:
+    """Rascunho que ninguém fechou em RASCUNHO_VALIDADE_HORAS sai do funil: sem
+    isto o card ficava 'novo' para sempre (contava no badge de Pedidos e voltava
+    a ser reaproveitado dias depois)."""
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.agent.tools import RASCUNHO_VALIDADE_HORAS, eh_rascunho, encerrar_rascunho
+    from app.db import AsyncSessionLocal, engine
+    from app.models import Pedido
+    try:
+        async with AsyncSessionLocal() as db:
+            limite = datetime.now(UTC) - timedelta(hours=RASCUNHO_VALIDADE_HORAS)
+            velhos = (await db.execute(select(Pedido).where(
+                Pedido.status == "novo", Pedido.created_at < limite,
+            ))).scalars().all()
+            n = 0
+            for ped in velhos:
+                if eh_rascunho(ped):
+                    await encerrar_rascunho(db, ped)
+                    n += 1
+            await db.commit()
+            return {"ok": True, "encerrados": n}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao encerrar rascunhos abandonados: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @celery_app.task(name="pizzabot.entregar_resposta_chamado")
 def entregar_resposta_chamado(chamado_id: str) -> dict:
     return asyncio.run(_entregar_resposta_chamado_async(chamado_id))
