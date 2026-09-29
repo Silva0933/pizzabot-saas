@@ -201,7 +201,13 @@ async def uso_mes_todas(db: AsyncSession) -> dict[str, dict[str, int]]:
     return out
 
 
-async def get_config(db: AsyncSession, chave: str) -> dict[str, Any]:
+async def get_config(db: AsyncSession, chave: str, *, estrito: bool = False) -> dict[str, Any]:
+    """Lê uma chave do app_config. Por padrão, falha de leitura vira `{}`.
+
+    `estrito=True` propaga a falha em vez de devolver `{}`: para quem faz merge
+    com o .env, "não consegui ler" não é o mesmo que "não há nada salvo" — tratar
+    igual troca a config em uso pelo fallback de ambiente sem ninguém saber.
+    """
     try:
         row = (await db.execute(
             text("SELECT valor FROM public.app_config WHERE chave = :k"),
@@ -209,7 +215,12 @@ async def get_config(db: AsyncSession, chave: str) -> dict[str, Any]:
         )).first()
     except Exception:
         # Tabela ainda não criada (ex.: worker antes do startup da API).
-        await db.rollback()
+        try:
+            await db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        if estrito:
+            raise
         return {}
     if not row or row[0] is None:
         return {}
@@ -345,7 +356,7 @@ DEFAULT_EVOLUTION_CONFIG: dict[str, Any] = {
 }
 
 
-async def get_evolution_config(db: AsyncSession) -> dict[str, Any]:
+async def get_evolution_config(db: AsyncSession, *, estrito: bool = False) -> dict[str, Any]:
     """
     Config da Evolution em uso (merge com as variáveis de ambiente).
 
@@ -356,8 +367,10 @@ async def get_evolution_config(db: AsyncSession) -> dict[str, Any]:
 
     `origem` diz de onde veio cada campo — o painel mostra isso pro admin
     entender se está editando o que realmente está valendo.
+
+    `estrito=True` propaga a falha de leitura do banco (ver `get_config`).
     """
-    cfg = await get_config(db, EVOLUTION_KEY)
+    cfg = await get_config(db, EVOLUTION_KEY, estrito=estrito)
 
     salvo_url = (cfg.get("base_url") or "").strip()
     salvo_key = decrypt_secret(cfg.get("api_key") or "") or ""

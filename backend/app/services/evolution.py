@@ -57,8 +57,12 @@ class EvolutionClient:
             from app.db import AsyncSessionLocal
             from app.services.app_config import get_evolution_config
 
+            # estrito: se a leitura falhar, cai no except e MANTÉM a config em uso.
+            # Sem isso a falha virava "nada salvo" e a URL trocava pela do .env
+            # (http://evolution..., que não responde) → falso alerta de Evolution
+            # INACESSÍVEL em produção sempre que o banco engasgava.
             async with AsyncSessionLocal() as db:
-                cfg = await get_evolution_config(db)
+                cfg = await get_evolution_config(db, estrito=True)
             base_url = cfg["base_url"]
             api_key = cfg["api_key"]
             webhook_token = cfg["webhook_token"]
