@@ -72,7 +72,9 @@ celery_app.conf.beat_schedule = {
     },
     "encerrar-rascunhos-abandonados": {
         "task": "pizzabot.encerrar_rascunhos_abandonados",
-        "schedule": 3600.0,  # de hora em hora: rascunho sem fechar há 12 h sai do funil
+        # A cada 15 min: rascunho sem fechar há 12 h sai do funil. De hora em hora
+        # não rodava nunca em dia de deploy — o beat reinicia e o relógio zera.
+        "schedule": 900.0,
     },
     "expirar-chamados": {
         "task": "pizzabot.expirar_chamados",

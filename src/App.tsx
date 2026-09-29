@@ -779,7 +779,14 @@ function AdminApp() {
       badges={{
         conversas: conversations.filter((c) => (c.unreadCount ?? 0) > 0).length,
         // Rascunho sem itens (contato que ainda não pediu) não é pedido a atender.
-        pedidos: orders.filter((o) => o.status === "novo" && (o.items.length > 0 || o.totalValue > 0)).length,
+        // Só os de hoje, como o quadro: um rascunho de 23/09 esquecido deixava o
+        // badge em "1" com o quadro vazio.
+        pedidos: orders.filter(
+          (o) =>
+            o.status === "novo" &&
+            (o.items.length > 0 || o.totalValue > 0) &&
+            new Date(o.createdAt).toDateString() === new Date().toDateString(),
+        ).length,
       }}
       pizzariaNome={pizzaria.nome}
       pizzariaLogo={pizzaria.logo_url ?? undefined}
