@@ -229,6 +229,60 @@ async def _verificar_assinaturas_async() -> dict:
             pass
 
 
+@celery_app.task(name="pizzabot.expirar_chamados")
+def expirar_chamados() -> dict:
+    return asyncio.run(_expirar_chamados_async())
+
+
+async def _expirar_chamados_async() -> dict:
+    from app.db import AsyncSessionLocal, engine
+    from app.services.chamados import expirar_vencidos
+    try:
+        async with AsyncSessionLocal() as db:
+            return {"ok": True, "expirados": await expirar_vencidos(db)}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao expirar chamados: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services.evolution import evolution
+            await evolution.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@celery_app.task(name="pizzabot.entregar_resposta_chamado")
+def entregar_resposta_chamado(chamado_id: str) -> dict:
+    return asyncio.run(_entregar_resposta_chamado_async(chamado_id))
+
+
+async def _entregar_resposta_chamado_async(chamado_id: str) -> dict:
+    import uuid as _uuid
+
+    from app.db import AsyncSessionLocal, engine
+    from app.services.chamados import entregar_resposta
+    try:
+        async with AsyncSessionLocal() as db:
+            return await entregar_resposta(db, _uuid.UUID(chamado_id))
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao entregar a resposta do chamado %s: %s", chamado_id, e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services.evolution import evolution
+            await evolution.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @celery_app.task(name="pizzabot.monitorar_fila_dispatcher")
 def monitorar_fila_dispatcher() -> dict:
     return asyncio.run(_monitorar_fila_dispatcher_async())

@@ -70,4 +70,10 @@ celery_app.conf.beat_schedule = {
         # cobrança. Diário basta — a cobrança é mensal.
         "schedule": crontab(hour=3, minute=30),
     },
+    "expirar-chamados": {
+        "task": "pizzabot.expirar_chamados",
+        # A cada minuto: chamado interno sem resposta no prazo da loja vira
+        # atendimento humano (o cliente nunca fica esperando para sempre).
+        "schedule": 60.0,
+    },
 }

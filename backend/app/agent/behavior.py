@@ -62,6 +62,11 @@ class HandoffConfig(BaseModel):
     # Conferência humana: pedido fechado pela IA espera alguém da loja aprovar
     # no painel antes de ir para a cozinha (e antes de o pagamento confirmar).
     revisar_pedidos: bool = False
+    # Chamado interno: quando a atendente não tem a resposta (ou uma operação no
+    # pedido falha), ela pergunta à equipe pelo painel em vez de transferir o
+    # cliente; sem resposta em `chamado_timeout_min`, vira atendimento humano.
+    chamado_interno: bool = True
+    chamado_timeout_min: int = Field(5, ge=2, le=30)
     mensagem_transicao: str = Field(
         "Vou chamar um de nossos atendentes para finalizar seu atendimento. "
         "Só um instante que a equipe já responde por aqui! 😊",

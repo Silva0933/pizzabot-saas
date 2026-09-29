@@ -459,6 +459,39 @@ class Conversa(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ChamadoInterno(Base):
+    """Pergunta da atendente à equipe (migration 035)."""
+    __tablename__ = "chamados_internos"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    conversa_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("conversas.id", ondelete="CASCADE"))
+    telefone: Mapped[str] = mapped_column(String(60), nullable=False)
+    pergunta: Mapped[str] = mapped_column(Text, nullable=False)
+    motivo: Mapped[str] = mapped_column(String(40), nullable=False)
+    contexto: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="aberto", nullable=False)
+    resposta: Mapped[str | None] = mapped_column(Text)
+    respondido_por: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+    respondido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ConhecimentoLoja(Base):
+    """Resposta que a loja salvou a partir de um chamado (migration 035)."""
+    __tablename__ = "conhecimento_loja"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=func.uuid_generate_v4())
+    pizzaria_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("pizzarias.id", ondelete="CASCADE"), nullable=False)
+    pergunta: Mapped[str] = mapped_column(Text, nullable=False)
+    resposta: Mapped[str] = mapped_column(Text, nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    origem_chamado_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("chamados_internos.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Mensagem(Base):
     __tablename__ = "mensagens"
 

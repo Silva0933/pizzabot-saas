@@ -970,6 +970,54 @@ async def _pos_venda(
 
 
 # ============================================
+# Chamado interno (a atendente pergunta à equipe)
+# ============================================
+# Temas que os dados do sistema já cobrem (horário, endereço, entrega, pagamento,
+# promoção, cardápio, preço, tempo, pedido): a voz responde com os fatos.
+_TEMA_COM_DADOS_RE = _re.compile(
+    r"\b(horari|abre|abrem|aberto|fecha|funciona|endereco|onde fica|localiza|taxa|frete|entreg|delivery|"
+    r"retir|pix|cartao|dinheiro|pag|aceit|cupom|desconto|promo|cardapio|menu|sabor|tamanho|preco|valor|"
+    r"quanto|demora|tempo|minut|pedido|pizza|lanche|bebida|refri|borda|adicional)"
+)
+_PERGUNTA_RE = _re.compile(
+    r"\?|^\s*(tem|tem|voces|vcs|qual|quais|como|onde|quando|pode|posso|aceita|fazem|faz|da pra|e possivel|existe)\b"
+)
+
+
+def _pergunta_sem_dados(dados: dict[str, Any], texto: str) -> bool:
+    """Pergunta que nenhum dado do sistema cobre ("vocês têm estacionamento?").
+    Só com a NLU de comandos, que diz com segurança se o cliente citou o cardápio."""
+    t = _normalizar_txt(texto)
+    if len(t) < 8 or dados.get("_nlu") != "comandos":
+        return False
+    if dados.get("_citados") or dados.get("_categoria_citada") or dados.get("_nao_encontrados"):
+        return False
+    return bool(_PERGUNTA_RE.search(t)) and not _TEMA_COM_DADOS_RE.search(t)
+
+
+async def _chamado_ou_espera(
+    db: AsyncSession, ctx: AgentContext, estado: dict[str, Any], *, pergunta: str, motivo: str,
+    msg_espera: str | None = None,
+) -> str | None:
+    """Abre o chamado (ou lembra que já há um aberto) e devolve a mensagem de
+    espera para o cliente. None se o chamado interno está desligado na loja."""
+    from app.agent.behavior import get_behavior
+    from app.services import chamados
+    if not get_behavior(ctx.personalidade).handoff.chamado_interno:
+        return None
+    if estado.get("chamado_pendente"):
+        return chamados.MSG_AINDA_ESPERANDO
+    try:
+        ch = await chamados.abrir_chamado(db, ctx, pergunta=pergunta, motivo=motivo, estado=estado)
+    except Exception as e:  # noqa: BLE001
+        # Sem chamado não há quem responda: melhor o caminho antigo (humano).
+        log.warning("Não abri o chamado interno (%s): segue o fluxo sem ele", e)
+        return None
+    estado["chamado_pendente"] = str(ch.id) if ch is not None else "simulado"
+    return msg_espera or chamados.MSG_ESPERA
+
+
+# ============================================
 # Troco (dinheiro na entrega)
 # ============================================
 _SEM_TROCO_RE = _re.compile(
@@ -1277,7 +1325,18 @@ async def processar(
             erro_upd = str(e_upd)
         if not atualizou_ok:
             # NÃO podemos dizer ao cliente que alteramos se o banco não mudou.
-            # Escala pra um humano resolver e instrui a voz a NÃO confirmar.
+            # A equipe resolve pelo chamado interno (o bot segue ativo); com o
+            # chamado desligado na loja, escala para um humano como antes.
+            espera = await _chamado_ou_espera(
+                db, ctx, estado, motivo="falha_operacao",
+                pergunta=f"Cliente pediu para alterar o pedido ('{user_input[:150]}'), mas não deu: {erro_upd or 'erro desconhecido'}",
+                msg_espera="Vou ajustar isso com a equipe e já te confirmo por aqui 😊",
+            )
+            if espera:
+                decisao["acao"] = "chamado_aberto"
+                decisao["mensagem_pronta"] = espera
+                decisao["mensagem_pronta_acao"] = "chamado_aberto"
+                return {"decisao": decisao, "estado": estado}
             try:
                 await escalar_humano(ctx, db, motivo_escalonamento=f"FSM: falha ao alterar pedido — {erro_upd or 'erro desconhecido'}")
             except Exception:  # noqa: BLE001
@@ -1322,7 +1381,18 @@ async def processar(
                 erro_cancel = str(e_cancel)
             if not cancelou_ok:
                 # Cancelamento real falhou (ex.: já está no forno / saiu pra entrega).
-                # NÃO dizemos que cancelou nem limpamos o estado — escala pra humano.
+                # NÃO dizemos que cancelou nem limpamos o estado — a equipe decide
+                # pelo chamado interno; sem chamado na loja, escala para humano.
+                espera = await _chamado_ou_espera(
+                    db, ctx, estado, motivo="falha_operacao",
+                    pergunta=f"Cliente quer CANCELAR o pedido, mas não deu automaticamente: {erro_cancel or 'erro desconhecido'}",
+                    msg_espera="Vou verificar o cancelamento com a equipe e já te respondo por aqui 🙏",
+                )
+                if espera:
+                    decisao["acao"] = "chamado_aberto"
+                    decisao["mensagem_pronta"] = espera
+                    decisao["mensagem_pronta_acao"] = "chamado_aberto"
+                    return {"decisao": decisao, "estado": estado}
                 try:
                     await escalar_humano(ctx, db, motivo_escalonamento=f"FSM: falha ao cancelar pedido — {erro_cancel or 'erro desconhecido'}")
                 except Exception:  # noqa: BLE001
@@ -1919,6 +1989,22 @@ async def processar(
                 decisao["fatos"].append(
                     "Sobre o que NÃO temos, diga exatamente isto: " + negativa.replace("[QUEBRA]", "")
                 )
+        # Pergunta que nenhum dado do sistema cobre: primeiro o que a loja já
+        # respondeu antes (base de conhecimento); senão, a atendente pergunta à
+        # equipe (chamado interno) em vez de improvisar ou transferir.
+        if intencao == "duvida_geral" and not pechincha:
+            from app.services.chamados import buscar_conhecimento
+            conhecimento = await buscar_conhecimento(db, ctx.pizzaria.id, user_input)
+            if conhecimento:
+                decisao["fatos"].append("Informação confirmada pela loja (use como verdade): " + conhecimento)
+            elif _pergunta_sem_dados(dados, user_input):
+                espera = await _chamado_ou_espera(db, ctx, estado, pergunta=user_input, motivo="sem_resposta")
+                if espera:
+                    decisao["acao"] = "chamado_aberto"
+                    decisao["mensagem_pronta"] = espera
+                    decisao["mensagem_pronta_acao"] = "chamado_aberto"
+                    estado["apresentou"] = True
+                    return {"decisao": decisao, "estado": estado}
         # GATILHO por produto citado (NLU de comandos): a voz recebe os dados reais
         # SÓ dos produtos/categoria de que o cliente falou — nada de busca pela
         # frase inteira (que trazia a "calabresa parecida" numa pechincha).
