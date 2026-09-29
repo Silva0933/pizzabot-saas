@@ -394,6 +394,10 @@ async def run_fsm_agent(
     # os itens por conta própria.
     from app.agent.fsm.confirmacao import confirmacao_do_turno
     confirmacao = None
+    if decisao.get("carrinho_resetado"):
+        # Carrinho zerado por reset (novo contato após o pedido fechado, rascunho
+        # cancelado): não é remoção — anunciar "✅ Tirei: Pizza" era mentira.
+        carrinho_antes_turno = []
     if decisao.get("acao") not in ("resumo_confirmar", "pedido_registrado", "cardapio", "escalado"):
         confirmacao = confirmacao_do_turno(carrinho_antes_turno, estado.get("carrinho") or [])
     if confirmacao:

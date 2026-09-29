@@ -58,6 +58,18 @@ class TestAfirmouUpsell:
         assert not _afirmou_upsell("confirmar_resumo", "pode fechar")
         assert not _afirmou_upsell(None, "tá bom assim")
 
+    def test_e_isso_mesmo_encerra_nao_aceita(self):
+        """Teste de estresse (Palazio): 'é isso mesmo' depois de 'alguma bebida?'
+        virava '✅ Anotei: 1x Fanta 1L'. A NLU dá confirmar_resumo a essas frases."""
+        from app.agent.fsm.engine import _afirmou_upsell
+        for frase in ("é isso mesmo", "e isso", "isso mesmo", "é só isso", "isso aí"):
+            assert not _afirmou_upsell("confirmar_resumo", frase), frase
+
+    def test_confirmar_resumo_sem_frase_de_aceite_nao_e_aceite(self):
+        from app.agent.fsm.engine import _afirmou_upsell
+        assert not _afirmou_upsell("confirmar_resumo", "segue o pedido")
+        assert _afirmou_upsell("confirmar_resumo", "sim")
+
 
 class TestOpcoesUpsell:
     def test_separa_bebidas_bordas_adicionais(self):
@@ -114,6 +126,24 @@ class TestOfertaUpsell:
         assert out["decisao"]["acao"] == "pedir_info"
         assert "entrega" in out["decisao"]["proxima_pergunta"].lower()
         assert out["estado"]["upsell_feito"] is True
+
+    def test_nao_oferece_bebida_a_quem_ja_pediu_bebida(self):
+        """Teste de estresse: pediu pizza + Coca 2L e ouviu 'alguma bebida?'."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        estado["carrinho"].append({
+            "nome": "Coca Cola 2L", "qtd": 1, "preco_congelado": 12.0, "nome_congelado": "Coca Cola 2L",
+        })
+        nlu = {"intencao": "adicionar_item", "dados": {}}
+
+        with patch("app.agent.fsm.engine._opcoes_upsell",
+                   new=AsyncMock(return_value={"bebidas": ["Coca Cola 2L"], "bordas": [], "adicionais": []})):
+            out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="ok"))
+
+        # Só havia bebida para oferecer e ela já está no pedido → segue o funil.
+        assert out["decisao"]["acao"] == "pedir_info"
+        assert not out["estado"].get("aguardando_upsell")
 
 
 # ============================================================
@@ -183,6 +213,25 @@ class TestUpsellItemUnico:
 
         assert out["decisao"]["acao"] == "upsell"
         assert out["estado"]["upsell_item_unico"] == "Coca Cola 2L"
+        # A oferta NOMEIA o item: só assim o "quero" seco é inequívoco.
+        assert "Coca Cola 2L" in out["decisao"]["proxima_pergunta"]
+
+    def test_e_isso_mesmo_nao_adiciona_o_item_unico(self):
+        """Regressão do item fantasma: 'é isso mesmo' encerra, não pede a bebida."""
+        from app.agent.fsm import engine
+        ctx, db = _ctx_db()
+        estado = _estado_com_pizza()
+        estado["upsell_feito"] = True
+        estado["aguardando_upsell"] = True
+        estado["upsell_item_unico"] = "Fanta 1L"
+        nlu = {"intencao": "confirmar_resumo", "dados": {}}
+
+        out = asyncio.run(engine.processar(db, ctx, estado, nlu, user_input="é isso mesmo"))
+
+        nomes = [i["nome"].lower() for i in out["estado"]["carrinho"]]
+        assert not any("fanta" in n for n in nomes)
+        assert out["decisao"]["acao"] == "pedir_info"
+        assert "upsell_item_unico" not in out["estado"]
 
     def test_aceite_seco_adiciona_o_item_oferecido(self):
         """Bug de produção: ofereceu 'Coca Cola 2L', cliente disse 'quero' e a

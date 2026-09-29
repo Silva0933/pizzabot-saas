@@ -370,6 +370,8 @@ class Pedido(Base):
     # Conferência da loja (migration 032): pedido da IA esperando alguém aprovar.
     aguardando_revisao: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     link_pagamento: Mapped[str | None] = mapped_column(Text)
+    # Copia-e-cola da cobrança Pix (migration 034): o reenvio manda a MESMA cobrança.
+    pix_copia_cola: Mapped[str | None] = mapped_column(Text)
 
     origem: Mapped[str] = mapped_column(String(30), default="whatsapp", nullable=False)
     chave_idempotencia: Mapped[str | None] = mapped_column(String(120))

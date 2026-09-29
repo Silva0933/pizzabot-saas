@@ -131,7 +131,7 @@ def _montar_resumo_msg(itens_norm: list[dict[str, Any]], taxa: float, total: flo
 
 
 def _montar_registro_msg(numero: Any, tempo: str | None, metodo_cobr: str | None,
-                         cobr_ok: bool, revisao: bool = False) -> str:
+                         cobr_ok: bool, revisao: bool = False, tipo: str | None = None) -> str:
     """BLINDAGEM (Pilar 2): texto do FECHAMENTO montado pelo backend (verbatim)."""
     if revisao:
         # Conferência da loja ligada: não promete prazo antes de alguém aprovar.
@@ -142,7 +142,12 @@ def _montar_registro_msg(numero: Any, tempo: str | None, metodo_cobr: str | None
     else:
         linhas = [f"Pedido #{numero} fechado! 🍕"]
     if tempo and not revisao:
-        linhas.append(f"Fica pronto em aproximadamente {tempo}.")
+        # O tempo de delivery é até a porta do cliente: "fica pronto em 30-45 min"
+        # numa entrega prometia o preparo, não a chegada.
+        if tipo == "delivery":
+            linhas.append(f"Chega em aproximadamente {tempo}.")
+        else:
+            linhas.append(f"Fica pronto em aproximadamente {tempo}.")
     if cobr_ok and metodo_cobr == "pix":
         linhas.append("O QR e o código Pix estão aí em cima — assim que o pagamento cair, eu confirmo pra você! 😊")
     elif cobr_ok and metodo_cobr == "pix_manual":
@@ -453,7 +458,10 @@ def _modo_pagamento(pizz) -> str:
 _RECUSA_UPSELL_RE = _re.compile(
     r"\b(n[aã]o|nada|só (a|o|isso|essa|esse)|so (a|o|isso|essa|esse)|"
     r"t[aá] (bom|certo|ok|tranquilo)|deixa( pra)? (la|lá)|sem mais|"
-    r"pode fechar|fechar o pedido|s[oó] (isso|essa|esse))\b",
+    r"pode fechar|fechar o pedido|s[oó] (isso|essa|esse))\b"
+    # "é isso (mesmo)" / "isso mesmo" encerram o pedido: é "só isso", não
+    # "sim, quero a bebida". Virava "✅ Anotei: 1x Fanta 1L" (teste de estresse).
+    r"|^\s*(é|e|eh)\s+isso\b|^\s*isso\s+(mesmo|a[ií])\b",
     _re.IGNORECASE,
 )
 # Aceite ao upsell ("quero", "sim", "pode", "manda", "aceito", "também"...).
@@ -470,7 +478,10 @@ def _afirmou_upsell(intencao: str | None, texto: str) -> bool:
     t = (texto or "").strip().lower()
     if _RECUSA_UPSELL_RE.search(t):
         return False
-    if intencao in ("confirmar_resumo", "adicionar_item"):
+    # "confirmar_resumo" NÃO é aceite: a NLU dá essa intenção a "é isso mesmo"
+    # e "pode seguir", que encerram o pedido. Aceite é frase de aceite explícita
+    # (a NLU determinística de "quero"/"sim" também passa pelo regex abaixo).
+    if intencao == "adicionar_item":
         return True
     return bool(_ACEITA_UPSELL_RE.match(t))
 
@@ -804,6 +815,146 @@ def _quer_cardapio(intencao: str | None, texto: str, dados: dict[str, Any]) -> b
     return bool(_CARDAPIO_RE.search(texto or ""))
 
 
+# ============================================
+# Pós-venda determinístico (status e pagamento do pedido JÁ fechado)
+# ============================================
+# Antes, no FINALIZADO, qualquer "pix/pagar/link" na frase gerava OUTRA cobrança:
+# "já paguei o pix" virava "o Pix já foi pago, reenviei o QR" e "vou pagar na
+# hora de buscar" virava um Pix novo (teste com o agente real, 29/09). E "já
+# ficou pronto?" chegava à voz sem o pedido. Aqui cada caso tem regra e texto
+# fixo, a partir do pedido real.
+_REENVIO_COBRANCA_RE = _re.compile(
+    r"\b(reenvi\w*|n[aã]o (chegou|recebi|veio|apareceu|achei|acho)|perdi o|"
+    r"cad[eê] o (pix|link|qr|c[oó]digo)|manda\w*\s+(o|de novo|novamente|outra vez)\s*(pix|link|qr|c[oó]digo)?|"
+    r"(pix|link|qr|c[oó]digo)\s+(de novo|novamente|outra vez))\b",
+    _re.IGNORECASE,
+)
+_MENCIONA_COBRANCA_RE = _re.compile(r"\b(pix|link|qr|c[oó]digo|copia e cola|boleto)\b", _re.IGNORECASE)
+_JA_PAGUEI_RE = _re.compile(
+    r"\b(j[aá] paguei|paguei|pix feito|fiz o (pix|pagamento)|transferi|t[aá] pago|"
+    r"pagamento feito|acabei de pagar|j[aá] (fiz|mandei) o pix)\b",
+    _re.IGNORECASE,
+)
+_PAGAR_DEPOIS_RE = _re.compile(
+    r"\bpag\w*\b.{0,40}\b(na entrega|na retirada|na hora|quando (chegar|buscar|for buscar|pegar|receber)|"
+    r"ao receber|no balc[aã]o|pessoalmente|l[aá] na hora|na porta)\b",
+    _re.IGNORECASE,
+)
+_STATUS_PEDIDO_RE = _re.compile(
+    r"\b(pront[oa]|j[aá] saiu|saiu|chega|chegando|demora\w*|quanto tempo|status|cad[eê]|"
+    r"a caminho|t[aá] vindo|j[aá] vem|meu pedido)\b",
+    _re.IGNORECASE,
+)
+_FORMA_NO_TEXTO_RE = _re.compile(r"\b(dinheiro|cart[aã]o|cr[eé]dito|d[eé]bito|pix)\b", _re.IGNORECASE)
+
+
+def _msg_status_pedido(ped, tipo_estado: str | None = None) -> str:
+    """Status do pedido real, em texto fixo do backend."""
+    n = getattr(ped, "numero_pedido", None)
+    tipo = getattr(ped, "tipo", None) or tipo_estado
+    st = getattr(ped, "status", None)
+    if st == "novo":
+        if getattr(ped, "aguardando_revisao", False):
+            return f"A equipe está conferindo seu pedido #{n} e já te confirma por aqui 😊"
+        return (f"Seu pedido #{n} está aguardando a confirmação do pagamento. "
+                "Assim que cair, ele vai direto pra cozinha 😊")
+    if st == "confirmado":
+        return f"Seu pedido #{n} está confirmado e na fila de preparo 🍕"
+    if st == "no_forno":
+        return f"Seu pedido #{n} está no forno agora 🔥"
+    if st == "pronto_entrega":
+        if tipo == "delivery":
+            return f"Seu pedido #{n} está pronto e sai pra entrega em instantes 🛵"
+        return f"Seu pedido #{n} está pronto! Pode vir buscar 😊"
+    if st == "a_caminho":
+        return f"Seu pedido #{n} já saiu para entrega 🛵"
+    return f"Seu pedido #{n} está em andamento 😊"
+
+
+def _forma_do_texto(dados: dict[str, Any], texto: str) -> str | None:
+    forma = dados.get("forma_pagamento")
+    if forma in ("pix", "cartao", "dinheiro"):
+        return forma
+    m = _FORMA_NO_TEXTO_RE.search(texto or "")
+    if not m:
+        return None
+    w = _normalizar_txt(m.group(1))
+    return "pix" if w == "pix" else ("dinheiro" if w == "dinheiro" else "cartao")
+
+
+async def _pos_venda(
+    db: AsyncSession, ctx: AgentContext, estado: dict[str, Any], intencao: str | None,
+    dados: dict[str, Any], user_input: str, ativo,
+) -> dict[str, str] | None:
+    """Resposta do sistema para status/pagamento de um pedido já fechado, ou None
+    (o fluxo normal segue). Só age com pedido real (`ativo`) ou logo após fechar."""
+    finalizado = estado.get("etapa") == "FINALIZADO"
+    if not finalizado and ativo is None:
+        return None
+    t = user_input or ""
+    quer_pagar_depois = bool(estado.get("aguardando_forma_pos_venda") or _PAGAR_DEPOIS_RE.search(t))
+    # "vou pagar na hora de buscar" chega como alterar_pedido: a troca de
+    # pagamento é tratada aqui; as demais alterações (endereço) seguem o ramo normal.
+    if intencao in ("cancelar", "reclamar", "falar_humano", "avaliar", "adicionar_item") \
+            or (intencao == "alterar_pedido" and not quer_pagar_depois):
+        return None
+    numero = getattr(ativo, "numero_pedido", None) or estado.get("pedido_numero")
+    tipo = getattr(ativo, "tipo", None) or estado.get("pedido_tipo") or estado.get("tipo")
+    onde = "na entrega" if tipo == "delivery" else "na retirada"
+    nomes_forma = {"pix": "no Pix", "cartao": "no cartão", "dinheiro": "em dinheiro"}
+
+    # 1) Vai pagar na entrega/retirada (ou respondendo qual forma, depois de perguntarmos).
+    if quer_pagar_depois:
+        forma = _forma_do_texto(dados, t)
+        if not forma:
+            estado["aguardando_forma_pos_venda"] = True
+            return {"acao": "pos_venda_pagamento",
+                    "texto": f"Sem problema! {onde.capitalize()} você prefere pagar em dinheiro, cartão ou Pix?"}
+        estado.pop("aguardando_forma_pos_venda", None)
+        from app.agent.tools import atualizar_pedido
+        r = await atualizar_pedido(ctx, db, nova_forma_pagamento=forma, pagar_na_entrega=True)
+        if not r.get("ok"):
+            erro = str(r.get("erro") or "")
+            if "pago" in erro:
+                return {"acao": "pos_venda_pagamento", "texto": f"Seu pedido #{numero} já está pago ✅"}
+            return None  # sem pedido para alterar: o fluxo normal responde
+        estado["pagamento"] = forma
+        estado["pagar_agora"] = False
+        return {"acao": "pos_venda_pagamento",
+                "texto": f"Combinado! O pedido #{numero} fica pra pagar {nomes_forma[forma]} {onde} 😊"}
+
+    # 2) Pediu a cobrança de novo ("manda o pix de novo", "não chegou o link").
+    if _REENVIO_COBRANCA_RE.search(t) and _MENCIONA_COBRANCA_RE.search(t):
+        from app.agent.tools import reenviar_cobranca
+        r = await reenviar_cobranca(ctx, db)
+        if r.get("ok"):
+            oque = "o link de pagamento" if r.get("metodo") == "link" else "o código Pix"
+            return {"acao": "pos_venda_pagamento", "texto": f"Reenviei {oque} aí em cima 👆"}
+        if r.get("motivo") == "ja_pago":
+            return {"acao": "pos_venda_pagamento", "texto": f"Seu pedido #{numero} já está pago ✅"}
+        if r.get("motivo") == "pagamento_na_entrega":
+            return {"acao": "pos_venda_pagamento",
+                    "texto": f"O pagamento do pedido #{numero} é {onde}, então não tem Pix nem link pra pagar agora 😊"}
+        return None
+
+    # 3) "Já paguei": nunca gera cobrança; responde com o status real.
+    if _JA_PAGUEI_RE.search(t):
+        if ativo is not None and getattr(ativo, "payment_status", None) == "approved":
+            return {"acao": "pos_venda_pagamento",
+                    "texto": "Pagamento confirmado ✅ " + _msg_status_pedido(ativo, tipo)}
+        return {"acao": "pos_venda_pagamento",
+                "texto": "Obrigado! Assim que o pagamento cair aqui eu te confirmo, costuma ser rapidinho 😊"}
+
+    # 4) Status do pedido ("já ficou pronto?", "já saiu?").
+    if intencao in (None, "duvida_geral", "conversa_fiada", "informar_pagamento") and _STATUS_PEDIDO_RE.search(t):
+        if ativo is not None:
+            return {"acao": "status_pedido", "texto": _msg_status_pedido(ativo, tipo)}
+        if finalizado and numero:
+            return {"acao": "status_pedido",
+                    "texto": f"Seu pedido #{numero} já está com a equipe 🍕 A cada etapa você recebe um aviso por aqui."}
+    return None
+
+
 async def _sincronizar_rascunho(db: AsyncSession, ctx: AgentContext, estado: dict[str, Any], calc: dict[str, Any]) -> None:
     """Espelha o pedido EM CONSTRUÇÃO no rascunho (card do Kanban "Novos"), pra o
     painel mostrar itens/total/entrega/pagamento em tempo real — sem esperar o
@@ -907,7 +1058,10 @@ async def processar(
     # passa pelo FSM) ou pelo WhatsApp com o estado já expirado (TTL de 2h). Sem
     # isto, "quero cancelar" caía no ramo de rascunho e a atendente CONFIRMAVA o
     # cancelamento sem cancelar nada, e "já saiu?" ficava sem resposta.
-    if estado.get("etapa") != "FINALIZADO" and not estado.get("carrinho"):
+    # Também no FINALIZADO: era justamente logo após fechar que "já ficou pronto?"
+    # chegava à voz sem o pedido e o reset do estado anunciava "✅ Tirei: Pizza".
+    ativo = None
+    if estado.get("etapa") == "FINALIZADO" or not estado.get("carrinho"):
         try:
             from app.agent.tools import ROTULO_STATUS_PEDIDO, pedido_ativo_do_cliente
             ativo = await pedido_ativo_do_cliente(ctx, db)
@@ -933,6 +1087,14 @@ async def processar(
     # Se a conversa anterior já foi finalizada com sucesso e o cliente está iniciando um novo
     # contato (intenção não é de pós-venda ou pós-entrega), resetamos o estado FSM.
     # Se for apenas cortesia/agradecimento pós-venda, respondemos com simpatia sem resetar o estado.
+    # Pós-venda: respostas do SISTEMA a partir do pedido real (texto fixo, sem LLM).
+    pos_venda = await _pos_venda(db, ctx, estado, intencao, dados, user_input, ativo)
+    if pos_venda is not None:
+        decisao["acao"] = pos_venda["acao"]
+        decisao["mensagem_pronta"] = pos_venda["texto"]
+        decisao["mensagem_pronta_acao"] = pos_venda["acao"]
+        return {"decisao": decisao, "estado": estado}
+
     if estado.get("etapa") == "FINALIZADO":
         if intencao == "conversa_fiada":
             decisao["proxima_pergunta"] = (
@@ -940,27 +1102,11 @@ async def processar(
                 "(ex.: 'Imagina!', 'De nada, bom apetite!', 'Qualquer coisa só chamar'). Não ofereça mais pizzas."
             )
             return {"decisao": decisao, "estado": estado}
-        elif intencao == "informar_pagamento" or any(k in user_input.lower() for k in ("link", "pix", "pagar", "pagamento", "copia e cola")):
-            from app.agent.tools import gerar_pagamento
-            try:
-                metodo_pag = estado.get("pagamento") or "pix"
-                r = await gerar_pagamento(ctx, db, metodo=metodo_pag)
-                if r.get("ok"):
-                    decisao["acao"] = "conversar"
-                    pag = r.get("pagamento") or {}
-                    metodo_cobr = pag.get("metodo") or metodo_pag
-                    if metodo_cobr == "pix":
-                        decisao["proxima_pergunta"] = "Avise o cliente que você acabou de reenviar o código Pix e o QR Code acima."
-                    else:
-                        decisao["proxima_pergunta"] = "Avise o cliente que você acabou de reenviar o link de pagamento do cartão acima."
-                    return {"decisao": decisao, "estado": estado}
-                else:
-                    decisao["proxima_pergunta"] = f"Avise o cliente que não foi possível gerar o pagamento: {r.get('motivo') or 'erro'}"
-                    return {"decisao": decisao, "estado": estado}
-            except Exception as e_pag:
-                log.warning("Falha ao re-gerar pagamento na FSM: %s", e_pag)
         elif intencao not in ("alterar_pedido", "avaliar", "cancelar", "reclamar", "falar_humano"):
             estado.update(estado_inicial())
+            # O carrinho sumiu por reset, não por remoção: sem isto a confirmação
+            # automática anunciava "✅ Tirei: Pizza Brasa (M)" do pedido fechado.
+            decisao["carrinho_resetado"] = True
 
     # Reclamação / pedir atendente humano → escala (desliga o bot na conversa).
     if intencao in ("reclamar", "falar_humano") or _eh_grosseria(user_input):
@@ -1074,6 +1220,7 @@ async def processar(
             decisao["fatos"].append("Pedido (rascunho) limpo.")
         estado.update(estado_inicial())
         estado["apresentou"] = True
+        decisao["carrinho_resetado"] = True
         decisao["acao"] = "cancelado"
         decisao["proxima_pergunta"] = "Confirme o cancelamento e pergunte se quer começar um novo pedido."
         return {"decisao": decisao, "estado": estado}
@@ -1863,6 +2010,9 @@ async def processar(
             decisao["fatos"].append(f"Falha ao registrar: {reg.get('erro')}")
             return {"decisao": decisao, "estado": estado}
         estado["etapa"] = "FINALIZADO"
+        # O pós-venda responde "já ficou pronto?" mesmo sem achar o pedido no banco.
+        estado["pedido_numero"] = reg.get("numero_pedido")
+        estado["pedido_tipo"] = estado.get("tipo")
         decisao["acao"] = "pedido_registrado"
         pag = reg.get("pagamento") or {}
         cobr_ok = bool(pag.get("ok"))
@@ -1893,7 +2043,7 @@ async def processar(
         # BLINDAGEM (Pilar 2): mensagem de fechamento escrita pelo backend (verbatim).
         decisao["mensagem_pronta"] = _montar_registro_msg(
             reg.get("numero_pedido"), reg.get("tempo_estimado"), metodo_cobr, cobr_ok,
-            revisao=bool(reg.get("aguardando_revisao")),
+            revisao=bool(reg.get("aguardando_revisao")), tipo=estado.get("tipo"),
         )
         return {"decisao": decisao, "estado": estado}
 
@@ -1948,6 +2098,14 @@ async def processar(
         estado["upsell_ofertas"] = ofertas_feitas + 1
         estado["upsell_ultimo_tamanho"] = tamanho_carrinho
         opc = await _opcoes_upsell(ctx, db)
+        # Bebida já no carrinho: oferecer "alguma bebida?" para quem acabou de
+        # pedir a Coca soa robótico (teste de estresse). Oferece o resto.
+        bebidas_norm = {_normalizar_txt(b) for b in opc["bebidas"]}
+        if any(
+            _normalizar_txt(it.get("nome_congelado") or it.get("nome")) in bebidas_norm
+            for it in (estado.get("carrinho") or []) if isinstance(it, dict)
+        ):
+            opc["bebidas"] = []
         ofertas = []
         if opc["bordas"]:
             ofertas.append("uma borda recheada")
@@ -1960,15 +2118,18 @@ async def processar(
         if ofertas:
             estado["etapa"] = "COLETA_ITENS"
             estado["aguardando_upsell"] = True
-            # Uma ÚNICA opção no total (ex.: só a Coca Cola 2L)? Guarda o nome:
-            # se o cliente aceitar com um "quero" seco, adicionamos ESSE item
-            # direto — jamais "qual você quer?" com uma opção só.
+            # Uma ÚNICA opção no total (ex.: só a Fanta 1L)? A oferta NOMEIA o
+            # item, e só então o "quero" seco adiciona ESSE item — jamais "qual
+            # você quer?" com uma opção só. Antes a pergunta era genérica
+            # ("alguma bebida?") e mesmo assim o item ficava guardado: "é isso
+            # mesmo" virava "✅ Anotei: 1x Fanta 1L" sem o cliente pedir.
             todas_opcoes = (
                 opc["bebidas"] + opc["bordas"] + opc["adicionais"]
                 + (opc.get("sobremesas") or [])
             )
-            if len(todas_opcoes) == 1:
-                estado["upsell_item_unico"] = todas_opcoes[0]
+            item_unico = todas_opcoes[0] if len(todas_opcoes) == 1 else None
+            if item_unico:
+                estado["upsell_item_unico"] = item_unico
             decisao["acao"] = "upsell"
             # Só os NOMES no upsell (sem preço) — o valor só aparece no resumo verbatim.
             itens_nomes = [f"{i['quantidade']}x {i['nome']}" for i in calc["itens"]]
@@ -1998,11 +2159,17 @@ async def processar(
                 opcoes_txt.append("uma sobremesa")
             opcoes_juntas = " ou ".join(opcoes_txt)
 
-            decisao["proxima_pergunta"] = (
-                f"De forma SUTIL e curta, pergunte APENAS se ele gostaria de adicionar {opcoes_juntas} "
-                "para acompanhar. NÃO invente marcas ou sabores e não liste quais são os itens ou nomes agora, sob nenhuma hipótese! "
-                "Faça só a pergunta genérica (ex.: 'Gostaria de alguma bebida para acompanhar?')."
-            )
+            if item_unico:
+                decisao["proxima_pergunta"] = (
+                    f"De forma SUTIL e curta, pergunte se ele gostaria de adicionar {item_unico} para acompanhar "
+                    f"(cite exatamente '{item_unico}'; é a única opção). NÃO invente outros itens nem cite preço."
+                )
+            else:
+                decisao["proxima_pergunta"] = (
+                    f"De forma SUTIL e curta, pergunte APENAS se ele gostaria de adicionar {opcoes_juntas} "
+                    "para acompanhar. NÃO invente marcas ou sabores e não liste quais são os itens ou nomes agora, sob nenhuma hipótese! "
+                    "Faça só a pergunta genérica (ex.: 'Gostaria de alguma bebida para acompanhar?')."
+                )
             return {"decisao": decisao, "estado": estado}
         # Nada pra oferecer → não faz upsell; cai direto no funil (entrega/pagamento).
 

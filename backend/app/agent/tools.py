@@ -1540,6 +1540,7 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
     # que fazia o pedido pago ficar 'pending' para sempre.
     ped.payment_id = cob.payment_id
     ped.link_pagamento = cob.link_pagamento
+    ped.pix_copia_cola = cob.qr_code if cob.metodo == "pix" else None
     ped.payment_status = "pending"
     await db.flush()
 
@@ -1638,6 +1639,7 @@ async def _enviar_pix_manual(ctx: AgentContext, db: AsyncSession, ped: Pedido, c
     from app.services.evolution import evolution
 
     ped.payment_status = "em_analise"
+    ped.pix_copia_cola = copia_cola  # "manda o pix de novo" reenvia este código
     await db.flush()
 
     titular = (getattr(ctx.pizzaria, "pix_manual_titular", None) or "").strip()
@@ -1703,7 +1705,42 @@ async def gerar_pagamento(ctx: AgentContext, db: AsyncSession, *, metodo: str = 
     return await _gerar_cobranca(ctx, db, ped, metodo)
 
 
+async def reenviar_cobranca(ctx: AgentContext, db: AsyncSession) -> dict[str, Any]:
+    """Reenvia a cobrança JÁ EXISTENTE do pedido ativo ("manda o pix de novo").
 
+    O pós-venda chamava gerar_pagamento a cada "pix"/"pagar" na mensagem: "já
+    paguei o pix" criava outra cobrança e reenviava o QR. Aqui só se reenvia o
+    que existe (código Pix ou link); cobrança nova apenas se o pedido online
+    ainda não tem nenhuma. Pedido anterior à migration 034 (sem o código
+    guardado) é o único caso em que se gera de novo.
+    """
+    if _simulated(ctx, "reenviar_cobranca"):
+        return {"ok": True, "metodo": "pix", "reenviada": True, "simulado": True}
+    ped = await pedido_ativo_do_cliente(ctx, db)
+    if ped is None:
+        return {"ok": False, "motivo": "sem_pedido"}
+    if ped.payment_status == "approved":
+        return {"ok": False, "motivo": "ja_pago", "numero_pedido": ped.numero_pedido}
+    # Sem cobrança registrada = pagamento na entrega/retirada (inclusive "Pix na
+    # hora"). O pós-venda nunca cria cobrança do zero.
+    if not (ped.payment_id or ped.link_pagamento or ped.pix_copia_cola):
+        return {"ok": False, "motivo": "pagamento_na_entrega", "numero_pedido": ped.numero_pedido}
+    from app.services.evolution import evolution
+    if ped.link_pagamento and ctx.pizzaria.instancia:
+        await evolution.send_text(
+            instancia=ctx.pizzaria.instancia, numero=ctx.telefone,
+            texto=f"💳 Pague pelo link: {ped.link_pagamento}",
+        )
+        return {"ok": True, "metodo": "link", "reenviada": True, "numero_pedido": ped.numero_pedido}
+    if ped.pix_copia_cola and ctx.pizzaria.instancia:
+        await evolution.send_text(
+            instancia=ctx.pizzaria.instancia, numero=ctx.telefone, texto=ped.pix_copia_cola,
+        )
+        return {"ok": True, "metodo": "pix", "reenviada": True, "numero_pedido": ped.numero_pedido}
+    # Cobrança existe no gateway, mas o código não foi guardado (pedido anterior
+    # à 034): gera de novo — é o único caso.
+    pag = await _gerar_cobranca(ctx, db, ped, _metodo_online(ped.forma_pagamento) or "pix")
+    return {**pag, "reenviada": False, "numero_pedido": ped.numero_pedido}
 
 
 async def _resolver_pedido(ctx: AgentContext, db: AsyncSession, ref: str | None = None) -> Pedido | None:
@@ -1785,7 +1822,13 @@ async def pedido_ativo_do_cliente(ctx: AgentContext, db: AsyncSession, *, horas:
         ).order_by(Pedido.created_at.desc())
     )).scalars().all()
     for ped in pedidos:
-        if ped.status != "novo" or ped.payment_id or ped.link_pagamento:
+        # "novo" sem cobrança é rascunho do funil — exceto o Pix manual à espera
+        # do comprovante e o pedido fechado aguardando a conferência da loja.
+        if (
+            ped.status != "novo" or ped.payment_id or ped.link_pagamento
+            or getattr(ped, "pix_copia_cola", None) or ped.payment_status == "em_analise"
+            or getattr(ped, "aguardando_revisao", False)
+        ):
             return ped
     return None
 
@@ -1840,14 +1883,46 @@ async def atualizar_pedido(
     nova_forma_pagamento: str | None = None,
     novas_observacoes: str | None = None,
     novo_valor_total: float | None = None,
+    pagar_na_entrega: bool = False,
 ) -> dict[str, Any]:
-    if _simulated(ctx, "atualizar_pedido"):
+    if _simulated(ctx, "atualizar_pedido", pagar_na_entrega=pagar_na_entrega,
+                  nova_forma_pagamento=nova_forma_pagamento):
         return {"ok": True, "numero_pedido": 999, "simulado": True}
     ped = await _resolver_pedido(ctx, db, pedido_id_alterar)
     if not ped:
         return {"ok": False, "erro": "nenhum pedido ativo encontrado para este cliente"}
     if ped.status in ("a_caminho", "entregue", "cancelado"):
         return {"ok": False, "erro": f"pedido #{ped.numero_pedido} já está '{ped.status}' e não pode ser alterado"}
+
+    if pagar_na_entrega:
+        # "Vou pagar na hora de buscar": troca a forma e tira o pedido da espera
+        # pelo pagamento online — sem gerar cobrança (antes o pós-venda gerava
+        # OUTRA cobrança Pix e dizia "reenviei o Pix").
+        if ped.payment_status == "approved":
+            return {"ok": False, "erro": f"o pedido #{ped.numero_pedido} já está pago"}
+        if nova_forma_pagamento:
+            ped.forma_pagamento = nova_forma_pagamento
+        status_anterior = ped.status
+        if ped.status == "novo" and not ped.aguardando_revisao:
+            ped.status = "confirmado"
+        ped.updated_at = datetime.now(UTC)
+        await db.flush()
+        if status_anterior != ped.status:
+            from app.services.order_audit import registrar_evento_pedido
+            registrar_evento_pedido(
+                db, ped, tipo="status_alterado", status_anterior=status_anterior,
+                status_novo=ped.status, ator_nome="Assistente IA", ator_tipo="ia",
+                motivo="cliente vai pagar na entrega/retirada",
+            )
+            from app.services.broadcaster import broadcaster
+            await broadcaster.publish(ctx.pizzaria.id, {
+                "tipo": "pedido.atualizado",
+                "pizzaria_id": str(ctx.pizzaria.id),
+                "payload": {"pedido_id": str(ped.id), "numero_pedido": ped.numero_pedido,
+                            "status_anterior": status_anterior, "status_novo": ped.status},
+            })
+        return {"ok": True, "numero_pedido": ped.numero_pedido, "status": ped.status,
+                "forma_pagamento": ped.forma_pagamento}
 
     ajuste_taxa: dict[str, Any] | None = None
     if novo_endereco:
