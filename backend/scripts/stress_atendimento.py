@@ -151,9 +151,11 @@ ROTEIROS: list[Roteiro] = [
         "'tem fanta?' → 'não temos' + bebidas reais, nunca 'não tenho essa informação' (29/09)",
         [
             Turno("oi"),
-            Turno("tem fanta laranja?", nao_pode=["nao tenho essa informacao", "nao tenho informacao"],
+            # Produto que nenhuma das lojas de teste tem (a Palazio TEM Fanta).
+            Turno("tem guaraná jesus?", nao_pode=["nao tenho essa informacao", "nao tenho informacao"],
                   espera_algum=["nao temos", "em falta"]),
             Turno("e coca de 600ml?", nao_pode=["nao tenho essa informacao", "nao tenho informacao"]),
+            Turno("então quero uma calabresa grande", espera_intencao=["adicionar_item"]),
         ],
     ),
     Roteiro(
