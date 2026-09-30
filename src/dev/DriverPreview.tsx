@@ -24,8 +24,6 @@ function pedido(n: number, status: string, extra: Partial<BackendPedido> = {}): 
 }
 
 const cenario = new URLSearchParams(window.location.search).get("cenario") || "cheio";
-// Mesma escala do app Android (main.tsx aplica 115% quando roda no Capacitor).
-document.documentElement.style.fontSize = "115%";
 const repasse = cenario !== "sem-repasse";
 
 Object.assign(entregadorApi, {

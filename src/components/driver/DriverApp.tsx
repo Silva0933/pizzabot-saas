@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle, Bike, CheckCircle2, ChevronDown, Clock3, Download, Hand, History, KeyRound, Loader2, LogOut,
-  MapPin, Navigation, Package, Phone, Power, RefreshCw, Route, Store, Wallet, X,
+  MapPin, MessageCircle, Navigation, Package, Phone, Power, RefreshCw, Route, Store, Wallet, X,
 } from "lucide-react";
 import {
   BackendPedido, connectWebSocket, EntregaHistorico, entregadorApi, HistoricoEntregador, ResumoEntregador,
@@ -426,15 +426,20 @@ function CardEntrega({ pedido: p, modo, busy, podeAssumir, onAvancar, onPegar }:
       </div>
 
       <div className="space-y-4 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-lg font-bold">{p.cliente?.nome || "Cliente"}</p>
-            <p className="text-base text-slate-400">{n} {n === 1 ? "item" : "itens"}</p>
-          </div>
+        <div>
+          <p className="truncate text-lg font-bold">{p.cliente?.nome || "Cliente"}</p>
+          <p className="text-base text-slate-400">{n} {n === 1 ? "item" : "itens"}</p>
           {tel && (
-            <button type="button" onClick={() => abrirExterno(`tel:+${tel.replace(/\D/g, "")}`)} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-400/15 text-emerald-300" aria-label="Ligar para o cliente">
-              <Phone className="h-5 w-5" />
-            </button>
+            // Ligação normal e WhatsApp separados: no teste real o único botão
+            // abria a chamada pelo WhatsApp e o entregador queria a do telefone.
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => abrirExterno(`tel:+${tel.replace(/\D/g, "")}`)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-white/10 text-base font-bold" aria-label="Ligar para o cliente">
+                <Phone className="h-5 w-5" />Ligar
+              </button>
+              <button type="button" onClick={() => abrirExterno(`https://wa.me/${tel.replace(/\D/g, "")}`)} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500/15 text-base font-bold text-emerald-300" aria-label="Chamar o cliente no WhatsApp">
+                <MessageCircle className="h-5 w-5" />WhatsApp
+              </button>
+            </div>
           )}
         </div>
 

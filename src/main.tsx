@@ -24,11 +24,10 @@ createRoot(document.getElementById('root')!).render(
 
 // App Android do entregador (Capacitor carrega este painel): sem service worker —
 // o cache dele não tem função no app e pode segurar uma tela antiga. Remove o que
-// já foi instalado. A tela também fica maior (medidas em rem): no celular real,
-// login e app estavam pequenos demais.
+// já foi instalado. (A escala de 115% que existia aqui, somada ao redesenho da
+// tela do entregador, deixou tudo grande demais no celular real — removida.)
 const noApp = Boolean((window as any).Capacitor?.isNativePlatform?.());
 if (noApp) {
-  document.documentElement.style.fontSize = '115%';
   navigator.serviceWorker?.getRegistrations?.()
     .then((regs) => regs.forEach((r) => r.unregister()))
     .catch(() => {});
