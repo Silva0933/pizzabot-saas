@@ -34,7 +34,7 @@ const AssinaturaView = lazy(() => import("./components/v2/AssinaturaView").then(
 
 function TelaCarregando() {
   return (
-    <div className="flex items-center justify-center py-24 text-slate-400">
+    <div className="flex items-center justify-center py-24 text-ink-muted">
       <Loader2 className="w-6 h-6 animate-spin" />
     </div>
   );
@@ -689,7 +689,7 @@ function AdminApp() {
   // ============================================
   if (bootstrap) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex items-center justify-center bg-surface">
         <Loader2 className="w-7 h-7 animate-spin text-orange-500" />
       </div>
     );
@@ -929,7 +929,7 @@ function AdminApp() {
       {nav === "ajuda"     && <AjudaView/>}
       </Suspense>
       {nav === "admin" && user.is_platform_admin && (
-        <div className="p-6 text-center text-slate-500">
+        <div className="p-6 text-center text-ink-muted">
           Painel SaaS admin — em breve via API nova.
         </div>
       )}
@@ -980,11 +980,11 @@ function FaixaPedidoNovo({ quantidade, ultimo, onVer, onSilenciar }: {
       </div>
       <div className="flex shrink-0 gap-2">
         <button type="button" onClick={onVer}
-          className="rounded-xl bg-orange-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-500">
+          className="rounded-xl bg-brand-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-800">
           Ver pedido
         </button>
         <button type="button" onClick={onSilenciar}
-          className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+          className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-ink-muted hover:bg-slate-800">
           Silenciar
         </button>
       </div>
@@ -1017,7 +1017,7 @@ function FaixaAtencao({ alertas, onAbrir, onDispensar }: {
           {estilo.acao}
         </button>
         <button type="button" onClick={() => onDispensar(a)}
-          className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+          className="rounded-xl border border-slate-600 px-3 py-1.5 text-xs font-semibold text-ink-muted hover:bg-slate-800">
           Dispensar
         </button>
       </div>
@@ -1049,15 +1049,15 @@ function TrialBanner({ plano, venceEm, suspensa, onAssinar }: {
         : `${dias} dia(s) restante(s)`;
 
   return (
-    <div className="mx-4 md:mx-6 mt-3 rounded-xl border border-violet-200 bg-gradient-to-r from-violet-50 to-fuchsia-50/60 px-4 py-3 flex items-center gap-3">
-      <span className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-violet-100">
-        <Sparkles className="w-4 h-4 text-violet-600" />
+    <div className="mx-4 md:mx-6 mt-3 rounded-xl border border-brand-500/25 bg-brand-500/10 px-4 py-3 flex flex-wrap items-center gap-3">
+      <span className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-brand-500/10">
+        <Sparkles className="w-4 h-4 text-brand-300" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-violet-900">
+        <p className="text-sm font-bold text-brand-300">
           Você está no período de teste{restante ? ` · ${restante}` : ""}
         </p>
-        <p className="text-xs text-violet-700/90 mt-0.5 leading-snug">
+        <p className="text-xs text-brand-300/90 mt-0.5 leading-snug">
           {venceu
             ? "Seu teste acabou. Assine um plano para manter o atendimento ativo."
             : "Aproveite tudo do PizzaBot. Assine um plano quando quiser para não interromper o atendimento."}
@@ -1066,7 +1066,7 @@ function TrialBanner({ plano, venceEm, suspensa, onAssinar }: {
       <button
         type="button"
         onClick={onAssinar}
-        className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white text-xs md:text-sm font-semibold px-3.5 py-2 rounded-lg"
+        className="shrink-0 bg-brand-700 hover:bg-brand-800 text-white text-xs md:text-sm font-semibold px-3.5 py-2 rounded-lg"
       >
         Assinar um plano
       </button>
@@ -1085,11 +1085,11 @@ function AssinaturaAviso({ venceEm, suspensa, suspensaMotivo }: {
   // ---- Suspensão: aviso PROMINENTE e fixo (não pode passar despercebido) ----
   if (suspensa) {
     return (
-      <div className="mx-3 md:mx-6 mt-3 rounded-xl border-2 border-red-300 bg-red-50 px-4 py-3.5 flex items-start gap-3 shadow-sm">
-        <AlertCircle className="w-6 h-6 text-red-600 shrink-0 mt-0.5" />
+      <div className="mx-3 md:mx-6 mt-3 rounded-xl border-2 border-red-300 bg-red-500/10 px-4 py-3.5 flex items-start gap-3 shadow-sm">
+        <AlertCircle className="w-6 h-6 text-red-300 shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-sm md:text-base font-bold text-red-800">Seu painel está suspenso</p>
-          <p className="text-xs md:text-sm text-red-700 mt-1 leading-snug">
+          <p className="text-sm md:text-base font-bold text-red-300">Seu painel está suspenso</p>
+          <p className="text-xs md:text-sm text-red-300 mt-1 leading-snug">
             O atendimento automático no WhatsApp está <strong>desligado</strong>
             {suspensaMotivo ? <> — motivo: <strong>{suspensaMotivo}</strong></> : null}.
             {" "}Para reativar e obter mais informações, entre em contato com o administrador / suporte.
@@ -1105,10 +1105,10 @@ function AssinaturaAviso({ venceEm, suspensa, suspensaMotivo }: {
   // Só mostra se vencida (dias<0) ou bem perto (<=3 dias).
   if (dias > 3) return null;
 
-  let cls = "bg-amber-50 border-amber-200 text-amber-800";
+  let cls = "bg-amber-500/10 border-amber-500/25 text-amber-300";
   let msg = `Sua assinatura vence em ${dias} dia(s). Fique atento para não interromper o atendimento.`;
   if (dias < 0) {
-    cls = "bg-red-50 border-red-200 text-red-800";
+    cls = "bg-red-500/10 border-red-500/25 text-red-300";
     msg = `Sua assinatura está em atraso há ${Math.abs(dias)} dia(s). Regularize para evitar a suspensão do atendimento.`;
   }
 
@@ -1133,13 +1133,13 @@ function LoginScreen(props: {
   subtitulo?: string;
 }) {
   return (
-    <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
+    <div className="pzb-auth-screen min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
       {/* Elementos de background decorativos (Glows neons sutis) */}
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-orange-600/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
 
       {/* Card Principal Glassmorphic */}
-      <div className="relative bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-3xl shadow-2xl p-10 w-full max-w-md transition-all duration-300 hover:border-slate-700/60 mx-4">
+      <div className="relative bg-slate-900/40 backdrop-blur-xl border border-line/80 rounded-3xl shadow-2xl p-10 w-full max-w-md transition-all duration-300 hover:border-line/60 mx-4">
         
         {/* Cabeçalho */}
         <div className="flex flex-col items-center text-center mb-8">
@@ -1147,15 +1147,15 @@ function LoginScreen(props: {
             <Pizza className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">PizzaBot</h1>
-          <p className="text-sm text-slate-400 mt-1">{props.subtitulo || "Gerencie seus pedidos com inteligência"}</p>
+          <p className="text-sm text-ink-muted mt-1">{props.subtitulo || "Gerencie seus pedidos com inteligência"}</p>
         </div>
 
         {/* Formulário */}
         <form onSubmit={props.onSubmit} className="space-y-5">
           <div className="space-y-1.5">
-            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">E-mail</span>
+            <span className="text-xs text-ink-muted font-semibold tracking-wider uppercase">E-mail</span>
             <div className="relative group">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 group-focus-within:text-orange-500 transition-colors">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-ink-muted group-focus-within:text-orange-500 transition-colors">
                 <Mail className="w-4 h-4" />
               </span>
               <input
@@ -1163,16 +1163,16 @@ function LoginScreen(props: {
                 required
                 value={props.email}
                 onChange={(e) => props.setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all"
+                className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-line rounded-xl text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all"
                 placeholder="exemplo@pizzaria.com"
               />
             </div>
           </div>
 
           <div className="space-y-1.5">
-            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">Senha</span>
+            <span className="text-xs text-ink-muted font-semibold tracking-wider uppercase">Senha</span>
             <div className="relative group">
-              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500 group-focus-within:text-orange-500 transition-colors">
+              <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-ink-muted group-focus-within:text-orange-500 transition-colors">
                 <Lock className="w-4 h-4" />
               </span>
               <input
@@ -1180,7 +1180,7 @@ function LoginScreen(props: {
                 required
                 value={props.senha}
                 onChange={(e) => props.setSenha(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-600 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all"
+                className="w-full pl-10 pr-4 py-3 bg-slate-950/50 border border-line rounded-xl text-sm text-white placeholder-slate-600 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all"
                 placeholder="••••••••"
               />
             </div>
@@ -1206,7 +1206,7 @@ function LoginScreen(props: {
           </button>
         </form>
         {props.onSignup && (
-          <p className="mt-5 text-center text-xs text-slate-400">
+          <p className="mt-5 text-center text-xs text-ink-muted">
             Ainda não tem conta?{" "}
             <button
               type="button"
@@ -1221,7 +1221,7 @@ function LoginScreen(props: {
           <button
             type="button"
             onClick={props.onBack}
-            className="w-full mt-4 text-xs text-slate-500 hover:text-slate-300 font-medium transition-colors"
+            className="w-full mt-4 text-xs text-ink-muted hover:text-ink-muted font-medium transition-colors"
           >
             ← Voltar para a página inicial
           </button>
@@ -1265,39 +1265,39 @@ function SignupScreen({ onDone, onBackToLogin }: {
     }
   }
 
-  const inputCls = "w-full px-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all";
+  const inputCls = "w-full px-4 py-3 bg-slate-950/50 border border-line rounded-xl text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/50 outline-none transition-all";
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
+    <div className="pzb-auth-screen min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
       <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-orange-600/10 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-96 h-96 bg-amber-500/10 rounded-full blur-[100px] pointer-events-none" />
 
-      <div className="relative bg-slate-900/40 backdrop-blur-xl border border-slate-800/80 rounded-3xl shadow-2xl p-10 w-full max-w-md mx-4">
+      <div className="relative bg-slate-900/40 backdrop-blur-xl border border-line/80 rounded-3xl shadow-2xl p-10 w-full max-w-md mx-4">
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-orange-500 to-amber-400 flex items-center justify-center shadow-lg shadow-orange-500/25 mb-4">
             <Pizza className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">Teste grátis por 14 dias</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-ink-muted mt-1">
             Sua atendente de IA no WhatsApp em minutos. Sem cartão de crédito.
           </p>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
-            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">Nome da pizzaria</span>
+            <span className="text-xs text-ink-muted font-semibold tracking-wider uppercase">Nome da pizzaria</span>
             <input required minLength={2} maxLength={80} value={nomePizzaria}
               onChange={(e) => setNomePizzaria(e.target.value)}
               className={inputCls} placeholder="Pizzaria do João" />
           </div>
           <div className="space-y-1.5">
-            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">E-mail</span>
+            <span className="text-xs text-ink-muted font-semibold tracking-wider uppercase">E-mail</span>
             <input type="email" required value={email}
               onChange={(e) => setEmail(e.target.value)}
               className={inputCls} placeholder="voce@suapizzaria.com" />
           </div>
           <div className="space-y-1.5">
-            <span className="text-xs text-slate-300 font-semibold tracking-wider uppercase">Senha</span>
+            <span className="text-xs text-ink-muted font-semibold tracking-wider uppercase">Senha</span>
             <input type="password" required minLength={8} value={senha}
               onChange={(e) => setSenha(e.target.value)}
               className={inputCls} placeholder="Mínimo 8 caracteres" />
@@ -1316,7 +1316,7 @@ function SignupScreen({ onDone, onBackToLogin }: {
           </button>
         </form>
 
-        <p className="mt-5 text-center text-xs text-slate-400">
+        <p className="mt-5 text-center text-xs text-ink-muted">
           Já tem conta?{" "}
           <button type="button" onClick={onBackToLogin}
             className="text-orange-400 hover:text-orange-300 font-semibold transition-colors">
@@ -1367,21 +1367,21 @@ function OnboardingScreen({ userName, isPlatformAdmin, onLogout, onCreated }: {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+    <div className="pzb-auth-screen min-h-screen bg-surface flex flex-col">
+      <header className="bg-surface border-b border-line px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Pizza className="w-5 h-5 text-orange-500"/>
-          <span className="font-semibold text-sm text-slate-800">PizzaBot</span>
+          <span className="font-semibold text-sm text-ink">PizzaBot</span>
         </div>
-        <button onClick={onLogout} className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
+        <button onClick={onLogout} className="text-xs text-ink-muted hover:text-ink flex items-center gap-1">
           <LogOut className="w-3.5 h-3.5"/> Sair
         </button>
       </header>
 
       <main className="flex-1 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow p-8 max-w-md w-full">
-          <h2 className="text-lg font-bold text-slate-800 mb-1">Bem-vindo, {userName}!</h2>
-          <p className="text-sm text-slate-500 mb-5">
+        <div className="bg-surface rounded-2xl shadow p-8 max-w-md w-full">
+          <h2 className="text-lg font-bold text-ink mb-1">Bem-vindo, {userName}!</h2>
+          <p className="text-sm text-ink-muted mb-5">
             {isPlatformAdmin
               ? "Vamos criar sua primeira pizzaria."
               : "Você ainda não está vinculado a nenhuma pizzaria. Peça pro admin te adicionar como operador."}
@@ -1402,20 +1402,20 @@ function OnboardingScreen({ userName, isPlatformAdmin, onLogout, onCreated }: {
                 <input value={instancia} onChange={(e) => setInstancia(e.target.value)} className={inputCls} placeholder="pizzaria-do-ze"/>
               </Field>
               {err && (
-                <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 text-red-700 px-2.5 py-2 rounded text-xs">
+                <div className="flex items-center gap-1.5 bg-red-500/10 border border-red-500/25 text-red-300 px-2.5 py-2 rounded text-xs">
                   <AlertCircle className="w-3.5 h-3.5"/> {err}
                 </div>
               )}
               <button
                 type="submit" disabled={loading || !nome.trim()}
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white rounded-md py-2 font-medium text-sm disabled:opacity-60 flex items-center justify-center gap-1.5"
+                className="w-full bg-brand-700 hover:bg-brand-800 text-white rounded-md py-2 font-medium text-sm disabled:opacity-60 flex items-center justify-center gap-1.5"
               >
                 {loading && <Loader2 className="w-4 h-4 animate-spin"/>}
                 Criar pizzaria
               </button>
             </form>
           ) : (
-            <button onClick={onLogout} className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md py-2 font-medium text-sm">
+            <button onClick={onLogout} className="w-full bg-surface hover:bg-slate-200 text-ink rounded-md py-2 font-medium text-sm">
               Sair
             </button>
           )}
@@ -1425,12 +1425,12 @@ function OnboardingScreen({ userName, isPlatformAdmin, onLogout, onCreated }: {
   );
 }
 
-const inputCls = "w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:border-orange-400 outline-none";
+const inputCls = "w-full px-3 py-2 border border-line rounded-md text-sm focus:border-orange-400 outline-none";
 
 function Field({ label, children, required }: any) {
   return (
     <label className="block">
-      <span className="text-xs text-slate-600 font-medium">{label}{required && " *"}</span>
+      <span className="text-xs text-ink-muted font-medium">{label}{required && " *"}</span>
       <div className="mt-0.5">{children}</div>
     </label>
   );

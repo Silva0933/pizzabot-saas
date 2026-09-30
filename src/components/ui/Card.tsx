@@ -5,13 +5,13 @@ export type CardAccent =
   | "orange" | "emerald" | "violet" | "sky" | "amber" | "rose" | "slate";
 
 const ACCENT: Record<CardAccent, string> = {
-  orange:  "bg-brand-50 text-brand-600",
-  emerald: "bg-emerald-50 text-emerald-600",
-  violet:  "bg-violet-50 text-violet-600",
-  sky:     "bg-sky-50 text-sky-600",
-  amber:   "bg-amber-50 text-amber-600",
-  rose:    "bg-rose-50 text-rose-600",
-  slate:   "bg-slate-100 text-slate-600",
+  orange:  "text-brand-400",
+  emerald: "text-emerald-400",
+  violet:  "text-violet-300",
+  sky:     "text-sky-300",
+  amber:   "text-amber-300",
+  rose:    "text-rose-300",
+  slate:   "text-ink-muted",
 };
 
 interface CardProps {
@@ -29,9 +29,9 @@ export function Card({ children, className, interactive, padded = true }: CardPr
   return (
     <div
       className={cn(
-        "bg-surface border border-line rounded-2xl shadow-card",
+        "bg-surface border border-line rounded-xl",
         padded && "p-4",
-        interactive && "transition-all hover:shadow-card-hover hover:-translate-y-0.5",
+        interactive && "transition-colors hover:border-ink-subtle",
         className,
       )}
     >
@@ -54,13 +54,13 @@ export function CardHeader({ icon: Icon, accent = "orange", title, subtitle, act
   return (
     <div className={cn("flex items-center gap-3", className)}>
       {Icon && (
-        <span className={cn("w-9 h-9 rounded-xl grid place-items-center shrink-0", ACCENT[accent])}>
+        <span className={cn("w-6 h-6 grid place-items-center shrink-0", ACCENT[accent])}>
           <Icon className="w-5 h-5" />
         </span>
       )}
       <div className="min-w-0 flex-1">
-        <h3 className="text-sm font-bold text-ink truncate">{title}</h3>
-        {subtitle && <p className="text-xs text-ink-muted truncate">{subtitle}</p>}
+        <h3 className="text-sm font-bold text-ink">{title}</h3>
+        {subtitle && <p className="text-xs text-ink-muted">{subtitle}</p>}
       </div>
       {action}
     </div>

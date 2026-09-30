@@ -7,23 +7,23 @@ export type ButtonVariant =
 export type ButtonSize = "sm" | "md" | "lg";
 
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "text-white bg-orange-500 hover:bg-orange-600 active:bg-orange-700 shadow-sm",
-  solid:   "text-white bg-orange-500 hover:bg-orange-600 active:bg-orange-700",
+  primary: "text-white bg-brand-700 hover:bg-brand-800 active:bg-brand-900",
+  solid:   "text-white bg-brand-700 hover:bg-brand-800 active:bg-brand-900",
   soft:    "text-orange-400 bg-orange-500/15 border border-orange-500/25 hover:bg-orange-500/25",
-  success: "text-white bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700",
-  danger:  "text-white bg-rose-500 hover:bg-rose-600 active:bg-rose-700",
-  outline: "text-slate-200 bg-[#161f30] border border-[#1e293b] hover:bg-[#1e293b] hover:text-white",
-  ghost:   "text-slate-400 hover:bg-[#161f30] hover:text-white",
+  success: "text-white bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900",
+  danger:  "text-white bg-rose-700 hover:bg-rose-800 active:bg-rose-900",
+  outline: "text-ink bg-surface-muted border border-line hover:bg-surface hover:border-ink-subtle",
+  ghost:   "text-ink-muted hover:bg-surface-muted hover:text-ink",
 };
 
 const SIZE: Record<ButtonSize, string> = {
-  sm: "text-xs px-3 py-1.5 gap-1.5 rounded-lg",
-  md: "text-sm px-4 py-2 gap-2 rounded-xl",
-  lg: "text-sm px-5 py-2.5 gap-2 rounded-xl",
+  sm: "text-xs px-3 py-2 gap-1.5 rounded-lg min-h-9",
+  md: "text-sm px-4 py-2.5 gap-2 rounded-lg min-h-10",
+  lg: "text-sm px-5 py-3 gap-2 rounded-lg min-h-11",
 };
 
 const BASE =
-  "inline-flex items-center justify-center font-semibold transition-all cursor-pointer select-none " +
+  "inline-flex items-center justify-center font-semibold transition-colors cursor-pointer select-none " +
   "disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300";
 
 /** Classes do botão — reutilizável em <a> estilizados como botão. */

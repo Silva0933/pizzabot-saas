@@ -9,7 +9,7 @@
  */
 import React, { useMemo, useState } from "react";
 import {
-  Bike, Bot, ChevronRight, ClipboardList, Globe, HelpCircle, LifeBuoy, MessageSquare, Palette,
+  Bike, Bot, ChevronRight, ClipboardList, Globe, LifeBuoy, MessageSquare, Palette,
   ReceiptText, Rocket, Search, ShieldCheck, Smartphone, Store, TrendingUp, Users, UtensilsCrossed, X,
 } from "lucide-react";
 
@@ -275,34 +275,32 @@ export function AjudaView() {
   ];
 
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-4 pb-24 md:p-6 md:pb-8">
+    <div className="pzb-page mx-auto max-w-6xl space-y-6">
       {/* Cabeçalho com busca */}
-      <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-xl md:p-6">
+      <div className="pzb-section p-5 md:p-6">
         <div className="flex items-center gap-3.5">
-          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl border border-orange-500/20 bg-orange-500/10">
-            <HelpCircle className="h-6 w-6 text-orange-400" />
-          </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Central de Ajuda</h1>
-            <p className="mt-0.5 text-sm text-slate-400">Como usar cada parte do PizzaBot. Busque um assunto ou abra uma seção.</p>
+            <h2 className="text-base font-semibold text-ink">Central de Ajuda</h2>
+            <p className="mt-0.5 text-sm text-ink-muted">Como usar cada parte do PizzaBot. Busque um assunto ou abra uma seção.</p>
           </div>
         </div>
         <div className="relative mt-5">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500" />
+          <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ink-subtle" />
           <input
             id="busca-ajuda"
             type="text"
             role="searchbox"
+            aria-label="Buscar um assunto na ajuda"
             name="busca-ajuda"
             autoComplete="off"
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Ex.: código de entrega, valor por entrega, pix manual…"
-            className="h-12 w-full rounded-xl border border-[#1e293b] bg-[#161f30] pl-12 pr-11 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-orange-500/50"
+            className="h-12 w-full rounded-xl border border-line bg-surface-muted pl-12 pr-11 text-sm text-white outline-none transition placeholder:text-ink-subtle focus:border-orange-500/50"
           />
           {busca && (
             <button type="button" onClick={() => setBusca("")} aria-label="Limpar busca"
-              className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-slate-400 hover:bg-[#1e293b] hover:text-white">
+              className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-ink-muted hover:bg-surface-elevated hover:text-ink">
               <X className="h-4 w-4" />
             </button>
           )}
@@ -311,7 +309,7 @@ export function AjudaView() {
           <div className="mt-3 flex flex-wrap gap-2">
             {SUGESTOES.map((s) => (
               <button key={s} type="button" onClick={() => setBusca(s)}
-                className="rounded-full border border-[#1e293b] bg-[#161f30] px-3 py-1 text-xs font-semibold text-slate-300 hover:border-orange-500/40 hover:text-orange-300">
+                className="rounded-full border border-line bg-surface-muted px-3 py-1 text-xs font-semibold text-ink-muted hover:border-orange-500/40 hover:text-orange-300">
                 {s}
               </button>
             ))}
@@ -322,27 +320,27 @@ export function AjudaView() {
       {termos.length > 0 ? (
         /* Resultados da busca */
         <section className="space-y-3">
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-ink-muted">
             {resultados.length === 0
               ? `Nada encontrado para "${busca.trim()}".`
               : `${resultados.length} resultado${resultados.length === 1 ? "" : "s"} para "${busca.trim()}"`}
           </p>
           {resultados.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#1e293b] p-8 text-center">
-              <p className="text-sm text-slate-300">Tente outra palavra, como "entrega", "pagamento" ou "WhatsApp".</p>
+            <div className="rounded-xl border border-dashed border-line p-8 text-center">
+              <p className="text-sm text-ink-muted">Tente outra palavra, como "entrega", "pagamento" ou "WhatsApp".</p>
             </div>
           ) : (
             resultados.map(({ secao, topico }, i) => {
               const Icon = secao?.icon ?? LifeBuoy;
               return (
-                <article key={`${secao?.id ?? "duvida"}-${i}`} className="rounded-2xl border border-[#1e293b] bg-[#111622] p-4">
+                <article key={`${secao?.id ?? "duvida"}-${i}`} className="rounded-xl border border-line bg-surface p-4">
                   <div className="flex items-center gap-2 text-xs font-semibold text-orange-400">
                     <Icon className="h-3.5 w-3.5" />
                     {secao ? secao.titulo : "Dúvidas frequentes"}
-                    {secao?.onde && <span className="font-normal text-slate-500">· {secao.onde}</span>}
+                    {secao?.onde && <span className="font-normal text-ink-subtle">· {secao.onde}</span>}
                   </div>
                   <h3 className="mt-1.5 text-sm font-bold text-white"><Destaque texto={topico.titulo} termos={termos} /></h3>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-300"><Destaque texto={topico.descricao} termos={termos} /></p>
+                  <p className="mt-1 text-sm leading-relaxed text-ink-muted"><Destaque texto={topico.descricao} termos={termos} /></p>
                 </article>
               );
             })
@@ -351,14 +349,14 @@ export function AjudaView() {
       ) : (
         <>
           {/* Visão geral */}
-          <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5">
+          <div className="pzb-section p-5">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-orange-500/20 bg-orange-500/10">
+              <div className="shrink-0 text-brand-400">
                 <Rocket className="h-5 w-5 text-orange-400" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-white">Visão geral</h2>
-                <p className="text-sm text-slate-400">Do pedido no WhatsApp à entrega, em um painel só.</p>
+                <p className="text-sm text-ink-muted">Do pedido no WhatsApp à entrega, em um painel só.</p>
               </div>
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -367,9 +365,9 @@ export function AjudaView() {
                 { t: "A loja acompanha", d: "O pedido entra no quadro com alarme. A equipe prepara, aprova pagamentos e responde as dúvidas que a atendente não sabe." },
                 { t: "O entregador entrega", d: "Pelo app Android: rota, localização ao vivo, código de entrega e, se a loja quiser, os ganhos de cada entrega." },
               ].map((c) => (
-                <div key={c.t} className="rounded-xl border border-[#1e293b] bg-[#161f30]/60 p-4">
+                <div key={c.t} className="border-t border-line pt-4">
                   <h3 className="text-sm font-bold text-white">{c.t}</h3>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-400">{c.d}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-ink-muted">{c.d}</p>
                 </div>
               ))}
             </div>
@@ -378,24 +376,24 @@ export function AjudaView() {
           {/* Seções por grupo */}
           <div className="grid gap-5 lg:grid-cols-3">
             {grupos.map((g) => (
-              <div key={g.id} className="space-y-3 rounded-2xl border border-[#1e293b] bg-[#111622] p-5">
+              <div key={g.id} className="pzb-section p-5">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-wider text-orange-400">{g.titulo}</p>
-                  <p className="mt-0.5 text-sm text-slate-400">{g.resumo}</p>
+                  <h2 className="text-base font-semibold text-ink">{g.titulo}</h2>
+                  <p className="mt-0.5 text-sm text-ink-muted">{g.resumo}</p>
                 </div>
                 {SECOES.filter((s) => s.grupo === g.id).map((s) => {
                   const Icon = s.icon;
                   return (
                     <button key={s.id} type="button" onClick={() => setAberta(s)}
-                      className="group flex w-full items-center gap-3 rounded-xl border border-[#1e293b] bg-[#161f30]/60 p-3.5 text-left transition-all hover:border-slate-600 hover:bg-[#161f30]">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-orange-500/20 bg-orange-500/10">
+                      className="group flex w-full items-center gap-3 border-b border-line py-4 text-left transition-colors last:border-b-0 hover:bg-surface-muted">
+                      <div className="shrink-0 text-brand-400">
                         <Icon className="h-4.5 w-4.5 text-orange-400" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-bold text-white transition-colors group-hover:text-orange-400">{s.titulo}</p>
-                        <p className="mt-0.5 text-xs text-slate-400">{s.resumo}</p>
+                        <p className="mt-0.5 text-xs text-ink-muted">{s.resumo}</p>
                       </div>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 group-hover:text-white" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-ink-subtle group-hover:text-ink" />
                     </button>
                   );
                 })}
@@ -404,27 +402,27 @@ export function AjudaView() {
           </div>
 
           {/* Dúvidas frequentes */}
-          <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5">
+          <div className="pzb-section p-5">
             <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-orange-500/20 bg-orange-500/10">
+              <div className="shrink-0 text-brand-400">
                 <LifeBuoy className="h-5 w-5 text-orange-400" />
               </div>
               <h2 className="text-base font-bold text-white">Dúvidas frequentes</h2>
             </div>
-            <div className="mt-4 divide-y divide-[#1e293b]">
+            <div className="mt-4 divide-y divide-line">
               {DUVIDAS.map((d) => (
                 <details key={d.titulo} className="group py-3">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-white">
                     {d.titulo}
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 transition-transform group-open:rotate-90" />
+                    <ChevronRight className="h-4 w-4 shrink-0 text-ink-subtle transition-transform group-open:rotate-90" />
                   </summary>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-300">{d.descricao}</p>
+                  <p className="mt-2 text-sm leading-relaxed text-ink-muted">{d.descricao}</p>
                 </details>
               ))}
             </div>
           </div>
 
-          <p className="flex items-center justify-center gap-2 pt-1 text-center text-xs text-slate-500">
+          <p className="flex items-center justify-center gap-2 pt-1 text-center text-xs text-ink-subtle">
             <Smartphone className="h-3.5 w-3.5" />
             Ainda com dúvida? Fale com o suporte da plataforma.
           </p>
@@ -433,36 +431,36 @@ export function AjudaView() {
 
       {/* Detalhe da seção */}
       {aberta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" onClick={() => setAberta(null)}>
-          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#1e293b] bg-[#111622] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-[#1e293b] pb-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setAberta(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="ajuda-secao-title" className="w-full max-w-lg overflow-hidden rounded-xl border border-line bg-surface p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-line pb-4">
               <div className="flex items-center gap-3">
                 <div className="grid h-10 w-10 place-items-center rounded-xl border border-orange-500/20 bg-orange-500/10">
                   <aberta.icon className="h-5 w-5 text-orange-400" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">{aberta.titulo}</h3>
-                  <p className="mt-0.5 text-xs text-slate-400">{aberta.onde ? `${aberta.onde} · ` : ""}{aberta.resumo}</p>
+                  <h3 id="ajuda-secao-title" className="text-base font-semibold text-ink">{aberta.titulo}</h3>
+                  <p className="mt-0.5 text-xs text-ink-muted">{aberta.onde ? `${aberta.onde} · ` : ""}{aberta.resumo}</p>
                 </div>
               </div>
               <button type="button" onClick={() => setAberta(null)} aria-label="Fechar"
-                className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-[#161f30] hover:text-white">
+                className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-muted hover:text-ink">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="mt-5 max-h-[60vh] space-y-3 overflow-y-auto pr-1">
               {aberta.topicos.map((t) => (
-                <div key={t.titulo} className="space-y-1 rounded-xl border border-[#1e293b] bg-[#161f30]/60 p-4">
+                <div key={t.titulo} className="space-y-1 border-b border-line pb-4 last:border-b-0">
                   <h4 className="flex items-center gap-2 text-sm font-bold text-white">
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" />{t.titulo}
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-brand-700" />{t.titulo}
                   </h4>
-                  <p className="pl-4 text-sm leading-relaxed text-slate-300">{t.descricao}</p>
+                  <p className="pl-4 text-sm leading-relaxed text-ink-muted">{t.descricao}</p>
                 </div>
               ))}
             </div>
-            <div className="mt-6 flex justify-end border-t border-[#1e293b] pt-4">
+            <div className="mt-6 flex justify-end border-t border-line pt-4">
               <button type="button" onClick={() => setAberta(null)}
-                className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-orange-600">
+                className="rounded-xl bg-brand-700 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-brand-800">
                 Entendi
               </button>
             </div>

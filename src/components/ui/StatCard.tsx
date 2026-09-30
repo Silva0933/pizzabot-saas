@@ -4,13 +4,13 @@ import { cn } from "../../lib/cn";
 import type { CardAccent } from "./Card";
 
 const ACCENT: Record<CardAccent, string> = {
-  orange:  "bg-orange-500/15 text-orange-400 border border-orange-500/20",
-  emerald: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
-  violet:  "bg-purple-500/15 text-purple-400 border border-purple-500/20",
-  sky:     "bg-sky-500/15 text-sky-400 border border-sky-500/20",
-  amber:   "bg-amber-500/15 text-amber-400 border border-amber-500/20",
-  rose:    "bg-rose-500/15 text-rose-400 border border-rose-500/20",
-  slate:   "bg-slate-500/15 text-slate-400 border border-slate-500/20",
+  orange:  "text-orange-400",
+  emerald: "text-emerald-400",
+  violet:  "text-purple-400",
+  sky:     "text-sky-400",
+  amber:   "text-amber-400",
+  rose:    "text-rose-400",
+  slate:   "text-slate-400",
 };
 
 interface StatCardProps {
@@ -45,21 +45,21 @@ export function StatCard({
       onClick={onClick}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
-      onKeyDown={clickable ? (e) => (e.key === "Enter" || e.key === " ") && onClick!() : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick!(); } } : undefined}
       className={cn(
-        "bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm flex items-center justify-between gap-3 transition-all",
-        clickable && "cursor-pointer hover:border-slate-700 hover:-translate-y-0.5",
+        "bg-surface border border-line rounded-xl p-4 flex items-center justify-between gap-3 transition-all",
+        clickable && "cursor-pointer hover:border-ink-subtle",
         className,
       )}
     >
-      <div className="flex items-center gap-3.5 min-w-0">
-        <span className={cn("w-11 h-11 rounded-xl grid place-items-center shrink-0", ACCENT[accent])}>
+      <div className="flex items-center gap-3 min-w-0">
+        <span className={cn("w-6 h-6 grid place-items-center shrink-0", ACCENT[accent])}>
           <Icon className="w-5 h-5" />
         </span>
         <div className="min-w-0">
-          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">{label}</p>
-          <p className="text-xl font-black text-white leading-tight truncate mt-0.5">{value}</p>
-          {hint && <p className="text-[11px] text-slate-400 truncate mt-0.5">{hint}</p>}
+          <p className="text-xs font-medium text-ink-muted">{label}</p>
+          <p className="text-xl font-semibold text-ink leading-tight tabular-nums mt-1">{value}</p>
+          {hint && <p className="text-xs text-ink-muted mt-0.5">{hint}</p>}
         </div>
       </div>
       {trend ? (
@@ -69,8 +69,8 @@ export function StatCard({
         )}>
           {trend}
         </span>
-      ) : showChevron ? (
-        <ChevronRight className="w-4 h-4 text-slate-600 shrink-0" />
+      ) : showChevron && clickable ? (
+        <ChevronRight className="w-4 h-4 text-ink-subtle shrink-0" />
       ) : null}
     </div>
   );

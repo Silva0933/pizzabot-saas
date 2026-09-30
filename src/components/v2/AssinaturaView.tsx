@@ -13,7 +13,7 @@ const STATUS_FATURA: Record<string, { label: string; cls: string }> = {
   paga: { label: "Paga", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
   pendente: { label: "Em aberto", cls: "border-amber-500/30 bg-amber-500/10 text-amber-400" },
   vencida: { label: "Vencida", cls: "border-rose-500/30 bg-rose-500/10 text-rose-400" },
-  cancelada: { label: "Cancelada", cls: "border-[#1e293b] bg-[#161f30] text-slate-500" },
+  cancelada: { label: "Cancelada", cls: "border-line bg-surface-muted text-ink-subtle" },
 };
 
 export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
@@ -124,7 +124,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
   }
   if (err || !info) {
     return (
-      <div className="m-6 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-300">
+      <div className="m-6 rounded-xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-300">
         {err || "Assinatura indisponível."}
       </div>
     );
@@ -150,13 +150,12 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
       : "Sem assinatura";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 pb-20 md:p-5 md:pb-6">
+    <div className="pzb-page mx-auto max-w-6xl space-y-6">
       {/* Hero Banner Header */}
-      <section className="relative overflow-hidden rounded-2xl border border-[#1e293b] bg-gradient-to-r from-[#141b2a] via-[#111622] to-[#0f1420] p-4 md:p-5 shadow-sm">
-        <div className="absolute top-0 right-0 w-80 h-80 bg-orange-500/5 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
+      <section className="pzb-page-header">
+        <div className="grid w-full gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
           <div>
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-[#1e293b] bg-[#161f30] px-2.5 py-0.5 text-[10px] font-bold text-slate-300">
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface-muted px-2.5 py-0.5 text-xs font-bold text-ink-muted">
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
                   info.status === "vencida" || info.status === "suspensa"
@@ -168,28 +167,25 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
               />
               {statusLabel}
             </div>
-            <p className="mt-2.5 text-[10px] font-bold uppercase tracking-wider text-orange-400">
-              Sua assinatura
-            </p>
-            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-              <h1 className="text-xl font-bold tracking-tight text-white">
+            <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+              <h2 className="text-base font-semibold text-ink">
                 Plano {info.plano_info.nome}
-              </h1>
+              </h2>
               {info.plano !== "trial" && (
-                <p className="text-xs font-semibold text-slate-400">
+                <p className="text-xs font-semibold text-ink-muted">
                   {brl(info.plano_info.preco_mensal)} por mês
                 </p>
               )}
             </div>
-            <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-slate-400">
+            <p className="pzb-page-description max-w-xl">
               Atendimento, cardápio e equipe protegidos por uma cobrança recorrente processada pelo Asaas.
             </p>
           </div>
 
-          <div className="rounded-xl border border-[#1e293b] bg-[#161f30]/60 p-3.5 backdrop-blur-sm">
+          <div className="border-t border-line pt-4 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+                <p className="text-xs font-bold text-ink-subtle">
                   Renovação
                 </p>
                 <p
@@ -212,8 +208,8 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                 className={`w-4 h-4 ${info.tem_assinatura ? "text-emerald-400" : "text-emerald-400"}`}
               />
             </div>
-            <div className="mt-2.5 border-t border-[#1e293b] pt-2">
-              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+            <div className="mt-2.5 border-t border-line pt-2">
+              <p className="text-xs font-bold text-ink-subtle">
                 {info.tem_assinatura ? "Próxima renovação" : "Acesso disponível até"}
               </p>
               <p className="mt-0.5 text-sm font-bold text-white">
@@ -247,14 +243,14 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
       )}
 
       {/* Monthly Usage Bar (Posicionado acima dos StatCards exatamente como na imagem) */}
-      <section className="rounded-xl border border-[#1e293b] bg-[#111622] px-4 py-3 shadow-xs">
+      <section className="pzb-section px-4 py-4">
         <div className="flex items-center justify-between gap-3 text-xs">
-          <span className="font-bold text-slate-200">Uso do plano neste mês</span>
+          <span className="font-bold text-ink">Uso do plano neste mês</span>
           <strong className={`font-bold text-xs ${percentual >= 80 ? "text-amber-400" : "text-emerald-400"}`}>
             {Math.round(percentual)}%
           </strong>
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#161f30]">
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-muted">
           <span
             className={`block h-full rounded-full transition-all duration-500 ${
               percentual >= 80 ? "bg-amber-400" : "bg-emerald-400"
@@ -265,7 +261,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
       </section>
 
       {/* 4 Stat Cards (Design compacto e horizontal 1:1) */}
-      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <section className="pzb-section grid grid-cols-2 xl:grid-cols-4 overflow-hidden">
         <Metric
           icon={Headphones}
           label="Atendimentos usados"
@@ -295,22 +291,20 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
       {/* 2-Column: Ciclo da Assinatura + Situação Financeira */}
       <section className="grid gap-4 lg:grid-cols-12 items-start">
         {/* Como funciona */}
-        <div className="lg:col-span-8 rounded-2xl border border-[#1e293b] bg-[#111622] p-4 md:p-5 shadow-xs">
+        <div className="pzb-section lg:col-span-8 p-4 md:p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-wider text-orange-400">
-                Como funciona
-              </p>
               <h2 className="mt-0.5 text-sm md:text-base font-bold text-white">Ciclo da sua assinatura</h2>
-              <p className="mt-0.5 text-xs text-slate-400">
-                Você acompanha tudo aqui; o Asaas processa e confirma o pagamento.
+              <p className="mt-0.5 text-xs text-ink-muted">
+                Veja como funciona o ciclo; o Asaas processa e confirma o pagamento.
               </p>
             </div>
             <button
               type="button"
               onClick={() => load(true)}
+              aria-label="Atualizar informações da assinatura"
               disabled={refreshing}
-              className="rounded-lg border border-[#1e293b] bg-[#161f30] p-1.5 text-slate-400 hover:bg-[#1e293b] hover:text-white transition-colors"
+              className="rounded-lg border border-line bg-surface-muted p-1.5 text-ink-muted hover:bg-surface-elevated hover:text-ink transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-orange-400" : ""}`} />
             </button>
@@ -334,7 +328,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
             />
           </div>
 
-          <div className="mt-3.5 grid gap-2.5 border-t border-[#1e293b] pt-3 sm:grid-cols-2">
+          <div className="mt-3.5 grid gap-2.5 border-t border-line pt-3 sm:grid-cols-2">
             <InfoRow
               icon={Mail}
               label="E-mail de cobrança"
@@ -353,7 +347,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
               onClick={() =>
                 document.getElementById("planos-assinatura")?.scrollIntoView({ behavior: "smooth" })
               }
-              className="inline-flex items-center gap-1.5 rounded-xl bg-orange-500 px-3.5 py-2 text-xs font-bold text-white hover:bg-orange-600 transition-all shadow-md shadow-orange-500/20"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors"
             >
               {info.tem_assinatura
                 ? "Trocar de plano"
@@ -377,15 +371,15 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
 
         {/* Situação financeira */}
         <div
-          className={`lg:col-span-4 rounded-2xl border p-4 md:p-5 shadow-xs ${
+          className={`lg:col-span-4 rounded-xl border p-4 md:p-5  ${
             info.fatura_aberta
-              ? "border-amber-500/30 bg-[#15171e]"
-              : "border-[#1e293b] bg-[#111622]"
+              ? "border-amber-500/30 bg-surface"
+              : "border-line bg-surface"
           }`}
         >
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">
+              <p className="text-xs font-bold text-ink-subtle">
                 {info.fatura_aberta ? "Ação necessária" : "Situação financeira"}
               </p>
               <h2 className="mt-0.5 text-sm md:text-base font-bold text-white">
@@ -407,8 +401,8 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
 
           {proxima ? (
             <div className="mt-3.5">
-              <p className="text-xl font-black text-white">{brl(proxima.valor)}</p>
-              <p className="mt-0.5 text-xs text-slate-400">
+              <p className="text-xl font-bold text-white">{brl(proxima.valor)}</p>
+              <p className="mt-0.5 text-xs text-ink-muted">
                 Vencimento em {fmtData(proxima.vencimento)}
               </p>
               <button
@@ -416,8 +410,8 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                 onClick={() => setCheckoutFatura({ id: proxima.id, valor: proxima.valor })}
                 className={`mt-3.5 flex w-full items-center justify-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all ${
                   info.fatura_aberta
-                    ? "bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-md shadow-amber-500/20"
-                    : "border border-[#1e293b] bg-[#161f30] text-white hover:bg-[#1e293b]"
+                    ? "bg-amber-500 hover:bg-amber-600 text-amber-950"
+                    : "border border-line bg-surface-muted text-white hover:bg-surface-elevated"
                 }`}
               >
                 <QrCode className="w-3.5 h-3.5" />
@@ -430,12 +424,12 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                 Tudo certo.
               </div>
-              <p className="text-[11px] leading-relaxed text-slate-400">
+              <p className="text-xs leading-relaxed text-ink-muted">
                 Não há cobrança aguardando pagamento neste momento.
               </p>
             </div>
           )}
-          <p className="mt-3 text-[10px] leading-relaxed text-slate-500">
+          <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
             Pagamento processado em ambiente seguro pelo Asaas. A confirmação pode levar alguns instantes.
           </p>
         </div>
@@ -444,12 +438,9 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
       {/* Planos Disponíveis */}
       <section
         id="planos-assinatura"
-        className="scroll-mt-24 rounded-2xl border border-[#1e293b] bg-[#111622] p-4 md:p-5 shadow-xs"
+        className="pzb-section scroll-mt-[calc(var(--pzb-topbar-height)+1rem)] p-4 md:p-5"
       >
         <div>
-          <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400">
-            Planos disponíveis
-          </p>
           <h2 className="mt-0.5 text-sm md:text-base font-bold text-white">
             {info.tem_assinatura
               ? "Mude conforme sua operação crescer"
@@ -457,8 +448,8 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
               ? "Reative a renovação automática"
               : "Escolha o melhor começo"}
           </h2>
-          <p className="mt-0.5 text-xs text-slate-400">
-            Compare preço e capacidade antes de confirmar.
+          <p className="mt-0.5 text-xs text-ink-muted">
+            Compare os planos disponíveis, preços e capacidade antes de confirmar.
           </p>
         </div>
 
@@ -483,14 +474,14 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                     className={`relative rounded-xl border p-3.5 text-left transition-all ${
                       escolhido
                         ? "border-orange-500 bg-orange-500/10 ring-1 ring-orange-500/40"
-                        : "border-[#1e293b] bg-[#161f30] hover:border-slate-600 hover:bg-[#1a253a]"
-                    } disabled:cursor-default disabled:hover:border-[#1e293b]`}
+                        : "border-line bg-surface-muted hover:border-line hover:bg-surface-elevated"
+                    } disabled:cursor-default disabled:hover:border-line`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <p className="font-bold text-white text-sm">{plano.nome}</p>
                       {atual && (
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                          className={`rounded-full px-2 py-0.5 text-xs font-bold  ${
                             info.tem_assinatura
                               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                               : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
@@ -500,11 +491,11 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-lg md:text-xl font-black text-white">
+                    <p className="mt-1 text-base font-semibold text-ink">
                       {brl(plano.preco_mensal)}
-                      <span className="text-[11px] font-normal text-slate-400">/mês</span>
+                      <span className="text-xs font-normal text-ink-muted">/mês</span>
                     </p>
-                    <ul className="mt-2.5 space-y-1.5 text-[11px] text-slate-300 border-t border-[#1e293b] pt-2">
+                    <ul className="mt-2.5 space-y-1.5 text-xs text-ink-muted border-t border-line pt-2">
                       <li className="flex items-center gap-1.5">
                         <Check className="w-3 h-3 text-emerald-400 shrink-0" />
                         <span>{plano.limites.conversas_mes} atendimentos/mês</span>
@@ -528,22 +519,22 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
                   <div className="grid flex-1 gap-2.5 md:grid-cols-2">
                     <label className="block">
-                      <span className="text-xs font-bold text-slate-300">E-mail de cobrança</span>
+                      <span className="text-xs font-bold text-ink-muted">E-mail de cobrança</span>
                       <input
                         type="email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="financeiro@suaempresa.com"
-                        className="mt-1 w-full rounded-xl border border-[#1e293b] bg-[#161f30] px-3 py-2 text-xs text-white outline-none placeholder:text-slate-500 focus:border-orange-500 transition-colors"
+                        className="mt-1 w-full rounded-xl border border-line bg-surface-muted px-3 py-2 text-xs text-white outline-none placeholder:text-ink-subtle focus:border-orange-500 transition-colors"
                       />
                     </label>
                     <label className="block">
-                      <span className="text-xs font-bold text-slate-300">CPF ou CNPJ</span>
+                      <span className="text-xs font-bold text-ink-muted">CPF ou CNPJ</span>
                       <input
                         value={cpfCnpj}
                         onChange={(e) => setCpfCnpj(e.target.value)}
                         placeholder="00.000.000/0000-00"
-                        className="mt-1 w-full rounded-xl border border-[#1e293b] bg-[#161f30] px-3 py-2 text-xs text-white outline-none placeholder:text-slate-500 focus:border-orange-500 transition-colors"
+                        className="mt-1 w-full rounded-xl border border-line bg-surface-muted px-3 py-2 text-xs text-white outline-none placeholder:text-ink-subtle focus:border-orange-500 transition-colors"
                       />
                     </label>
                   </div>
@@ -553,7 +544,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                     disabled={
                       contratando || !email.trim() || ![11, 14].includes(cpfCnpj.replace(/\D/g, "").length)
                     }
-                    className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2 text-xs font-bold text-white hover:bg-orange-600 transition-all shadow-md shadow-orange-500/20 disabled:opacity-40 shrink-0"
+                    className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 transition-colors disabled:opacity-40 shrink-0"
                   >
                     {contratando ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -568,7 +559,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                     {selecionado.nome}
                   </button>
                 </div>
-                <p className="mt-2.5 text-[10px] leading-relaxed text-slate-400">
+                <p className="mt-2.5 text-xs leading-relaxed text-ink-muted">
                   {info.tem_assinatura
                     ? "Ao trocar, a recorrência anterior é encerrada e uma nova assinatura é criada no Asaas. Se o plano for diferente, a primeira cobrança é emitida agora."
                     : renovacaoCancelada && selecionado.id === info.plano
@@ -582,45 +573,45 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
       </section>
 
       {/* Histórico de faturas */}
-      <section id="faturas" className="rounded-2xl border border-[#1e293b] bg-[#111622] p-4 md:p-5 shadow-xs">
+      <section id="faturas" className="pzb-section p-4 md:p-5">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-[9px] font-bold uppercase tracking-wider text-violet-400">
+            <p className="text-sm text-ink-muted">
               Financeiro
             </p>
             <h2 className="mt-0.5 text-sm md:text-base font-bold text-white">Histórico de faturas</h2>
           </div>
-          <span className="text-[11px] text-slate-500">
+          <span className="text-xs text-ink-subtle">
             {info.faturas.length} registro{info.faturas.length === 1 ? "" : "s"}
           </span>
         </div>
         {info.faturas.length === 0 ? (
-          <div className="py-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-1.5">
-            <CreditCard className="w-6 h-6 text-slate-600 stroke-[1.5]" />
+          <div className="py-8 text-center text-xs text-ink-subtle flex flex-col items-center justify-center gap-1.5">
+            <CreditCard className="w-6 h-6 text-ink-subtle stroke-[1.5]" />
             <span>As cobranças aparecerão aqui após a contratação.</span>
           </div>
         ) : (
-          <div className="mt-3 divide-y divide-[#1e293b]">
+          <div className="mt-3 divide-y divide-line">
             {info.faturas.map((fatura: FaturaInfo) => {
               const status = STATUS_FATURA[fatura.status] || STATUS_FATURA.pendente;
               const podePagar = fatura.status === "pendente" || fatura.status === "vencida";
               return (
                 <div
                   key={fatura.id}
-                  className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center transition-colors hover:bg-[#161f30]/30 px-2 rounded-xl"
+                  className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center transition-colors hover:bg-surface-muted/30 px-2 rounded-xl"
                 >
-                  <span className="grid w-8 h-8 shrink-0 place-items-center rounded-lg bg-[#161f30] border border-[#1e293b] text-slate-400">
+                  <span className="grid w-8 h-8 shrink-0 place-items-center rounded-lg bg-surface-muted border border-line text-ink-muted">
                     <CreditCard className="w-3.5 h-3.5" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="font-bold text-white text-xs">{brl(fatura.valor)}</p>
-                    <p className="text-[10px] text-slate-500">
+                    <p className="text-xs text-ink-subtle">
                       Vencimento {fmtData(fatura.vencimento)}
                       {fatura.pago_em ? ` • pago em ${fmtData(fatura.pago_em)}` : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${status.cls}`}>
+                    <span className={`rounded-full border px-2 py-0.5 text-xs font-bold ${status.cls}`}>
                       {status.label}
                     </span>
                     {podePagar && (
@@ -629,7 +620,7 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                         onClick={() =>
                           setCheckoutFatura({ id: fatura.id, valor: fatura.valor })
                         }
-                        className="inline-flex items-center gap-1 rounded-lg bg-orange-500 px-2.5 py-1 text-xs font-bold text-white hover:bg-orange-600 transition-colors shadow-xs"
+                        className="inline-flex items-center gap-1 rounded-lg bg-brand-700 px-2.5 py-1 text-xs font-bold text-white hover:bg-brand-800 transition-colors"
                       >
                         <QrCode className="w-3 h-3" />
                         Pagar
@@ -641,7 +632,8 @@ export function AssinaturaView({ pizzariaId }: { pizzariaId: string }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         title="Abrir no Asaas"
-                        className="rounded-lg border border-[#1e293b] bg-[#161f30] p-1.5 text-slate-400 hover:text-white transition-colors"
+                        aria-label="Abrir fatura no Asaas"
+                        className="rounded-lg border border-line bg-surface-muted p-1.5 text-ink-muted hover:text-ink transition-colors"
                       >
                         <ExternalLink className="w-3 h-3" />
                       </a>
@@ -733,13 +725,13 @@ function SubscriptionNotice({
       <Icon className="w-4 h-4 shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-bold leading-tight">{config.title}</p>
-        <p className="mt-0.5 text-[11px] opacity-80 leading-tight">{config.text}</p>
+        <p className="mt-0.5 text-xs opacity-80 leading-tight">{config.text}</p>
       </div>
       {info.fatura_aberta && (
         <button
           type="button"
           onClick={onPay}
-          className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-orange-600 transition-colors shadow-xs shrink-0"
+          className="rounded-lg bg-brand-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-brand-800 transition-colors shrink-0"
         >
           Pagar agora
         </button>
@@ -760,14 +752,14 @@ function Metric({
   detail: string;
 }) {
   return (
-    <div className="rounded-xl border border-[#1e293b] bg-[#111622] p-3 md:p-3.5 flex items-center gap-3 shadow-xs">
-      <span className="grid w-9 h-9 shrink-0 place-items-center rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+    <div className="p-4 flex items-start gap-3">
+      <span className="grid w-9 h-9 shrink-0 place-items-center rounded-lg bg-brand-500/10 text-brand-400">
         <Icon className="w-4 h-4" />
       </span>
       <div className="min-w-0">
-        <p className="text-base md:text-lg font-black text-white leading-tight">{value}</p>
-        <p className="text-xs font-semibold text-slate-300 truncate mt-0.5">{label}</p>
-        <p className="text-[10px] text-slate-500 truncate">{detail}</p>
+        <p className="text-xs text-ink-muted">{label}</p>
+        <p className="mt-1 text-base font-semibold text-ink tabular-nums leading-tight">{value}</p>
+        <p className="text-xs text-ink-subtle truncate">{detail}</p>
       </div>
     </div>
   );
@@ -775,21 +767,21 @@ function Metric({
 
 function Step({ number, title, text }: { number: string; title: string; text: string }) {
   return (
-    <div className="rounded-xl border border-[#1e293b] bg-[#161f30] p-3">
-      <span className="text-[10px] font-black text-orange-400 tracking-wider">{number}</span>
+    <div className="border-t border-line pt-3">
+      <span className="text-xs font-bold text-orange-400 tracking-wider">{number}</span>
       <p className="mt-1 text-xs font-bold text-white">{title}</p>
-      <p className="mt-0.5 text-[10px] leading-relaxed text-slate-400">{text}</p>
+      <p className="mt-0.5 text-xs leading-relaxed text-ink-muted">{text}</p>
     </div>
   );
 }
 
 function InfoRow({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-[#1e293b] bg-[#161f30] p-2.5">
-      <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+    <div className="flex items-center gap-2.5 border-b border-line py-3 last:border-b-0">
+      <Icon className="w-3.5 h-3.5 text-ink-muted shrink-0" />
       <div className="min-w-0">
-        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{label}</p>
-        <p className="truncate text-xs font-semibold text-slate-200">{value}</p>
+        <p className="text-xs font-bold text-ink-subtle">{label}</p>
+        <p className="truncate text-xs font-semibold text-ink">{value}</p>
       </div>
     </div>
   );
@@ -808,18 +800,21 @@ function CancelModal({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assinatura-cancelar-title"
+        className="w-full max-w-md rounded-xl border border-line bg-surface p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <span className="grid w-11 h-11 place-items-center rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
           <CircleOff className="w-5 h-5" />
         </span>
-        <h2 className="mt-4 text-base font-black text-white">Cancelar renovação automática?</h2>
-        <p className="mt-2 text-xs leading-relaxed text-slate-400">
+        <h2 id="assinatura-cancelar-title" className="mt-4 text-base font-semibold text-ink">Cancelar renovação automática?</h2>
+        <p className="mt-2 text-xs leading-relaxed text-ink-muted">
           O Asaas deixará de gerar novas cobranças e removerá as faturas pendentes desta recorrência.
           Pagamentos já realizados continuam no histórico.
         </p>
@@ -832,7 +827,7 @@ function CancelModal({
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-400 hover:bg-[#161f30] hover:text-white transition-colors"
+            className="rounded-xl px-4 py-2.5 text-xs font-bold text-ink-muted hover:bg-surface-muted hover:text-ink transition-colors"
           >
             Voltar
           </button>
@@ -909,26 +904,30 @@ function PixCheckoutModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
       onClick={onClose}
     >
       <div
-        className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assinatura-pagamento-title"
+        className="bg-surface border border-line rounded-xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="border-b border-[#1e293b] bg-[#161f30] px-5 py-4 flex items-center gap-2.5 rounded-t-2xl">
+        <div className="border-b border-line bg-surface-muted px-5 py-4 flex items-center gap-2.5 rounded-t-xl">
           <span className="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-500/30 grid place-items-center">
             <Pizza className="w-4 h-4 text-orange-400" />
           </span>
           <div>
             <p className="font-bold text-white text-sm leading-tight">PizzaBot</p>
-            <p className="text-[11px] text-slate-400 leading-tight">Pagamento da assinatura</p>
+            <p id="assinatura-pagamento-title" className="text-xs text-ink-muted leading-tight">Pagamento da assinatura</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto text-slate-400 hover:text-white p-1 rounded-lg hover:bg-[#1e293b] transition-colors"
+            aria-label="Fechar pagamento da assinatura"
+            className="ml-auto text-ink-muted hover:text-ink p-1 rounded-lg hover:bg-surface-elevated transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -941,7 +940,7 @@ function PixCheckoutModal({
                 <CheckCircle2 className="w-8 h-8 text-emerald-400" />
               </div>
               <p className="font-bold text-white text-base">Pagamento confirmado!</p>
-              <p className="text-xs text-slate-400 mt-1">Seu plano já está ativo. 🎉</p>
+              <p className="text-xs text-ink-muted mt-1">Seu plano já está ativo. 🎉</p>
               <button
                 type="button"
                 onClick={onClose}
@@ -957,8 +956,8 @@ function PixCheckoutModal({
           ) : pix?.ok ? (
             <>
               <div className="text-center">
-                <p className="text-xs text-slate-400">Valor</p>
-                <p className="text-2xl font-black text-white">{brl(pix.valor ?? fatura.valor)}</p>
+                <p className="text-xs text-ink-muted">Valor</p>
+                <p className="text-base font-semibold text-ink">{brl(pix.valor ?? fatura.valor)}</p>
                 <p className="text-xs font-semibold text-emerald-400 mt-0.5">Pague com Pix instantâneo</p>
               </div>
 
@@ -975,9 +974,9 @@ function PixCheckoutModal({
               )}
 
               <div>
-                <p className="text-xs font-semibold text-slate-300 mb-1.5">Pix copia e cola</p>
+                <p className="text-xs font-semibold text-ink-muted mb-1.5">Pix copia e cola</p>
                 <div className="flex items-stretch gap-2">
-                  <code className="flex-1 min-w-0 truncate bg-[#161f30] border border-[#1e293b] rounded-xl px-3 py-2 text-xs text-slate-300">
+                  <code className="flex-1 min-w-0 truncate bg-surface-muted border border-line rounded-xl px-3 py-2 text-xs text-ink-muted">
                     {pix.copia_cola}
                   </code>
                   <button
@@ -986,7 +985,7 @@ function PixCheckoutModal({
                     className={`shrink-0 inline-flex items-center gap-1.5 text-xs font-bold px-3.5 rounded-xl transition-colors ${
                       copied
                         ? "bg-emerald-500 text-white"
-                        : "bg-orange-500 hover:bg-orange-600 text-white shadow-sm"
+                        : "bg-brand-700 hover:bg-brand-800 text-white "
                     }`}
                   >
                     {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -995,7 +994,7 @@ function PixCheckoutModal({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2.5 text-xs text-slate-400 bg-[#161f30] border border-[#1e293b] rounded-xl px-3 py-2.5">
+              <div className="flex items-center gap-2.5 text-xs text-ink-muted bg-surface-muted border border-line rounded-xl px-3 py-2.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500 shrink-0" />
                 Aguardando o pagamento — o plano ativa automaticamente assim que cair.
               </div>
@@ -1006,7 +1005,7 @@ function PixCheckoutModal({
                     href={pix.link_pagamento}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-slate-400 hover:text-orange-400 inline-flex items-center gap-1 transition-colors"
+                    className="text-xs text-ink-muted hover:text-orange-400 inline-flex items-center gap-1 transition-colors"
                   >
                     Prefere boleto ou cartão? <ExternalLink className="w-3 h-3" />
                   </a>
@@ -1015,7 +1014,7 @@ function PixCheckoutModal({
             </>
           ) : (
             <div className="text-center py-6 space-y-3">
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-ink-muted">
                 Não foi possível gerar o Pix agora. Você pode pagar pela página segura do Asaas.
               </p>
               {pix?.link_pagamento ? (
@@ -1023,12 +1022,12 @@ function PixCheckoutModal({
                   href={pix.link_pagamento}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors"
+                  className="inline-flex items-center gap-1.5 bg-brand-700 hover:bg-brand-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors"
                 >
                   Abrir pagamento seguro <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               ) : (
-                <p className="text-xs text-slate-500">A fatura também foi enviada para seu e-mail.</p>
+                <p className="text-xs text-ink-subtle">A fatura também foi enviada para seu e-mail.</p>
               )}
             </div>
           )}

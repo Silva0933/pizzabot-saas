@@ -53,26 +53,21 @@ export function OrderCard({
     .join(", ");
 
   return (
-    <article className={cn("relative bg-surface border rounded-2xl shadow-card overflow-hidden flex flex-col", ringCls)}>
+    <article className={cn("pzb-order-card relative bg-surface border rounded-xl overflow-hidden flex flex-col", ringCls)}>
       {/* Header */}
-      <div className="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-2 border-b border-line">
+      <div className="px-3 pt-3 pb-1 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="inline-flex items-center gap-1 text-sm font-extrabold text-ink shrink-0">
             <Hash className="w-3.5 h-3.5 text-ink-subtle" />
             {p.numero_pedido ?? "—"}
           </span>
-          {delivery ? (
-            <Badge tone="brand" className="shrink-0">🛵 Entrega</Badge>
-          ) : (
-            <Badge tone="info" className="shrink-0">🏪 Retirada</Badge>
-          )}
         </div>
-        <OrderStatusBadge status={p.status} className="shrink-0" />
+        <time className="text-xs tabular-nums text-ink-subtle">{new Date(p.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</time>
       </div>
 
       {/* Faixa de conferência do Pix manual */}
       {aguardandoConferencia && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 flex items-center gap-1.5 text-[11px] font-semibold text-amber-800">
+        <div className="px-4 py-2 bg-amber-500/10 border-b border-amber-500/25 flex items-center gap-1.5 text-xs font-semibold text-amber-300">
           <Receipt className="w-3.5 h-3.5" />
           {comprovante ? "Comprovante recebido — confira o pagamento" : "Pix manual — aguardando comprovante"}
         </div>
@@ -80,28 +75,28 @@ export function OrderCard({
 
       {/* Conferência da loja (comportamento da pizzaria): a IA fechou, a equipe aprova */}
       {p.aguardando_revisao && p.status === "novo" && (
-        <div className="px-4 py-2 bg-violet-50 border-b border-violet-100 flex items-center gap-1.5 text-[11px] font-semibold text-violet-800">
+        <div className="px-4 py-2 bg-violet-500/10 border-b border-violet-500/25 flex items-center gap-1.5 text-xs font-semibold text-violet-300">
           <CircleCheck className="w-3.5 h-3.5 shrink-0" />
           <span>Pedido da IA — confira e confirme para ir à cozinha</span>
         </div>
       )}
 
       {p.em_problema && (
-        <div className="px-4 py-2 bg-rose-50 border-b border-rose-100 flex items-center gap-1.5 text-[11px] font-semibold text-rose-700">
+        <div className="px-4 py-2 bg-rose-500/10 border-b border-rose-500/25 flex items-center gap-1.5 text-xs font-semibold text-rose-300">
           <TriangleAlert className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate">Problema: {p.problema_motivo || "precisa de revisao"}</span>
         </div>
       )}
 
-      <div className="px-4 py-3 space-y-3 flex-1">
+      <div className="px-3 py-2 space-y-2.5 flex-1">
         {/* Cliente */}
-        <div className="flex items-center justify-between gap-2">
-          <p className="inline-flex items-center gap-1.5 text-sm font-bold text-ink min-w-0">
-            <User className="w-4 h-4 text-ink-subtle shrink-0" />
-            <span className="truncate">{p.cliente?.nome || "Cliente novo"}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="inline-flex items-center gap-1.5 text-sm font-bold text-ink min-w-0 flex-1">
+
+            <span className="break-words">{p.cliente?.nome || "Cliente novo"}</span>
           </p>
           {urg && (
-            <span className={cn("inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0", URGENCY_STYLE[urg.level].chip)}>
+            <span className={cn("inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md shrink-0", URGENCY_STYLE[urg.level].chip)}>
               <Clock className="w-3 h-3" /> {urg.label}
             </span>
           )}
@@ -109,21 +104,22 @@ export function OrderCard({
 
         {!aberto && (
           <>
-            <p className="flex items-center gap-1.5 text-xs text-ink-muted min-w-0">
-              {delivery ? <MapPin className="w-3.5 h-3.5 shrink-0 text-brand-600" /> : <Store className="w-3.5 h-3.5 shrink-0 text-blue-600" />}
-              <span className="truncate">
-                {delivery ? (p.endereco_entrega || <span className="text-rose-500 font-medium">Endereço não informado</span>) : "Retirada no balcão"}
-              </span>
+            <ul className="text-xs leading-relaxed text-ink-muted space-y-0.5" title={resumoItens}>
+              {(p.itens || []).slice(0,3).map((it,idx)=><li key={idx}>{Number(it.quantidade ?? 1)}× {it.nome}</li>)}
+              {(p.itens || []).length > 3 && <li>+{p.itens.length - 3} outros itens · ver detalhes</li>}
+              {!(p.itens || []).length && <li className="italic">Rascunho (sem itens)</li>}
+            </ul>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-base font-semibold text-ink tabular-nums">{brl(p.valor_total)}</span>
+              <Badge tone={delivery ? "neutral":"info"} icon={delivery ? Bike:Store}>{delivery ? "Delivery":"Retirada"}</Badge>
+            </div>
+            <p className="flex items-start gap-1.5 text-xs text-ink-muted min-w-0">
+              {delivery ? <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <Store className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+              <span className="break-words">{delivery ? (p.endereco_entrega || <span className="text-rose-300">Endereço não informado</span>) : "Retirada no balcão"}</span>
             </p>
-            <p className="text-xs text-ink truncate" title={resumoItens}>
-              {resumoItens || <span className="italic text-ink-subtle">Rascunho (sem itens)</span>}
-            </p>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-base font-extrabold text-emerald-600">{brl(p.valor_total)}</span>
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-ink">
-                <pay.icon className="w-3.5 h-3.5 text-ink-subtle" /> {pay.methodLabel}
-                {pay.stateLabel && <Badge tone={pay.stateTone} dot>{pay.stateLabel}</Badge>}
-              </span>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+              <pay.icon className="w-3.5 h-3.5" /> {pay.methodLabel}
+              {pay.stateLabel && <Badge tone={pay.stateTone} dot>{pay.stateLabel}</Badge>}
             </div>
           </>
         )}
@@ -132,13 +128,13 @@ export function OrderCard({
         {/* Entrega/Retirada — bloco destacado (dado de despacho) */}
         <div className={cn(
           "rounded-xl px-3 py-2 flex items-start gap-2 text-sm",
-          delivery ? "bg-brand-50 border border-brand-100" : "bg-blue-50 border border-blue-100",
+          delivery ? "bg-brand-500/10 border border-brand-500/25" : "bg-blue-500/10 border border-blue-500/25",
         )}>
           {delivery
-            ? <MapPin className="w-4 h-4 text-brand-600 shrink-0 mt-0.5" />
-            : <Store className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />}
+            ? <MapPin className="w-4 h-4 text-brand-300 shrink-0 mt-0.5" />
+            : <Store className="w-4 h-4 text-blue-300 shrink-0 mt-0.5" />}
           <div className="min-w-0">
-            <p className={cn("text-[10px] font-bold uppercase tracking-wide", delivery ? "text-brand-700" : "text-blue-700")}>
+            <p className={cn("text-xs font-bold uppercase tracking-wide", delivery ? "text-brand-300" : "text-blue-300")}>
               {delivery ? "Entregar em" : "Retirada no balcão"}
             </p>
             {delivery && (
@@ -151,7 +147,7 @@ export function OrderCard({
 
         {/* Itens — sem truncar */}
         <div>
-          <p className="text-[11px] font-bold text-ink-subtle uppercase tracking-wide mb-1.5">
+          <p className="text-xs font-bold text-ink-subtle uppercase tracking-wide mb-1.5">
             Itens · {totalItens}
           </p>
           <ul className="space-y-1 text-sm">
@@ -162,10 +158,10 @@ export function OrderCard({
               const q = Number(it.quantidade ?? 1);
               const pu = Number(it.preco_unit ?? 0);
               return (
-                <li key={idx} className="flex items-start justify-between gap-2">
-                  <span className="flex items-start gap-1.5 min-w-0">
-                    <span className="inline-flex items-center justify-center text-[11px] font-bold text-brand-700 bg-brand-50 rounded-md px-1.5 h-5 shrink-0">{q}×</span>
-                    <span className="text-ink leading-snug break-words">{it.nome}</span>
+                <li key={idx} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                  <span className="flex items-start gap-1.5 min-w-0 flex-1">
+                    <span className="inline-flex items-center justify-center text-xs font-bold text-brand-300 bg-brand-500/10 rounded-md px-1.5 h-5 shrink-0">{q}×</span>
+                    <span className="text-ink leading-snug break-words min-w-0 flex-1">{it.nome}</span>
                   </span>
                   {pu > 0 && <span className="text-ink-muted text-xs shrink-0 mt-0.5">{brl(pu * q)}</span>}
                 </li>
@@ -176,7 +172,7 @@ export function OrderCard({
 
         {/* Observações */}
         {p.observacoes && (
-          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+          <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5">
             <span className="font-semibold">Obs:</span> {p.observacoes}
           </p>
         )}
@@ -184,8 +180,8 @@ export function OrderCard({
         {/* Total + pagamento */}
         <div className="flex items-end justify-between gap-2 pt-1 border-t border-line">
           <div className="pt-2">
-            <p className="text-[11px] text-ink-subtle">Total</p>
-            <p className="text-xl font-extrabold text-emerald-600 leading-none">{brl(p.valor_total)}</p>
+            <p className="text-xs text-ink-subtle">Total</p>
+            <p className="text-xl font-semibold text-ink tabular-nums leading-none">{brl(p.valor_total)}</p>
           </div>
           <div className="pt-2 flex flex-col items-end gap-1">
             <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
@@ -202,7 +198,7 @@ export function OrderCard({
             href={`https://wa.me/${tel}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-brand-600 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs text-ink-muted hover:text-brand-300 transition-colors"
           >
             <Phone className="w-3.5 h-3.5" /> {tel}
           </a>
@@ -211,11 +207,11 @@ export function OrderCard({
       </div>
 
       {/* Footer: ações */}
-      <div className="px-4 py-3 border-t border-line bg-surface-muted/60 space-y-2">
+      <div className="px-3 py-3 border-t border-line space-y-2">
         {/* Atribuição de entregador (apenas delivery) */}
         {aberto && delivery && onAtribuir && (
           <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-muted shrink-0">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-ink-muted shrink-0">
               <Bike className="w-3.5 h-3.5" /> Entregador
             </span>
             <select
@@ -245,16 +241,17 @@ export function OrderCard({
             <Button variant="success" size="sm" fullWidth icon={Check} isLoading={paying} onClick={() => onConferir("confirmar")}>
               Confirmar pagamento
             </Button>
-            <Button variant="outline" size="sm" icon={X} disabled={paying} onClick={() => onConferir("rejeitar")} className="text-rose-600 border-rose-200 hover:bg-rose-50">
+            <Button variant="outline" size="sm" icon={X} disabled={paying} onClick={() => onConferir("rejeitar")} className="text-rose-300 border-rose-500/25 hover:bg-rose-500/10">
               Rejeitar
             </Button>
           </div>
         )}
 
         {/* Avanco sequencial: nao permite pular fases por acidente. */}
-        <div className="flex items-center gap-2">
+        <div className={cn("pzb-order-actions", !aberto && "pzb-order-primary-actions")}>
+          {!aberto && <Button variant="outline" size="sm" className="pzb-order-details" onClick={() => setAberto(true)} title="Ver endereço, itens, entregador e mais ações">Detalhes</Button>}
           {next ? (
-            <Button variant="primary" size="sm" fullWidth isLoading={moving} onClick={() => onStatus(next)}>
+            <Button variant="primary" size="sm" className="pzb-order-advance" isLoading={moving} onClick={() => onStatus(next)}>
               {nextLabel || `Avançar p/ ${orderStatusLabel(next)}`}
             </Button>
           ) : (
@@ -264,16 +261,12 @@ export function OrderCard({
             <Button variant="outline" size="sm" icon={Wrench} disabled={moving} onClick={onCorrect}>
               Corrigir
             </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setAberto(true)} title="Ver endereço, itens, entregador e mais ações">
-              Detalhes
-            </Button>
-          )}
+          ) : null}
         </div>
 
         {aberto && (<>
         {/* Whatsapp e acoes auditaveis. Pedidos nao podem mais ser excluidos. */}
-        <div className="flex items-center gap-2">
+        <div className="pzb-order-actions">
           {tel && (
             <a
               href={`https://wa.me/${tel}`}
@@ -288,22 +281,22 @@ export function OrderCard({
             Historico
           </Button>
           {p.em_problema ? (
-            <Button variant="ghost" size="sm" icon={CircleCheck} onClick={onResolveProblem} className="text-emerald-700 hover:bg-emerald-50">
+            <Button variant="ghost" size="sm" icon={CircleCheck} onClick={onResolveProblem} className="text-emerald-300 hover:bg-emerald-500/10">
               Resolver
             </Button>
           ) : (
-            <Button variant="ghost" size="sm" icon={TriangleAlert} onClick={onProblem} className="text-rose-600 hover:bg-rose-50">
+            <Button variant="ghost" size="sm" icon={TriangleAlert} onClick={onProblem} className="text-rose-300 hover:bg-rose-500/10">
               Problema
             </Button>
           )}
         </div>
 
         <div className="flex items-center justify-between gap-2 pt-0.5">
-          <p className="text-[10px] text-ink-subtle flex items-center gap-1">
+          <p className="text-xs text-ink-subtle flex items-center gap-1">
             <Clock className="w-3 h-3" />
             {new Date(p.created_at).toLocaleString("pt-BR")}
           </p>
-          <button type="button" onClick={() => setAberto(false)} className="text-[11px] font-semibold text-ink-muted hover:text-ink">
+          <button type="button" onClick={() => setAberto(false)} className="text-xs font-semibold text-ink-muted hover:text-ink">
             Recolher
           </button>
         </div>

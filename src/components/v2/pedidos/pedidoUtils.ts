@@ -87,7 +87,7 @@ export function urgency(pedido: BackendPedido): Urgency | null {
 }
 
 export const URGENCY_STYLE: Record<UrgencyLevel, { chip: string; ring: string }> = {
-  calm: { chip: "bg-slate-100 text-slate-500", ring: "" },
-  warn: { chip: "bg-amber-100 text-amber-700", ring: "ring-1 ring-amber-200" },
-  late: { chip: "bg-rose-100 text-rose-700 animate-pulse", ring: "ring-1 ring-rose-300" },
+  calm: { chip: "bg-surface text-ink-muted", ring: "" },
+  warn: { chip: "bg-amber-500/10 text-amber-300", ring: "ring-1 ring-amber-200" },
+  late: { chip: "bg-rose-500/10 text-rose-300 animate-pulse", ring: "ring-1 ring-rose-300" },
 };

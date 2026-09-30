@@ -56,8 +56,8 @@ export function MeuNegocioViewV2({
 
   return (
     <div className="pb-24 md:pb-6">
-      <div className="bg-[#0b0e14]/90 backdrop-blur-md border-b border-[#1e293b] px-4 md:px-8 sticky top-[57px] z-10">
-        <div className="flex gap-2 -mb-px overflow-x-auto">
+      <div className="bg-canvas border-b border-line px-4 md:px-6 sticky top-[var(--pzb-topbar-height)] z-10">
+        <div className="pzb-tablist overflow-x-auto" role="tablist" aria-label="Meu Negócio">
           <TabButton active={tab === "atendente"} onClick={() => setTab("atendente")}
             icon={<Bot className="w-4 h-4"/>} label="Atendente"
             badge={<Sparkles className="w-3 h-3 text-orange-500"/>}/>
@@ -86,8 +86,10 @@ function TabButton({ active, onClick, icon, label, badge }: any) {
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-2 px-4 py-3.5 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
-        active ? "border-orange-500 text-orange-400" : "border-transparent text-slate-400 hover:text-slate-200"
+      role="tab"
+      aria-selected={active}
+      className={`pzb-tab flex items-center gap-2 px-4 py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${
+        active ? "border-orange-500 text-orange-400" : "border-transparent text-ink-muted hover:text-ink"
       }`}>
       {icon}{label}{badge}
     </button>
@@ -119,14 +121,14 @@ function ConfigAccordion({
   }, [defaultOpen]);
 
   return (
-    <section id={id} className="overflow-hidden rounded-2xl border border-[#1e293b] bg-[#111622] shadow-sm">
+    <section id={id} className="pzb-section overflow-hidden scroll-mt-[calc(var(--pzb-topbar-height)+4rem)]">
       <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
-        className="flex w-full items-center gap-3.5 p-4 md:p-5 text-left transition hover:bg-[#161f30]/40">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400">{icon}</span>
-        <span className="min-w-0 flex-1"><strong className="block text-sm font-semibold text-white">{title}</strong><small className="mt-0.5 block text-xs leading-relaxed text-slate-400">{description}</small></span>
-        <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${open ? "rotate-180 text-orange-400" : ""}`} />
+        className="flex w-full items-center gap-3.5 p-4 md:p-5 text-left transition hover:bg-surface-muted/40">
+        <span className="shrink-0 text-ink-muted">{icon}</span>
+        <span className="min-w-0 flex-1"><strong className="block text-base font-semibold text-ink">{title}</strong><small className="mt-1 block text-sm leading-relaxed text-ink-muted">{description}</small></span>
+        <ChevronDown className={`h-5 w-5 shrink-0 text-ink-muted transition-transform ${open ? "rotate-180 text-orange-400" : ""}`} />
       </button>
-      {open && <div className="border-t border-[#1e293b] p-4 md:p-5 space-y-4">{children}</div>}
+      {open && <div className="border-t border-line p-4 md:p-5 space-y-4">{children}</div>}
     </section>
   );
 }
@@ -199,16 +201,13 @@ function ConfigGeral({
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="pzb-page max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3.5">
-        <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 shrink-0">
-          <SettingsIcon className="w-5 h-5" />
-        </div>
+      <div className="pzb-page-header">
         <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Configurações do negócio</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Gerencie os dados da <strong className="text-slate-200">sua pizzaria, endereço</strong>, imagem e funcionamento.
+          <h2 className="text-base font-semibold text-ink">Configurações do negócio</h2>
+          <p className="pzb-page-description">
+            Gerencie os dados da <strong className="text-ink">sua pizzaria, endereço</strong>, imagem e funcionamento.
           </p>
         </div>
       </div>
@@ -222,18 +221,17 @@ function ConfigGeral({
       {/* Row 1: 2-Column Grid (Identidade + Horário de funcionamento) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
         {/* Coluna 1: Identidade */}
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm space-y-4">
+        <div className="pzb-section p-5 space-y-4">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-orange-400 shrink-0">
+              <div className="text-brand-400 shrink-0 pt-0.5">
                 <Store className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">Identidade</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Dados da pizzaria, endereço, imagem e funcionamento.</p>
+                <h3 className="text-base font-semibold text-ink">Identidade</h3>
+                <p className="text-xs text-ink-muted mt-0.5">Dados da pizzaria, endereço, imagem e funcionamento.</p>
               </div>
             </div>
-            <ChevronDown className="w-4 h-4 text-slate-400 rotate-180 text-orange-400" />
           </div>
 
           <div className="pt-2 space-y-3.5">
@@ -268,18 +266,17 @@ function ConfigGeral({
         </div>
 
         {/* Coluna 2: Horário de funcionamento */}
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm space-y-4">
+        <div className="pzb-section p-5 space-y-4">
           <div className="flex items-start justify-between">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+              <div className="text-ink-muted shrink-0 pt-0.5">
                 <Clock className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white">Horário de funcionamento</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Dias e faixas de atendimento da pizzaria.</p>
+                <h3 className="text-base font-semibold text-ink">Horário de funcionamento</h3>
+                <p className="text-xs text-ink-muted mt-0.5">Dias e faixas de atendimento da pizzaria.</p>
               </div>
             </div>
-            <ChevronDown className="w-4 h-4 text-slate-400 rotate-180 text-orange-400" />
           </div>
 
           <div className="pt-2">
@@ -315,7 +312,7 @@ function ConfigGeral({
                 <Field label="Instância Evolution">
                   <input value={form.instancia ?? ""} onChange={(e) => setField("instancia", e.target.value)} className={inputCls}/>
                 </Field>
-                <label className="flex items-center gap-2.5 text-xs text-slate-300 mt-6 cursor-pointer">
+                <label className="flex items-center gap-2.5 text-xs text-ink-muted mt-6 cursor-pointer">
                   <input type="checkbox" checked={form.bot_ativo_global ?? false}
                     onChange={(e) => setField("bot_ativo_global", e.target.checked)}
                     className="w-4 h-4 accent-orange-500 rounded"/>
@@ -325,13 +322,13 @@ function ConfigGeral({
             </Card>
 
             <Card icon={<Volume2 className="w-4 h-4" />} title="Alertas sonoros de pedidos" accent="amber">
-              <label className="flex items-start gap-2.5 text-xs text-slate-300 cursor-pointer">
+              <label className="flex items-start gap-2.5 text-xs text-ink-muted cursor-pointer">
                 <input type="checkbox" checked={form.alertas_sonoros ?? true}
                   onChange={(e) => setField("alertas_sonoros", e.target.checked)}
                   className="w-4 h-4 mt-0.5 accent-orange-500 rounded"/>
                 <span>
                   Tocar som no painel quando um cliente começar um pedido e quando ele fechar o pedido
-                  <span className="block text-slate-500 mt-1">
+                  <span className="block text-ink-subtle mt-1">
                     Desligado, os pedidos continuam chegando normalmente, só sem o som.
                   </span>
                 </span>
@@ -384,7 +381,7 @@ function ConfigGeral({
                               placeholder="Cole a chave secreta gerada no painel do Mercado Pago"
                               className={inputCls}/>
                           </Field>
-                          <div className="md:col-span-2 text-xs text-slate-400 space-y-1">
+                          <div className="md:col-span-2 text-xs text-ink-muted space-y-1">
                             <p>
                               A confirmação automática do pedido já funciona só com o token — a URL de
                               aviso vai junto em cada cobrança. Cadastrar o webhook no Mercado Pago é
@@ -395,7 +392,7 @@ function ConfigGeral({
                               Em <strong>Suas integrações → sua aplicação → Webhooks</strong>, use esta
                               URL e marque o evento <strong>Pagamentos</strong>:
                             </p>
-                            <code className="block bg-slate-800/60 rounded px-2 py-1 break-all text-slate-200">
+                            <code className="block bg-surface-muted/60 rounded px-2 py-1 break-all text-ink">
                               {MP_WEBHOOK_URL}
                             </code>
                           </div>
@@ -415,7 +412,7 @@ function ConfigGeral({
                       <Field label="Nome do recebedor (opcional — aparece como 'em nome de …')">
                         <input value={form.pix_manual_titular ?? ""} onChange={(e) => setField("pix_manual_titular", e.target.value)} className={inputCls}/>
                       </Field>
-                      <p className="text-xs text-slate-400">
+                      <p className="text-xs text-ink-muted">
                         A atendente envia o código automaticamente e pede o comprovante. Você confere e
                         confirma o pagamento no card do pedido.
                       </p>
@@ -423,7 +420,7 @@ function ConfigGeral({
                   )}
 
                   {(form.modo_pagamento_online ?? "automatico") === "desativado" && (
-                    <p className="text-xs text-slate-400">
+                    <p className="text-xs text-ink-muted">
                       A atendente <strong>não oferece pagamento online</strong>: o cliente paga só na
                       entrega ou retirada (dinheiro/cartão).
                     </p>
@@ -437,7 +434,7 @@ function ConfigGeral({
         {/* Logística e entregas */}
         <ConfigAccordion icon={<Bike className="w-4 h-4" />} title="Logística e entregas" description="Configure prazos e taxas de delivery.">
           <div className="space-y-3">
-            <h3 className="text-xs font-bold text-slate-300 ml-1">Logística & Entregas</h3>
+            <h3 className="text-xs font-bold text-ink-muted ml-1">Logística & Entregas</h3>
 
             <Card icon={<Clock className="w-4 h-4" />} title="Tempos de preparo e rota (minutos)" accent="sky">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -486,15 +483,15 @@ function ConfigGeral({
       </div>
 
       {/* Sticky Bottom Bar */}
-      <div className="sticky bottom-0 bg-[#0b0e14]/90 backdrop-blur-md border-t border-[#1e293b] -mx-4 md:-mx-6 -mb-4 md:-mb-6 px-6 py-4 flex items-center justify-between z-10">
-        <p className="text-xs text-slate-400">
+      <div className="pzb-form-actions sticky bottom-[var(--pzb-bottom-nav-height)] border-t border-line bg-canvas px-4 py-4 flex flex-wrap items-center justify-between gap-3 z-10">
+        <p className="text-xs text-ink-muted">
           As mudanças entram em vigor na próxima conversa nova.
         </p>
         <button
           type="button"
           onClick={save}
           disabled={saving}
-          className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-xs font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-orange-500/20"
+          className="bg-brand-700 hover:bg-brand-800 disabled:opacity-50 text-white text-xs font-bold px-6 py-2.5 rounded-xl flex items-center gap-2 transition-colors"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? "Salvando..." : "Salvar alterações"}
@@ -568,8 +565,8 @@ function WhatsAppCard({
   }, [open, conectado]);
 
   return (
-    <div className={`rounded-2xl p-5 border shadow-sm flex items-center gap-4 ${
-      conectado ? "bg-[#161f30]/60 border-emerald-900/40" : "bg-[#161f30]/60 border-amber-900/40"
+    <div className={`rounded-xl p-5 border  flex items-center gap-4 ${
+      conectado ? "bg-surface-muted/60 border-emerald-900/40" : "bg-surface-muted/60 border-amber-900/40"
     }`}>
       <div className={`w-12 h-12 rounded-xl grid place-items-center text-white shrink-0 ${
         conectado ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400" : "bg-amber-500/10 border border-amber-500/20 text-amber-400"
@@ -579,7 +576,7 @@ function WhatsAppCard({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-white flex items-center gap-1.5">
           WhatsApp
-          {state === "loading" && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+          {state === "loading" && <Loader2 className="w-3.5 h-3.5 animate-spin text-ink-muted" />}
         </p>
         <p className={`text-xs ${conectado ? "text-emerald-400" : "text-amber-400"}`}>
           {state === "loading" ? "Verificando conexão…"
@@ -589,7 +586,7 @@ function WhatsAppCard({
       </div>
       <button onClick={openConnect}
         className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 flex items-center gap-1.5 transition-colors ${
-          conectado ? "bg-[#111622] hover:bg-slate-800 text-slate-200 border border-slate-700" : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm"
+          conectado ? "bg-surface hover:bg-surface-muted text-ink border border-line" : "bg-emerald-600 hover:bg-emerald-500 text-white "
         }`}>
         <QrCode className="w-4 h-4" />
         {conectado ? "Reconectar" : "Conectar"}
@@ -597,11 +594,11 @@ function WhatsAppCard({
 
       {/* Modal QR */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in"
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 animate-fade-in"
           onClick={() => setOpen(false)}>
-          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="relative px-5 py-4 bg-[#161f30] border-b border-[#1e293b] text-white">
-              <button onClick={() => setOpen(false)} className="absolute right-3 top-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-[#1e293b] transition-colors">
+          <div role="dialog" aria-modal="true" aria-labelledby="negocio-whatsapp-title" className="bg-surface border border-line rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="relative px-5 py-4 bg-surface-muted border-b border-line text-white">
+              <button onClick={() => setOpen(false)} aria-label="Fechar conexão do WhatsApp" className="absolute right-3 top-3 p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-elevated transition-colors">
                 <X className="w-4 h-4" />
               </button>
               <div className="flex items-center gap-3">
@@ -609,8 +606,8 @@ function WhatsAppCard({
                   <Smartphone className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-bold text-base leading-tight text-white">Conectar WhatsApp</h3>
-                  <p className="text-xs text-slate-400 truncate">{pizzaria.nome}</p>
+                  <h3 id="negocio-whatsapp-title" className="font-semibold text-base leading-tight text-ink">Conectar WhatsApp</h3>
+                  <p className="text-xs text-ink-muted truncate">{pizzaria.nome}</p>
                 </div>
               </div>
             </div>
@@ -627,20 +624,20 @@ function WhatsAppCard({
                 <div className="text-center py-6">
                   <WifiOff className="w-10 h-10 text-red-400 mx-auto mb-3" />
                   <p className="text-sm text-red-400 font-medium">{qrErr}</p>
-                  <button onClick={openConnect} className="mt-4 px-4 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium inline-flex items-center gap-1.5">
+                  <button onClick={openConnect} className="mt-4 px-4 py-2 text-sm bg-surface-muted hover:bg-surface-elevated text-white rounded-xl font-medium inline-flex items-center gap-1.5">
                     <RefreshCw className="w-4 h-4" /> Tentar de novo
                   </button>
                 </div>
               ) : (
                 <>
-                  <ol className="text-xs text-slate-400 space-y-1 mb-3 list-decimal list-inside">
+                  <ol className="text-xs text-ink-muted space-y-1 mb-3 list-decimal list-inside">
                     <li>Abra o WhatsApp no celular da pizzaria</li>
                     <li>Toque em <strong>Aparelhos conectados → Conectar</strong></li>
                     <li>Aponte a câmera para o QR Code</li>
                   </ol>
-                  <div className="aspect-square w-full max-w-[260px] mx-auto rounded-2xl border-2 border-dashed border-[#1e293b] grid place-items-center overflow-hidden bg-white p-3 shadow-inner">
+                  <div className="aspect-square w-full max-w-[260px] mx-auto rounded-xl border-2 border-dashed border-line grid place-items-center overflow-hidden bg-white p-3 shadow-inner">
                     {loadingQr && !qr?.qrcode?.base64 ? (
-                      <div className="text-center text-slate-500">
+                      <div className="text-center text-ink-subtle">
                         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-orange-500" />
                         <p className="text-xs">Gerando QR Code…</p>
                       </div>
@@ -648,20 +645,20 @@ function WhatsAppCard({
                       <img src={qr.qrcode.base64.startsWith("data:") ? qr.qrcode.base64 : `data:image/png;base64,${qr.qrcode.base64}`}
                         alt="QR Code" className="w-full h-full object-contain" />
                     ) : (
-                      <div className="text-center text-slate-500 px-4">
+                      <div className="text-center text-ink-subtle px-4">
                         <QrCode className="w-8 h-8 mx-auto mb-2" />
                         <p className="text-xs">QR indisponível. Gere novamente.</p>
                       </div>
                     )}
                   </div>
                   {qr?.qrcode?.pairingCode && (
-                    <p className="text-center text-xs text-slate-400 mt-3">Ou código: <span className="font-mono font-bold text-orange-400">{qr.qrcode.pairingCode}</span></p>
+                    <p className="text-center text-xs text-ink-muted mt-3">Ou código: <span className="font-mono font-bold text-orange-400">{qr.qrcode.pairingCode}</span></p>
                   )}
-                  <div className="flex items-center justify-center gap-1.5 mt-4 text-xs text-slate-400">
+                  <div className="flex items-center justify-center gap-1.5 mt-4 text-xs text-ink-muted">
                     <Wifi className="w-3.5 h-3.5 animate-pulse text-emerald-400" /> Aguardando leitura…
                   </div>
                   <button onClick={refreshQr} disabled={loadingQr}
-                    className="mt-3 w-full px-4 py-2 text-sm text-slate-300 hover:bg-[#1e293b] hover:text-white rounded-xl font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors border border-[#1e293b]">
+                    className="mt-3 w-full px-4 py-2 text-sm text-ink-muted hover:bg-surface-elevated hover:text-ink rounded-xl font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors border border-line">
                     {loadingQr ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />} Gerar novo QR
                   </button>
                 </>
@@ -682,7 +679,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   confirmado: { label: "Confirmado", cls: "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400" },
   no_forno:   { label: "No forno",   cls: "bg-amber-500/15 border border-amber-500/30 text-amber-400" },
   a_caminho:  { label: "A caminho",  cls: "bg-purple-500/15 border border-purple-500/30 text-purple-400" },
-  entregue:   { label: "Entregue",   cls: "bg-slate-800 border border-slate-700 text-slate-300" },
+  entregue:   { label: "Entregue",   cls: "bg-surface-muted border border-line text-ink-muted" },
   cancelado:  { label: "Cancelado",  cls: "bg-rose-500/15 border border-rose-500/30 text-rose-400" },
 };
 const brl = (n: number) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -742,25 +739,27 @@ function HorarioFuncionamento({
           const fechado = !!dia.fechado;
           return (
             <div key={d.key} className="flex items-center gap-3 flex-wrap">
-              <span className="w-20 text-sm text-slate-200 font-medium">{d.label}</span>
-              <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer w-24">
+              <span className="w-20 text-sm text-ink font-medium">{d.label}</span>
+              <label className="flex items-center gap-2 text-xs text-ink-muted cursor-pointer w-24">
                 <input type="checkbox" checked={!fechado}
                   onChange={(e) => setDia(d.key, { fechado: !e.target.checked })}
                   className="w-4 h-4 accent-orange-500 rounded" />
                 {fechado ? "Fechado" : "Aberto"}
               </label>
               <input type="time" value={dia.abre ?? "18:00"} disabled={fechado}
+                aria-label={`Abertura de ${d.label}`}
                 onChange={(e) => setDia(d.key, { abre: e.target.value })}
-                className={`px-3 py-1.5 bg-[#111622] border border-slate-800 rounded-xl text-sm text-slate-100 w-28 outline-none focus:border-orange-500 ${fechado ? "opacity-30" : ""}`} />
-              <span className="text-slate-500 text-xs">às</span>
+                className={`px-3 py-1.5 bg-surface border border-line rounded-xl text-sm text-ink w-28 outline-none focus:border-orange-500 ${fechado ? "opacity-30" : ""}`} />
+              <span className="text-ink-subtle text-xs">às</span>
               <input type="time" value={dia.fecha ?? "23:00"} disabled={fechado}
+                aria-label={`Fechamento de ${d.label}`}
                 onChange={(e) => setDia(d.key, { fecha: e.target.value })}
-                className={`px-3 py-1.5 bg-[#111622] border border-slate-800 rounded-xl text-sm text-slate-100 w-28 outline-none focus:border-orange-500 ${fechado ? "opacity-30" : ""}`} />
+                className={`px-3 py-1.5 bg-surface border border-line rounded-xl text-sm text-ink w-28 outline-none focus:border-orange-500 ${fechado ? "opacity-30" : ""}`} />
             </div>
           );
         })}
       </div>
-      <p className="text-[11px] text-slate-400">
+      <p className="text-xs text-ink-muted">
         Dica: para virar a madrugada use, por exemplo, 18:00 às 02:00.
       </p>
       <Field label="Mensagem fora do horário (a atendente envia uma única vez quando fechado)" full>
@@ -799,25 +798,25 @@ function ZonaPerigo({ pizzariaId }: { pizzariaId: string }) {
   }
 
   return (
-    <section className="bg-[#161f30]/60 border border-red-900/40 rounded-2xl p-5 shadow-sm">
+    <section className="bg-surface-muted/60 border border-red-900/40 rounded-xl p-5">
       <h3 className="text-sm font-semibold text-red-400 mb-1 flex items-center gap-2">
         <span className="w-7 h-7 rounded-lg grid place-items-center bg-red-500/15 text-red-400"><AlertTriangle className="w-4 h-4" /></span>
         Zona de perigo
       </h3>
-      <p className="text-xs text-slate-400 mb-4">Ações irreversíveis. Apagam dados do painel e do banco de dados.</p>
+      <p className="text-xs text-ink-muted mb-4">Ações irreversíveis. Apagam dados do painel e do banco de dados.</p>
 
       <div className="grid sm:grid-cols-2 gap-3.5">
-        <div className="border border-slate-800 bg-[#111622] rounded-xl p-4">
+        <div className="border-t border-line py-4">
           <p className="text-sm font-semibold text-white">Apagar todas as conversas</p>
-          <p className="text-xs text-slate-400 mt-1 mb-3">Conversas, mensagens e filas do bot.</p>
+          <p className="text-xs text-ink-muted mt-1 mb-3">Conversas, mensagens e filas do bot.</p>
           <button onClick={() => { setConfirm("conversas"); setMsg(null); }}
             className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 inline-flex items-center gap-1.5 transition-colors">
             <Trash2 className="w-3.5 h-3.5" /> Apagar conversas
           </button>
         </div>
-        <div className="border border-slate-800 bg-[#111622] rounded-xl p-4">
+        <div className="border-t border-line py-4">
           <p className="text-sm font-semibold text-white">Apagar todos os pedidos</p>
-          <p className="text-xs text-slate-400 mt-1 mb-3">Remove pedidos do painel e do servidor.</p>
+          <p className="text-xs text-ink-muted mt-1 mb-3">Remove pedidos do painel e do servidor.</p>
           <button onClick={() => { setConfirm("pedidos"); setMsg(null); }}
             className="text-xs font-semibold px-3.5 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 inline-flex items-center gap-1.5 transition-colors">
             <Trash2 className="w-3.5 h-3.5" /> Apagar pedidos
@@ -825,29 +824,29 @@ function ZonaPerigo({ pizzariaId }: { pizzariaId: string }) {
         </div>
       </div>
 
-      {msg && <p className="text-xs text-slate-300 mt-3.5 bg-[#111622] border border-slate-800 rounded-xl px-3.5 py-2.5">{msg}</p>}
+      {msg && <p className="text-xs text-ink-muted mt-3.5 bg-surface border border-line rounded-xl px-3.5 py-2.5">{msg}</p>}
 
       {confirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => !busy && setConfirm(null)}>
-          <div className="bg-[#111622] border border-slate-800 text-white rounded-2xl shadow-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => !busy && setConfirm(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="negocio-apagar-title" className="bg-surface border border-line text-ink rounded-xl shadow-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3.5 mb-3">
-              <div className="w-12 h-12 rounded-2xl bg-red-500/15 border border-red-500/30 grid place-items-center shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-red-500/15 border border-red-500/30 grid place-items-center shrink-0">
                 <AlertTriangle className="w-6 h-6 text-red-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-white">
+                <h3 id="negocio-apagar-title" className="text-base font-semibold text-ink">
                   Apagar {confirm === "conversas" ? "todas as conversas" : "todos os pedidos"}?
                 </h3>
-                <p className="text-sm text-slate-400 mt-0.5">Esta ação é permanente e irreversível.</p>
+                <p className="text-sm text-ink-muted mt-0.5">Esta ação é permanente e irreversível.</p>
               </div>
             </div>
             <div className="flex gap-2.5 justify-end mt-5">
               <button onClick={() => setConfirm(null)} disabled={busy}
-                className="px-4 py-2 text-sm font-medium text-slate-300 bg-[#161f30] hover:bg-slate-800 border border-slate-700 rounded-xl">
+                className="px-4 py-2 text-sm font-medium text-ink-muted bg-surface-muted hover:bg-surface-muted border border-line rounded-xl">
                 Cancelar
               </button>
               <button onClick={run} disabled={busy}
-                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl flex items-center gap-2 disabled:opacity-60 shadow-sm">
+                className="px-4 py-2 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl flex items-center gap-2 disabled:opacity-60">
                 {busy && <Loader2 className="w-4 h-4 animate-spin" />}
                 <Trash2 className="w-4 h-4" /> Sim, apagar tudo
               </button>
@@ -863,11 +862,11 @@ function ZonaPerigo({ pizzariaId }: { pizzariaId: string }) {
 // Helpers visuais
 // ============================================
 const ACCENTS: Record<string, string> = {
-  orange: "bg-orange-500/15 border border-orange-500/30 text-orange-400",
-  emerald: "bg-emerald-500/15 border border-emerald-500/30 text-emerald-400",
-  violet: "bg-purple-500/15 border border-purple-500/30 text-purple-400",
-  sky: "bg-sky-500/15 border border-sky-500/30 text-sky-400",
-  amber: "bg-amber-500/15 border border-amber-500/30 text-amber-400",
+  orange: "text-brand-400",
+  emerald: "text-ink-muted",
+  violet: "text-ink-muted",
+  sky: "text-ink-muted",
+  amber: "text-ink-muted",
 };
 
 type TaxaBairro = { bairro: string; taxa: number };
@@ -883,28 +882,31 @@ function TaxasBairroEditor({ taxas, onChange }: { taxas: TaxaBairro[]; onChange:
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-400 font-semibold">Tabela por bairro</span>
+        <span className="text-xs text-ink-muted font-semibold">Tabela por bairro</span>
         <button type="button" onClick={add}
           className="text-xs px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 font-semibold transition-colors">
           + Bairro
         </button>
       </div>
       {lista.length === 0 && (
-        <p className="text-xs text-slate-500 italic">Sem bairros cadastrados. A atendente usa a taxa fixa acima.</p>
+        <p className="text-xs text-ink-subtle italic">Sem bairros cadastrados. A atendente usa a taxa fixa acima.</p>
       )}
       {lista.map((t, i) => (
         <div key={i} className="flex gap-2 items-center">
           <input value={t.bairro} placeholder="Bairro"
+            aria-label={`Bairro ${i + 1}`}
             onChange={(e) => update(i, { bairro: e.target.value })}
             className={inputCls + " flex-1"}/>
           <div className="relative w-32">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">R$</span>
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-ink-subtle">R$</span>
             <input type="number" step="0.01" min="0" value={t.taxa}
+              aria-label={`Taxa do bairro ${t.bairro || i + 1}`}
               onChange={(e) => update(i, { taxa: Number(e.target.value) })}
               className={inputCls + " pl-8"}/>
           </div>
           <button type="button" onClick={() => remove(i)}
-            className="p-2 text-slate-500 hover:text-red-400 transition-colors" title="Remover">
+            aria-label={`Remover bairro ${t.bairro || i + 1}`}
+            className="p-2 text-ink-subtle hover:text-red-400 transition-colors" title="Remover">
             <Trash2 className="w-4 h-4"/>
           </button>
         </div>
@@ -915,9 +917,9 @@ function TaxasBairroEditor({ taxas, onChange }: { taxas: TaxaBairro[]; onChange:
 
 function Card({ icon, title, accent, children }: { icon: React.ReactNode; title: string; accent: keyof typeof ACCENTS | string; children: React.ReactNode }) {
   return (
-    <section className="bg-[#161f30]/60 border border-slate-800/80 rounded-2xl p-5 shadow-sm">
-      <h3 className="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2.5">
-        <span className={`w-8 h-8 rounded-xl grid place-items-center ${ACCENTS[accent] || ACCENTS.orange}`}>{icon}</span>
+    <section className="space-y-4 border-t border-line pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-semibold text-ink mb-4 flex items-center gap-2.5">
+        <span className={`shrink-0 ${ACCENTS[accent] || ACCENTS.orange}`}>{icon}</span>
         {title}
       </h3>
       {children}
@@ -925,12 +927,12 @@ function Card({ icon, title, accent, children }: { icon: React.ReactNode; title:
   );
 }
 
-const inputCls = "w-full px-3.5 py-2.5 bg-[#111622] border border-slate-800 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 outline-none transition";
+const inputCls = "w-full px-3.5 py-2.5 bg-surface border border-line rounded-xl text-sm text-ink placeholder-ink-subtle focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 outline-none transition";
 
 function Field({ label, children, required, full }: any) {
   return (
     <label className={`block ${full ? "md:col-span-2" : ""}`}>
-      <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{label}{required && " *"}</span>
+      <span className="text-xs font-semibold text-ink-muted">{label}{required && " *"}</span>
       <div className="mt-1.5">{children}</div>
     </label>
   );

@@ -7,7 +7,6 @@
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
-  Sparkles,
   Smile,
   MapPin,
   Star,
@@ -91,19 +90,20 @@ function PresetCard({ value, selected, title, example, onClick }: PresetCardProp
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={selected}
       className={`text-left p-4 rounded-xl border transition-all ${
         selected
-          ? "border-orange-500 bg-orange-500/10 shadow-[0_0_15px_rgba(249,115,22,0.15)] ring-1 ring-orange-500/50"
-          : "border-slate-800/80 bg-[#161f30]/60 hover:border-slate-700 hover:bg-[#161f30]"
+          ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500/50"
+          : "border-line bg-surface-muted/60 hover:border-line hover:bg-surface-muted"
       }`}
     >
       <div className="flex items-center justify-between mb-2">
-        <span className={`font-semibold text-sm ${selected ? "text-orange-400" : "text-slate-200"}`}>
+        <span className={`font-semibold text-sm ${selected ? "text-orange-400" : "text-ink"}`}>
           {title}
         </span>
         {selected && <CheckCircle2 className="w-4 h-4 text-orange-400" />}
       </div>
-      <p className="text-xs text-slate-400 italic leading-relaxed">"{example}"</p>
+      <p className="text-xs text-ink-muted italic leading-relaxed">"{example}"</p>
     </button>
   );
 }
@@ -131,17 +131,17 @@ function EmojiSlider({ value, onChange }: { value: NivelEmoji; onChange: (v: Niv
             onClick={() => onChange(level.value)}
             className={`py-2 px-2 text-xs font-semibold rounded-lg transition-all ${
               idx === currentIdx
-                ? "bg-orange-500 text-white shadow-sm"
-                : "bg-[#161f30] text-slate-300 hover:bg-slate-800 border border-slate-800"
+                ? "bg-brand-700 text-white "
+                : "bg-surface-muted text-ink-muted hover:bg-surface-muted border border-line"
             }`}
           >
             {level.label}
           </button>
         ))}
       </div>
-      <div className="bg-[#161f30]/60 border border-slate-800/80 rounded-xl p-3">
-        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Exemplo</span>
-        <p className="text-sm text-slate-200 mt-1">{EMOJI_LEVELS[currentIdx].preview}</p>
+      <div className="bg-surface-muted/60 border border-line rounded-xl p-3">
+        <span className="text-xs text-ink-muted font-semibold">Exemplo</span>
+        <p className="text-sm text-ink mt-1">{EMOJI_LEVELS[currentIdx].preview}</p>
       </div>
     </div>
   );
@@ -167,7 +167,7 @@ function ListEditor({
   const styles =
     colorClass === "red"
       ? { bg: "bg-red-500/15", border: "border-red-500/30", text: "text-red-300", btn: "bg-red-600 hover:bg-red-500" }
-      : { bg: "bg-orange-500/15", border: "border-orange-500/30", text: "text-orange-300", btn: "bg-orange-500 hover:bg-orange-600" };
+      : { bg: "bg-orange-500/15", border: "border-orange-500/30", text: "text-orange-300", btn: "bg-brand-700 hover:bg-brand-800" };
 
   const add = () => {
     const v = input.trim();
@@ -186,7 +186,7 @@ function ListEditor({
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
           placeholder={placeholder}
-          className="flex-1 px-3.5 py-2 text-sm bg-[#161f30] border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30"
+          className="flex-1 px-3.5 py-2 text-sm bg-surface-muted border border-line text-ink placeholder-ink-subtle rounded-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30"
         />
         <button
           type="button"
@@ -199,7 +199,7 @@ function ListEditor({
       </div>
 
       {items.length === 0 ? (
-        <p className="text-xs text-slate-500 italic">{emptyHint}</p>
+        <p className="text-xs text-ink-subtle italic">{emptyHint}</p>
       ) : (
         <ul className="flex flex-wrap gap-2">
           <AnimatePresence>
@@ -254,17 +254,17 @@ function ExamplesEditor({
   return (
     <div className="space-y-3">
       {examples.map((ex, idx) => (
-        <div key={idx} className="bg-[#161f30]/60 border border-slate-800/80 rounded-xl p-3.5 relative">
+        <div key={idx} className="bg-surface-muted/60 border border-line rounded-xl p-3.5 relative">
           <button
             type="button"
             onClick={() => remove(idx)}
-            className="absolute top-2.5 right-2.5 text-slate-400 hover:text-red-400"
+            className="absolute top-2.5 right-2.5 text-ink-muted hover:text-red-400"
             aria-label="Remover exemplo"
           >
             <X className="w-4 h-4" />
           </button>
           <label className="flex items-start gap-2.5 mb-3">
-            <div className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide mt-1.5 shrink-0">
+            <div className="bg-surface-muted text-ink-muted px-2 py-0.5 rounded text-xs font-bold mt-1.5 shrink-0">
               Cliente
             </div>
             <textarea
@@ -272,11 +272,11 @@ function ExamplesEditor({
               onChange={(e) => update(idx, "cliente", e.target.value)}
               rows={1}
               placeholder="ex: oi tem promoção hoje?"
-              className="flex-1 px-2.5 py-1.5 text-sm bg-[#111622] border border-slate-800 text-slate-100 placeholder-slate-500 rounded-lg resize-none focus:outline-none focus:border-orange-500"
+              className="flex-1 px-2.5 py-1.5 text-sm bg-surface border border-line text-ink placeholder-ink-subtle rounded-lg resize-none focus:outline-none focus:border-orange-500"
             />
           </label>
           <label className="flex items-start gap-2.5">
-            <div className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide mt-1.5 shrink-0">
+            <div className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded text-xs font-bold mt-1.5 shrink-0">
               Atendente
             </div>
             <textarea
@@ -284,7 +284,7 @@ function ExamplesEditor({
               onChange={(e) => update(idx, "atendente", e.target.value)}
               rows={2}
               placeholder="ex: oi! hoje tem rodízio de borda recheada na 4ª compra 😊"
-              className="flex-1 px-2.5 py-1.5 text-sm bg-[#111622] border border-slate-800 text-slate-100 placeholder-slate-500 rounded-lg resize-none focus:outline-none focus:border-orange-500"
+              className="flex-1 px-2.5 py-1.5 text-sm bg-surface border border-line text-ink placeholder-ink-subtle rounded-lg resize-none focus:outline-none focus:border-orange-500"
             />
           </label>
         </div>
@@ -292,7 +292,7 @@ function ExamplesEditor({
       <button
         type="button"
         onClick={addExample}
-        className="w-full py-2.5 border border-dashed border-slate-800 rounded-xl text-sm text-slate-400 hover:border-orange-500/50 hover:text-orange-400 hover:bg-orange-500/5 transition-colors flex items-center justify-center gap-2"
+        className="w-full py-2.5 border border-dashed border-line rounded-xl text-sm text-ink-muted hover:border-orange-500/50 hover:text-orange-400 hover:bg-orange-500/5 transition-colors flex items-center justify-center gap-2"
       >
         <Plus className="w-4 h-4" />
         Adicionar exemplo de conversa
@@ -457,36 +457,33 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 space-y-6">
+    <div className="pzb-page max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
+      <div className="pzb-page-header flex-wrap">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight flex items-center gap-2.5">
-            <span className="w-8 h-8 rounded-xl bg-orange-500/10 border border-orange-500/30 grid place-items-center text-orange-500">
-              <Sparkles className="w-5 h-5" />
-            </span>
+          <h2 className="text-base font-semibold text-ink">
             Personalidade da Atendente
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
+          </h2>
+          <p className="pzb-page-description">
             Configure como sua atendente conversa com os clientes — sem mexer em código.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           <button
             type="button"
             onClick={handlePreview}
-            className="px-4 py-2 text-xs font-semibold text-slate-300 bg-[#161f30] hover:bg-[#1a253a] hover:text-white border border-[#1e293b] rounded-xl flex items-center gap-2 transition-colors shadow-sm"
+            className="px-4 py-2 text-xs font-semibold text-ink-muted bg-surface-muted hover:bg-surface-elevated hover:text-ink border border-line rounded-xl flex items-center gap-2 transition-colors"
             title="Ver o prompt completo que o modelo recebe"
           >
-            <Eye className="w-4 h-4 text-slate-400" />
+            <Eye className="w-4 h-4 text-ink-muted" />
             Ver prompt
           </button>
           {onOpenTest && (
             <button
               type="button"
               onClick={onOpenTest}
-              className="px-4 py-2 text-xs font-bold text-white bg-orange-500 hover:bg-orange-600 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-orange-500/20"
+              className="px-4 py-2 text-xs font-bold text-white bg-brand-700 hover:bg-brand-800 rounded-xl flex items-center gap-2 transition-colors"
             >
               <MessageSquare className="w-4 h-4" />
               Testar agora
@@ -519,18 +516,18 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
       </AnimatePresence>
 
       {health && (
-        <section className="rounded-2xl border border-slate-800/80 bg-[#111622] p-5 shadow-sm">
+        <section className="pzb-section p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
             <div>
-              <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-ink flex items-center gap-2">
                 <Activity className="w-4 h-4 text-orange-400" />
                 Prontidão do atendimento
               </h3>
-              <p className="text-[11px] text-slate-500 mt-1">
+              <p className="text-xs text-ink-subtle mt-1">
                 Verificação das dependências que deixam o agente operar sem improvisos.
               </p>
             </div>
-            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold  ${
               health.status === "ready"
                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
                 : health.status === "blocked"
@@ -540,16 +537,16 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
               {health.status === "ready" ? "Pronto" : health.status === "blocked" ? "Ação necessária" : "Atenção"}
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-x-5 gap-y-4">
             {health.checks.map((check) => (
-              <div key={check.key} className="rounded-xl border border-slate-800 bg-[#161f30]/60 p-3">
+              <div key={check.key} className="border-t border-line pt-3">
                 <div className="flex items-center gap-2">
                   <span className={`h-2 w-2 rounded-full ${
                     check.status === "ok" ? "bg-emerald-400" : check.status === "error" ? "bg-red-400" : "bg-amber-400"
                   }`} />
-                  <strong className="text-xs text-slate-200">{check.label}</strong>
+                  <strong className="text-xs text-ink">{check.label}</strong>
                 </div>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{check.message}</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-ink-subtle">{check.message}</p>
               </div>
             ))}
           </div>
@@ -563,15 +560,15 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
           {/* Bloco: Identidade */}
           <Card icon={<User className="w-4 h-4" />} title="Identidade">
             <label className="block">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Nome da atendente</span>
+              <span className="text-xs font-semibold text-ink-muted">Nome da atendente</span>
               <input
                 type="text"
                 value={state.nome}
                 onChange={(e) => setState({ ...state, nome: e.target.value })}
                 placeholder="Ex: Camila, Júlia, Sofia..."
-                className="mt-1.5 w-full px-3.5 py-2.5 text-xs bg-[#161f30] border border-[#1e293b] text-white placeholder-slate-500 rounded-xl focus:outline-none focus:border-orange-500"
+                className="mt-1.5 w-full px-3.5 py-2.5 text-xs bg-surface-muted border border-line text-white placeholder-ink-subtle rounded-xl focus:outline-none focus:border-orange-500"
               />
-              <p className="text-[11px] text-slate-500 mt-1.5">
+              <p className="text-xs text-ink-subtle mt-1.5">
                 O nome que aparece quando a IA se apresenta. Pode ser qualquer nome.
               </p>
             </label>
@@ -619,9 +616,9 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
               value={state.vocabulario_regional || ""}
               onChange={(e) => setState({ ...state, vocabulario_regional: e.target.value || null })}
               placeholder="Ex: uai, trem, bão, sô"
-              className="w-full px-3.5 py-2.5 text-xs bg-[#161f30] border border-[#1e293b] text-white placeholder-slate-500 rounded-xl focus:outline-none focus:border-orange-500"
+              className="w-full px-3.5 py-2.5 text-xs bg-surface-muted border border-line text-white placeholder-ink-subtle rounded-xl focus:outline-none focus:border-orange-500"
             />
-            <p className="text-[11px] text-slate-500 mt-1.5">
+            <p className="text-xs text-ink-subtle mt-1.5">
               Palavras/expressões da sua região que a atendente deve usar com naturalidade.
             </p>
           </Card>
@@ -653,22 +650,22 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
         <Card icon={<SlidersHorizontal className="w-4 h-4" />} title="Comportamento da conversa">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
             <label className="block">
-              <span className="text-[11px] font-semibold text-slate-400">Tamanho</span>
+              <span className="text-xs font-semibold text-ink-muted">Tamanho</span>
               <select
                 value={state.config_atendimento.comunicacao.tamanho_resposta}
                 onChange={(e) => updateCommunication({ tamanho_resposta: e.target.value as "curta" | "equilibrada" })}
-                className="mt-1 w-full rounded-xl border border-slate-800 bg-[#161f30] px-3 py-2 text-xs text-slate-200 focus:border-orange-500 focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-line bg-surface-muted px-3 py-2 text-xs text-ink focus:border-orange-500 focus:outline-none"
               >
                 <option value="curta">Curta</option>
                 <option value="equilibrada">Equilibrada</option>
               </select>
             </label>
             <label className="block">
-              <span className="text-[11px] font-semibold text-slate-400">Ritmo de digitação</span>
+              <span className="text-xs font-semibold text-ink-muted">Ritmo de digitação</span>
               <select
                 value={state.config_atendimento.comunicacao.ritmo_digitacao}
                 onChange={(e) => updateCommunication({ ritmo_digitacao: e.target.value as "rapido" | "natural" | "calmo" })}
-                className="mt-1 w-full rounded-xl border border-slate-800 bg-[#161f30] px-3 py-2 text-xs text-slate-200 focus:border-orange-500 focus:outline-none"
+                className="mt-1 w-full rounded-xl border border-line bg-surface-muted px-3 py-2 text-xs text-ink focus:border-orange-500 focus:outline-none"
               >
                 <option value="rapido">Rápido</option>
                 <option value="natural">Natural</option>
@@ -750,12 +747,12 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
             <NumberField label="Pedido barrado na conferência" min={1} max={5} value={state.config_atendimento.handoff.validador_limite ?? 2} onChange={(value) => updateHandoff({ validador_limite: value })} />
           </div>
           <label className="block">
-            <span className="text-[11px] font-semibold text-slate-400">Mensagem de transição</span>
+            <span className="text-xs font-semibold text-ink-muted">Mensagem de transição</span>
             <textarea
               rows={3}
               value={state.config_atendimento.handoff.mensagem_transicao}
               onChange={(e) => updateHandoff({ mensagem_transicao: e.target.value })}
-              className="mt-1 w-full resize-none rounded-xl border border-slate-800 bg-[#161f30] px-3 py-2 text-xs text-slate-200 focus:border-orange-500 focus:outline-none"
+              className="mt-1 w-full resize-none rounded-xl border border-line bg-surface-muted px-3 py-2 text-xs text-ink focus:border-orange-500 focus:outline-none"
             />
           </label>
         </Card>
@@ -777,17 +774,17 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
           ] as const).map(([key, title]) => {
             const item = state.config_atendimento.followups[key];
             return (
-              <div key={key} className="rounded-xl border border-slate-800 bg-[#161f30]/50 p-4">
+              <div key={key} className="border-t border-line pt-4">
                 <ToggleRow label={title} checked={item.habilitado} onChange={(checked) => updateFollowupItem(key, { habilitado: checked })} />
                 <div className="mt-3 grid grid-cols-[130px_1fr] gap-3 items-start">
                   <NumberField label="Atraso (minutos)" min={2} max={1440} value={item.atraso_minutos} onChange={(value) => updateFollowupItem(key, { atraso_minutos: value })} />
                   <label className="block">
-                    <span className="text-[11px] font-semibold text-slate-400">Mensagem</span>
+                    <span className="text-xs font-semibold text-ink-muted">Mensagem</span>
                     <textarea
                       rows={3}
                       value={item.mensagem}
                       onChange={(e) => updateFollowupItem(key, { mensagem: e.target.value })}
-                      className="mt-1 w-full resize-none rounded-xl border border-slate-800 bg-[#111622] px-3 py-2 text-xs text-slate-200 focus:border-orange-500 focus:outline-none"
+                      className="mt-1 w-full resize-none rounded-xl border border-line bg-surface px-3 py-2 text-xs text-ink focus:border-orange-500 focus:outline-none"
                     />
                   </label>
                 </div>
@@ -795,24 +792,25 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
             );
           })}
         </div>
-        <p className="mt-3 text-[11px] text-slate-500">
+        <p className="mt-3 text-xs text-ink-subtle">
           Variáveis permitidas: {"{{ primeiro_nome }}"}, {"{{ nome_cliente }}"}, {"{{ nome_pizzaria }}"} e {"{{ nome_atendente }}"}.
         </p>
       </Card>
 
       {/* Bloco: avançado (escondido por padrão) */}
-      <div className="border border-slate-800/80 bg-[#111622] rounded-2xl overflow-hidden shadow-sm">
+      <div className="pzb-section overflow-hidden">
         <button
           type="button"
           onClick={() => setAdvancedOpen((v) => !v)}
-          className="w-full px-5 py-4 flex items-center justify-between text-sm font-semibold text-slate-300 hover:bg-[#161f30]/40 transition-colors"
+          aria-expanded={advancedOpen}
+          className="w-full px-5 py-4 flex items-center justify-between text-sm font-semibold text-ink-muted hover:bg-surface-muted/40 transition-colors"
         >
           <span className="flex items-center gap-2.5">
-            <Bot className="w-4 h-4 text-slate-400" />
+            <Bot className="w-4 h-4 text-ink-muted" />
             Avançado
-            <span className="text-[10px] uppercase tracking-wider bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full">para usuários experientes</span>
+            <span className="text-xs bg-surface-muted text-ink-muted px-2 py-0.5 rounded-full">para usuários experientes</span>
           </span>
-          {advancedOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          {advancedOpen ? <ChevronUp className="w-4 h-4 text-ink-muted" /> : <ChevronDown className="w-4 h-4 text-ink-muted" />}
         </button>
 
         <AnimatePresence>
@@ -821,15 +819,15 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden border-t border-slate-800/80"
+              className="overflow-hidden border-t border-line"
             >
               <div className="p-5 space-y-5">
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-200 mb-1.5 flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-slate-400" />
+                  <h4 className="text-sm font-semibold text-ink mb-1.5 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-ink-muted" />
                     Exemplos de conversa (few-shot)
                   </h4>
-                  <p className="text-xs text-slate-400 mb-3">
+                  <p className="text-xs text-ink-muted mb-3">
                     Mostre 2-3 exemplos do jeito que você QUER que ela responda. A IA aprende com seu estilo.
                   </p>
                   <ExamplesEditor
@@ -839,13 +837,13 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
                 </div>
 
                 <div>
-                  <h4 className="text-sm font-semibold text-slate-200 mb-1.5">Instruções extras (em texto livre)</h4>
+                  <h4 className="text-sm font-semibold text-ink mb-1.5">Instruções extras (em texto livre)</h4>
                   <textarea
                     value={state.instrucoes_extras || ""}
                     onChange={(e) => setState({ ...state, instrucoes_extras: e.target.value || null })}
                     rows={4}
                     placeholder="Ex: Sempre ofereça refrigerante de 2L como combo. Mencione que entregamos em até 40min ou ganha desconto."
-                    className="w-full px-3.5 py-2.5 text-sm bg-[#161f30] border border-slate-800 text-slate-100 placeholder-slate-500 rounded-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30 font-mono"
+                    className="w-full px-3.5 py-2.5 text-sm bg-surface-muted border border-line text-ink placeholder-ink-subtle rounded-xl focus:outline-none focus:border-orange-500 focus:ring-1 focus:ring-orange-500/30 font-mono"
                   />
                 </div>
               </div>
@@ -855,15 +853,15 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
       </div>
 
       {/* Footer ações */}
-      <div className="sticky bottom-0 bg-[#0b0e14]/90 backdrop-blur-md border-t border-slate-800/80 -mx-4 md:-mx-6 -mb-4 md:-mb-6 px-6 py-4 flex items-center justify-between z-10">
-        <p className="text-xs text-slate-400">
+      <div className="pzb-form-actions sticky bottom-[var(--pzb-bottom-nav-height)] border-t border-line bg-canvas px-4 py-4 flex flex-wrap items-center justify-between gap-3 z-10">
+        <p className="text-xs text-ink-muted">
           As mudanças entram em vigor na próxima mensagem processada.
         </p>
         <button
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-semibold px-6 py-2.5 rounded-xl flex items-center gap-2 transition-colors shadow-sm"
+          className="bg-brand-700 hover:bg-brand-800 disabled:opacity-50 text-white text-sm font-semibold px-6 py-2.5 rounded-xl flex items-center gap-2 transition-colors"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? "Salvando..." : "Salvar alterações"}
@@ -877,22 +875,25 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
             onClick={() => setPreviewOpen(false)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-[#111622] border border-slate-800 text-slate-100 rounded-2xl max-w-3xl w-full max-h-[80vh] flex flex-col shadow-2xl"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="atendente-prompt-title"
+              className="bg-surface border border-line text-ink rounded-xl max-w-3xl w-full max-h-[80vh] flex flex-col shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between p-4 border-b border-slate-800">
-                <h3 className="font-semibold text-white flex items-center gap-2">
+              <div className="flex items-center justify-between p-4 border-b border-line">
+                <h3 id="atendente-prompt-title" className="font-semibold text-ink flex items-center gap-2">
                   <Eye className="w-4 h-4 text-orange-400" />
                   Prompt real da voz · {previewPipeline || "carregando"}
                 </h3>
-                <button onClick={() => setPreviewOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">
+                <button onClick={() => setPreviewOpen(false)} aria-label="Fechar prompt" className="text-ink-muted hover:text-ink p-2 rounded-lg">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -902,7 +903,7 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
                     <Loader2 className="w-5 h-5 animate-spin text-orange-500" />
                   </div>
                 ) : (
-                  <pre className="whitespace-pre-wrap text-xs text-slate-300 font-mono leading-relaxed bg-[#161f30] p-4 rounded-xl border border-slate-800">
+                  <pre className="whitespace-pre-wrap text-xs text-ink-muted font-mono leading-relaxed bg-surface-muted p-4 rounded-xl border border-line">
                     {previewText}
                   </pre>
                 )}
@@ -920,9 +921,9 @@ export function PersonalityBuilder({ pizzariaId, onOpenTest }: PersonalityBuilde
 // ============================================
 function Card({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
-    <section className="bg-[#111622] border border-slate-800/80 rounded-2xl p-5 shadow-sm">
-      <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-3.5">
-        <span className="text-slate-400">{icon}</span>
+    <section className="pzb-section p-5">
+      <h3 className="text-base font-semibold text-ink flex items-center gap-2 mb-4">
+        <span className="text-ink-muted">{icon}</span>
         {title}
       </h3>
       {children}
@@ -944,10 +945,10 @@ function ToggleRow({
   compact?: boolean;
 }) {
   return (
-    <label className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-800 bg-[#161f30]/50 ${compact ? "px-3 py-2.5" : "px-3.5 py-3"}`}>
+    <label className={`flex cursor-pointer items-center justify-between gap-3 border-b border-line last:border-b-0 ${compact ? "py-2.5" : "py-3"}`}>
       <span className="min-w-0">
-        <span className="block text-xs font-medium text-slate-200">{label}</span>
-        {description && <span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">{description}</span>}
+        <span className="block text-sm font-medium text-ink">{label}</span>
+        {description && <span className="mt-0.5 block text-xs leading-relaxed text-ink-subtle">{description}</span>}
       </span>
       <input
         type="checkbox"
@@ -955,7 +956,7 @@ function ToggleRow({
         onChange={(e) => onChange(e.target.checked)}
         className="peer sr-only"
       />
-      <span className="relative h-5 w-9 shrink-0 rounded-full bg-slate-700 transition-colors peer-checked:bg-orange-500 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
+      <span className="relative h-5 w-9 shrink-0 rounded-full bg-surface-elevated transition-colors peer-checked:bg-orange-500 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-surface after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4" />
     </label>
   );
 }
@@ -975,7 +976,7 @@ function NumberField({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-semibold text-slate-400">{label}</span>
+      <span className="text-xs font-semibold text-ink-muted">{label}</span>
       <input
         type="number"
         min={min}
@@ -985,7 +986,7 @@ function NumberField({
           const parsed = Number(e.target.value);
           if (Number.isFinite(parsed)) onChange(Math.min(max, Math.max(min, parsed)));
         }}
-        className="mt-1 w-full rounded-xl border border-slate-800 bg-[#161f30] px-3 py-2 text-xs text-slate-200 focus:border-orange-500 focus:outline-none"
+        className="mt-1 w-full rounded-xl border border-line bg-surface-muted px-3 py-2 text-xs text-ink focus:border-orange-500 focus:outline-none"
       />
     </label>
   );

@@ -182,33 +182,29 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
 
   if (loading) {
     return (
-      <div className="min-h-[420px] grid place-items-center rounded-2xl border border-[#1e293b] bg-[#111622]">
-        <div className="flex items-center gap-2 text-slate-400 text-sm"><Loader2 className="w-5 h-5 animate-spin text-orange-500" /> Carregando divulgação...</div>
+      <div className="min-h-[420px] grid place-items-center rounded-xl border border-line bg-surface">
+        <div className="flex items-center gap-2 text-ink-muted text-sm"><Loader2 className="w-5 h-5 animate-spin text-orange-500" /> Carregando divulgação...</div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-[1500px] mx-auto pb-24 space-y-6">
-      <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 md:p-6 shadow-sm">
+    <div className="max-w-[1500px] mx-auto space-y-6">
+      <section>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3.5">
             {onBack && (
-              <button type="button" onClick={onBack} className="mt-0.5 w-10 h-10 grid place-items-center rounded-xl border border-[#1e293b] bg-[#161f30] text-slate-300 hover:text-white hover:bg-[#1e293b] transition" aria-label="Voltar aos temas">
+              <button type="button" onClick={onBack} className="mt-0.5 w-10 h-10 grid place-items-center rounded-xl border border-line bg-surface-muted text-ink-muted hover:text-white hover:bg-surface-elevated transition" aria-label="Voltar aos temas">
                 <ArrowLeft className="w-4 h-4" />
               </button>
             )}
             <div>
-              <div className="flex items-center gap-2 text-orange-400 mb-1">
-                <Megaphone className="w-4 h-4" />
-                <span className="text-xs font-bold uppercase tracking-wider">Divulgação do cardápio</span>
-              </div>
-              <h1 className="text-xl font-bold text-white tracking-tight">Banners, ofertas e cupons</h1>
-              <p className="text-xs text-slate-400 mt-1">Crie campanhas que combinam com a marca e convertem visitas em pedidos.</p>
+              <h2 className="text-base font-semibold text-ink">Banners, ofertas e cupons</h2>
+              <p className="pzb-page-description">Crie campanhas que combinam com a marca e convertem visitas em pedidos.</p>
             </div>
           </div>
           <button type="button" onClick={save} disabled={saving}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-sm disabled:opacity-60 transition">
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold disabled:opacity-60 transition">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
             {saving ? "Salvando..." : saved ? "Alterações salvas" : "Salvar divulgação"}
           </button>
@@ -218,36 +214,38 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
       {error && <div className="rounded-xl border border-red-500/30 bg-red-950/40 px-4 py-3 text-xs font-medium text-red-300">{error}</div>}
 
       <section className="grid sm:grid-cols-3 gap-4">
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Banners ativos</p>
-          <strong className="block text-2xl font-bold text-white mt-2">{campanhas.filter((item) => item.ativa).length}</strong>
-          <small className="text-xs text-slate-500">de {campanhas.length} configurados</small>
+        <div className="rounded-xl border border-line bg-surface p-5">
+          <p className="text-xs font-semibold tracking-normal text-ink-muted">Banners ativos</p>
+          <strong className="block text-2xl font-semibold text-white mt-2">{campanhas.filter((item) => item.ativa).length}</strong>
+          <small className="text-xs text-ink-subtle">de {campanhas.length} configurados</small>
         </div>
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Cupons ativos</p>
-          <strong className="block text-2xl font-bold text-white mt-2">{cuponsAtivos}</strong>
-          <small className="text-xs text-slate-500">validados no servidor</small>
+        <div className="rounded-xl border border-line bg-surface p-5">
+          <p className="text-xs font-semibold tracking-normal text-ink-muted">Cupons ativos</p>
+          <strong className="block text-2xl font-semibold text-white mt-2">{cuponsAtivos}</strong>
+          <small className="text-xs text-ink-subtle">validados no servidor</small>
         </div>
         <button type="button" onClick={() => { setMostrarAcompanhamento((v) => !v); setSaved(false); }}
-          className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 text-left hover:border-slate-600 transition shadow-sm">
+          className="rounded-xl border border-line bg-surface p-5 text-left hover:border-line transition">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Acompanhar pedido</p>
-            {mostrarAcompanhamento ? <Eye className="w-4 h-4 text-emerald-400" /> : <EyeOff className="w-4 h-4 text-slate-500" />}
+            <p className="text-xs font-semibold tracking-normal text-ink-muted">Acompanhar pedido</p>
+            {mostrarAcompanhamento ? <Eye className="w-4 h-4 text-emerald-400" /> : <EyeOff className="w-4 h-4 text-ink-subtle" />}
           </div>
-          <strong className="block text-2xl font-bold text-white mt-2">{mostrarAcompanhamento ? "Visível" : "Oculto"}</strong>
-          <small className="text-xs text-slate-500">Número + telefone do cliente</small>
+          <strong className="block text-2xl font-semibold text-white mt-2">{mostrarAcompanhamento ? "Visível" : "Oculto"}</strong>
+          <small className="text-xs text-ink-subtle">Número + telefone do cliente</small>
         </button>
       </section>
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
-        <section className="rounded-2xl border border-[#1e293b] bg-[#111622] overflow-hidden shadow-sm">
-          <div className="p-2 border-b border-[#1e293b] flex gap-2 bg-[#0d1117]">
+        <section className="rounded-xl border border-line bg-surface overflow-hidden">
+          <div className="pzb-tablist m-3" aria-label="Tipos de divulgação">
             <button type="button" onClick={() => setTab("campanhas")}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition ${tab === "campanhas" ? "bg-orange-500 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-[#161f30]"}`}>
+              aria-pressed={tab === "campanhas"} data-active={tab === "campanhas"}
+              className={`pzb-tab flex-1 ${tab === "campanhas" ? "bg-orange-500/10 text-orange-400 border-orange-500/30" : "text-ink-muted hover:text-ink hover:bg-surface-muted"}`}>
               Banners e ofertas
             </button>
             <button type="button" onClick={() => setTab("cupons")}
-              className={`flex-1 px-4 py-2.5 rounded-xl text-xs font-bold transition ${tab === "cupons" ? "bg-orange-500 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-[#161f30]"}`}>
+              aria-pressed={tab === "cupons"} data-active={tab === "cupons"}
+              className={`pzb-tab flex-1 ${tab === "cupons" ? "bg-orange-500/10 text-orange-400 border-orange-500/30" : "text-ink-muted hover:text-ink hover:bg-surface-muted"}`}>
               Cupons de desconto
             </button>
           </div>
@@ -255,56 +253,56 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
           {tab === "campanhas" ? (
             <div className="p-5 space-y-4">
               <div className="flex items-center justify-between gap-3">
-                <div><h3 className="font-bold text-sm text-white">Campanhas do cardápio</h3><p className="text-xs text-slate-400 mt-0.5">A primeira campanha ativa ganha maior destaque.</p></div>
+                <div><h3 className="font-semibold text-sm text-white">Campanhas do cardápio</h3><p className="text-xs text-ink-muted mt-0.5">A primeira campanha ativa ganha maior destaque.</p></div>
                 <button type="button" onClick={() => { setCampanhas((c) => [...c, novaCampanha(c.length)]); setSaved(false); }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs font-bold hover:bg-orange-500/20 transition">
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs font-semibold hover:bg-orange-500/20 transition">
                   <Plus className="w-3.5 h-3.5" /> Novo banner
                 </button>
               </div>
               {campanhas.length === 0 && (
-                <div className="py-12 text-center rounded-2xl border border-dashed border-[#1e293b] bg-[#161f30]/40">
-                  <Image className="w-8 h-8 text-slate-500 mx-auto mb-3" />
+                <div className="py-12 text-center rounded-xl border border-dashed border-line bg-surface-muted/40">
+                  <Image className="w-8 h-8 text-ink-subtle mx-auto mb-3" />
                   <p className="text-sm font-semibold text-white">Nenhuma campanha criada</p>
-                  <p className="text-xs text-slate-400 mt-1">Adicione uma oferta para destacar no cardápio.</p>
+                  <p className="text-xs text-ink-muted mt-1">Adicione uma oferta para destacar no cardápio.</p>
                 </div>
               )}
               {campanhas.map((item, index) => (
-                <article key={item.id} className="rounded-2xl border border-[#1e293b] bg-[#161f30] p-4 space-y-3">
+                <article key={item.id} className="rounded-xl border border-line bg-surface-muted p-4 space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
-                      <span className="w-7 h-7 grid place-items-center rounded-lg bg-orange-500/20 text-orange-400 text-xs font-bold">{index + 1}</span>
+                      <span className="w-7 h-7 grid place-items-center rounded-lg bg-orange-500/20 text-orange-400 text-xs font-semibold">{index + 1}</span>
                       <div>
-                        <strong className="text-xs font-bold text-white block">{item.titulo || "Banner sem título"}</strong>
-                        <small className="block text-[10px] text-slate-400">{item.ativa ? "Publicado no cardápio" : "Oculto do público"}</small>
+                        <strong className="text-xs font-semibold text-white block">{item.titulo || "Banner sem título"}</strong>
+                        <small className="block text-xs text-ink-muted">{item.ativa ? "Publicado no cardápio" : "Oculto do público"}</small>
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <button type="button" onClick={() => moveCampanha(index, -1)} disabled={index === 0} className="w-7 h-7 grid place-items-center rounded-lg text-slate-400 hover:text-white hover:bg-[#111622] disabled:opacity-30"><ArrowUp className="w-3.5 h-3.5" /></button>
-                      <button type="button" onClick={() => moveCampanha(index, 1)} disabled={index === campanhas.length - 1} className="w-7 h-7 grid place-items-center rounded-lg text-slate-400 hover:text-white hover:bg-[#111622] disabled:opacity-30"><ArrowDown className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={() => moveCampanha(index, -1)} disabled={index === 0} className="w-7 h-7 grid place-items-center rounded-lg text-ink-muted hover:text-white hover:bg-surface disabled:opacity-30"><ArrowUp className="w-3.5 h-3.5" /></button>
+                      <button type="button" onClick={() => moveCampanha(index, 1)} disabled={index === campanhas.length - 1} className="w-7 h-7 grid place-items-center rounded-lg text-ink-muted hover:text-white hover:bg-surface disabled:opacity-30"><ArrowDown className="w-3.5 h-3.5" /></button>
                       <button type="button" onClick={() => { if (confirm("Remover este banner?")) setCampanhas((c) => c.filter((x) => x.id !== item.id)); }} className="w-7 h-7 grid place-items-center rounded-lg text-red-400 hover:bg-red-950/40"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                   <div className="grid md:grid-cols-2 gap-3 pt-2">
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Título</span><input value={item.titulo} onChange={(e) => updateCampanha(item.id, { titulo: e.target.value })} className="admin-promo-input" placeholder="Ex: Festival de pizzas" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Etiqueta</span><input value={item.etiqueta || ""} onChange={(e) => updateCampanha(item.id, { etiqueta: e.target.value })} className="admin-promo-input" placeholder="OFERTA DA SEMANA" /></label>
-                    <label className="md:col-span-2 space-y-1"><span className="text-xs font-semibold text-slate-400">Descrição</span><input value={item.subtitulo || ""} onChange={(e) => updateCampanha(item.id, { subtitulo: e.target.value })} className="admin-promo-input" placeholder="Uma frase curta e convincente" /></label>
-                    <label className="md:col-span-2 space-y-1"><span className="text-xs font-semibold text-slate-400">URL da imagem</span><input value={item.imagem_url || ""} onChange={(e) => updateCampanha(item.id, { imagem_url: e.target.value })} className="admin-promo-input" placeholder="https://.../foto-da-oferta.jpg" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Texto do botão</span><input value={item.cta_label || ""} onChange={(e) => updateCampanha(item.id, { cta_label: e.target.value })} className="admin-promo-input" placeholder="Pedir agora" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Cupom associado</span><select value={item.cupom_codigo || ""} onChange={(e) => updateCampanha(item.id, { cupom_codigo: e.target.value })} className="admin-promo-input"><option value="">Sem cupom</option>{cupons.map((c) => <option key={c.id} value={c.codigo}>{c.codigo || "Cupom sem código"}</option>)}</select></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Título</span><input value={item.titulo} onChange={(e) => updateCampanha(item.id, { titulo: e.target.value })} className="admin-promo-input" placeholder="Ex: Festival de pizzas" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Etiqueta</span><input value={item.etiqueta || ""} onChange={(e) => updateCampanha(item.id, { etiqueta: e.target.value })} className="admin-promo-input" placeholder="OFERTA DA SEMANA" /></label>
+                    <label className="md:col-span-2 space-y-1"><span className="text-xs font-semibold text-ink-muted">Descrição</span><input value={item.subtitulo || ""} onChange={(e) => updateCampanha(item.id, { subtitulo: e.target.value })} className="admin-promo-input" placeholder="Uma frase curta e convincente" /></label>
+                    <label className="md:col-span-2 space-y-1"><span className="text-xs font-semibold text-ink-muted">URL da imagem</span><input value={item.imagem_url || ""} onChange={(e) => updateCampanha(item.id, { imagem_url: e.target.value })} className="admin-promo-input" placeholder="https://.../foto-da-oferta.jpg" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Texto do botão</span><input value={item.cta_label || ""} onChange={(e) => updateCampanha(item.id, { cta_label: e.target.value })} className="admin-promo-input" placeholder="Pedir agora" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Cupom associado</span><select value={item.cupom_codigo || ""} onChange={(e) => updateCampanha(item.id, { cupom_codigo: e.target.value })} className="admin-promo-input"><option value="">Sem cupom</option>{cupons.map((c) => <option key={c.id} value={c.codigo}>{c.codigo || "Cupom sem código"}</option>)}</select></label>
                   </div>
                   <div className="pt-1 space-y-2">
                     <div className="flex items-baseline justify-between gap-3">
-                      <span className="text-xs font-semibold text-slate-400">Fotos da colagem</span>
-                      <span className="text-[10px] text-slate-500">
+                      <span className="text-xs font-semibold text-ink-muted">Fotos da colagem</span>
+                      <span className="text-xs text-ink-subtle">
                         {(item.produtos_colagem || []).length}/{MAX_COLAGEM} escolhidos
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="text-xs text-ink-subtle">
                       Escolha até 3 produtos: as fotos deles aparecem no cartão, na ordem em que você clicar.
                       Sem escolha, o cardápio usa a imagem acima e as primeiras fotos do cardápio.
                     </p>
                     {produtosComFoto.length === 0 ? (
-                      <p className="text-[11px] text-slate-500 rounded-xl border border-dashed border-[#1e293b] px-3 py-3">
+                      <p className="text-xs text-ink-subtle rounded-xl border border-dashed border-line px-3 py-3">
                         Nenhum produto com foto no cardápio. Adicione fotos em Cardápio para escolher aqui.
                       </p>
                     ) : (
@@ -317,11 +315,11 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
                             <button key={p.id} type="button" disabled={cheio} aria-pressed={marcado}
                               title={cheio ? `Máximo de ${MAX_COLAGEM} fotos` : p.nome}
                               onClick={() => alternarProdutoColagem(item, p.id)}
-                              className={`relative rounded-xl overflow-hidden border-2 text-left transition ${marcado ? "border-orange-500" : "border-transparent hover:border-slate-600"} disabled:opacity-35 disabled:cursor-not-allowed`}>
+                              className={`relative rounded-xl overflow-hidden border-2 text-left transition ${marcado ? "border-orange-500" : "border-transparent hover:border-line"} disabled:opacity-35 disabled:cursor-not-allowed`}>
                               <img src={p.imagem_url || ""} alt="" className="w-full aspect-square object-cover" loading="lazy" />
-                              <span className="block truncate px-1.5 py-1 text-[10px] text-slate-300 bg-[#111622]">{p.nome}</span>
+                              <span className="block truncate px-1.5 py-1 text-xs text-ink-muted bg-surface">{p.nome}</span>
                               {marcado && (
-                                <span className="absolute top-1 right-1 w-5 h-5 grid place-items-center rounded-full bg-orange-500 text-white text-[10px] font-bold shadow">{posicao + 1}</span>
+                                <span className="absolute top-1 right-1 w-5 h-5 grid place-items-center rounded-full bg-brand-700 text-white text-xs font-semibold shadow">{posicao + 1}</span>
                               )}
                             </button>
                           );
@@ -330,13 +328,13 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
                     )}
                     {(item.produtos_colagem || []).length > 0 && (
                       <button type="button" onClick={() => updateCampanha(item.id, { produtos_colagem: [] })}
-                        className="text-[11px] font-semibold text-slate-400 hover:text-orange-400">
+                        className="text-xs font-semibold text-ink-muted hover:text-orange-400">
                         Voltar para a escolha automática
                       </button>
                     )}
                   </div>
                   <button type="button" onClick={() => updateCampanha(item.id, { ativa: !item.ativa })}
-                    className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border ${item.ativa ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-[#1e293b] text-slate-400"}`}>
+                    className={`mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border ${item.ativa ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-line text-ink-muted"}`}>
                     {item.ativa ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />} {item.ativa ? "Banner ativo" : "Banner desativado"}
                   </button>
                 </article>
@@ -345,27 +343,27 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
           ) : (
             <div className="p-5 space-y-4">
               <div className="flex items-center justify-between gap-3">
-                <div><h3 className="font-bold text-sm text-white">Cupons de desconto</h3><p className="text-xs text-slate-400 mt-0.5">O valor é conferido novamente no servidor ao fechar o pedido.</p></div>
+                <div><h3 className="font-semibold text-sm text-white">Cupons de desconto</h3><p className="text-xs text-ink-muted mt-0.5">O valor é conferido novamente no servidor ao fechar o pedido.</p></div>
                 <button type="button" onClick={() => { setCupons((c) => [...c, novoCupom()]); setSaved(false); }}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs font-bold hover:bg-orange-500/20 transition"><Plus className="w-3.5 h-3.5" /> Novo cupom</button>
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-orange-500/30 bg-orange-500/10 text-orange-400 text-xs font-semibold hover:bg-orange-500/20 transition"><Plus className="w-3.5 h-3.5" /> Novo cupom</button>
               </div>
-              {cupons.length === 0 && <div className="py-12 text-center rounded-2xl border border-dashed border-[#1e293b] bg-[#161f30]/40"><BadgePercent className="w-8 h-8 text-slate-500 mx-auto mb-3" /><p className="text-sm font-semibold text-white">Nenhum cupom criado</p><p className="text-xs text-slate-400 mt-1">Crie descontos percentuais ou em reais.</p></div>}
+              {cupons.length === 0 && <div className="py-12 text-center rounded-xl border border-dashed border-line bg-surface-muted/40"><BadgePercent className="w-8 h-8 text-ink-subtle mx-auto mb-3" /><p className="text-sm font-semibold text-white">Nenhum cupom criado</p><p className="text-xs text-ink-muted mt-1">Crie descontos percentuais ou em reais.</p></div>}
               {cupons.map((item) => (
-                <article key={item.id} className="rounded-2xl border border-[#1e293b] bg-[#161f30] p-4">
+                <article key={item.id} className="rounded-xl border border-line bg-surface-muted p-4">
                   <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Código</span><input value={item.codigo} onChange={(e) => updateCupom(item.id, { codigo: e.target.value.toUpperCase().replace(/\s/g, "") })} className="admin-promo-input font-mono uppercase" placeholder="PROMO10" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Tipo</span><select value={item.tipo} onChange={(e) => updateCupom(item.id, { tipo: e.target.value as CupomCardapio["tipo"] })} className="admin-promo-input"><option value="percentual">Percentual (%)</option><option value="fixo">Valor fixo (R$)</option></select></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Valor</span><input type="number" min="0.01" max={item.tipo === "percentual" ? 100 : undefined} step="0.01" value={item.valor} onChange={(e) => updateCupom(item.id, { valor: Number(e.target.value) })} className="admin-promo-input" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Pedido mínimo (R$)</span><input type="number" min="0" step="0.01" value={item.pedido_minimo || 0} onChange={(e) => updateCupom(item.id, { pedido_minimo: Number(e.target.value) })} className="admin-promo-input" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Validade</span><input type="date" value={item.validade || ""} onChange={(e) => updateCupom(item.id, { validade: e.target.value || null })} className="admin-promo-input" /></label>
-                    <label className="space-y-1"><span className="text-xs font-semibold text-slate-400">Descrição</span><input value={item.descricao || ""} onChange={(e) => updateCupom(item.id, { descricao: e.target.value })} className="admin-promo-input" placeholder="Benefício para o cliente" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Código</span><input value={item.codigo} onChange={(e) => updateCupom(item.id, { codigo: e.target.value.toUpperCase().replace(/\s/g, "") })} className="admin-promo-input font-mono" placeholder="PROMO10" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Tipo</span><select value={item.tipo} onChange={(e) => updateCupom(item.id, { tipo: e.target.value as CupomCardapio["tipo"] })} className="admin-promo-input"><option value="percentual">Percentual (%)</option><option value="fixo">Valor fixo (R$)</option></select></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Valor</span><input type="number" min="0.01" max={item.tipo === "percentual" ? 100 : undefined} step="0.01" value={item.valor} onChange={(e) => updateCupom(item.id, { valor: Number(e.target.value) })} className="admin-promo-input" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Pedido mínimo (R$)</span><input type="number" min="0" step="0.01" value={item.pedido_minimo || 0} onChange={(e) => updateCupom(item.id, { pedido_minimo: Number(e.target.value) })} className="admin-promo-input" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Validade</span><input type="date" value={item.validade || ""} onChange={(e) => updateCupom(item.id, { validade: e.target.value || null })} className="admin-promo-input" /></label>
+                    <label className="space-y-1"><span className="text-xs font-semibold text-ink-muted">Descrição</span><input value={item.descricao || ""} onChange={(e) => updateCupom(item.id, { descricao: e.target.value })} className="admin-promo-input" placeholder="Benefício para o cliente" /></label>
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <button type="button" onClick={() => updateCupom(item.id, { ativo: !item.ativo })}
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border ${item.ativo ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-[#1e293b] text-slate-400"}`}>
+                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border ${item.ativo ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-line text-ink-muted"}`}>
                       {item.ativo ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />} {item.ativo ? "Cupom ativo" : "Cupom desativado"}
                     </button>
-                    <button type="button" onClick={() => { if (confirm("Remover este cupom?")) setCupons((c) => c.filter((x) => x.id !== item.id)); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-red-400 hover:bg-red-950/40"><Trash2 className="w-3.5 h-3.5" /> Remover</button>
+                    <button type="button" onClick={() => { if (confirm("Remover este cupom?")) setCupons((c) => c.filter((x) => x.id !== item.id)); }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-400 hover:bg-red-950/40"><Trash2 className="w-3.5 h-3.5" /> Remover</button>
                   </div>
                 </article>
               ))}
@@ -374,27 +372,27 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
         </section>
 
         <aside className="lg:sticky lg:top-5 space-y-4">
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-3 text-orange-400"><Sparkles className="w-4 h-4" /><span className="text-xs font-bold uppercase tracking-wider">Prévia do destaque</span></div>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <div className="flex items-center gap-2 mb-3 text-orange-400"><Sparkles className="w-4 h-4" /><span className="text-xs font-semibold tracking-normal">Prévia do destaque</span></div>
             {campanhaAtiva ? (
-              <div className="relative min-h-[310px] overflow-hidden rounded-2xl border border-[#1e293b] bg-[#0b0e14]">
+              <div className="relative min-h-[310px] overflow-hidden rounded-xl border border-line bg-canvas">
                 {campanhaAtiva.imagem_url && <img src={campanhaAtiva.imagem_url} alt="" className="absolute inset-0 w-full h-full object-cover opacity-55" />}
                 <div className="absolute inset-0 bg-gradient-to-t from-black via-black/65 to-black/10" />
                 <div className="relative min-h-[310px] p-5 flex flex-col justify-end">
-                  <span className="w-fit px-2.5 py-1 rounded bg-orange-500 text-white text-[10px] font-bold tracking-wider">{campanhaAtiva.etiqueta || "OFERTA"}</span>
-                  <h3 className="mt-3 text-2xl leading-tight font-bold text-white uppercase">{campanhaAtiva.titulo}</h3>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-300">{campanhaAtiva.subtitulo}</p>
-                  <span className="mt-4 w-fit px-4 py-2 rounded-xl bg-orange-500 text-white text-xs font-bold shadow-sm">{campanhaAtiva.cta_label || "Aproveitar"}</span>
+                  <span className="w-fit px-2.5 py-1 rounded bg-brand-700 text-white text-xs font-semibold tracking-normal">{campanhaAtiva.etiqueta || "OFERTA"}</span>
+                  <h3 className="mt-3 text-2xl leading-tight font-semibold text-white">{campanhaAtiva.titulo}</h3>
+                  <p className="mt-2 text-xs leading-relaxed text-ink-muted">{campanhaAtiva.subtitulo}</p>
+                  <span className="mt-4 w-fit px-4 py-2 rounded-xl bg-brand-700 text-white text-xs font-semibold">{campanhaAtiva.cta_label || "Aproveitar"}</span>
                 </div>
               </div>
             ) : (
-              <div className="min-h-[260px] rounded-2xl border border-dashed border-[#1e293b] bg-[#161f30]/40 grid place-items-center text-center p-6">
-                <div><Megaphone className="w-8 h-8 text-slate-500 mx-auto mb-3" /><p className="text-sm font-semibold text-white">Ative um banner</p><p className="text-xs text-slate-400 mt-1">A prévia aparecerá aqui.</p></div>
+              <div className="min-h-[260px] rounded-xl border border-dashed border-line bg-surface-muted/40 grid place-items-center text-center p-6">
+                <div><Megaphone className="w-8 h-8 text-ink-subtle mx-auto mb-3" /><p className="text-sm font-semibold text-white">Ative um banner</p><p className="text-xs text-ink-muted mt-1">A prévia aparecerá aqui.</p></div>
               </div>
             )}
           </section>
-          <section className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-            <div className="flex gap-3"><ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" /><div><strong className="text-xs font-bold text-white">Desconto protegido</strong><p className="text-xs text-slate-400 leading-relaxed mt-1">O navegador mostra a estimativa, mas o servidor recalcula produtos, adicionais, pedido mínimo, validade e desconto.</p></div></div>
+          <section className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+            <div className="flex gap-3"><ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" /><div><strong className="text-xs font-semibold text-white">Desconto protegido</strong><p className="text-xs text-ink-muted leading-relaxed mt-1">O navegador mostra a estimativa, mas o servidor recalcula produtos, adicionais, pedido mínimo, validade e desconto.</p></div></div>
           </section>
         </aside>
       </div>
@@ -402,11 +400,11 @@ export function PromocoesCardapioPanel({ pizzariaId, onBack, onUpdated }: Props)
       <style>{`
         .admin-promo-input {
           width: 100%; min-height: 40px; padding: 8px 12px; border-radius: 10px;
-          border: 1px solid #1e293b; background: #161f30; color: #ffffff;
-          font-size: 12px; outline: none; transition: border-color .15s;
+          border: 1px solid var(--color-line); background: var(--color-surface-muted); color: var(--color-ink);
+          font-size: 14px; outline: none; transition: border-color .15s;
         }
         .admin-promo-input:focus { border-color: #f97316; }
-        .admin-promo-input::placeholder { color: #64748b; }
+        .admin-promo-input::placeholder { color: var(--color-ink-subtle); }
       `}</style>
     </div>
   );

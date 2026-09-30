@@ -4,9 +4,9 @@
  * Reformulado para visual premium, layout em Slide-over e abas.
  */
 import React, { useEffect, useMemo, useState } from "react";
-import { 
-  Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw, 
-  UtensilsCrossed, ImageOff, FileText, Upload, Sparkles, Search, 
+import {
+  Loader2, Plus, Pencil, Trash2, Save, X, AlertCircle, RefreshCw,
+  UtensilsCrossed, ImageOff, FileText, Upload, Sparkles, Search,
   Check, Eye, EyeOff, LayoutGrid, Tag, SlidersHorizontal, Settings,
   Copy, CheckCircle2, Package
 } from "lucide-react";
@@ -89,23 +89,23 @@ function ProdutoAdicionaisEditor({
     <div className="space-y-3.5">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
-          <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Adicionais e Bordas</h4>
-          <p className="text-[11px] text-slate-400 leading-relaxed">
+          <h4 className="text-xs font-semibold text-white tracking-normal block">Adicionais e Bordas</h4>
+          <p className="text-xs text-ink-muted leading-relaxed">
             Configure as opções e bordas aceitas para este produto com seus respectivos preços.
           </p>
         </div>
         <button
           type="button"
           onClick={() => addItem()}
-          className="text-xs px-3 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 hover:bg-orange-500/25 font-bold transition-all flex items-center gap-1.5 shadow-sm"
+          className="text-xs px-3 py-1.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 hover:bg-orange-500/25 font-semibold transition-all flex items-center gap-1.5"
         >
           <Plus className="w-3.5 h-3.5" /> Adicionar Opção
         </button>
       </div>
 
       {/* Sugestões rápidas de 1 clique */}
-      <div className="bg-[#161f30]/60 border border-[#1e293b] p-3 rounded-xl space-y-1.5">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Sugestões rápidas (1 clique):</span>
+      <div className="bg-surface-muted/60 border border-line p-3 rounded-xl space-y-1.5">
+        <span className="text-xs font-semibold text-ink-muted tracking-normal block">Sugestões rápidas (1 clique):</span>
         <div className="flex flex-wrap gap-1.5">
           {quickPresets.map((preset) => {
             const jaExiste = lista.some(
@@ -117,14 +117,14 @@ function ProdutoAdicionaisEditor({
                 type="button"
                 disabled={jaExiste}
                 onClick={() => addItem(preset)}
-                className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1 transition ${
+                className={`text-xs px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1 transition ${
                   jaExiste
-                    ? "bg-[#111622] text-slate-600 border-[#1e293b] cursor-not-allowed line-through"
-                    : "bg-[#111622] text-slate-300 border-[#1e293b] hover:border-orange-500/50 hover:text-white"
+                    ? "bg-surface text-ink-subtle border-line cursor-not-allowed line-through"
+                    : "bg-surface text-ink-muted border-line hover:border-orange-500/50 hover:text-white"
                 }`}
               >
                 <span>+ {preset.nome}</span>
-                <span className="text-slate-500 text-[10px]">(R$ {preset.preco.toFixed(2)})</span>
+                <span className="text-ink-subtle text-xs">(R$ {preset.preco.toFixed(2)})</span>
               </button>
             );
           })}
@@ -133,47 +133,47 @@ function ProdutoAdicionaisEditor({
 
       {/* Lista de itens */}
       {lista.length === 0 ? (
-        <div className="p-6 text-center border border-dashed border-[#1e293b] bg-[#111622] rounded-xl">
-          <p className="text-xs text-slate-400">Nenhum adicional ou borda cadastrado para este produto.</p>
-          <p className="text-[11px] text-slate-500 mt-1">Clique acima em "Adicionar Opção" ou escolha uma das sugestões rápidas.</p>
+        <div className="p-6 text-center border border-dashed border-line bg-surface rounded-xl">
+          <p className="text-xs text-ink-muted">Nenhum adicional ou borda cadastrado para este produto.</p>
+          <p className="text-xs text-ink-subtle mt-1">Clique acima em "Adicionar Opção" ou escolha uma das sugestões rápidas.</p>
         </div>
       ) : (
         <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
           {lista.map((item, idx) => (
             <div
               key={idx}
-              className="flex items-center gap-2 bg-[#161f30] p-2.5 rounded-xl border border-[#1e293b] hover:border-slate-700 transition"
+              className="flex items-center gap-2 bg-surface-muted p-2.5 rounded-xl border border-line hover:border-line transition"
             >
               <input
                 type="text"
                 value={item.nome}
                 onChange={(e) => updateItem(idx, { nome: e.target.value })}
                 placeholder="Ex: Borda Catupiry, Bacon Extra"
-                className="flex-1 px-3 py-1.5 bg-[#111622] border border-[#1e293b] rounded-lg text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500"
+                className="flex-1 px-3 py-1.5 bg-surface border border-line rounded-lg text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500"
               />
               <select
                 value={item.tipo || "borda"}
                 onChange={(e) => updateItem(idx, { tipo: e.target.value as any })}
-                className="w-28 px-2.5 py-1.5 bg-[#111622] border border-[#1e293b] rounded-lg text-xs text-slate-200 outline-none focus:border-orange-500"
+                className="w-28 px-2.5 py-1.5 bg-surface border border-line rounded-lg text-xs text-ink outline-none focus:border-orange-500"
               >
                 <option value="borda">Borda</option>
                 <option value="adicional">Adicional</option>
               </select>
               <div className="relative w-28">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-bold">R$</span>
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-subtle font-semibold">R$</span>
                 <input
                   type="number"
                   step="0.01"
                   min="0"
                   value={item.preco}
                   onChange={(e) => updateItem(idx, { preco: Number(e.target.value) || 0 })}
-                  className="w-full pl-8 pr-2 py-1.5 bg-[#111622] border border-[#1e293b] rounded-lg text-xs text-white outline-none focus:border-orange-500"
+                  className="w-full pl-8 pr-2 py-1.5 bg-surface border border-line rounded-lg text-xs text-white outline-none focus:border-orange-500"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => removeItem(idx)}
-                className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-950/40 rounded-lg transition"
+                className="p-1.5 text-ink-muted hover:text-red-400 hover:bg-red-950/40 rounded-lg transition"
                 title="Remover"
               >
                 <Trash2 className="w-4 h-4" />
@@ -185,10 +185,10 @@ function ProdutoAdicionaisEditor({
 
       {/* Ação em lote: Replicar para todos da mesma categoria */}
       {onReplicate && outrosCount > 0 && (
-        <div className="mt-3 pt-3 border-t border-[#1e293b] flex items-center justify-between gap-3 bg-[#111622] p-3 rounded-xl border border-slate-800">
+        <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-3 bg-surface p-3 rounded-xl border border-line">
           <div className="min-w-0">
-            <span className="text-xs font-bold text-white block">Replicar em lote</span>
-            <span className="text-[10px] text-slate-400 block truncate">
+            <span className="text-xs font-semibold text-white block">Replicar em lote</span>
+            <span className="text-xs text-ink-muted block truncate">
               Copiar estes adicionais para os outros {outrosCount} produtos da categoria "{categoria}".
             </span>
           </div>
@@ -196,7 +196,7 @@ function ProdutoAdicionaisEditor({
             type="button"
             onClick={onReplicate}
             disabled={replicating}
-            className="px-3 py-1.5 text-xs font-bold bg-[#161f30] hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-xl transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-semibold bg-surface-muted hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-xl transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
           >
             {replicating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
             Replicar para categoria
@@ -210,12 +210,12 @@ function ProdutoAdicionaisEditor({
 const CATEGORIAS = ["pizza", "lanche", "bebida", "sobremesa", "outro"] as const;
 
 const CAT_STYLE: Record<string, { emoji: string; chip: string; bg: string }> = {
-  todos:     { emoji: "🍽️", chip: "bg-[#161f30] text-slate-300 border-[#1e293b]", bg: "from-slate-700 to-slate-800" },
+  todos:     { emoji: "🍽️", chip: "bg-surface-muted text-ink-muted border-line", bg: "from-slate-700 to-slate-800" },
   pizza:     { emoji: "🍕", chip: "bg-orange-500/15 text-orange-400 border-orange-500/30", bg: "from-orange-500 to-rose-500" },
   lanche:    { emoji: "🍔", chip: "bg-amber-500/15 text-amber-400 border-amber-500/30", bg: "from-amber-500 to-amber-600" },
   bebida:    { emoji: "🥤", chip: "bg-sky-500/15 text-sky-400 border-sky-500/30", bg: "from-sky-500 to-blue-600" },
   sobremesa: { emoji: "🍰", chip: "bg-pink-500/15 text-pink-400 border-pink-500/30", bg: "from-pink-500 to-rose-500" },
-  outro:     { emoji: "🍽️", chip: "bg-slate-700/50 text-slate-300 border-slate-600/50", bg: "from-slate-600 to-slate-700" },
+  outro:     { emoji: "🍽️", chip: "bg-surface-elevated/50 text-ink-muted border-line/50", bg: "from-slate-600 to-slate-700" },
 };
 
 type Form = Omit<BackendProduto, "id" | "pizzaria_id">;
@@ -223,8 +223,8 @@ type Form = Omit<BackendProduto, "id" | "pizzaria_id">;
 const EMPTY: Form = {
   nome: "", categoria: "pizza", descricao: "", preco: 0,
   disponivel: true, imagem_url: "", ordem: 0, tamanhos: null,
-  aliases: [], tags: [], 
-  opcoes: { adicionais: [] }, 
+  aliases: [], tags: [],
+  opcoes: { adicionais: [] },
   regras: { meia_meia: { permitido: false, calculo: "maior_valor", max_sabores: 2 } },
 };
 
@@ -268,28 +268,28 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
           onChange={(e) => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          className="flex-1 px-3.5 py-2 bg-[#161f30] border border-[#1e293b] rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500/50 transition"
+          className="flex-1 px-3.5 py-2 bg-surface-muted border border-line rounded-xl text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500/50 transition"
         />
         <button
           type="button"
           onClick={addChip}
-          className="px-4 py-2 bg-[#161f30] hover:bg-[#1e293b] text-slate-300 border border-[#1e293b] rounded-xl text-xs font-semibold transition"
+          className="px-4 py-2 bg-surface-muted hover:bg-surface-elevated text-ink-muted border border-line rounded-xl text-xs font-semibold transition"
         >
           Adicionar
         </button>
       </div>
       {value && value.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 p-2.5 bg-[#161f30]/60 border border-[#1e293b] rounded-xl max-h-32 overflow-y-auto">
+        <div className="flex flex-wrap gap-1.5 p-2.5 bg-surface-muted/60 border border-line rounded-xl max-h-32 overflow-y-auto">
           {value.map((chip, idx) => (
             <span
               key={idx}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#111622] border border-[#1e293b] text-xs text-slate-200 rounded-lg font-medium shadow-sm"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-surface border border-line text-xs text-ink rounded-lg font-medium"
             >
               {chip}
               <button
                 type="button"
                 onClick={() => removeChip(idx)}
-                className="text-slate-400 hover:text-red-400 font-bold ml-1 transition"
+                className="text-ink-muted hover:text-red-400 font-semibold ml-1 transition"
               >
                 &times;
               </button>
@@ -297,7 +297,7 @@ function ChipsInput({ value, onChange, placeholder }: ChipsInputProps) {
           ))}
         </div>
       ) : (
-        <p className="text-[10px] text-slate-500 italic">Nenhum item adicionado ainda.</p>
+        <p className="text-xs text-ink-subtle italic">Nenhum item adicionado ainda.</p>
       )}
     </div>
   );
@@ -339,7 +339,7 @@ export function CardapioViewV2({
   const [produtos, setProdutos] = useState<BackendProduto[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  
+
   // Painel lateral e Formulário
   const [editing, setEditing] = useState<BackendProduto | null>(null);
   const [creating, setCreating] = useState(false);
@@ -540,16 +540,16 @@ export function CardapioViewV2({
 
   const toggleDisponivel = async (p: BackendProduto) => {
     if (loadingStatus[p.id]) return;
-    
+
     setLoadingStatus(prev => ({ ...prev, [p.id]: true }));
     const originalValue = p.disponivel;
     const newValue = !originalValue;
-    
+
     // Atualização otimista no UI
     setProdutos((prev) =>
       prev.map((item) => (item.id === p.id ? { ...item, disponivel: newValue } : item))
     );
-    
+
     try {
       await cardapioApi.update(pizzariaId, p.id, {
         nome: p.nome,
@@ -598,28 +598,23 @@ export function CardapioViewV2({
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-3">
       <Loader2 className="w-8 h-8 animate-spin text-orange-500"/>
-      <span className="text-sm font-medium text-slate-500">Carregando cardápio...</span>
+      <span className="text-sm font-medium text-ink-subtle">Carregando cardápio...</span>
     </div>
   );
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto pb-24 md:pb-6 space-y-6">
+    <div className="pzb-page max-w-6xl mx-auto space-y-6">
       {/* Header do Cardápio */}
-      <div className="flex items-center justify-between flex-wrap gap-4 bg-[#111622] p-5 rounded-2xl border border-[#1e293b] shadow-sm">
-        <div className="flex items-center gap-3.5">
-          <span className="w-11 h-11 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 grid place-items-center shadow-sm">
-            <UtensilsCrossed className="w-5 h-5" />
-          </span>
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Cardápio</h1>
-            <p className="text-xs text-slate-400">Total: {produtos.length} {produtos.length === 1 ? "item cadastrado" : "itens cadastrados"}.</p>
-          </div>
+      <div className="pzb-page-header">
+        <div>
+          <h2 className="text-base font-semibold text-ink">Produtos do cardápio</h2>
+          <p className="pzb-page-description">Total: {produtos.length} {produtos.length === 1 ? "item cadastrado" : "itens cadastrados"}.</p>
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <button
             onClick={reindex}
             disabled={reindexing}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 hover:text-white border border-[#1e293b] rounded-xl font-semibold transition disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-surface-muted hover:bg-surface-elevated text-ink-muted hover:text-white border border-line rounded-xl font-semibold transition disabled:opacity-50"
           >
             {reindexing ? <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-500"/> : <RefreshCw className="w-3.5 h-3.5"/>}
             Reindexar busca
@@ -627,7 +622,7 @@ export function CardapioViewV2({
           <ImportarCardapio pizzariaId={pizzariaId} onImported={load} />
           <button
             onClick={startCreate}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold shadow-sm transition"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs bg-brand-700 hover:bg-brand-800 text-white rounded-xl font-semibold transition"
           >
             <Plus className="w-4 h-4"/> Novo produto
           </button>
@@ -635,7 +630,7 @@ export function CardapioViewV2({
       </div>
 
       {err && (
-        <div className="flex items-center gap-2.5 bg-red-950/40 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl text-xs shadow-sm">
+        <div className="flex items-center gap-2.5 bg-red-950/40 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl text-xs">
           <AlertCircle className="w-4 h-4 shrink-0 text-red-400"/>
           <span className="font-medium">{err}</span>
         </div>
@@ -650,10 +645,10 @@ export function CardapioViewV2({
       <CardapioArquivo pizzariaId={pizzariaId} />
 
       {/* Filtros e Busca */}
-      <div className="space-y-3 bg-[#111622] p-4 rounded-2xl border border-[#1e293b] shadow-sm">
+      <div className="pzb-section space-y-3 p-4">
         <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
           <div className="relative flex-1">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-subtle pointer-events-none">
               <Search className="w-4 h-4" />
             </span>
             <input
@@ -661,38 +656,38 @@ export function CardapioViewV2({
               placeholder="Pesquisar produto por nome, tag ou apelido..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-[#161f30] border border-[#1e293b] rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500/50 transition"
+              className="w-full pl-10 pr-10 py-2 bg-surface-muted border border-line rounded-xl text-sm text-ink placeholder-ink-subtle outline-none focus:border-orange-500 transition"
             />
             {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery("")} 
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white font-bold"
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-white font-semibold"
               >
                 &times;
               </button>
             )}
           </div>
-          <div className="text-xs text-slate-400 font-medium whitespace-nowrap self-center">
+          <div className="text-xs text-ink-muted font-medium whitespace-nowrap self-center">
             Mostrando {produtosFiltrados.length} de {produtos.length} produtos
           </div>
         </div>
 
         {/* Abas das Categorias */}
-        <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none border-t border-[#1e293b]/60 pt-3">
+        <div className="pzb-tablist overflow-x-auto" aria-label="Categorias do cardápio">
           {categoriasUnicasFiltro.map((catName) => {
-            const style = CAT_STYLE[catName] || CAT_STYLE.outro;
             const isActive = selectedCategory === catName;
             return (
               <button
                 key={catName}
                 onClick={() => setSelectedCategory(catName)}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold rounded-xl border transition-all shrink-0 ${
+                aria-pressed={isActive}
+                data-active={isActive}
+                className={`pzb-tab flex items-center gap-1.5 shrink-0 ${
                   isActive
-                    ? "bg-[#1e293b] text-white border-slate-600 shadow-sm"
-                    : "bg-[#161f30] text-slate-400 border-[#1e293b] hover:bg-[#1a2336] hover:text-white"
+                    ? "bg-orange-500/10 text-orange-400 border-orange-500/30"
+                    : "text-ink-muted hover:bg-surface-elevated hover:text-ink"
                 }`}
               >
-                <span>{style.emoji}</span>
                 <span className="capitalize">{catName === "todos" ? "Todos" : catName}</span>
               </button>
             );
@@ -702,12 +697,12 @@ export function CardapioViewV2({
 
       {/* Grid de Produtos */}
       {produtosFiltrados.length === 0 ? (
-        <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-16 text-center shadow-sm">
-          <div className="w-16 h-16 rounded-2xl bg-orange-500/10 border border-orange-500/20 grid place-items-center mx-auto mb-4 text-orange-400">
+        <div className="bg-surface border border-line rounded-xl p-16 text-center">
+          <div className="w-16 h-16 rounded-xl bg-orange-500/10 border border-orange-500/20 grid place-items-center mx-auto mb-4 text-orange-400">
             <UtensilsCrossed className="w-7 h-7" />
           </div>
-          <p className="text-white font-bold text-base">Nenhum produto encontrado</p>
-          <p className="text-xs text-slate-400 mt-1.5">Experimente limpar a busca ou os filtros de categoria.</p>
+          <p className="text-white font-semibold text-base">Nenhum produto encontrado</p>
+          <p className="text-xs text-ink-muted mt-1.5">Experimente limpar a busca ou os filtros de categoria.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -715,25 +710,25 @@ export function CardapioViewV2({
             const cat = CAT_STYLE[p.categoria ?? "outro"] || CAT_STYLE.outro;
             const isDisponivel = p.disponivel;
             return (
-              <article 
+              <article
                 key={p.id}
-                className={`group bg-[#111622] border rounded-2xl overflow-hidden shadow-sm hover:border-slate-700 transition-all duration-300 flex flex-col ${
-                  isDisponivel ? "border-[#1e293b]" : "border-[#1e293b] opacity-70"
+                className={`group bg-surface border rounded-xl overflow-hidden  hover:border-line transition-all duration-300 flex flex-col ${
+                  isDisponivel ? "border-line" : "border-line opacity-70"
                 }`}
               >
                 {/* Banner de Imagem */}
-                <div className="relative h-36 bg-[#161f30] grid place-items-center overflow-hidden">
+                <div className="relative h-36 bg-surface-muted grid place-items-center overflow-hidden">
                   {p.imagem_url ? (
-                    <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
+                    <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-cover transition duration-500" />
                   ) : (
-                    <span className="text-5xl select-none group-hover:scale-110 transition duration-500">{cat.emoji}</span>
+                    <UtensilsCrossed className="w-10 h-10 text-ink-subtle stroke-[1.5]" aria-hidden="true" />
                   )}
-                  
+
                   {/* Categoria Badge */}
-                  <span className="absolute top-2.5 left-2.5 text-[10px] font-bold px-2.5 py-1 rounded-lg bg-slate-900/80 backdrop-blur-sm text-slate-300 border border-white/10 capitalize tracking-wider">
+                  <span className="absolute top-2.5 left-2.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-canvas/80 backdrop-blur-sm text-ink-muted border border-white/10 capitalize tracking-normal">
                     {p.categoria || "outro"}
                   </span>
-                  
+
                   {/* Toggle de Disponibilidade Rápido */}
                   <button
                     type="button"
@@ -742,14 +737,14 @@ export function CardapioViewV2({
                       toggleDisponivel(p);
                     }}
                     disabled={loadingStatus[p.id]}
-                    className={`absolute top-2.5 right-2.5 text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm transition-all duration-200 border cursor-pointer ${
+                    className={`absolute top-2.5 right-2.5 text-xs font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1.5  transition-all duration-200 border cursor-pointer ${
                       isDisponivel
                         ? "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border-emerald-500/30"
                         : "bg-red-500/15 hover:bg-red-500/25 text-red-400 border-red-500/30"
                     }`}
                   >
                     {loadingStatus[p.id] ? (
-                      <Loader2 className="w-3 h-3 animate-spin text-slate-400" />
+                      <Loader2 className="w-3 h-3 animate-spin text-ink-muted" />
                     ) : (
                       <span className={`w-1.5 h-1.5 rounded-full ${isDisponivel ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
                     )}
@@ -761,13 +756,13 @@ export function CardapioViewV2({
                 <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                   <div>
                     <div className="flex items-start justify-between gap-2">
-                      <h3 className="font-bold text-sm text-white group-hover:text-orange-400 transition-colors duration-200 leading-tight">
+                      <h3 className="font-semibold text-sm text-white group-hover:text-orange-400 transition-colors duration-200 leading-tight">
                         {p.nome}
                       </h3>
-                      <span className="text-sm font-bold text-emerald-400 whitespace-nowrap text-right shrink-0">
+                      <span className="text-sm font-semibold text-emerald-400 whitespace-nowrap text-right shrink-0">
                         {p.tamanhos && p.tamanhos.length > 0 ? (
                           <span className="block">
-                            <span className="text-[9px] text-slate-500 font-medium block leading-none">A partir de</span>
+                            <span className="text-xs text-ink-subtle font-medium block leading-none">A partir de</span>
                             <span className="text-emerald-400 block mt-0.5">
                               {Math.min(...p.tamanhos.map(t => Number(t.preco))).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
                             </span>
@@ -782,19 +777,19 @@ export function CardapioViewV2({
 
                     {/* Descrição */}
                     {p.descricao && (
-                      <p className="text-xs text-slate-400 mt-1.5 line-clamp-2 italic leading-relaxed">
+                      <p className="text-xs text-ink-muted mt-1.5 line-clamp-2 italic leading-relaxed">
                         {p.descricao}
                       </p>
                     )}
 
                     {/* Listagem de Variações */}
                     {p.tamanhos && p.tamanhos.length > 0 && (
-                      <div className="mt-2.5 pt-2 border-t border-[#1e293b] space-y-1">
-                        <span className="text-[9px] font-bold text-slate-500 block uppercase tracking-wider">Tamanhos:</span>
+                      <div className="mt-2.5 pt-2 border-t border-line space-y-1">
+                        <span className="text-xs font-semibold text-ink-subtle block tracking-normal">Tamanhos:</span>
                         <div className="flex flex-wrap gap-1">
                           {p.tamanhos.map((t, idx) => (
-                            <span key={idx} className="text-[10px] bg-[#161f30] border border-[#1e293b] px-2 py-0.5 rounded text-slate-300 font-medium">
-                              {t.tamanho}: <span className="text-emerald-400 font-bold">R${Number(t.preco).toFixed(1)}</span>
+                            <span key={idx} className="text-xs bg-surface-muted border border-line px-2 py-0.5 rounded text-ink-muted font-medium">
+                              {t.tamanho}: <span className="text-emerald-400 font-semibold">R${Number(t.preco).toFixed(1)}</span>
                             </span>
                           ))}
                         </div>
@@ -803,14 +798,14 @@ export function CardapioViewV2({
 
                     {/* Tags do produto */}
                     {((p.tags && p.tags.length > 0) || (p.aliases && p.aliases.length > 0)) && (
-                      <div className="flex flex-wrap gap-1 mt-2.5 pt-2 border-t border-[#1e293b]">
+                      <div className="flex flex-wrap gap-1 mt-2.5 pt-2 border-t border-line">
                         {p.tags?.map((t, idx) => (
-                          <span key={`tag-${idx}`} className="text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-lg font-medium">
+                          <span key={`tag-${idx}`} className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-lg font-medium">
                             #{t}
                           </span>
                         ))}
                         {p.aliases?.map((a, idx) => (
-                          <span key={`alias-${idx}`} className="text-[9px] bg-violet-500/10 text-violet-400 border border-violet-500/20 px-1.5 py-0.5 rounded-lg font-medium">
+                          <span key={`alias-${idx}`} className="text-xs bg-violet-500/10 text-violet-400 border border-violet-500/20 px-1.5 py-0.5 rounded-lg font-medium">
                             {a}
                           </span>
                         ))}
@@ -819,16 +814,16 @@ export function CardapioViewV2({
                   </div>
 
                   {/* Ações */}
-                  <div className="flex gap-2 pt-3 border-t border-[#1e293b]">
-                    <button 
+                  <div className="flex gap-2 pt-3 border-t border-line">
+                    <button
                       onClick={() => startEdit(p)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs text-slate-300 hover:text-white bg-[#161f30] hover:bg-[#1e293b] border border-[#1e293b] rounded-xl font-bold transition duration-200"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs text-ink-muted hover:text-white bg-surface-muted hover:bg-surface-elevated border border-line rounded-xl font-semibold transition duration-200"
                     >
                       <Pencil className="w-3.5 h-3.5"/> Editar
                     </button>
-                    <button 
+                    <button
                       onClick={() => remove(p)}
-                      className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-[#1e293b] hover:border-red-800/40 rounded-xl font-bold transition duration-200"
+                      className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 border border-line hover:border-red-800/40 rounded-xl font-semibold transition duration-200"
                     >
                       <Trash2 className="w-3.5 h-3.5"/>
                     </button>
@@ -843,43 +838,43 @@ export function CardapioViewV2({
       {/* =========================================================
           SLIDE-OVER (PAINEL LATERAL DE CADASTRO/EDIÇÃO)
          ========================================================= */}
-      <div 
+      <div
         className={`fixed inset-0 z-50 overflow-hidden transition-all duration-300 ${
           isFormPanelOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       >
         {/* Overlay escuro desfocado */}
-        <div 
+        <div
           className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity duration-300"
-          onClick={cancel} 
+          onClick={cancel}
         />
-        
+
         <div className="absolute inset-y-0 right-0 max-w-full flex pl-0 sm:pl-10">
           <div
-            className={`w-screen max-w-xl bg-[#111622] border-l border-[#1e293b] shadow-2xl flex flex-col transform transition-transform duration-300 ease-in-out ${
+            className={`w-screen max-w-xl bg-surface border-l border-line  flex flex-col transform transition-transform duration-300 ease-in-out ${
               isFormPanelOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
             {/* Header do Slide-over */}
-            <div className="px-5 py-4 border-b border-[#1e293b] flex items-center justify-between bg-[#111622]">
+            <div className="px-5 py-4 border-b border-line flex items-center justify-between bg-surface">
               <div>
-                <h3 className="font-bold text-base text-white">
+                <h3 className="font-semibold text-base text-white">
                   {editing ? "Editar Produto" : "Novo Produto"}
                 </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="text-xs text-ink-muted mt-0.5">
                   {editing ? `Alterando "${form.nome}"` : "Cadastre as informações da variação ou produto único"}
                 </p>
               </div>
-              <button 
-                onClick={cancel} 
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-[#161f30] rounded-xl transition"
+              <button
+                onClick={cancel}
+                className="p-1.5 text-ink-muted hover:text-white hover:bg-surface-muted rounded-xl transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Abas de Navegação do Formulário (scroll horizontal no mobile) */}
-            <div className="flex border-b border-[#1e293b] px-4 bg-[#0d1117] overflow-x-auto scrollbar-none">
+            <div className="flex border-b border-line px-4 bg-canvas overflow-x-auto scrollbar-none">
               {([
                 ["geral", "Geral", <LayoutGrid className="w-3.5 h-3.5" />],
                 ["tamanhos", "Tamanhos & Preços", <SlidersHorizontal className="w-3.5 h-3.5" />],
@@ -892,10 +887,10 @@ export function CardapioViewV2({
                     key={id}
                     type="button"
                     onClick={() => setActiveTab(id)}
-                    className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-bold border-b-2 transition-all -mb-px shrink-0 whitespace-nowrap ${
+                    className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-semibold border-b-2 transition-all -mb-px shrink-0 whitespace-nowrap ${
                       isActive
                         ? "border-orange-500 text-orange-400"
-                        : "border-transparent text-slate-400 hover:text-white"
+                        : "border-transparent text-ink-muted hover:text-white"
                     }`}
                   >
                     {icon}
@@ -907,14 +902,14 @@ export function CardapioViewV2({
 
             {/* Conteúdo do Formulário */}
             <div className="flex-1 p-5 overflow-y-auto space-y-4">
-              
+
               {/* ABA 1: INFORMAÇÕES GERAIS */}
               {activeTab === "geral" && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-4">
                   <Field label="Nome do Produto" required>
-                    <input 
-                      value={form.nome} 
-                      onChange={(e) => setForm({ ...form, nome: e.target.value })} 
+                    <input
+                      value={form.nome}
+                      onChange={(e) => setForm({ ...form, nome: e.target.value })}
                       placeholder="Ex: Pizza Calabresa, Refrigerante Guaraná"
                       className={inputCls}
                     />
@@ -931,10 +926,10 @@ export function CardapioViewV2({
                             className={inputCls}
                             placeholder="Nome da categoria"
                           />
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             onClick={() => setNovaCategoria(false)}
-                            className="px-2.5 text-xs font-bold text-orange-400 hover:bg-orange-500/10 rounded-xl shrink-0"
+                            className="px-2.5 text-xs font-semibold text-orange-400 hover:bg-orange-500/10 rounded-xl shrink-0"
                           >
                             Lista
                           </button>
@@ -943,9 +938,9 @@ export function CardapioViewV2({
                         <select
                           value={form.categoria ?? ""}
                           onChange={(e) => {
-                            if (e.target.value === "__nova__") { 
-                              setNovaCategoria(true); 
-                              setForm({ ...form, categoria: "" }); 
+                            if (e.target.value === "__nova__") {
+                              setNovaCategoria(true);
+                              setForm({ ...form, categoria: "" });
                             } else {
                               setForm({ ...form, categoria: e.target.value });
                             }
@@ -953,18 +948,18 @@ export function CardapioViewV2({
                           className={inputCls}
                         >
                           {categoriasDisponiveis.map((c) => (
-                            <option key={c} value={c} className="bg-[#111622] text-white">{c}</option>
+                            <option key={c} value={c} className="bg-surface text-white">{c}</option>
                           ))}
-                          <option value="__nova__" className="bg-[#111622] text-orange-400">➕ Criar categoria…</option>
+                          <option value="__nova__" className="bg-surface text-orange-400">➕ Criar categoria…</option>
                         </select>
                       )}
                     </Field>
 
                     <Field label="Ordem de exibição">
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         value={form.ordem}
-                        onChange={(e) => setForm({ ...form, ordem: Number(e.target.value) })} 
+                        onChange={(e) => setForm({ ...form, ordem: Number(e.target.value) })}
                         className={inputCls}
                       />
                     </Field>
@@ -973,13 +968,13 @@ export function CardapioViewV2({
                   {form.tamanhos === null && (
                     <Field label="Preço Unitário (R$)" required>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 font-bold">R$</span>
-                        <input 
-                          type="number" 
-                          step="0.01" 
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-ink-subtle font-semibold">R$</span>
+                        <input
+                          type="number"
+                          step="0.01"
                           value={form.preco || ""}
                           placeholder="0,00"
-                          onChange={(e) => setForm({ ...form, preco: Number(e.target.value) })} 
+                          onChange={(e) => setForm({ ...form, preco: Number(e.target.value) })}
                           className={`${inputCls} pl-8`}
                         />
                       </div>
@@ -987,59 +982,59 @@ export function CardapioViewV2({
                   )}
 
                   <Field label="Descrição / Ingredientes">
-                    <textarea 
-                      value={form.descricao ?? ""} 
+                    <textarea
+                      value={form.descricao ?? ""}
                       rows={3}
                       placeholder="Massa tradicional, molho de tomate, calabresa fatiada, cebola e azeitonas pretas."
-                      onChange={(e) => setForm({ ...form, descricao: e.target.value })} 
+                      onChange={(e) => setForm({ ...form, descricao: e.target.value })}
                       className={inputCls}
                     />
                   </Field>
 
                   <Field label="URL da Imagem do Produto">
-                    <input 
-                      value={form.imagem_url ?? ""} 
+                    <input
+                      value={form.imagem_url ?? ""}
                       placeholder="https://suaimagem.com/foto.jpg"
-                      onChange={(e) => setForm({ ...form, imagem_url: e.target.value })} 
+                      onChange={(e) => setForm({ ...form, imagem_url: e.target.value })}
                       className={inputCls}
                     />
                   </Field>
 
                   {form.imagem_url && (
-                    <div className="p-3 bg-[#161f30] border border-[#1e293b] rounded-xl space-y-2">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pré-visualização:</span>
-                      <img 
-                        src={form.imagem_url} 
-                        alt="Preview" 
+                    <div className="p-3 bg-surface-muted border border-line rounded-xl space-y-2">
+                      <span className="text-xs font-semibold text-ink-muted tracking-normal block">Pré-visualização:</span>
+                      <img
+                        src={form.imagem_url}
+                        alt="Preview"
                         onError={(e) => { (e.target as HTMLElement).style.display = "none"; }}
-                        className="max-h-36 rounded-lg object-cover mx-auto" 
+                        className="max-h-36 rounded-lg object-cover mx-auto"
                       />
                     </div>
                   )}
 
-                  <label className="flex items-center gap-2.5 p-3 bg-[#161f30] border border-[#1e293b] rounded-xl cursor-pointer">
-                    <input 
-                      type="checkbox" 
+                  <label className="flex items-center gap-2.5 p-3 bg-surface-muted border border-line rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
                       checked={form.disponivel}
                       onChange={(e) => setForm({ ...form, disponivel: e.target.checked })}
-                      className="rounded text-orange-500 focus:ring-orange-400 bg-[#111622] border-[#1e293b]"
+                      className="rounded text-orange-500 focus:ring-orange-400 bg-surface border-line"
                     />
-                    <span className="text-xs font-bold text-white">Disponível no cardápio do bot</span>
+                    <span className="text-xs font-semibold text-white">Disponível no cardápio do bot</span>
                   </label>
                 </div>
               )}
 
               {/* ABA 2: TAMANHOS E VARIAÇÕES */}
               {activeTab === "tamanhos" && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-4">
                   <div className="p-3.5 bg-orange-500/10 border border-orange-500/20 rounded-xl space-y-1">
-                    <h4 className="text-xs font-bold text-orange-400">Múltiplos Tamanhos ou Preços</h4>
-                    <p className="text-[11px] text-orange-300/80 leading-normal">
+                    <h4 className="text-xs font-semibold text-orange-400">Múltiplos Tamanhos ou Preços</h4>
+                    <p className="text-xs text-orange-300/80 leading-normal">
                       Habilite esta opção se o mesmo produto for vendido em formatos diferentes (Ex: Pizza P, M e G ou Refrigerante Lata e 2L).
                     </p>
                   </div>
 
-                  <label className="flex items-center gap-2.5 p-3 border border-[#1e293b] bg-[#161f30] rounded-xl cursor-pointer">
+                  <label className="flex items-center gap-2.5 p-3 border border-line bg-surface-muted rounded-xl cursor-pointer">
                     <input
                       type="checkbox"
                       checked={form.tamanhos !== null}
@@ -1050,9 +1045,9 @@ export function CardapioViewV2({
                           setForm({ ...form, tamanhos: null });
                         }
                       }}
-                      className="rounded text-orange-500 focus:ring-orange-400 bg-[#111622] border-[#1e293b]"
+                      className="rounded text-orange-500 focus:ring-orange-400 bg-surface border-line"
                     />
-                    <span className="text-xs font-bold text-white">
+                    <span className="text-xs font-semibold text-white">
                       Este produto tem múltiplos tamanhos / variações
                     </span>
                   </label>
@@ -1060,14 +1055,14 @@ export function CardapioViewV2({
                   {form.tamanhos !== null ? (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between pt-2">
-                        <span className="text-xs font-bold text-white">Lista de Variações</span>
+                        <span className="text-xs font-semibold text-white">Lista de Variações</span>
                         <button
                           type="button"
                           onClick={() => {
                             const cur = form.tamanhos || [];
                             setForm({ ...form, tamanhos: [...cur, { tamanho: "", preco: 0 }] });
                           }}
-                          className="text-xs text-orange-400 hover:text-orange-300 font-bold inline-flex items-center gap-1 bg-orange-500/10 px-2.5 py-1.5 rounded-lg border border-orange-500/20 transition"
+                          className="text-xs text-orange-400 hover:text-orange-300 font-semibold inline-flex items-center gap-1 bg-orange-500/10 px-2.5 py-1.5 rounded-lg border border-orange-500/20 transition"
                         >
                           <Plus className="w-3.5 h-3.5" /> Adicionar tamanho
                         </button>
@@ -1075,7 +1070,7 @@ export function CardapioViewV2({
 
                       <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                         {(form.tamanhos || []).map((t, idx) => (
-                          <div key={idx} className="flex gap-2 items-center bg-[#161f30] p-2.5 border border-[#1e293b] rounded-xl">
+                          <div key={idx} className="flex gap-2 items-center bg-surface-muted p-2.5 border border-line rounded-xl">
                             <input
                               placeholder="Tamanho (ex: Grande, Lata, 2L)"
                               value={t.tamanho}
@@ -1084,10 +1079,10 @@ export function CardapioViewV2({
                                 newT[idx] = { ...newT[idx], tamanho: e.target.value };
                                 setForm({ ...form, tamanhos: newT });
                               }}
-                              className="flex-1 px-3 py-1.5 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white focus:border-orange-500"
+                              className="flex-1 px-3 py-1.5 border border-line rounded-lg text-xs outline-none bg-surface text-white focus:border-orange-500"
                             />
                             <div className="relative w-28 shrink-0">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">R$</span>
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-subtle font-semibold">R$</span>
                               <input
                                 type="number"
                                 step="0.01"
@@ -1098,7 +1093,7 @@ export function CardapioViewV2({
                                   newT[idx] = { ...newT[idx], preco: Number(e.target.value) || 0 };
                                   setForm({ ...form, tamanhos: newT });
                                 }}
-                                className="w-full pl-7 pr-2.5 py-1.5 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white focus:border-orange-500"
+                                className="w-full pl-7 pr-2.5 py-1.5 border border-line rounded-lg text-xs outline-none bg-surface text-white focus:border-orange-500"
                               />
                             </div>
                             <button
@@ -1116,8 +1111,8 @@ export function CardapioViewV2({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-8 text-center border border-[#1e293b] bg-[#161f30] rounded-2xl">
-                      <p className="text-xs text-slate-400 italic">Configure o preço único na aba "Geral" ou habilite as variações acima.</p>
+                    <div className="p-8 text-center border border-line bg-surface-muted rounded-xl">
+                      <p className="text-xs text-ink-muted italic">Configure o preço único na aba "Geral" ou habilite as variações acima.</p>
                     </div>
                   )}
                 </div>
@@ -1125,8 +1120,8 @@ export function CardapioViewV2({
 
               {/* ABA 3: ADICIONAIS E REGRAS */}
               {activeTab === "adicionais" && (
-                <div className="space-y-4 animate-fadeIn">
-                  
+                <div className="space-y-4">
+
                   {/* Seção Adicionais e Bordas Unificada */}
                   <ProdutoAdicionaisEditor
                     adicionais={(form.opcoes as any)?.adicionais || []}
@@ -1141,7 +1136,7 @@ export function CardapioViewV2({
                   />
 
                   {replicateSuccessMsg && (
-                    <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs shadow-sm animate-fadeIn">
+                    <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400 text-xs">
                       <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
                       <span>{replicateSuccessMsg}</span>
                     </div>
@@ -1149,13 +1144,13 @@ export function CardapioViewV2({
 
                   {/* Seção Regras Meia-Meia (Apenas para Categoria Pizza) */}
                   {form.categoria === "pizza" ? (
-                    <div className="mt-4 pt-4 border-t border-[#1e293b] space-y-3">
-                      <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Regras de Meia / Meia</h4>
-                      <p className="text-[10px] text-slate-400 leading-relaxed">
+                    <div className="mt-4 pt-4 border-t border-line space-y-3">
+                      <h4 className="text-xs font-semibold text-white tracking-normal block">Regras de Meia / Meia</h4>
+                      <p className="text-xs text-ink-muted leading-relaxed">
                         Defina se este produto aceita combinação de múltiplos sabores e como será calculado o preço.
                       </p>
-                      
-                      <div className="bg-[#161f30] p-3.5 border border-[#1e293b] rounded-xl space-y-3">
+
+                      <div className="bg-surface-muted p-3.5 border border-line rounded-xl space-y-3">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -1167,13 +1162,13 @@ export function CardapioViewV2({
                                 meia_meia: { ...((form.regras as any)?.meia_meia || {}), permitido: e.target.checked },
                               },
                             })}
-                            className="rounded text-orange-500 focus:ring-orange-400 bg-[#111622] border-[#1e293b]"
+                            className="rounded text-orange-500 focus:ring-orange-400 bg-surface border-line"
                           />
-                          <span className="text-xs font-bold text-white">Permitir divisão de sabores (meia-meia)</span>
+                          <span className="text-xs font-semibold text-white">Permitir divisão de sabores (meia-meia)</span>
                         </label>
 
                         {Boolean((form.regras as any)?.meia_meia?.permitido) && (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-[#1e293b]">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-line">
                             <Field label="Cálculo do Preço">
                               <select
                                 value={(form.regras as any)?.meia_meia?.calculo || "maior_valor"}
@@ -1184,7 +1179,7 @@ export function CardapioViewV2({
                                     meia_meia: { ...((form.regras as any)?.meia_meia || {}), calculo: e.target.value },
                                   },
                                 })}
-                                className="w-full px-2.5 py-2 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white"
+                                className="w-full px-2.5 py-2 border border-line rounded-lg text-xs outline-none bg-surface text-white"
                               >
                                 <option value="maior_valor">Maior valor</option>
                                 <option value="media">Média dos valores</option>
@@ -1204,7 +1199,7 @@ export function CardapioViewV2({
                                     meia_meia: { ...((form.regras as any)?.meia_meia || {}), max_sabores: Number(e.target.value) || 2 },
                                   },
                                 })}
-                                className="w-full px-2.5 py-2 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#111622] text-white"
+                                className="w-full px-2.5 py-2 border border-line rounded-lg text-xs outline-none bg-surface text-white"
                               />
                             </Field>
                           </div>
@@ -1212,8 +1207,8 @@ export function CardapioViewV2({
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 border border-[#1e293b] bg-[#161f30] rounded-2xl">
-                      <p className="text-[10px] text-slate-400 italic">As configurações de meio-a-meio são exclusivas para a categoria "pizza".</p>
+                    <div className="p-4 border border-line bg-surface-muted rounded-xl">
+                      <p className="text-xs text-ink-muted italic">As configurações de meio-a-meio são exclusivas para a categoria "pizza".</p>
                     </div>
                   )}
                 </div>
@@ -1221,25 +1216,25 @@ export function CardapioViewV2({
 
               {/* ABA 4: BUSCA E TAGS */}
               {activeTab === "seo" && (
-                <div className="space-y-4 animate-fadeIn">
+                <div className="space-y-4">
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Apelidos / Buscas (Aliases)</h4>
-                    <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
+                    <h4 className="text-xs font-semibold text-white tracking-normal block">Apelidos / Buscas (Aliases)</h4>
+                    <p className="text-xs text-ink-muted leading-relaxed mb-2">
                       Adicione sinônimos ou termos comuns que seus clientes usam no WhatsApp para chamar este produto (Ex: "coca", "refri", "lata"). Isso melhora o entendimento do bot de IA.
                     </p>
-                    <ChipsInput 
+                    <ChipsInput
                       value={form.aliases || []}
                       onChange={(val) => setForm({ ...form, aliases: val })}
                       placeholder="Escreva um apelido e tecle Enter..."
                     />
                   </div>
 
-                  <div className="space-y-2 mt-4 pt-4 border-t border-[#1e293b]">
-                    <h4 className="text-xs font-bold text-white uppercase tracking-wider block">Tags de Identificação</h4>
-                    <p className="text-[10px] text-slate-400 leading-relaxed mb-2">
+                  <div className="space-y-2 mt-4 pt-4 border-t border-line">
+                    <h4 className="text-xs font-semibold text-white tracking-normal block">Tags de Identificação</h4>
+                    <p className="text-xs text-ink-muted leading-relaxed mb-2">
                       Crie tags para categorizar ou sinalizar propriedades do produto (Ex: "semcebola", "vegano", "apimentada").
                     </p>
-                    <ChipsInput 
+                    <ChipsInput
                       value={form.tags || []}
                       onChange={(val) => setForm({ ...form, tags: val })}
                       placeholder="Escreva uma tag e tecle Enter..."
@@ -1251,19 +1246,19 @@ export function CardapioViewV2({
             </div>
 
             {/* Rodapé do Slide-over */}
-            <div className="px-5 py-4 border-t border-[#1e293b] bg-[#111622] flex gap-2 justify-end">
-              <button 
+            <div className="px-5 py-4 border-t border-line bg-surface flex gap-2 justify-end">
+              <button
                 type="button"
-                onClick={cancel} 
-                className="px-4 py-2 text-xs text-slate-300 hover:text-white hover:bg-[#161f30] border border-[#1e293b] rounded-xl font-bold transition flex items-center gap-1"
+                onClick={cancel}
+                className="px-4 py-2 text-xs text-ink-muted hover:text-white hover:bg-surface-muted border border-line rounded-xl font-semibold transition flex items-center gap-1"
               >
                 <X className="w-4 h-4"/> Cancelar
               </button>
-              <button 
+              <button
                 type="button"
-                onClick={save} 
+                onClick={save}
                 disabled={saving || !form.nome || (form.tamanhos === null && !form.preco)}
-                className="px-5 py-2 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 transition-all"
+                className="px-5 py-2 text-xs bg-brand-700 hover:bg-brand-800 text-white rounded-xl font-semibold flex items-center gap-1.5 disabled:opacity-50 transition-all"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}
                 Salvar Produto
@@ -1314,27 +1309,27 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
   const url = info?.existe ? `${cardapioApi.arquivoUrl(pizzariaId)}?t=${Date.now()}` : "";
 
   return (
-    <div className="bg-[#111622] border border-[#1e293b] rounded-2xl p-4 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div className="bg-surface border border-line rounded-xl p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
       <div className="flex items-center gap-3">
-        <span className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 grid place-items-center shrink-0 shadow-sm">
+        <span className="w-10 h-10 rounded-xl bg-surface-muted border border-line text-ink-muted grid place-items-center shrink-0">
           <FileText className="w-5 h-5" />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-bold text-white">Cardápio em PDF / Imagem</h3>
-          <p className="text-xs text-slate-400 leading-tight mt-0.5">
+          <h3 className="text-sm font-semibold text-white">Cardápio em PDF / Imagem</h3>
+          <p className="text-xs text-ink-muted leading-tight mt-0.5">
             {info?.existe
               ? `Enviado: ${info.filename} · Enviado no WhatsApp quando pedem o cardápio completo.`
               : "Opcional. O bot envia este arquivo quando o cliente pede o cardápio no WhatsApp."}
           </p>
         </div>
       </div>
-      
+
       <div className="flex items-center gap-2 w-full md:w-auto justify-end shrink-0">
         <input ref={inputRef} type="file" accept="application/pdf,image/*" onChange={onPick} className="hidden" />
-        <button 
-          onClick={() => inputRef.current?.click()} 
+        <button
+          onClick={() => inputRef.current?.click()}
           disabled={busy}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-xl font-bold transition disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-surface-muted hover:bg-surface-elevated text-ink-muted border border-line rounded-xl font-semibold transition disabled:opacity-50"
         >
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {info?.existe ? "Trocar arquivo" : "Enviar arquivo"}
@@ -1342,18 +1337,18 @@ function CardapioArquivo({ pizzariaId }: { pizzariaId: string }) {
         {info?.existe && (
           <>
             {isImg ? (
-              <a href={url} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 border border-[#1e293b] rounded-xl font-semibold transition">
+              <a href={url} target="_blank" rel="noreferrer" className="px-3 py-2 text-xs bg-surface-muted hover:bg-surface-elevated text-ink-muted border border-line rounded-xl font-semibold transition">
                 Visualizar
               </a>
             ) : (
-              <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-3 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 border border-[#1e293b] rounded-xl font-semibold transition">
+              <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1 px-3 py-2 text-xs bg-surface-muted hover:bg-surface-elevated text-ink-muted border border-line rounded-xl font-semibold transition">
                 Abrir PDF
               </a>
             )}
-            <button 
-              onClick={remover} 
+            <button
+              onClick={remover}
               disabled={busy}
-              className="p-2 text-red-400 hover:bg-red-950/40 rounded-xl border border-[#1e293b] hover:border-red-800/40 transition disabled:opacity-50" 
+              className="p-2 text-red-400 hover:bg-red-950/40 rounded-xl border border-line hover:border-red-800/40 transition disabled:opacity-50"
               title="Remover arquivo"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -1455,40 +1450,40 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
 
   return (
     <>
-      <button 
+      <button
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-[#161f30] hover:bg-[#1e293b] text-slate-300 hover:text-white border border-[#1e293b] rounded-xl font-semibold transition"
+        className="flex items-center gap-1.5 px-3.5 py-2 text-xs bg-surface-muted hover:bg-surface-elevated text-ink-muted hover:text-white border border-line rounded-xl font-semibold transition"
       >
         <Sparkles className="w-3.5 h-3.5 text-orange-400" /> Importar via JSON
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn" onClick={() => !salvando && close()}>
-          <div className="bg-[#111622] border border-[#1e293b] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-scaleIn" onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 py-4 bg-[#161f30] border-b border-[#1e293b] text-white flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => !salvando && close()}>
+          <div className="bg-surface border border-line rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 bg-surface-muted border-b border-line text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Sparkles className="w-5 h-5 text-orange-400" />
-                <h3 className="font-bold text-sm tracking-tight text-white">Importar Cardápio via JSON</h3>
+                <h3 className="font-semibold text-sm tracking-tight text-white">Importar Cardápio via JSON</h3>
               </div>
-              <button onClick={close} className="p-1.5 rounded-xl hover:bg-[#111622] text-slate-400 hover:text-white transition"><X className="w-4.5 h-4.5" /></button>
+              <button onClick={close} className="p-1.5 rounded-xl hover:bg-surface text-ink-muted hover:text-white transition"><X className="w-4.5 h-4.5" /></button>
             </div>
 
             <div className="p-5 overflow-y-auto space-y-4">
               {!itens ? (
                 <div className="space-y-3">
-                  <p className="text-xs text-slate-400">Cole um JSON formatado na estrutura correta:</p>
-                  <pre className="text-[10px] bg-[#0d1117] border border-[#1e293b] rounded-xl p-3.5 overflow-x-auto text-slate-300 font-mono leading-relaxed">{JSON_EXEMPLO}</pre>
-                  <textarea 
-                    value={jsonText} 
-                    onChange={(e) => setJsonText(e.target.value)} 
+                  <p className="text-xs text-ink-muted">Cole um JSON formatado na estrutura correta:</p>
+                  <pre className="text-xs bg-canvas border border-line rounded-xl p-3.5 overflow-x-auto text-ink-muted font-mono leading-relaxed">{JSON_EXEMPLO}</pre>
+                  <textarea
+                    value={jsonText}
+                    onChange={(e) => setJsonText(e.target.value)}
                     rows={6}
-                    placeholder='[{ "nome": "Calabresa", "categoria": "pizza", "preco": 48.00 }]' 
-                    className={`${inputCls} font-mono text-xs`} 
+                    placeholder='[{ "nome": "Calabresa", "categoria": "pizza", "preco": 48.00 }]'
+                    className={`${inputCls} font-mono text-xs`}
                   />
-                  <button 
-                    onClick={carregarJson} 
+                  <button
+                    onClick={carregarJson}
                     disabled={!jsonText.trim()}
-                    className="px-5 py-2.5 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold disabled:opacity-50 transition"
+                    className="px-5 py-2.5 text-xs bg-brand-700 hover:bg-brand-800 text-white rounded-xl font-semibold disabled:opacity-50 transition"
                   >
                     Carregar e Revisar
                   </button>
@@ -1497,50 +1492,50 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
                 /* Tela de Revisão */
                 <div className="space-y-3">
                   <div className="p-3.5 bg-orange-500/10 border border-orange-500/20 rounded-xl">
-                    <p className="text-xs font-bold text-orange-400">Revisão de Produtos Extraídos</p>
-                    <p className="text-[11px] text-orange-300/80 mt-0.5">
+                    <p className="text-xs font-semibold text-orange-400">Revisão de Produtos Extraídos</p>
+                    <p className="text-xs text-orange-300/80 mt-0.5">
                       Encontramos {itens.length} itens. Confira atentamente os nomes, categorias e preços e ajuste se necessário antes de confirmar.
                     </p>
                   </div>
-                  
-                  <div className="border border-[#1e293b] rounded-2xl divide-y divide-[#1e293b] max-h-[48vh] overflow-y-auto bg-[#0d1117]">
+
+                  <div className="border border-line rounded-xl divide-y divide-line max-h-[48vh] overflow-y-auto bg-canvas">
                     {itens.map((p, i) => (
                       <div key={i} className="p-3 flex gap-2.5 items-center flex-wrap sm:flex-nowrap">
-                        <input 
-                          value={p.nome} 
+                        <input
+                          value={p.nome}
                           onChange={(e) => setItem(i, { nome: e.target.value })}
-                          className="flex-1 min-w-[150px] px-3 py-1.5 border border-[#1e293b] rounded-lg text-xs font-semibold outline-none bg-[#161f30] text-white focus:border-orange-500" 
-                          placeholder="Nome do produto" 
+                          className="flex-1 min-w-[150px] px-3 py-1.5 border border-line rounded-lg text-xs font-semibold outline-none bg-surface-muted text-white focus:border-orange-500"
+                          placeholder="Nome do produto"
                         />
-                        <select 
-                          value={p.categoria} 
+                        <select
+                          value={p.categoria}
                           onChange={(e) => setItem(i, { categoria: e.target.value })}
-                          className="px-2.5 py-1.5 border border-[#1e293b] rounded-lg text-xs outline-none bg-[#161f30] text-white font-medium"
+                          className="px-2.5 py-1.5 border border-line rounded-lg text-xs outline-none bg-surface-muted text-white font-medium"
                         >
                           {["pizza","lanche","bebida","sobremesa","outro"].map(c => (
-                            <option key={c} value={c} className="bg-[#111622]">{c}</option>
+                            <option key={c} value={c} className="bg-surface">{c}</option>
                           ))}
                         </select>
                         <div className="w-36 shrink-0 text-right">
                           {p.tamanhos && p.tamanhos.length > 0 ? (
-                            <span className="text-[10px] bg-[#161f30] text-slate-300 border border-[#1e293b] px-2 py-1 rounded font-bold block text-center truncate">
+                            <span className="text-xs bg-surface-muted text-ink-muted border border-line px-2 py-1 rounded font-semibold block text-center truncate">
                               {p.tamanhos.length} var. ({Math.min(...p.tamanhos.map(t => Number(t.preco)))} min)
                             </span>
                           ) : (
                             <div className="relative">
-                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">R$</span>
-                              <input 
-                                type="number" 
-                                step="0.01" 
-                                value={p.preco} 
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-ink-subtle font-semibold">R$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={p.preco}
                                 onChange={(e) => setItem(i, { preco: Number(e.target.value) })}
-                                className="w-full pl-7 pr-2.5 py-1.5 border border-[#1e293b] rounded-lg text-xs font-semibold outline-none bg-[#161f30] text-white focus:border-orange-500" 
+                                className="w-full pl-7 pr-2.5 py-1.5 border border-line rounded-lg text-xs font-semibold outline-none bg-surface-muted text-white focus:border-orange-500"
                               />
                             </div>
                           )}
                         </div>
-                        <button 
-                          onClick={() => removeItem(i)} 
+                        <button
+                          onClick={() => removeItem(i)}
                           className="p-1.5 text-red-400 hover:bg-red-950/40 rounded-lg border border-transparent hover:border-red-800/40 transition"
                           title="Remover produto da importação"
                         >
@@ -1549,9 +1544,9 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
                       </div>
                     ))}
                   </div>
-                  <button 
-                    onClick={() => setItens(null)} 
-                    className="text-xs font-bold text-slate-400 hover:text-white hover:underline"
+                  <button
+                    onClick={() => setItens(null)}
+                    className="text-xs font-semibold text-ink-muted hover:text-white hover:underline"
                   >
                     ← Voltar e reenviar
                   </button>
@@ -1562,17 +1557,17 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
             </div>
 
             {itens && (
-              <div className="px-5 py-4 border-t border-[#1e293b] bg-[#111622] flex justify-end gap-2 shrink-0">
-                <button 
-                  onClick={close} 
-                  className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white hover:bg-[#161f30] rounded-xl transition"
+              <div className="px-5 py-4 border-t border-line bg-surface flex justify-end gap-2 shrink-0">
+                <button
+                  onClick={close}
+                  className="px-4 py-2 text-xs font-semibold text-ink-muted hover:text-white hover:bg-surface-muted rounded-xl transition"
                 >
                   Cancelar
                 </button>
-                <button 
-                  onClick={confirmar} 
+                <button
+                  onClick={confirmar}
                   disabled={salvando}
-                  className="px-5 py-2 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold flex items-center gap-1.5 shadow-sm disabled:opacity-50 transition"
+                  className="px-5 py-2 text-xs bg-brand-700 hover:bg-brand-800 text-white rounded-xl font-semibold flex items-center gap-1.5 disabled:opacity-50 transition"
                 >
                   {salvando ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Importar {itens.length} Produto(s)
                 </button>
@@ -1586,12 +1581,12 @@ function ImportarCardapio({ pizzariaId, onImported }: { pizzariaId: string; onIm
 }
 
 // Estilos Utilitários
-const inputCls = "w-full px-3.5 py-2.5 bg-[#161f30] border border-[#1e293b] rounded-xl text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500/50 transition";
+const inputCls = "w-full px-3.5 py-2.5 bg-surface-muted border border-line rounded-xl text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500/50 transition";
 
 function Field({ label, children, required, full }: any) {
   return (
     <label className={`block ${full ? "md:col-span-2" : ""}`}>
-      <span className="text-xs text-slate-400 font-bold block mb-1">{label}{required && " *"}</span>
+      <span className="text-xs text-ink-muted font-semibold block mb-1">{label}{required && " *"}</span>
       <div className="mt-0.5">{children}</div>
     </label>
   );

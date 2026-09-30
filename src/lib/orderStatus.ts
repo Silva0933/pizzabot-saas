@@ -23,13 +23,13 @@ export interface OrderStatusMeta {
 }
 
 export const ORDER_STATUS_META: Record<OrderStatus, OrderStatusMeta> = {
-  novo:       { label: "Recebido",   badge: "bg-blue-50 text-blue-700 border-blue-200",       dot: "bg-blue-500",    text: "text-blue-600",    icon: Sparkles },
-  confirmado: { label: "Aceito",     badge: "bg-emerald-50 text-emerald-700 border-emerald-200", dot: "bg-emerald-500", text: "text-emerald-600", icon: CheckCircle2 },
-  no_forno:   { label: "No forno",   badge: "bg-amber-50 text-amber-700 border-amber-200",     dot: "bg-amber-500",   text: "text-amber-600",   icon: Flame },
-  pronto_entrega: { label: "Pronto p/ entrega", badge: "bg-teal-50 text-teal-700 border-teal-200", dot: "bg-teal-500", text: "text-teal-600", icon: PackageOpen },
-  a_caminho:  { label: "A caminho",  badge: "bg-violet-50 text-violet-700 border-violet-200",  dot: "bg-violet-500",  text: "text-violet-600",  icon: Bike },
-  entregue:   { label: "Entregue",   badge: "bg-green-50 text-green-700 border-green-200",     dot: "bg-green-500",   text: "text-green-600",   icon: PackageCheck },
-  cancelado:  { label: "Cancelado",  badge: "bg-rose-50 text-rose-700 border-rose-200",        dot: "bg-rose-500",    text: "text-rose-600",    icon: XCircle },
+  novo:       { label: "Recebido",   badge: "bg-orange-500/10 text-orange-300 border-orange-500/25",       dot: "bg-orange-500",    text: "text-orange-300",    icon: Sparkles },
+  confirmado: { label: "Aceito",     badge: "bg-sky-500/10 text-sky-300 border-sky-500/25", dot: "bg-sky-500", text: "text-sky-300", icon: CheckCircle2 },
+  no_forno:   { label: "No forno",   badge: "bg-amber-500/10 text-amber-300 border-amber-500/25",     dot: "bg-amber-500",   text: "text-amber-300",   icon: Flame },
+  pronto_entrega: { label: "Pronto p/ entrega", badge: "bg-violet-500/10 text-violet-300 border-violet-500/25", dot: "bg-violet-500", text: "text-violet-300", icon: PackageOpen },
+  a_caminho:  { label: "A caminho",  badge: "bg-cyan-500/10 text-cyan-300 border-cyan-500/25",  dot: "bg-cyan-500",  text: "text-cyan-300",  icon: Bike },
+  entregue:   { label: "Entregue",   badge: "bg-green-500/10 text-green-300 border-green-500/25",     dot: "bg-green-500",   text: "text-green-300",   icon: PackageCheck },
+  cancelado:  { label: "Cancelado",  badge: "bg-rose-500/10 text-rose-300 border-rose-500/25",        dot: "bg-rose-500",    text: "text-rose-300",    icon: XCircle },
 };
 
 /** Todos os status (inclui cancelado), na ordem do seletor. */

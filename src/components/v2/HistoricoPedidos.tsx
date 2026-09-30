@@ -110,7 +110,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
     return (
       <div className="flex flex-col items-center justify-center py-24 space-y-3">
         <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-        <p className="text-xs text-slate-400">Carregando histórico de pedidos...</p>
+        <p className="text-xs text-ink-muted">Carregando histórico de pedidos...</p>
       </div>
     );
   }
@@ -120,11 +120,11 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
       {/* Header direct on canvas */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-orange-500 text-xs font-black uppercase tracking-wider">
+          <div className="flex items-center gap-2 text-orange-500 text-xs font-semibold ">
             <History className="w-4 h-4" /> REGISTROS HISTÓRICOS
           </div>
           <h2 className="mt-1 text-xl font-bold text-white tracking-tight">Histórico de Pedidos</h2>
-          <p className="mt-0.5 text-xs text-slate-400 max-w-2xl">
+          <p className="mt-0.5 text-xs text-ink-muted max-w-2xl">
             Consulte todos os pedidos já realizados, status de entrega e faturamento consolidado.
           </p>
         </div>
@@ -133,9 +133,9 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
           type="button"
           onClick={() => load(true)}
           disabled={refreshing}
-          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-[#111622] hover:bg-[#161f30] text-slate-200 border border-[#1e293b] rounded-xl transition disabled:opacity-50 self-start sm:self-auto shrink-0 shadow-sm"
+          className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-surface hover:bg-surface-muted text-slate-200 border border-line rounded-xl transition disabled:opacity-50 self-start sm:self-auto shrink-0 shadow-sm"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-orange-400" : "text-slate-400"}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin text-orange-400" : "text-ink-muted"}`} />
           Atualizar
         </button>
       </div>
@@ -149,62 +149,62 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
 
       {/* 4 StatCards de Métricas - padronizados com Clientes.png */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+        <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
           <span className="w-10 h-10 grid place-items-center rounded-xl bg-[#241a12] border border-amber-900/30 text-orange-400">
             <ClipboardList className="w-5 h-5" />
           </span>
-          <b className="mt-4 block text-2xl font-black text-white tracking-tight">{metrics.total}</b>
-          <small className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">TOTAL DE PEDIDOS</small>
+          <b className="mt-4 block text-2xl font-semibold text-white tracking-tight">{metrics.total}</b>
+          <small className="mt-1 block text-xs font-bold  text-ink-muted">TOTAL DE PEDIDOS</small>
         </div>
 
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+        <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
           <span className="w-10 h-10 grid place-items-center rounded-xl bg-[#0e2720] border border-emerald-900/30 text-emerald-400">
             <DollarSign className="w-5 h-5" />
           </span>
-          <b className="mt-4 block text-2xl font-black text-white tracking-tight">{brl(metrics.faturamento)}</b>
-          <small className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">FATURAMENTO CONSOLIDADO</small>
+          <b className="mt-4 block text-2xl font-semibold text-white tracking-tight">{brl(metrics.faturamento)}</b>
+          <small className="mt-1 block text-xs font-bold  text-ink-muted">FATURAMENTO CONSOLIDADO</small>
         </div>
 
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+        <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
           <span className="w-10 h-10 grid place-items-center rounded-xl bg-[#13233a] border border-blue-900/30 text-sky-400">
             <PackageCheck className="w-5 h-5" />
           </span>
-          <b className="mt-4 block text-2xl font-black text-white tracking-tight">{metrics.entregues}</b>
-          <small className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">ENTREGUES COM SUCESSO</small>
+          <b className="mt-4 block text-2xl font-semibold text-white tracking-tight">{metrics.entregues}</b>
+          <small className="mt-1 block text-xs font-bold  text-ink-muted">ENTREGUES COM SUCESSO</small>
         </div>
 
-        <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+        <div className="rounded-2xl border border-line bg-surface p-5 shadow-sm">
           <span className="w-10 h-10 grid place-items-center rounded-xl bg-[#221634] border border-purple-900/30 text-purple-400">
             <TrendingUp className="w-5 h-5" />
           </span>
-          <b className="mt-4 block text-2xl font-black text-white tracking-tight">{brl(metrics.ticketMedio)}</b>
-          <small className="mt-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">TICKET MÉDIO GERAL</small>
+          <b className="mt-4 block text-2xl font-semibold text-white tracking-tight">{brl(metrics.ticketMedio)}</b>
+          <small className="mt-1 block text-xs font-bold  text-ink-muted">TICKET MÉDIO GERAL</small>
         </div>
       </section>
 
       {/* Tabela de Pedidos */}
-      <section className="bg-[#111622] border border-[#1e293b] rounded-2xl overflow-hidden shadow-sm">
+      <section className="bg-surface border border-line rounded-2xl overflow-hidden shadow-sm">
         {/* Header e Busca */}
-        <div className="p-4 md:p-5 border-b border-[#1e293b] flex flex-col md:flex-row gap-3 md:items-center justify-between">
+        <div className="p-4 md:p-5 border-b border-line flex flex-col md:flex-row gap-3 md:items-center justify-between">
           <div>
             <h3 className="text-base font-bold text-white">Base de pedidos</h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-ink-muted">
               Mostrando {filtrados.length} de {pedidos.length} pedidos arquivados.
             </p>
           </div>
           <div className="relative w-full md:w-80">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted pointer-events-none" />
             <input
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               placeholder="Buscar por nº, cliente, telefone..."
-              className="w-full h-10 pl-10 pr-4 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder:text-slate-500 outline-none focus:border-orange-500/50 transition"
+              className="w-full h-10 pl-10 pr-4 rounded-xl border border-line bg-surface-muted text-xs text-white placeholder:text-ink-muted outline-none focus:border-orange-500/50 transition"
             />
           </div>
         </div>
 
         {/* Abas de Filtros de Status */}
-        <div className="px-5 py-3 border-b border-[#1e293b] bg-[#0d1117] flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+        <div className="px-5 py-3 border-b border-line bg-canvas flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           {["todos", ...ORDER_STATUS_LIST].map((st) => {
             const isActive = filtroStatus === st;
             const label = st === "todos" ? "Todos" : orderStatusLabel(st);
@@ -216,12 +216,12 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                 onClick={() => setFiltroStatus(st)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition flex items-center gap-1.5 ${
                   isActive
-                    ? "bg-orange-500 text-white shadow-xs"
-                    : "bg-[#161f30] text-slate-400 hover:text-white border border-[#1e293b] hover:bg-[#1c273c]"
+                    ? "bg-brand-700 text-white shadow-xs"
+                    : "bg-surface-muted text-ink-muted hover:text-white border border-line hover:bg-surface-muted"
                 }`}
               >
                 <span>{label}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? "bg-white/20 text-white" : "bg-[#111622] text-slate-500"}`}>
+                <span className={`text-xs px-1.5 py-0.2 rounded-full ${isActive ? "bg-surface/20 text-white" : "bg-surface text-ink-muted"}`}>
                   {count}
                 </span>
               </button>
@@ -230,7 +230,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
         </div>
 
         {/* Table Header */}
-        <div className="hidden lg:grid grid-cols-[90px_140px_1.6fr_1.6fr_130px_120px_32px] px-6 py-3.5 border-b border-[#1e293b] text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <div className="hidden lg:grid grid-cols-[90px_140px_1.6fr_1.6fr_130px_120px_32px] px-6 py-3.5 border-b border-line text-xs font-bold  text-ink-muted">
           <span>PEDIDO</span>
           <span>DATA / HORA</span>
           <span>CLIENTE</span>
@@ -243,9 +243,9 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
         {/* Lista de Registros */}
         {filtrados.length === 0 ? (
           <div className="py-20 text-center px-4">
-            <Package className="w-12 h-12 text-slate-600 mx-auto stroke-1 mb-3" />
+            <Package className="w-12 h-12 text-ink-muted mx-auto stroke-1 mb-3" />
             <h4 className="text-base font-bold text-white">Nenhum pedido arquivado</h4>
-            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+            <p className="text-xs text-ink-muted mt-1 max-w-sm mx-auto">
               {busca || filtroStatus !== "todos"
                 ? "Nenhum pedido corresponde aos critérios de pesquisa ou status selecionados."
                 : "Os pedidos registrados aparecerão listados aqui automaticamente conforme forem processados."}
@@ -254,7 +254,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
         ) : (
           <div className="divide-y divide-[#1e293b]">
             {filtrados.map((p) => {
-              const badge = STATUS_BADGES[p.status] || { label: orderStatusLabel(p.status), cls: "bg-slate-800 text-slate-300" };
+              const badge = STATUS_BADGES[p.status] || { label: orderStatusLabel(p.status), cls: "bg-slate-800 text-ink-muted" };
               const clienteNome = p.cliente?.nome || p.cliente_nome || "Cliente";
               const clienteTel = p.cliente?.telefone || p.cliente_telefone || "";
               const itensQtd = (p.itens || []).length;
@@ -265,7 +265,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                 <div
                   key={p.id}
                   onClick={() => abrirDetalhes(p)}
-                  className="grid grid-cols-1 lg:grid-cols-[90px_140px_1.6fr_1.6fr_130px_120px_32px] items-center px-4 md:px-6 py-4 hover:bg-[#161f30]/40 transition-colors cursor-pointer gap-2 lg:gap-4 text-xs"
+                  className="grid grid-cols-1 lg:grid-cols-[90px_140px_1.6fr_1.6fr_130px_120px_32px] items-center px-4 md:px-6 py-4 hover:bg-surface-muted/40 transition-colors cursor-pointer gap-2 lg:gap-4 text-xs"
                 >
                   {/* Número */}
                   <span className="w-12 h-8 rounded-lg bg-[#241a12] border border-amber-900/30 text-orange-400 font-bold font-mono grid place-items-center shrink-0 text-xs">
@@ -273,7 +273,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                   </span>
 
                   {/* Data e Hora */}
-                  <div className="text-slate-400 font-medium">
+                  <div className="text-ink-muted font-medium">
                     <span className="block text-white font-semibold">
                       {new Date(p.created_at).toLocaleDateString("pt-BR", {
                         day: "2-digit",
@@ -281,7 +281,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                         year: "numeric",
                       })}
                     </span>
-                    <span className="block text-[11px] text-slate-400 mt-0.5">
+                    <span className="block text-xs text-ink-muted mt-0.5">
                       {new Date(p.created_at).toLocaleTimeString("pt-BR", {
                         hour: "2-digit",
                         minute: "2-digit",
@@ -297,9 +297,9 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                     <div className="min-w-0">
                       <strong className="block text-white font-semibold truncate">{clienteNome}</strong>
                       {clienteTel ? (
-                        <span className="block text-[11px] text-slate-400 truncate">{clienteTel}</span>
+                        <span className="block text-xs text-ink-muted truncate">{clienteTel}</span>
                       ) : (
-                        <span className="block text-[11px] text-slate-500 italic truncate">Sem telefone</span>
+                        <span className="block text-xs text-ink-muted italic truncate">Sem telefone</span>
                       )}
                     </div>
                   </div>
@@ -307,19 +307,19 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                   {/* Itens e Tipo */}
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                      <span className={`text-xs px-2 py-0.5 rounded font-bold  ${
                         isDelivery ? "bg-sky-500/15 text-sky-400 border border-sky-500/30" : "bg-purple-500/15 text-purple-400 border border-purple-500/30"
                       }`}>
                         {isDelivery ? "Entrega" : "Retirada"}
                       </span>
-                      <span className="text-[11px] font-semibold text-slate-300">{itensQtd} {itensQtd === 1 ? "item" : "itens"}</span>
+                      <span className="text-xs font-semibold text-ink-muted">{itensQtd} {itensQtd === 1 ? "item" : "itens"}</span>
                     </div>
-                    {itensResumo && <p className="text-[11px] text-slate-400 truncate mt-1">{itensResumo}</p>}
+                    {itensResumo && <p className="text-xs text-ink-muted truncate mt-1">{itensResumo}</p>}
                   </div>
 
                   {/* Status */}
                   <div>
-                    <span className={`inline-flex items-center text-[10px] font-bold px-2.5 py-1 rounded-full ${badge.cls}`}>
+                    <span className={`inline-flex items-center text-xs font-bold px-2.5 py-1 rounded-full ${badge.cls}`}>
                       {badge.label}
                     </span>
                   </div>
@@ -330,7 +330,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                   </div>
 
                   {/* Chevron */}
-                  <ChevronRight className="w-4 h-4 text-slate-600 justify-self-end hidden lg:block" />
+                  <ChevronRight className="w-4 h-4 text-ink-muted justify-self-end hidden lg:block" />
                 </div>
               );
             })}
@@ -354,7 +354,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                   href={`https://wa.me/55${String(pedidoSelecionado.cliente?.telefone || pedidoSelecionado.cliente_telefone).replace(/\D/g, "")}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-[#161f30] hover:bg-[#1e293b] text-emerald-400 border border-emerald-500/30 transition shadow-xs"
+                  className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold bg-surface-muted hover:bg-[#1e293b] text-emerald-400 border border-emerald-500/30 transition shadow-xs"
                 >
                   <MessageCircle className="w-4 h-4 text-emerald-400" />
                   Chamar no WhatsApp
@@ -370,7 +370,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
         >
           <div className="space-y-4">
             {/* Status e Valor */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#161f30] p-4.5 rounded-2xl border border-[#1e293b] shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface-muted p-4.5 rounded-2xl border border-line shadow-sm">
               <div className="flex items-center gap-3">
                 <span className={`w-10 h-10 rounded-xl grid place-items-center shrink-0 ${
                   pedidoSelecionado.tipo === "delivery" || pedidoSelecionado.tipo === "entrega"
@@ -384,15 +384,15 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                   )}
                 </span>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Status do Pedido</p>
+                  <p className="text-xs  text-ink-muted font-bold">Status do Pedido</p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1 rounded-full ${
-                      STATUS_BADGES[pedidoSelecionado.status]?.cls || "bg-slate-800 text-slate-300"
+                      STATUS_BADGES[pedidoSelecionado.status]?.cls || "bg-slate-800 text-ink-muted"
                     }`}>
                       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
                       {STATUS_BADGES[pedidoSelecionado.status]?.label || orderStatusLabel(pedidoSelecionado.status)}
                     </span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider ${
+                    <span className={`text-xs px-2 py-0.5 rounded font-bold  ${
                       pedidoSelecionado.tipo === "delivery" || pedidoSelecionado.tipo === "entrega"
                         ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                         : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
@@ -402,18 +402,18 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                   </div>
                 </div>
               </div>
-              <div className="sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-[#1e293b]/60">
-                <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Valor Total</p>
-                <p className="text-2xl font-black text-emerald-400 mt-0.5 tracking-tight">
+              <div className="sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-line/60">
+                <p className="text-xs  text-ink-muted font-bold">Valor Total</p>
+                <p className="text-2xl font-semibold text-emerald-400 mt-0.5 tracking-tight">
                   {brl(Number(pedidoSelecionado.valor_total || 0))}
                 </p>
               </div>
             </div>
 
             {/* Dados do Cliente */}
-            <div className="bg-[#161f30] p-4.5 rounded-2xl border border-[#1e293b] space-y-3 shadow-sm">
-              <div className="flex items-center justify-between border-b border-[#1e293b]/70 pb-2.5">
-                <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
+            <div className="bg-surface-muted p-4.5 rounded-2xl border border-line space-y-3 shadow-sm">
+              <div className="flex items-center justify-between border-b border-line/70 pb-2.5">
+                <h4 className="text-xs font-bold text-orange-400  flex items-center gap-2">
                   <Phone className="w-3.5 h-3.5 text-orange-400" />
                   Dados do Cliente
                 </h4>
@@ -424,27 +424,27 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                     {initials(pedidoSelecionado.cliente?.nome || pedidoSelecionado.cliente_nome || "Cliente")}
                   </span>
                   <div className="min-w-0">
-                    <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Nome</span>
+                    <span className="text-ink-muted block text-xs font-bold ">Nome</span>
                     <strong className="text-white text-sm font-bold block truncate">
                       {pedidoSelecionado.cliente?.nome || pedidoSelecionado.cliente_nome || "Não informado"}
                     </strong>
                   </div>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Telefone / WhatsApp</span>
+                  <span className="text-ink-muted block text-xs font-bold ">Telefone / WhatsApp</span>
                   {pedidoSelecionado.cliente?.telefone || pedidoSelecionado.cliente_telefone ? (
                     <span className="text-slate-200 font-medium block mt-1 font-mono">
                       {pedidoSelecionado.cliente?.telefone || pedidoSelecionado.cliente_telefone}
                     </span>
                   ) : (
-                    <span className="text-slate-500 italic mt-1 block">Não informado</span>
+                    <span className="text-ink-muted italic mt-1 block">Não informado</span>
                   )}
                 </div>
                 {pedidoSelecionado.endereco_entrega && (
-                  <div className="sm:col-span-2 pt-2.5 border-t border-[#1e293b]/60 flex items-start gap-2.5 bg-[#111622]/50 p-3 rounded-xl border border-[#1e293b]">
+                  <div className="sm:col-span-2 pt-2.5 border-t border-line/60 flex items-start gap-2.5 bg-surface/50 p-3 rounded-xl border border-line">
                     <MapPin className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                     <div>
-                      <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">Endereço de Entrega</span>
+                      <span className="text-ink-muted block text-xs font-bold ">Endereço de Entrega</span>
                       <p className="text-xs text-slate-200 font-medium mt-0.5 leading-relaxed">
                         {pedidoSelecionado.endereco_entrega}
                       </p>
@@ -455,13 +455,13 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
             </div>
 
             {/* Itens do Pedido */}
-            <div className="bg-[#161f30] p-4.5 rounded-2xl border border-[#1e293b] space-y-3 shadow-sm">
-              <div className="flex items-center justify-between border-b border-[#1e293b]/70 pb-2.5">
-                <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
+            <div className="bg-surface-muted p-4.5 rounded-2xl border border-line space-y-3 shadow-sm">
+              <div className="flex items-center justify-between border-b border-line/70 pb-2.5">
+                <h4 className="text-xs font-bold text-orange-400  flex items-center gap-2">
                   <ClipboardList className="w-3.5 h-3.5 text-orange-400" />
                   Itens do Pedido ({(pedidoSelecionado.itens || []).length})
                 </h4>
-                <span className="text-xs font-semibold text-slate-400">
+                <span className="text-xs font-semibold text-ink-muted">
                   {(pedidoSelecionado.itens || []).reduce((sum, item) => sum + (item.quantidade || 1), 0)} unidades
                 </span>
               </div>
@@ -469,7 +469,7 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                 {(pedidoSelecionado.itens || []).map((item, idx) => (
                   <div key={idx} className="py-3 flex items-start justify-between gap-3 text-xs first:pt-1 last:pb-1">
                     <div className="flex items-start gap-3 min-w-0">
-                      <span className="w-7 h-7 rounded-lg bg-[#111622] border border-[#1e293b] text-orange-400 font-black text-xs grid place-items-center shrink-0 mt-0.5">
+                      <span className="w-7 h-7 rounded-lg bg-surface border border-line text-orange-400 font-semibold text-xs grid place-items-center shrink-0 mt-0.5">
                         {item.quantidade || 1}×
                       </span>
                       <div className="min-w-0">
@@ -477,14 +477,14 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                         {item.adicionais && item.adicionais.length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
                             {item.adicionais.map((a: any, aIdx: number) => (
-                              <span key={aIdx} className="text-[10px] font-semibold bg-[#111622] text-slate-300 border border-[#1e293b] px-2 py-0.5 rounded-md">
+                              <span key={aIdx} className="text-xs font-semibold bg-surface text-ink-muted border border-line px-2 py-0.5 rounded-md">
                                 + {typeof a === "string" ? a : a.nome}
                               </span>
                             ))}
                           </div>
                         )}
                         {item.observacao && (
-                          <p className="text-[11px] text-amber-300/90 font-medium italic mt-1.5 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg inline-block">
+                          <p className="text-xs text-amber-300/90 font-medium italic mt-1.5 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg inline-block">
                             Obs: {item.observacao}
                           </p>
                         )}
@@ -499,9 +499,9 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                       const total = Number(item.preco_total ?? unit * qtd);
                       return (
                         <div className="text-right shrink-0">
-                          <span className="font-black text-sm text-slate-200">{brl(total)}</span>
+                          <span className="font-semibold text-sm text-slate-200">{brl(total)}</span>
                           {qtd > 1 && unit > 0 && (
-                            <p className="text-[10px] text-slate-500 font-medium">{brl(unit)} cada</p>
+                            <p className="text-xs text-ink-muted font-medium">{brl(unit)} cada</p>
                           )}
                         </div>
                       );
@@ -512,9 +512,9 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
             </div>
 
             {/* Eventos / Linha do Tempo */}
-            <div className="bg-[#161f30] p-4.5 rounded-2xl border border-[#1e293b] space-y-3 shadow-sm">
-              <div className="flex items-center justify-between border-b border-[#1e293b]/70 pb-2.5">
-                <h4 className="text-xs font-bold text-orange-400 uppercase tracking-wider flex items-center gap-2">
+            <div className="bg-surface-muted p-4.5 rounded-2xl border border-line space-y-3 shadow-sm">
+              <div className="flex items-center justify-between border-b border-line/70 pb-2.5">
+                <h4 className="text-xs font-bold text-orange-400  flex items-center gap-2">
                   <History className="w-3.5 h-3.5 text-orange-400" />
                   Histórico de Eventos
                 </h4>
@@ -522,23 +522,23 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
               {loadingEventos ? (
                 <div className="py-6 text-center">
                   <Loader2 className="w-5 h-5 animate-spin text-orange-500 mx-auto" />
-                  <p className="text-xs text-slate-400 mt-2">Carregando eventos...</p>
+                  <p className="text-xs text-ink-muted mt-2">Carregando eventos...</p>
                 </div>
               ) : eventos.length === 0 ? (
-                <p className="text-xs text-slate-400 py-2">Nenhum evento adicional registrado para este pedido.</p>
+                <p className="text-xs text-ink-muted py-2">Nenhum evento adicional registrado para este pedido.</p>
               ) : (
                 <ol className="space-y-3 relative before:absolute before:top-2 before:bottom-2 before:left-[11px] before:w-0.5 before:bg-[#1e293b] mt-2">
                   {eventos.map((ev) => (
                     <li key={ev.id} className="relative pl-7 text-xs">
-                      <span className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-orange-500 border-2 border-[#161f30] shrink-0" />
+                      <span className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-brand-700 border-2 border-[#161f30] shrink-0" />
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-bold text-white text-xs capitalize">{ev.tipo.replaceAll("_", " ")}</span>
-                        <span className="text-[11px] font-semibold text-slate-400 shrink-0">
+                        <span className="text-xs font-semibold text-ink-muted shrink-0">
                           {new Date(ev.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
                       {ev.motivo && (
-                        <p className="text-[11px] text-slate-300 mt-1 bg-[#111622] p-2 rounded-lg border border-[#1e293b]">
+                        <p className="text-xs text-ink-muted mt-1 bg-surface p-2 rounded-lg border border-line">
                           Motivo: {ev.motivo}
                         </p>
                       )}

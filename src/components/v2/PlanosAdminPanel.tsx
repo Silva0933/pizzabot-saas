@@ -92,7 +92,7 @@ export function PlanosAdminPanel() {
   }
   if (!dados) {
     return (
-      <div className="flex items-center gap-2 text-xs text-slate-400 py-8">
+      <div className="flex items-center gap-2 text-xs text-ink-muted py-8">
         <Loader2 className="w-4 h-4 animate-spin" /> Carregando planos…
       </div>
     );
@@ -103,13 +103,15 @@ export function PlanosAdminPanel() {
       {/* Primeiro o gateway: plano bem configurado nao cobra nada sem ele. */}
       <GatewayCobrancaPanel />
 
-      <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-4">
-        <h2 className="text-sm font-bold text-white">Planos e limites</h2>
-        <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
-          O preço novo vale para assinaturas <strong>novas</strong>. Quem já assinou continua no
-          valor contratado até trocar de plano, porque a recorrência fica no Asaas. Campo em
-          branco volta ao padrão do sistema.
-        </p>
+      <div className="pzb-page-header">
+        <div>
+          <h2 className="text-base font-semibold text-ink">Planos e limites</h2>
+          <p className="pzb-page-description max-w-3xl">
+            O preço novo vale para assinaturas <strong>novas</strong>. Quem já assinou continua no
+            valor contratado até trocar de plano, porque a recorrência fica no Asaas. Campo em
+            branco volta ao padrão do sistema.
+          </p>
+        </div>
       </div>
 
       {erro && (
@@ -125,20 +127,20 @@ export function PlanosAdminPanel() {
           const ehTrial = plano.id === "trial";
 
           return (
-            <section key={plano.id} className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 space-y-3">
+            <section key={plano.id} className="pzb-section p-5 space-y-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <strong className="text-sm font-bold text-white">{plano.nome}</strong>
-                    <code className="text-[10px] text-slate-500 bg-[#161f30] px-1.5 py-0.5 rounded">{plano.id}</code>
+                    <strong className="text-sm font-semibold text-white">{plano.nome}</strong>
+                    <code className="text-xs text-ink-subtle bg-surface-muted px-1.5 py-0.5 rounded">{plano.id}</code>
                     {ehTrial && (
-                      <span className="text-[10px] text-slate-400 border border-[#1e293b] px-1.5 py-0.5 rounded">
+                      <span className="text-xs text-ink-muted border border-line px-1.5 py-0.5 rounded">
                         não é vendido
                       </span>
                     )}
                   </div>
                   {ajustado && padrao && (
-                    <p className="mt-1 text-[10px] text-orange-400">
+                    <p className="mt-1 text-xs text-orange-400">
                       Alterado — padrão: {padrao.nome}, R$ {padrao.preco_mensal.toFixed(2)}
                     </p>
                   )}
@@ -148,14 +150,14 @@ export function PlanosAdminPanel() {
                     type="button"
                     onClick={() => voltarAoPadrao(plano.id)}
                     disabled={salvando === plano.id}
-                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#1e293b] bg-[#161f30] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-orange-500 disabled:opacity-50"
+                    className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-line bg-surface-muted text-xs font-semibold text-ink-muted hover:text-white hover:border-orange-500 disabled:opacity-50"
                   >
                     <RotateCcw className="w-3 h-3" /> Padrão
                   </button>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Campo
                   rotulo="Nome"
                   valor={patch.nome ?? plano.nome}
@@ -177,7 +179,7 @@ export function PlanosAdminPanel() {
               />
 
               <div>
-                <span className="block text-[11px] font-semibold text-slate-400 mb-2">Limites</span>
+                <span className="block text-xs font-semibold text-ink-muted mb-2">Limites</span>
                 <div className="grid grid-cols-2 gap-3">
                   {LIMITES.map(({ chave, rotulo, ajuda }) => (
                     <div key={chave}>
@@ -193,12 +195,12 @@ export function PlanosAdminPanel() {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-1">
+              <div className="pzb-form-actions pt-1">
                 <button
                   type="button"
                   onClick={() => salvar(plano.id)}
                   disabled={!mudou || salvando === plano.id}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-40 disabled:hover:bg-orange-500 text-white text-xs font-bold"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 hover:bg-brand-800 disabled:opacity-40 disabled:hover:bg-brand-800 text-white text-xs font-semibold"
                 >
                   {salvando === plano.id ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -230,16 +232,16 @@ function Campo({
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] font-semibold text-slate-400 mb-1">{rotulo}</span>
+      <span className="block text-xs font-semibold text-ink-muted mb-1">{rotulo}</span>
       <input
         type={tipo}
         value={valor}
         disabled={desabilitado}
         min={tipo === "number" ? 0 : undefined}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 rounded-lg border border-[#1e293b] bg-[#161f30] text-xs text-white outline-none focus:border-orange-500 disabled:opacity-40"
+        className="w-full px-3 py-2 rounded-lg border border-line bg-surface-muted text-xs text-white outline-none focus:border-orange-500 disabled:opacity-40"
       />
-      {ajuda && <span className="block mt-1 text-[10px] text-slate-500">{ajuda}</span>}
+      {ajuda && <span className="block mt-1 text-xs text-ink-subtle">{ajuda}</span>}
     </label>
   );
 }

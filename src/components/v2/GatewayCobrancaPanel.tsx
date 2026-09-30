@@ -100,21 +100,21 @@ export function GatewayCobrancaPanel() {
 
   if (!cfg) {
     return (
-      <div className="flex items-center gap-2 text-xs text-slate-400 py-6">
+      <div className="flex items-center gap-2 text-xs text-ink-muted py-6">
         <Loader2 className="w-4 h-4 animate-spin" /> Carregando gateway…
       </div>
     );
   }
 
   return (
-    <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 space-y-4">
+    <section className="pzb-section p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-bold text-white flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
             <KeyRound className="w-4 h-4 text-orange-400" />
             Gateway de cobrança
           </h2>
-          <p className="mt-1 text-[11px] text-slate-400 leading-relaxed max-w-xl">
+          <p className="mt-1 text-xs text-ink-muted leading-relaxed max-w-xl">
             O Asaas que <strong>você</strong> usa para cobrar as assinaturas das pizzarias. Não é o
             mesmo de "Meu Negócio → Pagamento", que é o da pizzaria cobrando o cliente final dela.
           </p>
@@ -123,7 +123,7 @@ export function GatewayCobrancaPanel() {
       </div>
 
       {!cfg.configurada && (
-        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2.5 text-[11px] text-amber-300">
+        <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-300">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>
             Sem chave, <strong>nenhuma pizzaria consegue assinar nem pagar</strong> — e a suspensão
@@ -157,35 +157,35 @@ export function GatewayCobrancaPanel() {
       </div>
 
       <label className="block">
-        <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-1">
+        <span className="flex items-center gap-2 text-xs font-semibold text-ink-muted mb-1">
           Ambiente <SeloOrigem origem={cfg.origem.base_url} />
         </span>
         <input
           list="asaas-urls"
           value={baseUrl}
           onChange={(e) => setBaseUrl(e.target.value)}
-          className="w-full px-3 py-2 rounded-lg border border-[#1e293b] bg-[#161f30] text-xs text-white outline-none focus:border-orange-500"
+          className="w-full px-3 py-2 rounded-lg border border-line bg-surface-muted text-xs text-white outline-none focus:border-orange-500"
         />
         <datalist id="asaas-urls">
           {cfg.sugestoes_base_url.map((u) => <option key={u} value={u} />)}
         </datalist>
-        <span className="block mt-1 text-[10px] text-slate-500">
+        <span className="block mt-1 text-xs text-ink-subtle">
           Produção: <code>api.asaas.com</code> · Testes: <code>api-sandbox.asaas.com</code>
         </span>
       </label>
 
       <div>
-        <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-1">
+        <span className="flex items-center gap-2 text-xs font-semibold text-ink-muted mb-1">
           Webhook no Asaas
           {cfg.configurada && webhook && (
-            <span className={webhook.cadastrado ? "text-[9px] text-emerald-400 font-normal" : "text-[9px] text-amber-400 font-normal"}>
+            <span className={webhook.cadastrado ? "text-xs text-emerald-400 font-normal" : "text-xs text-amber-400 font-normal"}>
               {webhook.cadastrado ? "cadastrado" : "NÃO cadastrado"}
             </span>
           )}
         </span>
 
         {cfg.configurada && webhook && !webhook.cadastrado && (
-          <div className="mb-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2.5 text-[11px] text-amber-300">
+          <div className="mb-2 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-300">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
               Sem webhook a assinatura funciona pela metade: a pizzaria paga, o Asaas confirma,
@@ -196,14 +196,14 @@ export function GatewayCobrancaPanel() {
         )}
 
         {webhook?.cadastrado && webhook.webhook?.interrupted && (
-          <div className="mb-2 rounded-xl border border-red-500/30 bg-red-950/40 px-3 py-2.5 text-[11px] text-red-300">
+          <div className="mb-2 rounded-xl border border-red-500/30 bg-red-950/40 px-3 py-2.5 text-xs text-red-300">
             A fila deste webhook está <strong>interrompida</strong> no Asaas — normalmente porque a
             nossa API respondeu erro várias vezes. Reative no painel do Asaas.
           </div>
         )}
 
         <div className="flex items-center gap-2">
-          <code className="flex-1 px-3 py-2 rounded-lg bg-[#161f30] border border-[#1e293b] text-[11px] text-slate-200 break-all">
+          <code className="flex-1 px-3 py-2 rounded-lg bg-surface-muted border border-line text-xs text-ink break-all">
             {cfg.webhook_url}
           </code>
           <button
@@ -215,7 +215,7 @@ export function GatewayCobrancaPanel() {
                 window.setTimeout(() => setCopiado(false), 1800);
               } catch { /* sem clipboard: a URL continua visível pra copiar à mão */ }
             }}
-            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#1e293b] bg-[#161f30] text-[11px] font-semibold text-slate-300 hover:text-white hover:border-orange-500"
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-line bg-surface-muted text-xs font-semibold text-ink-muted hover:text-white hover:border-orange-500"
           >
             {copiado ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
             {copiado ? "Copiado" : "Copiar"}
@@ -227,13 +227,13 @@ export function GatewayCobrancaPanel() {
             type="button"
             onClick={cadastrarWebhook}
             disabled={cadastrandoWebhook}
-            className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-orange-500/40 bg-orange-500/10 text-[11px] font-bold text-orange-300 hover:bg-orange-500/20 disabled:opacity-40"
+            className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-orange-500/40 bg-orange-500/10 text-xs font-semibold text-orange-300 hover:bg-orange-500/20 disabled:opacity-40"
           >
             {cadastrandoWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Link2 className="w-3.5 h-3.5" />}
             Cadastrar webhook no Asaas automaticamente
           </button>
         )}
-        <span className="block mt-1 text-[10px] text-slate-500">
+        <span className="block mt-1 text-xs text-ink-subtle">
           O cadastro automático gera o token de autenticação e já o guarda aqui — o Asaas só
           mostra esse valor uma vez.
         </span>
@@ -241,7 +241,7 @@ export function GatewayCobrancaPanel() {
 
       {teste && (
         <div
-          className={`rounded-xl border px-3 py-2.5 text-[11px] ${
+          className={`rounded-xl border px-3 py-2.5 text-xs ${
             teste.ok
               ? "border-emerald-500/30 bg-emerald-950/30 text-emerald-300"
               : "border-red-500/30 bg-red-950/40 text-red-300"
@@ -261,12 +261,12 @@ export function GatewayCobrancaPanel() {
         </div>
       )}
 
-      <div className="flex justify-end gap-2 pt-1">
+      <div className="pzb-form-actions pt-1">
         <button
           type="button"
           onClick={testar}
           disabled={testando || !cfg.configurada}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs font-semibold text-slate-300 hover:text-white hover:border-orange-500 disabled:opacity-40"
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-line bg-surface-muted text-xs font-semibold text-ink-muted hover:text-white hover:border-orange-500 disabled:opacity-40"
         >
           {testando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
           Testar conexão
@@ -275,7 +275,7 @@ export function GatewayCobrancaPanel() {
           type="button"
           onClick={salvar}
           disabled={salvando}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold disabled:opacity-40"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold disabled:opacity-40"
         >
           {salvando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
           {salvando ? "Salvando…" : "Salvar e testar"}
@@ -288,7 +288,7 @@ export function GatewayCobrancaPanel() {
 function Selo({ ok }: { ok: boolean }) {
   return (
     <span
-      className={`shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-bold ${
+      className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold ${
         ok ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
            : "bg-amber-500/15 text-amber-400 border border-amber-500/30"
       }`}
@@ -300,9 +300,9 @@ function Selo({ ok }: { ok: boolean }) {
 
 /** De onde o valor em uso veio — evita o admin editar algo que não está valendo. */
 function SeloOrigem({ origem }: { origem: string }) {
-  if (origem === "banco") return <span className="text-[9px] text-emerald-400 font-normal">salvo aqui</span>;
-  if (origem === "env") return <span className="text-[9px] text-sky-400 font-normal">vindo do ambiente</span>;
-  return <span className="text-[9px] text-slate-500 font-normal">vazio</span>;
+  if (origem === "banco") return <span className="text-xs text-emerald-400 font-normal">salvo aqui</span>;
+  if (origem === "env") return <span className="text-xs text-sky-400 font-normal">vindo do ambiente</span>;
+  return <span className="text-xs text-ink-subtle font-normal">vazio</span>;
 }
 
 function Campo({
@@ -317,13 +317,13 @@ function Campo({
 }) {
   return (
     <label className="block">
-      <span className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-1">
+      <span className="flex items-center gap-2 text-xs font-semibold text-ink-muted mb-1">
         {rotulo} <SeloOrigem origem={origem} />
         {onLimpar && (
           <button
             type="button"
             onClick={(e) => { e.preventDefault(); onLimpar(); }}
-            className="ml-auto text-[10px] font-semibold text-slate-500 hover:text-red-400"
+            className="ml-auto text-xs font-semibold text-ink-subtle hover:text-red-400"
           >
             limpar
           </button>
@@ -334,9 +334,9 @@ function Campo({
         value={valor}
         onChange={(e) => onChange(e.target.value)}
         placeholder="$aact_..."
-        className="w-full px-3 py-2 rounded-lg border border-[#1e293b] bg-[#161f30] text-xs text-white font-mono outline-none focus:border-orange-500"
+        className="w-full px-3 py-2 rounded-lg border border-line bg-surface-muted text-xs text-white font-mono outline-none focus:border-orange-500"
       />
-      <span className="block mt-1 text-[10px] text-slate-500">{ajuda}</span>
+      <span className="block mt-1 text-xs text-ink-subtle">{ajuda}</span>
     </label>
   );
 }

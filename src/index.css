@@ -1,465 +1,118 @@
 @import url('https://fonts.googleapis.com/css2?family=Anton+SC&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Montserrat:wght@400;500;600;700;800;900&family=Nunito:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,600;1,700&display=swap');
 @import "tailwindcss";
-
-/* ============================================================
-   PizzaBot — Design tokens (Tailwind v4 @theme)
-   Identidade laranja coesa entre painel (claro) e cardápio (escuro).
-   Cada token vira utilitário: --color-brand-500 → bg-brand-500 / text-brand-500.
-   ============================================================ */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-
-  /* Marca — laranja (âncora #f97316) */
-  --color-brand-50:  #fff7ed;
-  --color-brand-100: #ffedd5;
-  --color-brand-200: #fed7aa;
-  --color-brand-300: #fdba74;
-  --color-brand-400: #fb923c;
-  --color-brand-500: #f97316;
-  --color-brand-600: #ea580c;
-  --color-brand-700: #c2410c;
-  --color-brand-800: #9a3412;
-  --color-brand-900: #7c2d12;
-
-  /* Secundária ember (rosa quente) — fecho do degradê da marca */
-  --color-ember-400: #fb7185;
-  --color-ember-500: #f43f5e;
-  --color-ember-600: #e11d48;
-
-  /* Superfícies & tinta (painel claro) */
-  --color-canvas:        #f6f7f9;
-  --color-surface:       #ffffff;
-  --color-surface-muted: #f8fafc;
-  --color-line:          #e6e9ef;
-  --color-ink:           #1e293b;
-  --color-ink-muted:     #64748b;
-  --color-ink-subtle:    #94a3b8;
-
-  /* Elevação */
-  --shadow-card:       0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-card-hover: 0 6px 18px rgba(15, 23, 42, 0.09);
-  --shadow-pop:        0 12px 32px rgba(15, 23, 42, 0.14);
-  --shadow-brand:      0 8px 24px rgba(249, 115, 22, 0.28);
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-brand-50: #fff7ed; --color-brand-100: #ffedd5;
+  --color-brand-200: #fed7aa; --color-brand-300: #fdba74;
+  --color-brand-400: #fb923c; --color-brand-500: #f97316;
+  --color-brand-600: #d44a0b; --color-brand-700: #c2410c;
+  --color-brand-800: #9a3412; --color-brand-900: #7c2d12;
+  --color-ember-400: #fb7185; --color-ember-500: #f43f5e; --color-ember-600: #e11d48;
+  --color-canvas: #101418; --color-surface: #191e25;
+  --color-surface-muted: #20262f; --color-surface-elevated: #20262f;
+  --color-line: #303741; --color-ink: #f2f5fa;
+  --color-ink-muted: #b4bdca; --color-ink-subtle: #99a4b5;
+  --shadow-card: none; --shadow-card-hover: none;
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / .35);
+  --shadow-brand: 0 6px 20px rgb(0 0 0 / .2);
 }
-
-/* ============================================================
-   Escala tipográfica por resolução.
-
-   Todo tamanho do Tailwind é em rem, então ancorar o font-size do <html> faz
-   texto, espaçamento, raio e altura de componente escalarem juntos — mantendo
-   a proporção, que e o que se perde ao mexer em tamanho solto.
-
-   O padrão do navegador é 16px, pensado pra tela grande. Num notebook de
-   1366x768 isso deixa o painel apertado: sobra pouca altura útil e os títulos
-   competem com o conteúdo. A régua abaixo é conservadora — no máximo ~12%
-   menor que o padrão e ~9% maior, longe de qualquer distorção:
-
-     1280px -> 15.2px    1366px -> 15.4px
-     1600px -> 16.0px    1920px -> 16.8px    2560px+ -> 17.5px (teto)
-
-   O piso de 14px protege a legibilidade: nenhuma tela desce abaixo dele.
-   ============================================================ */
-html {
-  font-size: clamp(14px, 12px + 0.25vw, 17.5px);
-  background-color: #070b12;
-  overscroll-behavior-x: none;
-}
-
-/*
-  Altura também pesa: notebooks 1366x768 e 1440x900 têm largura razoável mas
-  pouca altura, e é aí que o conteúdo é cortado. Um degrau a menos devolve
-  linhas visíveis sem mexer na proporção.
-*/
-@media (max-height: 820px) and (min-width: 1024px) {
-  html { font-size: clamp(13.5px, 11px + 0.22vw, 15.5px); }
-}
-
-/* Telas muito largas (ultrawide/4K): o teto evita texto gigante. */
-@media (min-width: 2400px) {
-  html { font-size: 17.5px; }
-}
-
-/*
-  O cardápio público tem tipografia própria, toda em px e dirigida pelo tema da
-  pizzaria. Ancorar o rem ali dobraria a escala (rem do painel + clamp do tema),
-  então ele fica fora desta régua.
-*/
+:root { --pzb-topbar-height: 68px; --pzb-bottom-nav-height: 0px; }
+html { font-size: 100%; background: var(--color-canvas); overscroll-behavior-x: none; }
+html, body, #root { width: 100%; max-width: 100%; min-width: 0; overflow-x: clip; }
+body { margin: 0; font-family: var(--font-sans); background: var(--color-canvas); color: var(--color-ink); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font-family: inherit; }
+button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--color-brand-400); outline-offset: 3px; }
+input, textarea { caret-color: var(--color-brand-400); }
+::selection { color: #fff7ed; background: #9a3412; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #485260; border-radius: 20px; }
+::-webkit-scrollbar-thumb:hover { background: #647184; }
+* { scrollbar-color: #485260 transparent; scrollbar-width: thin; }
 .cdp-root { font-size: 16px; }
-
-/* Respeita quem aumentou a fonte do sistema/navegador por acessibilidade. */
-@media (prefers-reduced-motion: no-preference) {
-  html { scroll-behavior: smooth; }
-}
-/* clip, e nao hidden: hidden no body vira contêiner de rolagem e desliga todo
-   position: sticky do painel (a prévia de Temas saía da tela ao rolar). */
-html, body, #root {
-  width: 100%; max-width: 100%; min-width: 0; overflow-x: clip;
-}
-body {
-  font-family: var(--font-sans);
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
-  -webkit-font-smoothing: antialiased;
-}
-
-/* Degradê da marca, reutilizável */
-.bg-brand-gradient {
-  background-image: linear-gradient(135deg, var(--color-brand-500) 0%, var(--color-ember-500) 100%);
-}
-.text-brand-gradient {
-  background-image: linear-gradient(135deg, var(--color-brand-500) 0%, var(--color-ember-500) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-/* ---- Animações compartilhadas ---- */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-fade-in {
-  animation: fadeIn 0.3s ease-out both;
-}
-
-@keyframes popIn {
-  from { opacity: 0; transform: scale(0.96); }
-  to   { opacity: 1; transform: scale(1); }
-}
-.animate-pop-in {
-  animation: popIn 0.22s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.animate-slide-up {
-  animation: slideUp 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to   { transform: translateX(0); }
-}
-.animate-slide-in-right {
-  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background-color: #cbd5e1;
-  border-radius: 20px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background-color: #94a3b8;
-}
-/* ============================================================
-   Painel Dark Slate + Laranja — tema oficial idêntico às telas de referência.
-   Garante coerência visual em 100% dos componentes administrativos.
-   ============================================================ */
-.pzb-admin-shell {
-  color-scheme: dark;
-  background: #0b0e14;
-  --pzb-admin-bg: #0b0e14;
-  --pzb-admin-surface: #111622;
-  --pzb-admin-surface-2: #161f30;
-  --pzb-admin-line: #1e293b;
-  --pzb-admin-text: #f8fafc;
-  --pzb-admin-muted: #94a3b8;
-  --pzb-admin-accent: #f97316;
-  /* Tokens semânticos usados pelas telas v2 (bg-surface, text-ink etc.). */
-  --color-canvas: #0b0e14;
-  --color-surface: #111622;
-  --color-surface-muted: #161f30;
-  --color-line: #1e293b;
-  --color-ink: #f8fafc;
-  --color-ink-muted: #94a3b8;
-  --color-ink-subtle: #64748b;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.5);
-}
-.pzb-admin-content {
-  background: #0b0e14;
-}
-.pzb-admin-sidebar {
-  background: #0d1117 !important;
-  border-color: #1e2638 !important;
-  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
-}
-.pzb-admin-sidebar > div,
-.pzb-admin-sidebar nav,
-.pzb-admin-sidebar nav + div { border-color: #1e2638 !important; }
-.pzb-admin-sidebar nav button {
-  min-height: 40px;
-  border-radius: 10px;
-}
-.pzb-admin-sidebar nav button:hover {
-  background: #161f30 !important;
-  color: #f8fafc !important;
-}
-.pzb-admin-sidebar .bg-brand-50 {
-  background: rgba(249, 115, 22, 0.12) !important;
-  color: #f97316 !important;
-  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.2);
-}
-.pzb-admin-sidebar .bg-brand-gradient {
-  background-image: linear-gradient(135deg, #f97316, #ea580c);
-}
-.pzb-admin-topbar {
-  min-height: 64px;
-  background: #0d1117 !important;
-  border-color: #1e2638 !important;
-}
-.pzb-admin-topbar h1 {
-  color: #ffffff !important;
-  font-family: var(--font-sans) !important;
-  font-size: 1.125rem !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.05em !important;
-  text-transform: uppercase !important;
-}
-.pzb-admin-topbar > div:first-child p {
-  color: #94a3b8 !important;
-}
-.pzb-admin-user-menu,
-.pzb-admin-mobile-more,
-.pzb-admin-bottom-nav {
-  background: #111622 !important;
-  border-color: #1e293b !important;
-}
-.pzb-admin-content > main {
-  min-height: calc(100vh - 64px);
-  background: #0b0e14 !important;
-}
-.pzb-admin-shell .bg-white,
-.pzb-admin-shell .bg-slate-50,
-.pzb-admin-shell .bg-slate-50\/20,
-.pzb-admin-shell .bg-slate-50\/30,
-.pzb-admin-shell .bg-slate-50\/50,
-.pzb-admin-shell .bg-slate-50\/70 {
-  background-color: var(--pzb-admin-surface) !important;
-}
-.pzb-admin-shell .bg-slate-100,
-.pzb-admin-shell .bg-slate-200,
-.pzb-admin-shell .bg-gray-50 {
-  background-color: var(--pzb-admin-surface-2) !important;
-}
-.pzb-admin-shell .bg-white\/60,
-.pzb-admin-shell .bg-white\/70,
-.pzb-admin-shell .bg-white\/80,
-.pzb-admin-shell .bg-surface,
-.pzb-admin-shell .bg-surface-elevated {
-  background-color: var(--pzb-admin-surface) !important;
-}
-.pzb-admin-shell .bg-surface-muted,
-.pzb-admin-shell .bg-\[\#f7f3ee\] {
-  background-color: var(--pzb-admin-surface-2) !important;
-}
-.pzb-admin-shell .text-ink { color: var(--pzb-admin-text) !important; }
-.pzb-admin-shell .text-ink-muted { color: var(--pzb-admin-muted) !important; }
-.pzb-admin-shell .text-ink-subtle { color: #64748b !important; }
-.pzb-admin-shell .border-line { border-color: var(--pzb-admin-line) !important; }
-.pzb-admin-shell .ring-line { --tw-ring-color: var(--pzb-admin-line) !important; }
-.pzb-admin-shell .border-slate-50,
-.pzb-admin-shell .border-slate-100,
-.pzb-admin-shell .border-slate-150,
-.pzb-admin-shell .border-slate-200,
-.pzb-admin-shell .border-gray-100,
-.pzb-admin-shell .border-gray-200 {
-  border-color: var(--pzb-admin-line) !important;
-}
-.pzb-admin-shell .divide-slate-100 > :not(:last-child),
-.pzb-admin-shell .divide-slate-200 > :not(:last-child) {
-  border-color: var(--pzb-admin-line) !important;
-}
-.pzb-admin-shell .text-slate-900,
-.pzb-admin-shell .text-slate-800,
-.pzb-admin-shell .text-slate-700,
-.pzb-admin-shell .text-gray-900,
-.pzb-admin-shell .text-gray-800 {
-  color: var(--pzb-admin-text) !important;
-}
-.pzb-admin-shell .text-slate-600,
-.pzb-admin-shell .text-slate-500,
-.pzb-admin-shell .text-gray-600,
-.pzb-admin-shell .text-gray-500 {
-  color: var(--pzb-admin-muted) !important;
-}
-.pzb-admin-shell .text-slate-400,
-.pzb-admin-shell .text-slate-300,
-.pzb-admin-shell .text-gray-400 {
-  color: #64748b !important;
-}
-.pzb-admin-shell .text-brand-600,
-.pzb-admin-shell .text-brand-700,
-.pzb-admin-shell .text-orange-500,
-.pzb-admin-shell .text-orange-600,
-.pzb-admin-shell .text-orange-700 {
-  color: #f97316 !important;
-}
-.pzb-admin-shell .bg-brand-50,
-.pzb-admin-shell .bg-orange-50,
-.pzb-admin-shell .bg-orange-100 {
-  background-color: rgba(249, 115, 22, 0.12) !important;
-}
-.pzb-admin-shell .border-orange-100,
-.pzb-admin-shell .border-orange-200,
-.pzb-admin-shell .border-brand-100,
-.pzb-admin-shell .border-brand-200 {
-  border-color: rgba(249, 115, 22, 0.25) !important;
-}
-.pzb-admin-shell .shadow-sm,
-.pzb-admin-shell .shadow-md,
-.pzb-admin-shell .shadow-lg {
-  --tw-shadow-color: rgba(0, 0, 0, 0.5);
-}
-.pzb-admin-shell input:not([type="checkbox"]):not([type="radio"]),
-.pzb-admin-shell textarea,
-.pzb-admin-shell select {
-  background-color: #161f30 !important;
-  border-color: var(--pzb-admin-line) !important;
-  color: var(--pzb-admin-text) !important;
-}
-.pzb-admin-shell input::placeholder,
-.pzb-admin-shell textarea::placeholder { color: #475569 !important; }
-.pzb-admin-shell select option { background: #111622; color: var(--pzb-admin-text); }
-.pzb-admin-shell input:focus,
-.pzb-admin-shell textarea:focus,
-.pzb-admin-shell select:focus {
-  border-color: var(--pzb-admin-accent) !important;
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15) !important;
-}
-.pzb-admin-shell table { color: var(--pzb-admin-text); }
-.pzb-admin-shell thead { background: #161f30 !important; }
-.pzb-admin-shell tr { border-color: var(--pzb-admin-line) !important; }
-.pzb-admin-shell [class*="hover:bg-slate-"]:hover,
-.pzb-admin-shell [class*="hover:bg-gray-"]:hover {
-  background-color: var(--pzb-admin-surface-2) !important;
-}
-.pzb-admin-shell ::-webkit-scrollbar-thumb { background-color: #243044; border-radius: 10px; }
-.pzb-admin-shell ::-webkit-scrollbar-thumb:hover { background-color: #334155; }
+.bg-brand-gradient { background: var(--color-brand-700); }
+.text-brand-gradient { color: var(--color-brand-400); }
+@keyframes fadeIn { from { opacity: .8; } to { opacity: 1; } }
+@keyframes popIn { from { opacity: .8; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+.animate-fade-in, .animate-slide-up { animation: fadeIn .18s cubic-bezier(.16,1,.3,1) both; }
+.animate-pop-in { animation: popIn .18s cubic-bezier(.16,1,.3,1) both; }
+.animate-slide-in-right { animation: slideInRight .22s cubic-bezier(.16,1,.3,1) both; }
+.pzb-admin-shell { min-height: 100dvh; background: var(--color-canvas); color: var(--color-ink); }
+.pzb-admin-sidebar { width: 244px; flex-shrink: 0; }
+.pzb-admin-topbar { min-height: 68px; }
+.pzb-main-heading { padding: 26px 24px 0; }
+.pzb-main-heading h1 { font-size: 26px; line-height: 1.25; font-weight: 700; letter-spacing: -.025em; }
+.pzb-main-heading p { margin-top: 6px; color: var(--color-ink-muted); font-size: 13px; line-height: 1.6; }
+.pzb-page { padding: 24px; min-width: 0; }
+.pzb-page-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.pzb-page-title { color: var(--color-ink); font-size: 20px; line-height: 1.35; font-weight: 650; letter-spacing: -.02em; }
+.pzb-page-description { color: var(--color-ink-muted); font-size: 13px; line-height: 1.6; max-width: 72ch; }
+.pzb-section { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 12px; }
+.pzb-tablist { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--color-line); padding: 4px; }
+.pzb-tab { white-space: nowrap; flex-shrink: 0; padding: 10px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--color-ink-muted); }
+.pzb-tab[aria-selected="true"], .pzb-tab[data-active="true"] { color: var(--color-brand-400); background: rgb(249 115 22 / .12); }
+.pzb-form-actions { position: sticky; bottom: var(--pzb-bottom-nav-height); z-index: 20; background: var(--color-surface); border-top: 1px solid var(--color-line); padding: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+.pzb-stat-strip { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface); overflow: hidden; }
+.pzb-stat-strip > * { border: 0; border-radius: 0; background: transparent; padding: 18px 20px; }
+.pzb-stat-strip > * + * { border-left: 1px solid var(--color-line); }
+.pzb-order-card { container-type: inline-size; }
+.pzb-order-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pzb-order-actions > * { min-width: 0; flex: 1 1 auto; }
+.pzb-order-actions .pzb-order-details { flex: 0 0 auto; }
+.pzb-order-advance { white-space: normal; text-align: center; line-height: 1.35; }
+.pzb-kanban { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(210px,calc((100% - 60px)/6)); gap: 12px; overflow-x: auto; align-items: stretch; min-height: 420px; height: calc(100dvh - var(--pzb-topbar-height) - 265px); padding-bottom: 8px; }
+.pzb-platform-admin { background: var(--color-canvas); color: var(--color-ink); min-width: 0; }
+.pzb-platform-pizzeria-card { contain: paint; isolation: isolate; }
+.pzb-platform-admin main, .pzb-platform-admin section { min-width: 0; max-width: 100%; }
+.pzb-billing-title > h3 { overflow-wrap: anywhere; }
+.safe-area-inset-bottom { padding-bottom: env(safe-area-inset-bottom,0px); }
+.pzb-admin-bottom-nav { min-height: var(--pzb-bottom-nav-height); }
+@media (max-width: 1279px) { .pzb-kanban { display: flex; flex-direction: column; height: auto; min-height: 0; overflow: visible; } }
 @media (max-width: 767px) {
-  .pzb-admin-content > main { padding-bottom: 58px; }
-  .pzb-admin-topbar { min-height: 60px; }
-  .pzb-admin-bottom-nav { box-shadow: 0 -12px 35px rgba(0, 0, 0, .4); }
+  :root { --pzb-topbar-height: 122px; --pzb-bottom-nav-height: calc(64px + env(safe-area-inset-bottom,0px)); }
+  .pzb-admin-content > main { padding-bottom: var(--pzb-bottom-nav-height); }
+  .pzb-main-heading { padding: 22px 16px 0; }
+  .pzb-main-heading h1 { font-size: 25px; }
+  .pzb-page { padding: 20px 16px; }
+  .pzb-stat-strip { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .pzb-stat-strip > * { padding: 14px; }
+  .pzb-stat-strip > :nth-child(3), .pzb-stat-strip > :nth-child(4) { border-top: 1px solid var(--color-line); }
+  .pzb-stat-strip > :nth-child(3) { border-left: 0; }
+  .pzb-page-title { font-size: 18px; }
+  .pzb-admin-mobile-more { bottom: var(--pzb-bottom-nav-height); }
 }
-.pzb-admin-shell .pzb-admin-sidebar.bg-white { background: #0d1117 !important; }
-.pzb-admin-shell .pzb-admin-topbar.bg-white { background: #0d1117 !important; }
-
-
-/* Platform admin: executive dark workspace */
-.pzb-platform-admin {
-  color-scheme: dark;
-  background:
-    radial-gradient(circle at 75% -10%, rgba(249, 115, 22, .10), transparent 30%),
-    #070b12;
-}
-.pzb-platform-admin .bg-white { background-color: #111722 !important; }
-.pzb-platform-admin .bg-slate-50,
-.pzb-platform-admin .bg-gray-50 { background-color: #0c121b !important; }
-.pzb-platform-admin .bg-slate-100,
-.pzb-platform-admin .bg-gray-100 { background-color: #18202c !important; }
-.pzb-platform-admin .border-slate-100,
-.pzb-platform-admin .border-slate-200,
-.pzb-platform-admin .border-gray-100,
-.pzb-platform-admin .border-gray-200 { border-color: rgba(255, 255, 255, .09) !important; }
-.pzb-platform-admin .divide-slate-100 > :not(:last-child),
-.pzb-platform-admin .divide-slate-200 > :not(:last-child) { border-color: rgba(255, 255, 255, .075) !important; }
-.pzb-platform-admin .text-slate-900,
-.pzb-platform-admin .text-slate-800,
-.pzb-platform-admin .text-slate-700 { color: #eef2f7 !important; }
-.pzb-platform-admin .text-slate-600,
-.pzb-platform-admin .text-slate-500 { color: #94a3b8 !important; }
-.pzb-platform-admin .text-slate-400 { color: #64748b !important; }
-.pzb-platform-admin .bg-orange-50,
-.pzb-platform-admin .bg-orange-100 { background-color: rgba(249, 115, 22, .12) !important; }
-.pzb-platform-admin .bg-emerald-50,
-.pzb-platform-admin .bg-emerald-100 { background-color: rgba(52, 211, 153, .11) !important; }
-.pzb-platform-admin .bg-violet-50,
-.pzb-platform-admin .bg-violet-100 { background-color: rgba(139, 92, 246, .12) !important; }
-.pzb-platform-admin .bg-red-50,
-.pzb-platform-admin .bg-red-100 { background-color: rgba(244, 63, 94, .11) !important; }
-.pzb-platform-admin .bg-amber-50,
-.pzb-platform-admin .bg-amber-100 { background-color: rgba(251, 191, 36, .10) !important; }
-.pzb-platform-admin .border-orange-100,
-.pzb-platform-admin .border-orange-200 { border-color: rgba(249, 115, 22, .24) !important; }
-.pzb-platform-admin .border-emerald-100,
-.pzb-platform-admin .border-emerald-200 { border-color: rgba(52, 211, 153, .22) !important; }
-.pzb-platform-admin .border-violet-100,
-.pzb-platform-admin .border-violet-200 { border-color: rgba(139, 92, 246, .22) !important; }
-.pzb-platform-admin .border-red-100,
-.pzb-platform-admin .border-red-200 { border-color: rgba(244, 63, 94, .22) !important; }
-.pzb-platform-admin .border-amber-100,
-.pzb-platform-admin .border-amber-200 { border-color: rgba(251, 191, 36, .22) !important; }
-.pzb-platform-admin input:not([type="checkbox"]):not([type="radio"]),
-.pzb-platform-admin textarea,
-.pzb-platform-admin select {
-  background-color: #0b111a !important;
-  border-color: rgba(255, 255, 255, .11) !important;
-  color: #eef2f7 !important;
-}
-.pzb-platform-admin input::placeholder,
-.pzb-platform-admin textarea::placeholder { color: #526074 !important; }
-.pzb-platform-admin select option { background: #111722; color: #eef2f7; }
-.pzb-platform-admin input:focus,
-.pzb-platform-admin textarea:focus,
-.pzb-platform-admin select:focus {
-  border-color: rgba(249, 115, 22, .65) !important;
-  box-shadow: 0 0 0 3px rgba(249, 115, 22, .10) !important;
-}
-.pzb-platform-admin [class*="hover:bg-slate-"]:hover,
-.pzb-platform-admin [class*="hover:bg-gray-"]:hover { background-color: rgba(255, 255, 255, .06) !important; }
-.pzb-platform-admin .shadow-sm,
-.pzb-platform-admin .shadow-md,
-.pzb-platform-admin .shadow-lg,
-.pzb-platform-admin .shadow-2xl { --tw-shadow-color: rgba(0, 0, 0, .5); }
-.pzb-platform-admin ::-webkit-scrollbar-thumb { background-color: #263244; }
-.pzb-platform-admin ::-webkit-scrollbar-thumb:hover { background-color: #34445b; }
-.pzb-platform-pizzeria-card {
-  contain: paint;
-  isolation: isolate;
-}
-.pzb-platform-admin main,
-.pzb-platform-admin section { min-width: 0; max-width: 100%; }
-.pzb-billing-status > div {
-  max-width: 100%;
-  line-height: 1.2;
-  letter-spacing: .1em;
-}
-.pzb-billing-title > h3 {
-  margin-top: .75rem;
-  overflow-wrap: anywhere;
-  font-size: clamp(1.25rem, 6vw, 1.75rem);
-  line-height: 1.1;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
-.pzb-ai-console > button > div { display: flex; flex-direction: column; }
-.pzb-ai-console > button > div > h2 { order: 2; }
-.pzb-ai-console > button > div > h2 + span { order: 1; }
-.pzb-ai-console > button > div > p { order: 3; }
-.pzb-ai-console > button > svg { order: 4; }
-.pzb-ai-console > button > span:last-of-type { order: 3; }
-
-.pzb-ai-console h2 {
-  color: #fff !important;
-  font-size: 1.125rem;
-  font-weight: 900;
-  line-height: 1.2;
-}
-
+.pzb-conversations { height: calc(100dvh - var(--pzb-topbar-height) - 186px); min-height: 420px; }
 @media (max-width: 767px) {
-  .pzb-platform-admin { overflow-x: hidden; }
-  .pzb-platform-admin-header {
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
+ .pzb-conversations { height: calc(100dvh - var(--pzb-topbar-height) - var(--pzb-bottom-nav-height) - 170px); min-height: 330px; }
+ .pzb-status-control { font-size: 11px; padding-inline: 6px; gap: 4px; }
+}
+
+.pzb-kanban-column { background: #151a20; border: 1px solid var(--color-line); border-radius: 12px; padding: 12px 10px; }
+.pzb-order-actions > .pzb-order-advance { flex: 1 1 90px; padding-inline: 9px; }
+.pzb-order-actions > .pzb-order-details { padding-inline: 9px; }
+.pzb-order-card > div { line-height: 1.5; }
+@media (max-width: 1279px) { .pzb-kanban-column { background: transparent; border: 0; padding: 0; } }
+@media (max-width: 767px) {
+ .pzb-orders-page { display: flex; flex-direction: column; gap: 20px; }
+ .pzb-orders-page > * { margin-block: 0; }
+ .pzb-orders-page > .pzb-stat-strip { order: 3; }
+ .pzb-orders-page .pzb-order-card { font-size: 14px; }
+}
+
+/* Final review: scope native controls to the administrator, never public themes. */
+.pzb-admin-shell, .pzb-platform-admin, .pzb-auth-screen, [data-pzb-modal] { color-scheme: dark; }
+.pzb-order-primary-actions { display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); gap: 8px; align-items: stretch; }
+.pzb-order-primary-actions > * { width: auto; min-width: 0; }
+.pzb-order-primary-actions .pzb-order-advance { flex-basis: auto; }
+@media (min-width: 768px) and (max-width: 1200px) {
+ .pzb-stat-strip { grid-template-columns: repeat(2,minmax(0,1fr)); }
+ .pzb-stat-strip > :nth-child(3), .pzb-stat-strip > :nth-child(4) { border-top: 1px solid var(--color-line); }
+ .pzb-stat-strip > :nth-child(3) { border-left: 0; }
 }

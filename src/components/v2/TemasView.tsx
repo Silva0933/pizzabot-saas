@@ -249,26 +249,22 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
   }
 
   return (
-    <div className="p-4 md:p-6 pb-24 md:pb-8 max-w-[1500px] mx-auto space-y-5">
-      <nav className="inline-flex w-full sm:w-auto gap-1 rounded-xl border border-[#1e293b] bg-[#111622] p-1" aria-label="Seções de temas">
-        <button type="button" onClick={() => setArea("identidade")} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${area === "identidade" ? "bg-orange-500 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-[#161f30]"}`}><LayoutTemplate className="w-4 h-4" /> Identidade visual</button>
-        <button type="button" onClick={() => setArea("promocoes")} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition ${area === "promocoes" ? "bg-orange-500 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-[#161f30]"}`}><Megaphone className="w-4 h-4" /> Banners e cupons</button>
+    <div className="pzb-page max-w-[1500px] mx-auto space-y-5">
+      <nav className="pzb-tablist" aria-label="Seções de temas">
+        <button type="button" onClick={() => setArea("identidade")} data-active={area === "identidade"} aria-pressed={area === "identidade"} className={`pzb-tab flex-1 sm:flex-none inline-flex items-center justify-center gap-2 ${area === "identidade" ? "bg-orange-500/10 text-orange-400 border-orange-500/30" : "text-ink-muted hover:text-ink hover:bg-surface-muted"}`}><LayoutTemplate className="w-4 h-4" /> Identidade visual</button>
+        <button type="button" onClick={() => setArea("promocoes")} data-active={area === "promocoes"} aria-pressed={area === "promocoes"} className={`pzb-tab flex-1 sm:flex-none inline-flex items-center justify-center gap-2 ${area === "promocoes" ? "bg-orange-500/10 text-orange-400 border-orange-500/30" : "text-ink-muted hover:text-ink hover:bg-surface-muted"}`}><Megaphone className="w-4 h-4" /> Banners e cupons</button>
       </nav>
 
       {area === "identidade" ? <>
-      <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 md:p-6 shadow-sm">
+      <section className="pzb-section p-5 md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
-            <div className="flex items-center gap-2 text-orange-400 mb-1">
-              <Palette className="w-4 h-4" />
-              <span className="text-xs font-bold uppercase tracking-wider">Identidade do cardápio</span>
-            </div>
-            <h1 className="text-xl font-bold text-white tracking-tight">Escolha uma direção visual</h1>
-            <p className="text-xs text-slate-400 mt-1">Cada pizzaria pode ter sua própria combinação de estilo, tipografia e cores.</p>
+            <h2 className="text-base font-semibold text-ink flex items-center gap-2"><Palette className="w-4 h-4 text-ink-muted" />Escolha uma direção visual</h2>
+            <p className="pzb-page-description">Cada pizzaria pode ter sua própria combinação de estilo, tipografia e cores.</p>
           </div>
           {pizzaria.slug && (
             <a href={`/m/${pizzaria.slug}`} target="_blank" rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs font-semibold text-slate-300 hover:text-white hover:bg-[#1e293b] transition">
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-line bg-surface-muted text-xs font-semibold text-ink-muted hover:text-white hover:bg-surface-elevated transition">
               Ver cardápio <ExternalLink className="w-3.5 h-3.5" />
             </a>
           )}
@@ -279,7 +275,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             const active = config.modelo === preset.id;
             return (
               <button key={preset.id} type="button" aria-pressed={active} onClick={() => choosePreset(preset)}
-                className={`relative overflow-hidden rounded-2xl border p-3.5 text-left transition-all ${active ? "border-orange-500 ring-1 ring-orange-500/30 bg-[#161f30]" : "border-[#1e293b] bg-[#161f30]/60 hover:border-slate-600"}`}>
+                className={`relative overflow-hidden rounded-xl border p-3.5 text-left transition-all ${active ? "border-orange-500 ring-1 ring-orange-500/30 bg-surface-muted" : "border-line bg-surface-muted/60 hover:border-line"}`}>
                 <div className="h-24 rounded-xl mb-3 overflow-hidden relative"
                   style={{ background: preset.config.cor_fundo, color: preset.id === "trattoria" ? "#2c1d17" : "#fff" }}>
                   <div className="h-3" style={{ background: preset.config.cor_primaria }} />
@@ -294,10 +290,10 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
                 </div>
                 <div className="flex items-start gap-2">
                   <span className="flex-1">
-                    <strong className="block text-sm font-bold text-white">{preset.nome}</strong>
-                    <span className="block text-xs text-slate-400 mt-0.5">{preset.descricao}</span>
+                    <strong className="block text-sm font-semibold text-white">{preset.nome}</strong>
+                    <span className="block text-xs text-ink-muted mt-0.5">{preset.descricao}</span>
                   </span>
-                  {active && <span className="w-6 h-6 rounded-full bg-orange-500 text-white grid place-items-center shrink-0 shadow-sm"><Check className="w-3.5 h-3.5" /></span>}
+                  {active && <span className="w-6 h-6 rounded-full bg-brand-700 text-white grid place-items-center shrink-0"><Check className="w-3.5 h-3.5" /></span>}
                 </div>
               </button>
             );
@@ -307,10 +303,10 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
 
       <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(420px,.9fr)] gap-5 items-start">
         <div ref={colunaFormRef} className="space-y-5">
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+          <section className="rounded-xl border border-line bg-surface p-5">
             <div className="flex items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2"><Type className="w-4 h-4 text-orange-400" /><h3 className="font-bold text-sm text-white">Tipografia e acabamento</h3></div>
-              <button type="button" onClick={resetPreset} className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-orange-400 transition">
+              <div className="flex items-center gap-2"><Type className="w-4 h-4 text-orange-400" /><h3 className="font-semibold text-sm text-white">Tipografia e acabamento</h3></div>
+              <button type="button" onClick={resetPreset} className="inline-flex items-center gap-1 text-xs text-ink-muted hover:text-orange-400 transition">
                 <RotateCcw className="w-3.5 h-3.5" /> Restaurar estilo
               </button>
             </div>
@@ -329,17 +325,17 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <h3 className="font-bold text-sm text-white mb-4">Paleta da marca</h3>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="font-semibold text-sm text-white mb-4">Paleta da marca</h3>
             <div className="grid sm:grid-cols-3 gap-3">
               <ColorField label="Cor principal" value={config.cor_primaria || selected.config.cor_primaria} onChange={(v) => update("cor_primaria", v)} />
               <ColorField label="Cor secundária" value={config.cor_secundaria || selected.config.cor_secundaria} onChange={(v) => update("cor_secundaria", v)} />
               <ColorField label="Cor de fundo" value={config.cor_fundo || selected.config.cor_fundo} onChange={(v) => update("cor_fundo", v)} />
             </div>
           </section>
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <h3 className="font-bold text-sm text-white mb-1">Cores avançadas</h3>
-            <p className="text-xs text-slate-400 mb-4">Ajuste a superfície dos cartões, leitura dos textos e os botões de ação.</p>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="font-semibold text-sm text-white mb-1">Cores avançadas</h3>
+            <p className="text-xs text-ink-muted mb-4">Ajuste a superfície dos cartões, leitura dos textos e os botões de ação.</p>
             <div className="grid sm:grid-cols-2 gap-3">
               <ColorField label="Superfície dos cartões" value={config.cor_superficie || selected.config.cor_superficie} onChange={(v) => update("cor_superficie", v)} />
               <ColorField label="Cor principal do texto" value={config.cor_texto || selected.config.cor_texto} onChange={(v) => update("cor_texto", v)} />
@@ -352,28 +348,28 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-1"><Image className="w-4 h-4 text-orange-400" /><h3 className="font-bold text-sm text-white">Imagem do banner principal</h3></div>
-            <p className="text-xs text-slate-400 mb-4">Use uma imagem horizontal com o produto mais à direita. O texto do cardápio ficará protegido e alinhado à esquerda.</p>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <div className="flex items-center gap-2 mb-1"><Image className="w-4 h-4 text-orange-400" /><h3 className="font-semibold text-sm text-white">Imagem do banner principal</h3></div>
+            <p className="text-xs text-ink-muted mb-4">Use uma imagem horizontal com o produto mais à direita. O texto do cardápio ficará protegido e alinhado à esquerda.</p>
             <label className="block">
-              <span className="block text-xs font-semibold text-slate-400 mb-1.5">Link da imagem do banner</span>
+              <span className="block text-xs font-semibold text-ink-muted mb-1.5">Link da imagem do banner</span>
               <input type="url" value={bannerUrl} onChange={(event) => { saltoRef.current = { secao: "topo" }; setBannerUrl(event.target.value); setSaved(false); }} placeholder="https://exemplo.com/banner.jpg"
-                className="w-full px-3.5 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500" />
+                className="w-full px-3.5 py-2 rounded-xl border border-line bg-surface-muted text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500" />
             </label>
-            <div className="mt-3 overflow-hidden rounded-xl border border-[#1e293b] bg-[#161f30]">
-              {bannerUrl.trim() ? <img src={bannerUrl.trim()} alt="Prévia do banner" className="h-40 w-full object-cover object-right" /> : <div className="h-40 grid place-items-center text-xs text-slate-500">Cole o link de uma imagem para ver a prévia.</div>}
+            <div className="mt-3 overflow-hidden rounded-xl border border-line bg-surface-muted">
+              {bannerUrl.trim() ? <img src={bannerUrl.trim()} alt="Prévia do banner" className="h-40 w-full object-cover object-right" /> : <div className="h-40 grid place-items-center text-xs text-ink-subtle">Cole o link de uma imagem para ver a prévia.</div>}
             </div>
-            <p className="mt-2 text-[11px] text-slate-500">Recomendado: 1920 × 720 px. Formatos JPG, PNG ou WebP hospedados em um link público.</p>
+            <p className="mt-2 text-xs text-ink-subtle">Recomendado: 1920 × 720 px. Formatos JPG, PNG ou WebP hospedados em um link público.</p>
           </section>
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <h3 className="font-bold text-sm text-white mb-4">Textos de apresentação</h3>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="font-semibold text-sm text-white mb-4">Textos de apresentação</h3>
             <div className="space-y-3">
               <TextField label="Chamada pequena" value={config.chamada || ""} onChange={(v) => update("chamada", v)} maxLength={70} />
               <TextField label="Título principal" help="Use | para definir a quebra e destacar a segunda parte." value={config.titulo || ""} onChange={(v) => update("titulo", v)} maxLength={70} />
               <label className="block">
-                <span className="block text-xs font-semibold text-slate-400 mb-1.5">Descrição</span>
+                <span className="block text-xs font-semibold text-ink-muted mb-1.5">Descrição</span>
                 <textarea rows={3} value={config.descricao || ""} maxLength={180} onChange={(e) => update("descricao", e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500" />
+                  className="w-full px-3.5 py-2 rounded-xl border border-line bg-surface-muted text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500" />
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <TextField label="Botão principal" value={config.cta_primario || ""} onChange={(v) => update("cta_primario", v)} maxLength={28} />
@@ -382,12 +378,12 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <h3 className="font-bold text-sm text-white mb-1">Barra de cupom</h3>
-            <p className="text-[11px] text-slate-500 mb-4">Aparece no topo do site quando existe um cupom ativo.</p>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="font-semibold text-sm text-white mb-1">Barra de cupom</h3>
+            <p className="text-xs text-ink-subtle mb-4">Aparece no topo do site quando existe um cupom ativo.</p>
             <label className="flex items-center gap-2 mb-3 cursor-pointer">
               <input type="checkbox" checked={config.barra_cupom_ativa !== false} onChange={(e) => update("barra_cupom_ativa", e.target.checked)} className="accent-orange-500" />
-              <span className="text-xs font-semibold text-slate-300">Mostrar a barra de cupom</span>
+              <span className="text-xs font-semibold text-ink-muted">Mostrar a barra de cupom</span>
             </label>
             <TextField label="Texto da barra" value={config.barra_cupom_texto || ""} onChange={(v) => update("barra_cupom_texto", v)} maxLength={90} />
           </section>
@@ -405,8 +401,8 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             max={4}
           />
 
-          <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
-            <h3 className="font-bold text-sm text-white mb-4">Títulos das seções</h3>
+          <section className="rounded-xl border border-line bg-surface p-5">
+            <h3 className="font-semibold text-sm text-white mb-4">Títulos das seções</h3>
             <div className="space-y-3">
               <TextField label="Promoções" value={config.promocoes_titulo || ""} onChange={(v) => update("promocoes_titulo", v)} maxLength={60} />
               <TextField label="Subtítulo das promoções" value={config.promocoes_subtitulo || ""} onChange={(v) => update("promocoes_subtitulo", v)} maxLength={90} />
@@ -443,17 +439,17 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
           />
         </div>
 
-        <aside className="xl:sticky xl:top-24 rounded-2xl border border-[#1e293b] bg-[#111622] p-4 shadow-sm">
+        <aside className="xl:sticky xl:top-24 rounded-xl border border-line bg-surface p-4">
           <div className="flex items-center justify-between mb-3 px-1 gap-2">
-            <strong className="text-sm font-bold text-white">Prévia da identidade</strong>
-            <div className="flex items-center gap-1 rounded-lg border border-[#1e293b] bg-[#161f30] p-0.5">
+            <strong className="text-sm font-semibold text-white">Prévia da identidade</strong>
+            <div className="flex items-center gap-1 rounded-lg border border-line bg-surface-muted p-0.5">
               {([["desktop", "Computador"], ["mobile", "Celular"]] as const).map(([id, rotulo]) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => setDispositivo(id)}
-                  className={`px-2 py-1 rounded-md text-[10px] font-semibold transition-colors ${
-                    dispositivo === id ? "bg-orange-500 text-white" : "text-slate-400 hover:text-white"
+                  className={`px-2 py-1 rounded-md text-xs font-semibold transition-colors ${
+                    dispositivo === id ? "bg-brand-700 text-white" : "text-ink-muted hover:text-white"
                   }`}
                 >
                   {rotulo}
@@ -466,13 +462,13 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
               nao salvo por postMessage. Um mockup paralelo divergiria da pagina
               real a cada mudanca de layout. */}
           {!pizzaria.slug ? (
-            <div className="h-64 grid place-items-center p-6 text-center text-[11px] text-slate-400 rounded-xl border border-white/10 bg-[#0b0f18]">
+            <div className="h-64 grid place-items-center p-6 text-center text-xs text-ink-muted rounded-xl border border-white/10 bg-canvas">
               Defina o endereço (slug) do cardápio para ver a prévia.
             </div>
           ) : dispositivo === "desktop" ? (
             <div
               ref={caixaPreviaRef}
-              className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0b0f18]"
+              className="relative overflow-hidden rounded-xl border border-white/10 bg-canvas"
               style={{ height: alturaDesktop }}
             >
               <iframe
@@ -500,7 +496,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
                 <span aria-hidden="true" className="absolute -left-[3px] top-[160px] h-14 w-[3px] rounded-l bg-[#1b2230]" />
                 <span aria-hidden="true" className="absolute -right-[3px] top-[140px] h-20 w-[3px] rounded-r bg-[#1b2230]" />
                 <div className="relative overflow-hidden rounded-[36px] bg-black" style={{ width: TELA_CELULAR, height: alturaTelaCelular }}>
-                  <div aria-hidden="true" className="relative flex items-center justify-between px-6 text-[11px] font-semibold text-white" style={{ height: BARRA_STATUS }}>
+                  <div aria-hidden="true" className="relative flex items-center justify-between px-6 text-xs font-semibold text-white" style={{ height: BARRA_STATUS }}>
                     <span>9:41</span>
                     <span className="absolute left-1/2 top-[7px] -translate-x-1/2 h-[18px] w-[86px] rounded-full bg-[#05070c] ring-1 ring-white/5" />
                     <span className="flex items-center gap-1">
@@ -528,7 +524,7 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
             </div>
           )}
 
-          <p className="mt-3 text-[11px] text-slate-500">
+          <p className="mt-3 text-xs text-ink-subtle">
             É o cardápio real, com as mudanças que você ainda não salvou. A prévia acompanha
             a rolagem do formulário e vai até a seção de cada texto que você editar.
           </p>
@@ -536,9 +532,9 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
       </div>
 
       {error && <div className="rounded-xl border border-red-500/30 bg-red-950/40 text-red-300 px-4 py-3 text-xs">{error}</div>}
-      <div className="sticky bottom-3 flex justify-end pointer-events-none">
+      <div className="sticky bottom-[calc(var(--pzb-bottom-nav-height)+12px)] flex justify-end pointer-events-none">
         <button type="button" onClick={save} disabled={saving || !changed}
-          className="pointer-events-auto inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold shadow-sm disabled:opacity-50 transition">
+          className="pointer-events-auto inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-700 hover:bg-brand-800 text-white text-xs font-semibold disabled:opacity-50 transition">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
           {saving ? "Salvando..." : saved ? "Tema salvo" : "Salvar tema"}
         </button>
@@ -551,9 +547,9 @@ export function TemasView({ pizzaria, onUpdated }: Props) {
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: Array<{ value: string; label: string }> }) {
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-400 mb-1.5">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white outline-none focus:border-orange-500">
-        {options.map((o) => <option key={o.value} value={o.value} className="bg-[#111622]">{o.label}</option>)}
+      <span className="block text-xs font-semibold text-ink-muted mb-1.5">{label}</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-line bg-surface-muted text-xs text-white outline-none focus:border-orange-500">
+        {options.map((o) => <option key={o.value} value={o.value} className="bg-surface">{o.label}</option>)}
       </select>
     </label>
   );
@@ -564,10 +560,10 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
   useEffect(() => setDraft(value), [value]);
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-400 mb-1.5">{label}</span>
-      <span className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-[#1e293b] bg-[#161f30]">
+      <span className="block text-xs font-semibold text-ink-muted mb-1.5">{label}</span>
+      <span className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border border-line bg-surface-muted">
         <input type="color" value={value} onChange={(e) => { setDraft(e.target.value); onChange(e.target.value); }} className="w-8 h-8 rounded-lg border-0 bg-transparent p-0 cursor-pointer" />
-        <input value={draft} onChange={(e) => { const next = e.target.value; if (/^#[0-9a-fA-F]{0,6}$/.test(next)) { setDraft(next); if (/^#[0-9a-fA-F]{6}$/.test(next)) onChange(next); } }} onBlur={() => setDraft(value)} className="min-w-0 flex-1 bg-transparent border-0 text-xs font-mono text-white uppercase outline-none" />
+        <input value={draft} onChange={(e) => { const next = e.target.value; if (/^#[0-9a-fA-F]{0,6}$/.test(next)) { setDraft(next); if (/^#[0-9a-fA-F]{6}$/.test(next)) onChange(next); } }} onBlur={() => setDraft(value)} className="min-w-0 flex-1 bg-transparent border-0 text-xs font-mono text-white outline-none" />
       </span>
     </label>
   );
@@ -576,9 +572,9 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
 function TextField({ label, help, value, onChange, maxLength }: { label: string; help?: string; value: string; onChange: (value: string) => void; maxLength: number }) {
   return (
     <label className="block">
-      <span className="block text-xs font-semibold text-slate-400 mb-1.5">{label}</span>
-      <input value={value} maxLength={maxLength} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-[#1e293b] bg-[#161f30] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500" />
-      {help && <small className="block text-[10px] text-slate-500 mt-1">{help}</small>}
+      <span className="block text-xs font-semibold text-ink-muted mb-1.5">{label}</span>
+      <input value={value} maxLength={maxLength} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2 rounded-xl border border-line bg-surface-muted text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500" />
+      {help && <small className="block text-xs text-ink-subtle mt-1">{help}</small>}
     </label>
   );
 }
@@ -605,17 +601,17 @@ function ListaEditavel<T extends Record<string, string | undefined>>({
   };
 
   return (
-    <section className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+    <section className="rounded-xl border border-line bg-surface p-5">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h3 className="font-bold text-sm text-white">{titulo}</h3>
-          {ajuda && <p className="text-[11px] text-slate-500 mt-0.5">{ajuda}</p>}
+          <h3 className="font-semibold text-sm text-white">{titulo}</h3>
+          {ajuda && <p className="text-xs text-ink-subtle mt-0.5">{ajuda}</p>}
         </div>
         {itens.length < max && (
           <button
             type="button"
             onClick={() => onChange([...itens, { ...novoItem }])}
-            className="shrink-0 px-3 py-1.5 rounded-lg border border-[#1e293b] bg-[#161f30] text-[11px] font-semibold text-slate-300 hover:border-orange-500 hover:text-white"
+            className="shrink-0 px-3 py-1.5 rounded-lg border border-line bg-surface-muted text-xs font-semibold text-ink-muted hover:border-orange-500 hover:text-white"
           >
             + Adicionar
           </button>
@@ -624,15 +620,15 @@ function ListaEditavel<T extends Record<string, string | undefined>>({
 
       <div className="space-y-3">
         {itens.map((item, indice) => (
-          <div key={indice} className="rounded-xl border border-[#1e293b] bg-[#161f30] p-3">
+          <div key={indice} className="rounded-xl border border-line bg-surface-muted p-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+              <span className="text-xs tracking-normal text-ink-subtle font-semibold">
                 {indice + 1}
               </span>
               <button
                 type="button"
                 onClick={() => onChange(itens.filter((_, i) => i !== indice))}
-                className="text-[11px] font-semibold text-slate-500 hover:text-red-400"
+                className="text-xs font-semibold text-ink-subtle hover:text-red-400"
               >
                 Remover
               </button>
@@ -640,12 +636,12 @@ function ListaEditavel<T extends Record<string, string | undefined>>({
             <div className="space-y-2">
               {campos.map((campo) => (
                 <label className="block" key={campo.chave}>
-                  <span className="block text-[11px] font-semibold text-slate-400 mb-1">{campo.label}</span>
+                  <span className="block text-xs font-semibold text-ink-muted mb-1">{campo.label}</span>
                   <input
                     value={(item[campo.chave] as string) || ""}
                     maxLength={campo.max}
                     onChange={(e) => alterar(indice, campo.chave, e.target.value)}
-                    className="w-full px-3 py-1.5 rounded-lg border border-[#1e293b] bg-[#0f1624] text-xs text-white placeholder-slate-500 outline-none focus:border-orange-500"
+                    className="w-full px-3 py-1.5 rounded-lg border border-line bg-canvas text-xs text-white placeholder-ink-subtle outline-none focus:border-orange-500"
                   />
                 </label>
               ))}
@@ -654,7 +650,7 @@ function ListaEditavel<T extends Record<string, string | undefined>>({
         ))}
 
         {itens.length === 0 && (
-          <p className="text-[11px] text-slate-500 py-2">
+          <p className="text-xs text-ink-subtle py-2">
             Sem itens próprios — o cardápio mostra o texto padrão.
           </p>
         )}

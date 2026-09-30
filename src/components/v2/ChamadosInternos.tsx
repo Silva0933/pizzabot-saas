@@ -80,17 +80,17 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
   }
 
   return (
-    <div className="grid h-[calc(100vh-190px)] min-h-[500px] grid-cols-1 overflow-hidden rounded-2xl border border-[#1e293b] bg-[#0b0e14] shadow-sm md:grid-cols-[340px_1fr]">
-      <aside className={`flex-col border-r border-[#1e293b] bg-[#0d1117] ${ativo ? "hidden md:flex" : "flex"}`}>
-        <div className="border-b border-[#1e293b] bg-[#111622] p-4">
+    <div className="grid h-[calc(100vh-190px)] min-h-[500px] grid-cols-1 overflow-hidden rounded-2xl border border-line bg-canvas shadow-sm md:grid-cols-[340px_1fr]">
+      <aside className={`flex-col border-r border-line bg-canvas ${ativo ? "hidden md:flex" : "flex"}`}>
+        <div className="border-b border-line bg-surface p-4">
           <h2 className="flex items-center gap-2 text-base font-bold text-white">
             <Bot className="h-4 w-4 text-amber-400" /> Chat com a atendente
           </h2>
-          <p className="mt-1 text-xs text-slate-400">Dúvidas e problemas que ela trouxe para você resolver.</p>
+          <p className="mt-1 text-xs text-ink-muted">Dúvidas e problemas que ela trouxe para você resolver.</p>
         </div>
         <div className="flex-1 divide-y divide-[#1e293b]/40 overflow-y-auto">
           {ordenados.length === 0 && (
-            <div className="p-8 text-center text-sm text-slate-400">
+            <div className="p-8 text-center text-sm text-ink-muted">
               <Bot className="mx-auto mb-2 h-8 w-8 opacity-30" />
               Nenhuma dúvida da atendente por enquanto.
             </div>
@@ -100,7 +100,7 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
             return (
               <button key={c.id} type="button" onClick={() => setAtivoId(c.id)}
                 className={`flex w-full gap-3 px-4 py-3.5 text-left transition-colors ${
-                  c.id === ativo?.id ? "border-l-2 border-l-amber-500 bg-[#161f30]" : aberto ? "bg-amber-950/20 hover:bg-amber-950/30" : "hover:bg-[#131926]"
+                  c.id === ativo?.id ? "border-l-2 border-l-amber-500 bg-surface-muted" : aberto ? "bg-amber-950/20 hover:bg-amber-950/30" : "hover:bg-[#131926]"
                 }`}>
                 <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
                   aberto ? "animate-pulse bg-amber-400" : c.status === "respondido" ? "bg-emerald-500" : "bg-slate-600"
@@ -108,10 +108,10 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-xs font-semibold text-white">{c.cliente_nome || c.telefone}</span>
-                    <span className="shrink-0 text-[10px] text-slate-400">{haQuanto(c.created_at)}</span>
+                    <span className="shrink-0 text-xs text-ink-muted">{haQuanto(c.created_at)}</span>
                   </div>
-                  <p className="mt-0.5 truncate text-xs text-slate-400">{c.pergunta}</p>
-                  <p className={`mt-0.5 text-[10px] font-semibold ${aberto ? "text-amber-300" : c.status === "respondido" ? "text-emerald-400" : "text-slate-500"}`}>
+                  <p className="mt-0.5 truncate text-xs text-ink-muted">{c.pergunta}</p>
+                  <p className={`mt-0.5 text-xs font-semibold ${aberto ? "text-amber-300" : c.status === "respondido" ? "text-emerald-400" : "text-ink-muted"}`}>
                     {aberto ? "Esperando sua resposta" : c.status === "respondido" ? "Resolvido" : "Expirou — foi para atendimento humano"}
                   </p>
                 </div>
@@ -123,7 +123,7 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
 
       <section className={`h-full min-h-0 min-w-0 flex-col ${ativo ? "flex" : "hidden md:flex"}`}>
         {!ativo ? (
-          <div className="grid flex-1 place-items-center text-sm text-slate-500">Selecione uma conversa com a atendente.</div>
+          <div className="grid flex-1 place-items-center text-sm text-ink-muted">Selecione uma conversa com a atendente.</div>
         ) : (
           <div key={ativo.id} className="flex h-full min-h-0 flex-col">
             <FioChamado pizzariaId={pizzariaId} chamado={ativo}
@@ -141,10 +141,10 @@ function Balao({ lado, cor, icone, titulo, horario, children }: {
   return (
     <div className={`flex gap-2.5 ${lado === "dir" ? "flex-row-reverse" : ""}`}>
       <span className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-full ${cor}`}>{icone}</span>
-      <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm ${lado === "dir" ? "rounded-tr-sm bg-orange-600/90 text-white" : "rounded-tl-sm border border-slate-800 bg-[#161f30] text-slate-100"}`}>
-        <p className={`text-[11px] font-bold ${lado === "dir" ? "text-orange-100" : "text-amber-300"}`}>{titulo}</p>
+      <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm ${lado === "dir" ? "rounded-tr-sm bg-orange-600/90 text-white" : "rounded-tl-sm border border-line bg-surface-muted text-slate-100"}`}>
+        <p className={`text-xs font-bold ${lado === "dir" ? "text-orange-100" : "text-amber-300"}`}>{titulo}</p>
         <div className="mt-0.5 whitespace-pre-wrap text-sm">{children}</div>
-        {horario && <p className={`mt-1 text-right text-[10px] ${lado === "dir" ? "text-orange-100/80" : "text-slate-500"}`}>{horario}</p>}
+        {horario && <p className={`mt-1 text-right text-xs ${lado === "dir" ? "text-orange-100/80" : "text-ink-muted"}`}>{horario}</p>}
       </div>
     </div>
   );
@@ -188,15 +188,15 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
   const iconeBot = <Bot className="h-4 w-4 text-amber-300" />;
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-[#1e293b] bg-[#111622] px-4 py-3">
-        <button type="button" onClick={onVoltar} className="text-slate-400 hover:text-white md:hidden"><ArrowLeft className="h-5 w-5" /></button>
+      <div className="flex items-center gap-3 border-b border-line bg-surface px-4 py-3">
+        <button type="button" onClick={onVoltar} className="text-ink-muted hover:text-white md:hidden"><ArrowLeft className="h-5 w-5" /></button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-white">Cliente: {cliente}</p>
-          <p className="text-[11px] text-slate-400">{ROTULO_MOTIVO[chamado.motivo] ?? chamado.motivo}</p>
+          <p className="text-xs text-ink-muted">{ROTULO_MOTIVO[chamado.motivo] ?? chamado.motivo}</p>
         </div>
         {chamado.conversa_id && (
           <button type="button" onClick={() => onAbrirConversa(chamado.conversa_id!)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+            className="inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-muted hover:bg-slate-800">
             <MessageSquare className="h-3.5 w-3.5" /> Ver conversa do cliente
           </button>
         )}
@@ -207,7 +207,7 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
           {chamado.motivo === "falha_operacao"
             ? <>Preciso de ajuda com o pedido de <strong>{cliente}</strong>:{"\n"}{chamado.pergunta}</>
             : <>O cliente <strong>{cliente}</strong> perguntou:{"\n"}“{chamado.pergunta}”{"\n\n"}Não tenho essa informação. O que respondo?</>}
-          {itens.length > 0 && <p className="mt-2 text-[11px] text-slate-400">Pedido em andamento: {itens.join(", ")}</p>}
+          {itens.length > 0 && <p className="mt-2 text-xs text-ink-muted">Pedido em andamento: {itens.join(", ")}</p>}
         </Balao>
 
         {chamado.resposta && (
@@ -223,16 +223,16 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
               Obrigada! Passei para o cliente:{"\n"}“{chamado.contexto.mensagem_ao_cliente}”
             </Balao>
           ) : chamado.contexto?.humano_assumiu ? (
-            <p className="text-center text-[11px] text-slate-500">Um atendente já tinha assumido a conversa — responda o cliente por lá.</p>
+            <p className="text-center text-xs text-ink-muted">Um atendente já tinha assumido a conversa — responda o cliente por lá.</p>
           ) : (
-            <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-400">
+            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-ink-muted">
               <Loader2 className="h-3 w-3 animate-spin" /> A atendente está passando a resposta para o cliente…
             </p>
           )
         )}
 
         {chamado.status === "expirado" && (
-          <p className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-[#111622] px-3 py-2 text-center text-[11px] text-slate-400">
+          <p className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2 text-center text-xs text-ink-muted">
             <Clock3 className="h-3.5 w-3.5" /> Ninguém respondeu a tempo: o cliente foi avisado e a conversa passou para atendimento humano.
           </p>
         )}
@@ -240,19 +240,19 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
       </div>
 
       {aberto && (
-        <div className="border-t border-[#1e293b] bg-[#111622] p-3">
+        <div className="border-t border-line bg-surface p-3">
           {erro && <p className="mb-2 text-xs text-rose-300">{erro}</p>}
           <div className="flex items-end gap-2">
             <textarea value={resposta} onChange={(e) => setResposta(e.target.value)} rows={2}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); responder(); } }}
               placeholder="Responda a atendente — ela resolve com o cliente"
-              className="flex-1 resize-none rounded-xl border border-slate-800 bg-[#0b0e14] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-amber-500" />
+              className="flex-1 resize-none rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-amber-500" />
             <button type="button" onClick={responder} disabled={enviando || !resposta.trim()}
               className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50" title="Enviar">
               {enviando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             </button>
           </div>
-          <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-300">
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-ink-muted">
             <input type="checkbox" checked={salvar} onChange={(e) => setSalvar(e.target.checked)} className="h-4 w-4 accent-amber-500" />
             Salvar como conhecimento (da próxima vez ela responde sozinha)
           </label>
@@ -293,16 +293,16 @@ export function BaseConhecimento({ pizzariaId }: { pizzariaId: string }) {
     setItens((atual) => atual.filter((i) => i.id !== id));
   }
 
-  const inputCls = "w-full rounded-xl border border-slate-800 bg-[#111622] px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-orange-500";
+  const inputCls = "w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-orange-500";
   return (
-    <section className="rounded-2xl border border-slate-800/80 bg-[#161f30]/60 p-5 shadow-sm">
+    <section className="rounded-2xl border border-line/80 bg-surface-muted/60 p-5 shadow-sm">
       <h3 className="mb-1 flex items-center gap-2.5 text-sm font-semibold text-slate-200">
         <span className="grid h-8 w-8 place-items-center rounded-xl border border-sky-500/30 bg-sky-500/15 text-sky-400">
           <BookOpen className="h-4 w-4" />
         </span>
         Base de conhecimento da atendente
       </h3>
-      <p className="mb-4 text-xs text-slate-400">
+      <p className="mb-4 text-xs text-ink-muted">
         Respostas que a atendente usa sozinha. Entram aqui as que você salva ao responder um chamado — ou cadastre direto.
       </p>
       <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
@@ -314,15 +314,15 @@ export function BaseConhecimento({ pizzariaId }: { pizzariaId: string }) {
         </button>
       </div>
       <div className="mt-4 space-y-2">
-        {itens.length === 0 && <p className="text-xs italic text-slate-500">Nada cadastrado ainda.</p>}
+        {itens.length === 0 && <p className="text-xs italic text-ink-muted">Nada cadastrado ainda.</p>}
         {itens.map((i) => (
-          <div key={i.id} className="flex items-start gap-3 rounded-xl border border-slate-800 bg-[#0b0e14] px-3 py-2">
+          <div key={i.id} className="flex items-start gap-3 rounded-xl border border-line bg-canvas px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-slate-200">{i.pergunta}</p>
-              <p className="mt-0.5 text-xs text-slate-400">{i.resposta}</p>
+              <p className="mt-0.5 text-xs text-ink-muted">{i.resposta}</p>
             </div>
             <button type="button" onClick={() => remover(i.id)} title="Remover"
-              className="p-1 text-slate-500 transition-colors hover:text-red-400">
+              className="p-1 text-ink-muted transition-colors hover:text-red-400">
               <Trash2 className="h-4 w-4" />
             </button>
           </div>

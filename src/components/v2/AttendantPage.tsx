@@ -24,7 +24,7 @@ export function AttendantPage({ pizzariaId }: AttendantPageProps) {
         pizzariaId={pizzariaId}
         onOpenTest={() => setTestOpen(true)}
       />
-      <div className="mx-auto max-w-7xl px-4 pb-6 md:px-6">
+      <div className="mx-auto max-w-7xl px-4 pb-8 md:px-6">
         <BaseConhecimento pizzariaId={pizzariaId} />
       </div>
       <AgentTestPanel

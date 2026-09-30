@@ -80,7 +80,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   return (
-    <div className="pzb-admin-shell min-h-screen bg-[#0b0e14] text-[#f8fafc] flex font-sans">
+    <div className="pzb-admin-shell min-h-screen bg-canvas text-[#f8fafc] flex font-sans">
       <Sidebar
         active={activeNav}
         onChange={onNavChange}
@@ -90,7 +90,7 @@ export function AppShell({
         badges={badges}
       />
 
-      <div className="pzb-admin-content flex-1 min-w-0 flex flex-col bg-[#0b0e14]">
+      <div className="pzb-admin-content flex-1 min-w-0 flex flex-col bg-canvas">
         <Topbar
           pageTitle={pageTitle}
           pageSubtitle={pageSubtitle}
@@ -137,7 +137,7 @@ export function AppShell({
           </div>
         )}
 
-        <main className="flex-1 min-w-0 bg-[#0b0e14]">
+        <main className="flex-1 min-w-0 bg-canvas" id="pzb-main-content"><div className="pzb-main-heading"><h1>{pageTitle}</h1>{pageSubtitle && <p>{pageSubtitle}</p>}</div>
           {children}
         </main>
       </div>
