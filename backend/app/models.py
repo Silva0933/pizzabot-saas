@@ -91,6 +91,10 @@ class Pizzaria(Base):
     # Permite que entregadores peguem pedidos livres (self-claim). Quando False,
     # só o dono atribui as entregas.
     permitir_autoatribuicao_entregador: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Valor fixo pago ao entregador por entrega (migration 038). Desligado, o app
+    # do entregador não mostra valores.
+    repasse_entregador_ativo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    repasse_entregador_valor: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
     endereco: Mapped[str | None] = mapped_column(Text)
     # Link do endereço no Google Maps (enviado ao cliente quando ele pergunta o
@@ -398,6 +402,9 @@ class Pedido(Base):
     # Código de 4 dígitos que o cliente recebe no "saiu para entrega" (migration 037).
     # Nunca vai para a API do entregador: ele precisa ouvir do cliente.
     codigo_entrega: Mapped[str | None] = mapped_column(String(6))
+    # Quando foi entregue e quanto o entregador ganhou nela (congelado na hora).
+    entregue_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    repasse_entregador: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
     @property
     def tem_codigo_entrega(self) -> bool:

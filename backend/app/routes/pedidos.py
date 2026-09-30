@@ -155,6 +155,13 @@ async def apply_status_change(
     if novo_status == "a_caminho" and p.tipo == "delivery" and not p.codigo_entrega:
         from app.services.entregas import gerar_codigo_entrega
         p.codigo_entrega = gerar_codigo_entrega()
+    # Entregue: registra quando e congela o valor que o entregador ganha nela
+    # (mudar o valor na loja depois não altera o que ele já ganhou).
+    if novo_status == "entregue":
+        p.entregue_em = datetime.now(UTC)
+        if p.entregador_id and getattr(p, "repasse_entregador", None) is None:
+            from app.services.entregas import valor_repasse
+            p.repasse_entregador = await valor_repasse(db, pizzaria_id)
     # Saiu de "novo" (a loja aprovou ou cancelou): a conferência acabou.
     if old_status == "novo":
         p.aguardando_revisao = False

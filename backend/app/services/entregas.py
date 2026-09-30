@@ -26,6 +26,19 @@ RAIO_MAXIMO_KM = 60.0
 MAX_WAYPOINTS = 9
 
 
+async def valor_repasse(db: Any, pizzaria_id: Any) -> Any:
+    """Valor fixo por entrega da loja, ou None se o repasse está desligado."""
+    from sqlalchemy import select
+
+    from app.models import Pizzaria
+    row = (await db.execute(
+        select(Pizzaria.repasse_entregador_ativo, Pizzaria.repasse_entregador_valor).where(Pizzaria.id == pizzaria_id)
+    )).first()
+    if not row or not row[0] or row[1] is None:
+        return None
+    return row[1]
+
+
 def gerar_codigo_entrega() -> str:
     return f"{secrets.randbelow(10_000):04d}"
 

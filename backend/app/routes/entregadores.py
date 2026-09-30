@@ -12,6 +12,7 @@ broadcast). Sem aviso novo ao cliente — usa o "saiu para entrega" já existent
 """
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
@@ -52,12 +53,16 @@ class EntregadorOut(BaseModel):
     lat: float | None = None
     lon: float | None = None
     localizacao_em: datetime | None = None
+    # Ganhos de hoje (soma dos valores por entrega congelados), se a loja paga por entrega.
+    ganhos_hoje: float = 0.0
     created_at: datetime
 
 
 class EntregadoresResp(BaseModel):
     entregadores: list[EntregadorOut]
     permitir_autoatribuicao: bool
+    repasse_ativo: bool = False
+    repasse_valor: float | None = None
 
 
 class EntregadorCreate(BaseModel):
@@ -75,7 +80,10 @@ class EntregadorUpdate(BaseModel):
 
 
 class ConfigIn(BaseModel):
-    permitir_autoatribuicao: bool
+    # Campos ausentes mantêm o valor atual (cada cartão do painel salva o seu).
+    permitir_autoatribuicao: bool | None = None
+    repasse_ativo: bool | None = None
+    repasse_valor: float | None = Field(default=None, ge=0, le=1000)
 
 
 class DriverStatusIn(BaseModel):
@@ -96,8 +104,13 @@ class DisponibilidadeIn(BaseModel):
     disponivel: bool
 
 
-def _out(ent: Entregador, entregas: int = 0) -> EntregadorOut:
+# Início do dia no fuso das pizzarias (o "hoje" do entregador e do painel).
+_HOJE_SQL = "(date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"
+
+
+def _out(ent: Entregador, entregas: int = 0, ganhos_hoje: float = 0.0) -> EntregadorOut:
     return EntregadorOut(
+        ganhos_hoje=round(float(ganhos_hoje or 0), 2),
         id=ent.id,
         nome=ent.nome,
         email=ent.usuario.email if ent.usuario else "",
@@ -139,10 +152,25 @@ async def listar_entregadores(
         )
     ).all()
     counts = {row[0]: row[1] for row in count_rows}
+    ganhos_rows = (
+        await db.execute(
+            select(Pedido.entregador_id, func.coalesce(func.sum(Pedido.repasse_entregador), 0))
+            .where(
+                Pedido.pizzaria_id == pizzaria_id,
+                Pedido.status == "entregue",
+                Pedido.entregador_id.isnot(None),
+                text(f"pedidos.entregue_em >= {_HOJE_SQL}"),
+            )
+            .group_by(Pedido.entregador_id)
+        )
+    ).all()
+    ganhos = {row[0]: float(row[1] or 0) for row in ganhos_rows}
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
     return EntregadoresResp(
-        entregadores=[_out(e, counts.get(e.id, 0)) for e in rows],
+        entregadores=[_out(e, counts.get(e.id, 0), ganhos.get(e.id, 0.0)) for e in rows],
         permitir_autoatribuicao=pizz.permitir_autoatribuicao_entregador,
+        repasse_ativo=bool(pizz.repasse_entregador_ativo),
+        repasse_valor=float(pizz.repasse_entregador_valor) if pizz.repasse_entregador_valor is not None else None,
     )
 
 
@@ -154,7 +182,14 @@ async def set_config(
     _: object = Depends(membership),
 ) -> EntregadoresResp:
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
-    pizz.permitir_autoatribuicao_entregador = body.permitir_autoatribuicao
+    if body.permitir_autoatribuicao is not None:
+        pizz.permitir_autoatribuicao_entregador = body.permitir_autoatribuicao
+    if body.repasse_valor is not None:
+        pizz.repasse_entregador_valor = Decimal(str(round(body.repasse_valor, 2)))
+    if body.repasse_ativo is not None:
+        if body.repasse_ativo and pizz.repasse_entregador_valor is None:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Informe o valor por entrega.")
+        pizz.repasse_entregador_ativo = body.repasse_ativo
     await db.commit()
     return await listar_entregadores(pizzaria_id, db, None)  # type: ignore[arg-type]
 
@@ -318,23 +353,70 @@ async def resumo_entregador(
     db: AsyncSession = Depends(get_db),
     ent: Entregador = Depends(current_entregador),
 ) -> dict:
-    """Quantas entregas o entregador concluiu (total e hoje)."""
-    base = select(func.count()).where(
+    """Entregas concluídas (total e hoje) e, se a loja paga por entrega, os ganhos."""
+    filtros = (
         Pedido.pizzaria_id == pizzaria_id,
         Pedido.entregador_id == ent.id,
         Pedido.status == "entregue",
     )
-    total = (await db.execute(base)).scalar_one()
-    hoje = (
-        await db.execute(
-            base.where(
-                text(
-                    "pedidos.updated_at >= (date_trunc('day', now() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo')"
-                )
-            )
-        )
-    ).scalar_one()
-    return {"entregas_total": int(total), "entregas_hoje": int(hoje)}
+    soma = func.coalesce(func.sum(Pedido.repasse_entregador), 0)
+    total, ganhos_total = (await db.execute(select(func.count(), soma).where(*filtros))).one()
+    hoje, ganhos_hoje = (await db.execute(
+        select(func.count(), soma).where(*filtros, text(f"pedidos.entregue_em >= {_HOJE_SQL}"))
+    )).one()
+    semana, ganhos_semana = (await db.execute(
+        select(func.count(), soma).where(*filtros, text(f"pedidos.entregue_em >= {_HOJE_SQL} - interval '6 days'"))
+    )).one()
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
+    repasse_ativo = bool(pizz.repasse_entregador_ativo)
+    return {
+        "entregas_total": int(total), "entregas_hoje": int(hoje), "entregas_semana": int(semana),
+        "repasse_ativo": repasse_ativo,
+        "repasse_valor": float(pizz.repasse_entregador_valor) if repasse_ativo and pizz.repasse_entregador_valor is not None else None,
+        # Valores só com o repasse ligado: desligado, o app não mostra dinheiro.
+        "ganhos_hoje": round(float(ganhos_hoje), 2) if repasse_ativo else None,
+        "ganhos_semana": round(float(ganhos_semana), 2) if repasse_ativo else None,
+        "ganhos_total": round(float(ganhos_total), 2) if repasse_ativo else None,
+    }
+
+
+@driver_router.get("/historico")
+async def historico_entregador(
+    pizzaria_id: uuid.UUID,
+    dias: int = 30,
+    db: AsyncSession = Depends(get_db),
+    ent: Entregador = Depends(current_entregador),
+) -> dict:
+    """Entregas concluídas pelo entregador nos últimos `dias` (máx. 90), da mais
+    recente para a mais antiga, com o valor ganho em cada uma se a loja paga
+    por entrega."""
+    dias = max(1, min(int(dias), 90))
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
+    repasse_ativo = bool(pizz.repasse_entregador_ativo)
+    rows = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == pizzaria_id,
+            Pedido.entregador_id == ent.id,
+            Pedido.status == "entregue",
+            text(f"pedidos.entregue_em >= {_HOJE_SQL} - make_interval(days => :dias)").bindparams(dias=dias - 1),
+        ).order_by(desc(Pedido.entregue_em)).limit(300)
+    )).scalars().all()
+    return {
+        "repasse_ativo": repasse_ativo,
+        "entregas": [
+            {
+                "pedido_id": str(p.id),
+                "numero_pedido": p.numero_pedido,
+                "cliente": p.cliente.nome if p.cliente else None,
+                "endereco": p.endereco_entrega,
+                "entregue_em": p.entregue_em.isoformat() if p.entregue_em else None,
+                "valor_total": float(p.valor_total or 0),
+                "forma_pagamento": p.forma_pagamento,
+                "repasse": float(p.repasse_entregador) if repasse_ativo and p.repasse_entregador is not None else None,
+            }
+            for p in rows
+        ],
+    }
 
 
 @driver_router.post("/pedidos/{pedido_id}/pegar", response_model=PedidoOut)
