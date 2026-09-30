@@ -176,6 +176,14 @@ async def enviar_mensagem_status(
             else f"{pizz.tempo_retirada_min}-{pizz.tempo_retirada_max} min",
     }
     texto = _interpolar(template, ctx)
+    # Código de entrega (app do entregador): vai em qualquer template, inclusive
+    # o personalizado da loja — sem ele o entregador não consegue confirmar.
+    codigo = getattr(pedido, "codigo_entrega", None)
+    if novo_status == "a_caminho" and isinstance(codigo, str) and codigo:
+        texto += (
+            f"\n\n🔐 Código de entrega: *{codigo}*\n"
+            "Informe ao entregador quando ele chegar."
+        )
 
     # Envia com "digitando…" (presença + delay proporcional ao tamanho)
     try:

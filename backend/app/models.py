@@ -395,6 +395,13 @@ class Pedido(Base):
     entregador_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("entregadores.id", ondelete="SET NULL"))
     atribuido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     entregador: Mapped[Entregador | None] = relationship("Entregador", lazy="joined")
+    # Código de 4 dígitos que o cliente recebe no "saiu para entrega" (migration 037).
+    # Nunca vai para a API do entregador: ele precisa ouvir do cliente.
+    codigo_entrega: Mapped[str | None] = mapped_column(String(6))
+
+    @property
+    def tem_codigo_entrega(self) -> bool:
+        return bool(self.codigo_entrega)
 
     # Pós-venda (NPS): nota de 0-10 e comentário opcional do cliente.
     nps_nota: Mapped[int | None] = mapped_column(Integer)
@@ -438,6 +445,11 @@ class Entregador(Base):
     telefone: Mapped[str | None] = mapped_column(String)
     disponivel: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Última posição enviada pelo app durante o turno (migration 037).
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    precisao_m: Mapped[float | None] = mapped_column(Float)
+    localizacao_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

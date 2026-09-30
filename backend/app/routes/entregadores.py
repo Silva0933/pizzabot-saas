@@ -48,6 +48,10 @@ class EntregadorOut(BaseModel):
     disponivel: bool
     ativo: bool
     entregas_concluidas: int = 0
+    # Última posição enviada pelo app (turno ligado).
+    lat: float | None = None
+    lon: float | None = None
+    localizacao_em: datetime | None = None
     created_at: datetime
 
 
@@ -76,6 +80,16 @@ class ConfigIn(BaseModel):
 
 class DriverStatusIn(BaseModel):
     status: str
+    # Confirmação da entrega: o código que o cliente recebeu no WhatsApp, ou o
+    # motivo de confirmar sem ele (fica registrado no histórico do pedido).
+    codigo: str | None = Field(default=None, max_length=10)
+    sem_codigo_motivo: str | None = Field(default=None, max_length=300)
+
+
+class LocalizacaoIn(BaseModel):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    precisao: float | None = Field(default=None, ge=0, le=100_000)
 
 
 class DisponibilidadeIn(BaseModel):
@@ -91,6 +105,9 @@ def _out(ent: Entregador, entregas: int = 0) -> EntregadorOut:
         disponivel=ent.disponivel,
         ativo=ent.ativo,
         entregas_concluidas=entregas,
+        lat=ent.lat,
+        lon=ent.lon,
+        localizacao_em=ent.localizacao_em,
         created_at=ent.created_at,
     )
 
@@ -374,10 +391,115 @@ async def atualizar_status_entregador(
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado ou não é seu")
 
+    motivo = None
+    if body.status == "entregue" and p.codigo_entrega:
+        from app.services.entregas import codigo_confere
+        sem_codigo = (body.sem_codigo_motivo or "").strip()
+        if (body.codigo or "").strip():
+            if not codigo_confere(p.codigo_entrega, body.codigo):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                    "O código não confere. Confira com o cliente.")
+        elif len(sem_codigo) >= 3:
+            motivo = f"Entregue sem o código do cliente: {sem_codigo}"
+        else:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                "Informe o código que o cliente recebeu no WhatsApp.")
+
     return await apply_status_change(
-        db, pizzaria_id, p, body.status,
+        db, pizzaria_id, p, body.status, motivo,
         ator_id=ent.usuario_id, ator_nome=ent.nome, ator_tipo="entregador",
     )
+
+
+@driver_router.post("/localizacao")
+async def registrar_localizacao(
+    pizzaria_id: uuid.UUID,
+    body: LocalizacaoIn,
+    db: AsyncSession = Depends(get_db),
+    ent: Entregador = Depends(current_entregador),
+) -> dict:
+    """Posição enviada pelo app durante o turno. A pizzaria vê o entregador no
+    painel e a rota parte de onde ele está."""
+    agora = datetime.now(UTC)
+    ent.lat, ent.lon, ent.precisao_m, ent.localizacao_em = body.lat, body.lon, body.precisao, agora
+    await db.commit()
+    try:
+        from app.services.broadcaster import broadcaster
+        await broadcaster.publish(pizzaria_id, {
+            "tipo": "entregador.localizacao",
+            "pizzaria_id": str(pizzaria_id),
+            "payload": {"entregador_id": str(ent.id), "nome": ent.nome, "lat": body.lat,
+                        "lon": body.lon, "em": agora.isoformat()},
+        })
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True}
+
+
+# Posição do entregador mais velha que isso não serve de ponto de partida.
+POSICAO_VALIDA_S = 10 * 60
+
+
+@driver_router.get("/rota")
+async def minha_rota(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    ent: Entregador = Depends(current_entregador),
+) -> dict:
+    """Paradas do entregador em ordem (coleta na pizzaria, se houver pedido a
+    retirar, e as entregas pelo vizinho mais próximo) + links do Maps e do Waze."""
+    from app.services import entregas as E
+
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one()
+    pedidos = (await db.execute(
+        select(Pedido).where(
+            Pedido.pizzaria_id == pizzaria_id,
+            Pedido.entregador_id == ent.id,
+            Pedido.tipo == "delivery",
+            Pedido.status.in_(("pronto_entrega", "a_caminho")),
+        ).order_by(Pedido.atribuido_em)
+    )).scalars().all()
+
+    cidade = E.cidade_da_pizzaria(pizz.endereco)
+    ponto_pizzaria = await E.coordenadas(pizz.endereco) if pizz.endereco else None
+    posicao = None
+    if ent.lat is not None and ent.lon is not None and ent.localizacao_em is not None \
+            and (datetime.now(UTC) - ent.localizacao_em).total_seconds() < POSICAO_VALIDA_S:
+        posicao = (ent.lat, ent.lon)
+
+    entregas = []
+    for p in pedidos:
+        ponto = (p.endereco_lat, p.endereco_lon) if p.endereco_lat is not None and p.endereco_lon is not None \
+            else await E.coordenadas(p.endereco_entrega, cidade=cidade, perto_de=ponto_pizzaria)
+        entregas.append({
+            "tipo": "entrega", "pedido_id": str(p.id), "numero_pedido": p.numero_pedido,
+            "status": p.status, "cliente": p.cliente.nome if p.cliente else None,
+            "endereco": p.endereco_entrega, "lat": ponto[0] if ponto else None,
+            "lon": ponto[1] if ponto else None,
+        })
+
+    # Algum pedido ainda não foi retirado: a rota começa pela pizzaria.
+    coleta = None
+    if any(p.status == "pronto_entrega" for p in pedidos):
+        coleta = {"tipo": "coleta", "nome": pizz.nome, "endereco": pizz.endereco,
+                  "lat": ponto_pizzaria[0] if ponto_pizzaria else None,
+                  "lon": ponto_pizzaria[1] if ponto_pizzaria else None}
+    inicio = (coleta and ponto_pizzaria) or posicao or ponto_pizzaria
+    ordenadas = E.ordenar_paradas(inicio, entregas)
+    paradas = ([coleta] if coleta else []) + ordenadas
+    if coleta and posicao and ponto_pizzaria:
+        coleta["distancia_km"] = round(E.distancia_km(posicao, ponto_pizzaria), 2)
+
+    total = sum(p.get("distancia_km") or 0 for p in paradas)
+    for p in paradas:
+        p["waze_url"] = E.link_waze(p)
+    return {
+        "paradas": paradas,
+        "distancia_km": round(total, 1),
+        "google_maps_url": E.link_google_maps(paradas),
+        "sem_coordenada": sum(1 for p in paradas if p.get("lat") is None),
+        "origem": "posicao_atual" if posicao else ("pizzaria" if ponto_pizzaria else "desconhecida"),
+    }
 
 
 @driver_router.patch("/disponibilidade")

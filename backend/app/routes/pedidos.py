@@ -66,6 +66,8 @@ class PedidoOut(BaseModel):
     entregador_id: uuid.UUID | None = None
     atribuido_em: datetime | None = None
     entregador: EntregadorMinOut | None = None
+    # Só o indicador: o código em si nunca sai pela API (o entregador ouve do cliente).
+    tem_codigo_entrega: bool = False
     em_problema: bool = False
     problema_motivo: str | None = None
     problema_aberto_em: datetime | None = None
@@ -148,6 +150,11 @@ async def apply_status_change(
 
     old_status = p.status
     p.status = novo_status
+    # Saiu para entrega: gera o código que o cliente recebe no aviso de "a
+    # caminho" e informa ao entregador na porta (app do entregador, Fase 1).
+    if novo_status == "a_caminho" and p.tipo == "delivery" and not p.codigo_entrega:
+        from app.services.entregas import gerar_codigo_entrega
+        p.codigo_entrega = gerar_codigo_entrega()
     # Saiu de "novo" (a loja aprovou ou cancelou): a conferência acabou.
     if old_status == "novo":
         p.aguardando_revisao = False
