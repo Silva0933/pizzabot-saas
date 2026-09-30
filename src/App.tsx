@@ -47,6 +47,7 @@ import {
   clearTokens, getToken, ApiError,
 } from "./lib/api";
 import { calcEstaAberto } from "./lib/businessHours";
+import { ehApp } from "./lib/nativo";
 
 // ============================================
 // Sinal sonoro de pedidos (Web Audio API)
@@ -716,7 +717,9 @@ function AdminApp() {
         loading={authLoading}
         err={authErr}
         onSubmit={handleLogin}
-        onSignup={() => setAuthMode("signup")}
+        // No app do entregador não tem cadastro de pizzaria: a conta é criada pela loja.
+        onSignup={ehApp() ? undefined : () => setAuthMode("signup")}
+        subtitulo={ehApp() ? "App do entregador · entre com o acesso que a pizzaria criou" : undefined}
       />
     );
   }
@@ -1127,6 +1130,7 @@ function LoginScreen(props: {
   onSubmit: (e: React.FormEvent) => void;
   onBack?: () => void;
   onSignup?: () => void;
+  subtitulo?: string;
 }) {
   return (
     <div className="min-h-screen relative flex items-center justify-center bg-slate-950 overflow-hidden font-sans">
@@ -1143,7 +1147,7 @@ function LoginScreen(props: {
             <Pizza className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-2xl font-extrabold text-white tracking-tight">PizzaBot</h1>
-          <p className="text-sm text-slate-400 mt-1">Gerencie seus pedidos com inteligência</p>
+          <p className="text-sm text-slate-400 mt-1">{props.subtitulo || "Gerencie seus pedidos com inteligência"}</p>
         </div>
 
         {/* Formulário */}
