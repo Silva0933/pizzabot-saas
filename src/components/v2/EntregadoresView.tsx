@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle, Bike, CircleDot, Clock3, Copy, ExternalLink, Link2, Loader2, Lock, Mail, Navigation,
+  AlertCircle, Bike, CircleDot, Clock3, Copy, Download, ExternalLink, Link2, Loader2, Lock, Mail, Navigation,
   PackageCheck, Pencil, Phone, Plus, Radio, RefreshCw, Search, ShieldCheck,
-  SlidersHorizontal, Trash2, User, Users,
+  SlidersHorizontal, Smartphone, Trash2, User, Users,
 } from "lucide-react";
 import { BackendEntregador, BackendPedido, entregadoresApi, pedidosApi } from "../../lib/api";
+import { APK_URL } from "../../lib/nativo";
 import { Badge, Button, Field, Input, Modal } from "../ui";
 
 interface FormState {
@@ -315,6 +316,7 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
                               {e.telefone}
                             </p>
                           )}
+                          <UltimaPosicao entregador={e} />
                         </div>
                       </div>
                       <div className="grid grid-cols-3 gap-2 md:w-[280px]">
@@ -350,6 +352,7 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
 
         {/* Aside Sidebar */}
         <aside className="space-y-4">
+          <AppEntregador />
           <LinkAcessoEntregador />
 
           {/* Distribuição de pedidos */}
@@ -468,6 +471,77 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
           )}
         </div>
       </Modal>
+    </div>
+  );
+}
+
+/** Onde o entregador estava na última posição enviada pelo app (turno ligado). */
+function UltimaPosicao({ entregador: e }: { entregador: BackendEntregador }) {
+  if (e.lat == null || e.lon == null || !e.localizacao_em) return null;
+  const min = Math.max(0, Math.round((Date.now() - new Date(e.localizacao_em).getTime()) / 60_000));
+  if (min > 24 * 60) return null;
+  const quando = min < 1 ? "agora" : min < 60 ? `há ${min} min` : `há ${Math.round(min / 60)} h`;
+  return (
+    <a
+      href={`https://www.google.com/maps/search/?api=1&query=${e.lat},${e.lon}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`mt-1 inline-flex items-center gap-1.5 text-xs font-semibold ${min <= 5 ? "text-sky-300" : "text-slate-500"} hover:underline`}
+    >
+      <Navigation className="w-3 h-3" />
+      Localização {quando} · ver no mapa
+    </a>
+  );
+}
+
+// App Android do entregador (APK publicado pelo CI no GitHub Releases).
+function AppEntregador() {
+  const [copied, setCopied] = useState(false);
+  async function copiar() {
+    try {
+      await navigator.clipboard.writeText(APK_URL);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt("Copie o link do app:", APK_URL);
+    }
+  }
+  return (
+    <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="grid w-9 h-9 shrink-0 place-items-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+          <Smartphone className="w-4.5 h-4.5" />
+        </span>
+        <div>
+          <h2 className="font-bold text-white text-sm">App do entregador (Android)</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
+            Avisa de entrega nova com a tela desligada, monta a rota e mostra aqui onde o entregador está.
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={copiar}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+        >
+          <Copy className="w-3.5 h-3.5" />
+          {copied ? "Copiado!" : "Copiar link"}
+        </button>
+        <a
+          href={APK_URL}
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-500 transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" />
+          Baixar APK
+        </a>
+      </div>
+      <ol className="mt-3 list-decimal space-y-1 border-t border-[#1e293b] pt-3 pl-4 text-[11px] leading-relaxed text-slate-500">
+        <li>Envie o link ao entregador e peça para abrir no celular Android.</li>
+        <li>Na instalação, permita "instalar apps desta fonte".</li>
+        <li>No app, entrar com o e-mail e a senha cadastrados aqui e ligar o turno.</li>
+        <li>Permitir localização e notificações quando o app pedir.</li>
+      </ol>
     </div>
   );
 }

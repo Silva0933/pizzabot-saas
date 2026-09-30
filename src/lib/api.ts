@@ -152,6 +152,10 @@ export interface BackendEntregador {
   disponivel: boolean;
   ativo: boolean;
   entregas_concluidas?: number;
+  /** Última posição enviada pelo app do entregador (turno ligado). */
+  lat?: number | null;
+  lon?: number | null;
+  localizacao_em?: string | null;
   created_at: string;
 }
 
@@ -264,6 +268,8 @@ export interface BackendPedido {
   entregador_id?: string | null;
   atribuido_em?: string | null;
   entregador?: { id: string; nome: string } | null;
+  /** O cliente recebeu um código de entrega (o código em si nunca vem na API). */
+  tem_codigo_entrega?: boolean;
   em_problema?: boolean;
   problema_motivo?: string | null;
   problema_aberto_em?: string | null;
@@ -577,13 +583,42 @@ export const entregadorApi = {
     api.get<BackendPedido[]>(`/pizzarias/${pizzariaId}/entregador/disponiveis`),
   pegar: (pizzariaId: string, pedidoId: string) =>
     api.post<BackendPedido>(`/pizzarias/${pizzariaId}/entregador/pedidos/${pedidoId}/pegar`),
-  updateStatus: (pizzariaId: string, pedidoId: string, status: "a_caminho" | "entregue") =>
-    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/entregador/pedidos/${pedidoId}/status`, { status }),
+  updateStatus: (
+    pizzariaId: string, pedidoId: string, status: "a_caminho" | "entregue",
+    confirmacao?: { codigo?: string; sem_codigo_motivo?: string },
+  ) =>
+    api.post<BackendPedido>(`/pizzarias/${pizzariaId}/entregador/pedidos/${pedidoId}/status`, { status, ...confirmacao }),
   setDisponibilidade: (pizzariaId: string, disponivel: boolean) =>
     api.patch<{ ok: boolean; disponivel: boolean }>(`/pizzarias/${pizzariaId}/entregador/disponibilidade`, { disponivel }),
   resumo: (pizzariaId: string) =>
     api.get<{ entregas_total: number; entregas_hoje: number }>(`/pizzarias/${pizzariaId}/entregador/resumo`),
+  localizacao: (pizzariaId: string, lat: number, lon: number, precisao?: number) =>
+    api.post<{ ok: boolean }>(`/pizzarias/${pizzariaId}/entregador/localizacao`, { lat, lon, precisao }),
+  rota: (pizzariaId: string) =>
+    api.get<RotaEntregador>(`/pizzarias/${pizzariaId}/entregador/rota`),
 };
+
+export interface ParadaRota {
+  tipo: "coleta" | "entrega";
+  pedido_id?: string;
+  numero_pedido?: number | null;
+  status?: string;
+  cliente?: string | null;
+  nome?: string;
+  endereco: string | null;
+  lat: number | null;
+  lon: number | null;
+  distancia_km?: number;
+  waze_url: string | null;
+}
+
+export interface RotaEntregador {
+  paradas: ParadaRota[];
+  distancia_km: number;
+  google_maps_url: string | null;
+  sem_coordenada: number;
+  origem: "posicao_atual" | "pizzaria" | "desconhecida";
+}
 
 // ============================================
 // Conversas + mensagens

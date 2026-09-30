@@ -10,6 +10,12 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "1.2.26",
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/app-launcher": "8.0.1",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/local-notifications": "8.3.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
@@ -22,6 +28,7 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.2",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",

@@ -1,10 +1,14 @@
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, Bike, CheckCircle2, Clock3, Hand, Loader2, LogOut, MapPin,
-  Navigation, PackageCheck, Phone, Power, RefreshCw, Route, Signal, WalletCards,
+  AlertCircle, Bike, CheckCircle2, Clock3, Download, Hand, KeyRound, Loader2, LogOut, MapPin,
+  Navigation, PackageCheck, Phone, Power, RefreshCw, Route, Signal, Store, WalletCards, X,
 } from "lucide-react";
-import { BackendPedido, connectWebSocket, entregadorApi, UserMe } from "../../lib/api";
+import { BackendPedido, connectWebSocket, entregadorApi, RotaEntregador, UserMe } from "../../lib/api";
+import {
+  abrirConfiguracoesDoApp, abrirExterno, APK_URL, ehApp, iniciarRastreamento, notificar,
+  prepararNotificacoes, Rastreamento, versaoNovaDisponivel,
+} from "../../lib/nativo";
 import { OrderStatusBadge } from "../ui";
 import { cn } from "../../lib/cn";
 import { brl, itemCount } from "../v2/pedidos/pedidoUtils";
@@ -31,15 +35,85 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
   const [busyAvailability, setBusyAvailability] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [wsOnline, setWsOnline] = useState(false);
+  const [gpsErro, setGpsErro] = useState<string | null>(null);
+  const [rota, setRota] = useState<RotaEntregador | null>(null);
+  const [rotaAberta, setRotaAberta] = useState(false);
+  const [carregandoRota, setCarregandoRota] = useState(false);
+  const [confirmando, setConfirmando] = useState<BackendPedido | null>(null);
+  const [versaoNova, setVersaoNova] = useState<string | null>(null);
+  // Pedidos já vistos: o que aparecer de novo vira notificação (a 1ª carga não avisa).
+  const vistos = useRef<Set<string> | null>(null);
+  const disponivelRef = useRef(disponivel);
+  disponivelRef.current = disponivel;
+
+  function avisarNovidades(mine: BackendPedido[], livres: BackendPedido[]) {
+    const ids = new Set([...mine, ...livres].map((p) => p.id));
+    if (vistos.current) {
+      for (const p of mine) {
+        if (!vistos.current.has(p.id)) {
+          notificar(`Nova entrega #${p.numero_pedido ?? ""}`, p.endereco_entrega || "Abra o app para ver o endereço.");
+        }
+      }
+      if (disponivelRef.current) {
+        for (const p of livres) {
+          if (!vistos.current.has(p.id)) {
+            notificar(`Entrega disponível #${p.numero_pedido ?? ""}`, `${p.endereco_entrega || "Endereço no app"} · toque para assumir`);
+          }
+        }
+      }
+    }
+    vistos.current = ids;
+  }
 
   async function load(silent = false) {
     if (silent) setRefreshing(true);
-    await Promise.all([
-      entregadorApi.minhasEntregas(pid).then(setMinhas).catch(() => {}),
-      entregadorApi.disponiveis(pid).then(setDisponiveis).catch(() => {}),
+    const [mine, livres] = await Promise.all([
+      entregadorApi.minhasEntregas(pid).catch(() => null),
+      entregadorApi.disponiveis(pid).catch(() => null),
       entregadorApi.resumo(pid).then(setResumo).catch(() => {}),
     ]);
+    if (mine) setMinhas(mine);
+    if (livres) setDisponiveis(livres);
+    if (mine && livres) avisarNovidades(mine, livres);
     if (silent) setRefreshing(false);
+  }
+
+  // Turno ligado = GPS ligado. No app, a posição segue com a tela desligada (a
+  // notificação fixa do Android mantém o app vivo e as entregas continuam chegando).
+  useEffect(() => {
+    if (!disponivel) return;
+    let rastreio: Rastreamento | null = null;
+    let cancelado = false;
+    prepararNotificacoes().catch(() => {});
+    iniciarRastreamento(
+      (pos) => { entregadorApi.localizacao(pid, pos.lat, pos.lon, pos.precisao).catch(() => {}); },
+      setGpsErro,
+    ).then((r) => { if (cancelado) r.parar(); else rastreio = r; }).catch(() => {});
+    return () => { cancelado = true; rastreio?.parar(); };
+  }, [disponivel, pid]);
+
+  useEffect(() => {
+    versaoNovaDisponivel().then(setVersaoNova).catch(() => {});
+  }, []);
+
+  async function abrirRota() {
+    setRotaAberta(true);
+    setCarregandoRota(true);
+    try {
+      setRota(await entregadorApi.rota(pid));
+    } catch (e: any) {
+      setErr(e.message || "Não foi possível montar a rota.");
+      setRotaAberta(false);
+    } finally {
+      setCarregandoRota(false);
+    }
+  }
+
+  async function confirmarEntrega(p: BackendPedido, conf: { codigo?: string; sem_codigo_motivo?: string }) {
+    await entregadorApi.updateStatus(pid, p.id, "entregue", conf);
+    setConfirmando(null);
+    setMinhas((m) => m.filter((x) => x.id !== p.id));
+    await load(true);
   }
 
   useEffect(() => {
@@ -78,6 +152,11 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
 
   async function avancar(p: BackendPedido) {
     const novo = p.status === "a_caminho" ? "entregue" : "a_caminho";
+    // Confirmação com o código que o cliente recebeu no WhatsApp.
+    if (novo === "entregue" && p.tem_codigo_entrega) {
+      setConfirmando(p);
+      return;
+    }
     setBusyId(p.id);
     setErr(null);
     if (novo === "entregue") setMinhas((m) => m.filter((x) => x.id !== p.id));
@@ -167,13 +246,28 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
             <Summary icon={CheckCircle2} label="Total" value={resumo?.entregas_total ?? 0} tone="green" />
           </section>
 
+          {versaoNova && (
+            <button type="button" onClick={() => abrirExterno(APK_URL)} className="flex w-full items-center gap-3 rounded-2xl border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-left">
+              <Download className="w-4 h-4 shrink-0 text-sky-300" />
+              <span className="text-sm"><strong>Nova versão do app ({versaoNova}).</strong> <span className="text-slate-400">Toque para baixar e instalar.</span></span>
+            </button>
+          )}
+
           {err && <div className="flex items-start gap-2 rounded-2xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-200"><AlertCircle className="mt-0.5 w-4 h-4 shrink-0" />{err}</div>}
+
+          {gpsErro && disponivel && (
+            <div className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
+              <p className="flex items-start gap-2"><MapPin className="mt-0.5 w-4 h-4 shrink-0" />{gpsErro}</p>
+              {ehApp() && <button type="button" onClick={() => abrirConfiguracoesDoApp()} className="mt-2 rounded-xl bg-amber-400 px-3 py-1.5 text-xs font-black text-amber-950">Abrir configurações</button>}
+            </div>
+          )}
 
           {(emRota > 0 || prontas > 0) && (
             <section className="rounded-2xl border border-orange-400/20 bg-gradient-to-r from-orange-400/10 to-transparent px-4 py-3">
               <div className="flex items-center gap-3">
                 <span className="grid w-9 h-9 place-items-center rounded-xl bg-orange-400/15 text-orange-300"><Route className="w-4 h-4" /></span>
-                <div className="min-w-0"><p className="text-sm font-bold">{emRota ? `${emRota} entrega${emRota > 1 ? "s" : ""} em andamento` : `${prontas} pedido${prontas > 1 ? "s" : ""} pronto${prontas > 1 ? "s" : ""}`}</p><p className="mt-0.5 text-[11px] text-slate-500">{emRota ? "Conclua a rota atual antes de seguir." : "Retire na pizzaria e inicie a rota."}</p></div>
+                <div className="min-w-0 flex-1"><p className="text-sm font-bold">{emRota ? `${emRota} entrega${emRota > 1 ? "s" : ""} em andamento` : `${prontas} pedido${prontas > 1 ? "s" : ""} pronto${prontas > 1 ? "s" : ""}`}</p><p className="mt-0.5 text-[11px] text-slate-500">{emRota ? "Conclua a rota atual antes de seguir." : "Retire na pizzaria e inicie a rota."}</p></div>
+                <button type="button" onClick={abrirRota} className="shrink-0 rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white">Ver rota</button>
               </div>
             </section>
           )}
@@ -210,6 +304,126 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
           </section>
         </main>
       </div>
+      {rotaAberta && <RotaSheet rota={rota} carregando={carregandoRota} onFechar={() => setRotaAberta(false)} />}
+      {confirmando && (
+        <ConfirmarEntrega pedido={confirmando} onFechar={() => setConfirmando(null)} onConfirmar={(c) => confirmarEntrega(confirmando, c)} />
+      )}
+    </div>
+  );
+}
+
+/** Paradas em ordem (coleta primeiro, se houver) e os atalhos para o Maps/Waze. */
+function RotaSheet({ rota, carregando, onFechar }: { rota: RotaEntregador | null; carregando: boolean; onFechar: () => void }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 sm:items-center" onClick={onFechar}>
+      <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0e131b] p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300">Sua rota</p>
+            <h2 className="text-lg font-black">{rota ? `${rota.paradas.length} parada${rota.paradas.length === 1 ? "" : "s"} · ~${rota.distancia_km} km` : "Montando a rota…"}</h2>
+          </div>
+          <button type="button" onClick={onFechar} className="rounded-xl p-2 text-slate-400 hover:bg-white/10" aria-label="Fechar"><X className="w-5 h-5" /></button>
+        </div>
+        {carregando || !rota ? (
+          <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-orange-400" /></div>
+        ) : rota.paradas.length === 0 ? (
+          <p className="py-10 text-center text-sm text-slate-400">Nenhuma entrega pronta ou em rota agora.</p>
+        ) : (
+          <>
+            <ol className="mt-4 space-y-2">
+              {rota.paradas.map((p, i) => (
+                <li key={p.pedido_id || `coleta-${i}`} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                  <span className={cn("grid w-7 h-7 shrink-0 place-items-center rounded-lg text-xs font-black", p.tipo === "coleta" ? "bg-orange-500 text-white" : "bg-sky-400 text-sky-950")}>
+                    {p.tipo === "coleta" ? <Store className="w-3.5 h-3.5" /> : i + (rota.paradas[0]?.tipo === "coleta" ? 0 : 1)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold">{p.tipo === "coleta" ? `Coleta · ${p.nome}` : `#${p.numero_pedido ?? "—"} · ${p.cliente || "Cliente"}`}</p>
+                    <p className="mt-0.5 break-words text-xs text-slate-400">{p.endereco || "Endereço não informado"}</p>
+                    {p.distancia_km != null && <p className="mt-0.5 text-[11px] text-slate-500">~{p.distancia_km} km da parada anterior</p>}
+                  </div>
+                  {p.waze_url && (
+                    <button type="button" onClick={() => abrirExterno(p.waze_url!)} className="shrink-0 rounded-xl border border-white/10 px-2.5 py-1.5 text-[11px] font-bold text-slate-200">Waze</button>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {rota.sem_coordenada > 0 && (
+              <p className="mt-3 text-[11px] text-amber-300">{rota.sem_coordenada} endereço(s) sem localização exata: a ordem delas é a de atribuição.</p>
+            )}
+            {rota.google_maps_url && (
+              <button type="button" onClick={() => abrirExterno(rota.google_maps_url!)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-400 px-4 py-3.5 text-sm font-black text-sky-950">
+                <Navigation className="w-4 h-4" />Abrir rota completa no Google Maps
+              </button>
+            )}
+            <p className="mt-2 text-center text-[11px] text-slate-500">
+              {rota.origem === "posicao_atual" ? "Ordem calculada a partir de onde você está." : "Ordem calculada a partir da pizzaria."}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Confirmação da entrega com o código de 4 dígitos que o cliente recebeu no WhatsApp. */
+function ConfirmarEntrega({ pedido, onFechar, onConfirmar }: {
+  pedido: BackendPedido;
+  onFechar: () => void;
+  onConfirmar: (c: { codigo?: string; sem_codigo_motivo?: string }) => Promise<void>;
+}) {
+  const [codigo, setCodigo] = useState("");
+  const [semCodigo, setSemCodigo] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const pronto = semCodigo ? motivo.trim().length >= 3 : codigo.length === 4;
+
+  async function enviar() {
+    if (!pronto) return;
+    setEnviando(true);
+    setErro(null);
+    try {
+      await onConfirmar(semCodigo ? { sem_codigo_motivo: motivo.trim() } : { codigo });
+    } catch (e: any) {
+      setErro(e.message || "Não foi possível confirmar a entrega.");
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 sm:items-center" onClick={onFechar}>
+      <form className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#0e131b] p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => { e.preventDefault(); enviar(); }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Confirmar entrega</p>
+            <h2 className="text-lg font-black">Pedido #{pedido.numero_pedido ?? "—"} · {pedido.cliente?.nome || "Cliente"}</h2>
+          </div>
+          <button type="button" onClick={onFechar} className="rounded-xl p-2 text-slate-400 hover:bg-white/10" aria-label="Fechar"><X className="w-5 h-5" /></button>
+        </div>
+        {!semCodigo ? (
+          <>
+            <label htmlFor="codigo-entrega" className="mt-4 flex items-center gap-2 text-sm text-slate-300"><KeyRound className="w-4 h-4 text-emerald-300" />Peça ao cliente o código que ele recebeu no WhatsApp</label>
+            <input id="codigo-entrega" inputMode="numeric" autoComplete="one-time-code" maxLength={4} autoFocus value={codigo}
+              onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 4))}
+              className="mt-3 w-full rounded-2xl border border-white/15 bg-black/30 py-4 text-center font-mono text-3xl font-black tracking-[0.6em] text-white outline-none focus:border-emerald-400" placeholder="····" />
+            <button type="button" onClick={() => setSemCodigo(true)} className="mt-3 text-xs font-semibold text-slate-400 underline">O cliente não tem o código</button>
+          </>
+        ) : (
+          <>
+            <label htmlFor="motivo-sem-codigo" className="mt-4 block text-sm text-slate-300">Por que está confirmando sem o código? Fica registrado no pedido.</label>
+            <textarea id="motivo-sem-codigo" autoFocus rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)}
+              placeholder="Ex.: cliente sem celular, entreguei para o porteiro"
+              className="mt-3 w-full rounded-2xl border border-white/15 bg-black/30 p-3 text-sm text-white outline-none focus:border-amber-400" />
+            <button type="button" onClick={() => setSemCodigo(false)} className="mt-2 text-xs font-semibold text-slate-400 underline">Voltar e digitar o código</button>
+          </>
+        )}
+        {erro && <p className="mt-3 rounded-xl bg-rose-400/10 px-3 py-2 text-sm text-rose-200">{erro}</p>}
+        <button type="submit" disabled={!pronto || enviando} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-4 py-3.5 text-sm font-black text-emerald-950 disabled:opacity-50">
+          {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}Confirmar entrega
+        </button>
+      </form>
     </div>
   );
 }
@@ -253,12 +467,12 @@ function DriverCard({ pedido: p, mode, position, busy, canClaim, onAvancar, onPe
       <div className="space-y-4 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0"><p className="text-base font-black">{p.cliente?.nome || "Cliente"}</p><p className="mt-1 text-xs text-slate-500">{itemCount(p.itens)} item{itemCount(p.itens) === 1 ? "" : "s"} no pedido</p></div>
-          {tel && <a href={`tel:${tel}`} className="grid w-10 h-10 shrink-0 place-items-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300" aria-label="Ligar para cliente"><Phone className="w-4 h-4" /></a>}
+          {tel && <button type="button" onClick={() => abrirExterno(`tel:+${tel.replace(/\D/g, "")}`)} className="grid w-10 h-10 shrink-0 place-items-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300" aria-label="Ligar para cliente"><Phone className="w-4 h-4" /></button>}
         </div>
 
         <div className="rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] p-3.5">
           <div className="flex items-start gap-2.5"><MapPin className="mt-0.5 w-4 h-4 shrink-0 text-sky-300" /><p className="flex-1 break-words text-sm font-semibold leading-snug text-slate-200">{endereco}</p></div>
-          <a href={mapsUrl(endereco, p.endereco_lat, p.endereco_lon)} target="_blank" rel="noopener noreferrer" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-3 py-2.5 text-xs font-black text-sky-950"><Navigation className="w-4 h-4" />Abrir rota no mapa</a>
+          <button type="button" onClick={() => abrirExterno(mapsUrl(endereco, p.endereco_lat, p.endereco_lon))} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-3 py-2.5 text-xs font-black text-sky-950"><Navigation className="w-4 h-4" />Abrir no mapa</button>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
