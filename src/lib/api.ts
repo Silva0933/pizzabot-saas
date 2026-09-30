@@ -156,6 +156,8 @@ export interface BackendEntregador {
   lat?: number | null;
   lon?: number | null;
   localizacao_em?: string | null;
+  /** Soma do valor por entrega das entregas de hoje. */
+  ganhos_hoje?: number;
   created_at: string;
 }
 
@@ -558,6 +560,9 @@ export const clientesApi = {
 export interface EntregadoresResp {
   entregadores: BackendEntregador[];
   permitir_autoatribuicao: boolean;
+  /** Valor fixo pago ao entregador por entrega. */
+  repasse_ativo?: boolean;
+  repasse_valor?: number | null;
 }
 
 export const entregadoresApi = {
@@ -571,6 +576,8 @@ export const entregadoresApi = {
     api.delete<{ ok: boolean }>(`/pizzarias/${pizzariaId}/entregadores/${entregadorId}`),
   setConfig: (pizzariaId: string, permitirAutoatribuicao: boolean) =>
     api.put<EntregadoresResp>(`/pizzarias/${pizzariaId}/entregadores/config`, { permitir_autoatribuicao: permitirAutoatribuicao }),
+  setRepasse: (pizzariaId: string, ativo: boolean, valor?: number) =>
+    api.put<EntregadoresResp>(`/pizzarias/${pizzariaId}/entregadores/config`, { repasse_ativo: ativo, repasse_valor: valor }),
 };
 
 // ============================================
@@ -591,12 +598,42 @@ export const entregadorApi = {
   setDisponibilidade: (pizzariaId: string, disponivel: boolean) =>
     api.patch<{ ok: boolean; disponivel: boolean }>(`/pizzarias/${pizzariaId}/entregador/disponibilidade`, { disponivel }),
   resumo: (pizzariaId: string) =>
-    api.get<{ entregas_total: number; entregas_hoje: number }>(`/pizzarias/${pizzariaId}/entregador/resumo`),
+    api.get<ResumoEntregador>(`/pizzarias/${pizzariaId}/entregador/resumo`),
+  historico: (pizzariaId: string, dias = 30) =>
+    api.get<HistoricoEntregador>(`/pizzarias/${pizzariaId}/entregador/historico?dias=${dias}`),
   localizacao: (pizzariaId: string, lat: number, lon: number, precisao?: number) =>
     api.post<{ ok: boolean }>(`/pizzarias/${pizzariaId}/entregador/localizacao`, { lat, lon, precisao }),
   rota: (pizzariaId: string) =>
     api.get<RotaEntregador>(`/pizzarias/${pizzariaId}/entregador/rota`),
 };
+
+export interface ResumoEntregador {
+  entregas_total: number;
+  entregas_hoje: number;
+  entregas_semana?: number;
+  /** A loja paga um valor fixo por entrega? Desligado, os ganhos vêm null. */
+  repasse_ativo?: boolean;
+  repasse_valor?: number | null;
+  ganhos_hoje?: number | null;
+  ganhos_semana?: number | null;
+  ganhos_total?: number | null;
+}
+
+export interface EntregaHistorico {
+  pedido_id: string;
+  numero_pedido: number | null;
+  cliente: string | null;
+  endereco: string | null;
+  entregue_em: string | null;
+  valor_total: number;
+  forma_pagamento: string | null;
+  repasse: number | null;
+}
+
+export interface HistoricoEntregador {
+  repasse_ativo: boolean;
+  entregas: EntregaHistorico[];
+}
 
 export interface ParadaRota {
   tipo: "coleta" | "entrega";

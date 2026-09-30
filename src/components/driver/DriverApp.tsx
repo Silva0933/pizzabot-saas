@@ -1,20 +1,26 @@
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle, Bike, CheckCircle2, Clock3, Download, Hand, KeyRound, Loader2, LogOut, MapPin,
-  Navigation, PackageCheck, Phone, Power, RefreshCw, Route, Signal, Store, WalletCards, X,
+  AlertCircle, Bike, CheckCircle2, ChevronDown, Clock3, Download, Hand, History, KeyRound, Loader2, LogOut,
+  MapPin, Navigation, Package, Phone, Power, RefreshCw, Route, Store, Wallet, X,
 } from "lucide-react";
-import { BackendPedido, connectWebSocket, entregadorApi, RotaEntregador, UserMe } from "../../lib/api";
+import {
+  BackendPedido, connectWebSocket, EntregaHistorico, entregadorApi, HistoricoEntregador, ResumoEntregador,
+  RotaEntregador, UserMe,
+} from "../../lib/api";
 import {
   abrirConfiguracoesDoApp, abrirExterno, APK_URL, ehApp, iniciarRastreamento, notificar,
   prepararNotificacoes, Rastreamento, versaoNovaDisponivel,
 } from "../../lib/nativo";
-import { OrderStatusBadge } from "../ui";
 import { cn } from "../../lib/cn";
 import { brl, itemCount } from "../v2/pedidos/pedidoUtils";
 
+// Redesenho após o teste no celular real (29/09): textos e botões pequenos demais,
+// informação espalhada. Agora: navegação por abas embaixo (como os apps de
+// entrega), turno em destaque, cards com uma ação principal grande e mínimo de
+// texto abaixo de 14 px.
+
 const REFRESH_EVENTS = ["pedido.atualizado", "pedido.novo", "entregador.atribuicao", "pedidos.limpos"];
-const PRIORITY: Record<string, number> = { a_caminho: 0, pronto_entrega: 1, em_preparo: 2, pendente: 3 };
+const PRIORITY: Record<string, number> = { a_caminho: 0, pronto_entrega: 1, no_forno: 2, confirmado: 3 };
 
 const mapsUrl = (endereco: string, lat?: number | null, lon?: number | null) =>
   lat != null && lon != null
@@ -22,20 +28,32 @@ const mapsUrl = (endereco: string, lat?: number | null, lon?: number | null) =>
     : `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(endereco)}`;
 
 // Um botão só abria direto no Google Maps (teste real: o entregador usa Waze).
-// Cada app tem o seu botão; o link do Waze abre o app quando ele está instalado.
 const wazeUrl = (endereco: string, lat?: number | null, lon?: number | null) =>
   lat != null && lon != null
     ? `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`
     : `https://waze.com/ul?q=${encodeURIComponent(endereco)}&navigate=yes`;
 
+const PAGAMENTO: Record<string, string> = { pix: "Pix", cartao: "Cartão", dinheiro: "Dinheiro" };
+const pagamentoLabel = (f?: string | null) => (f ? PAGAMENTO[f] ?? f.replaceAll("_", " ") : "Não informado");
+
+const STATUS: Record<string, { label: string; cor: string }> = {
+  confirmado: { label: "Na cozinha", cor: "bg-slate-500/20 text-slate-200" },
+  no_forno: { label: "No forno", cor: "bg-amber-400/15 text-amber-200" },
+  pronto_entrega: { label: "Pronto para retirar", cor: "bg-orange-400/15 text-orange-200" },
+  a_caminho: { label: "Em rota", cor: "bg-sky-400/15 text-sky-200" },
+};
+
+type Aba = "entregas" | "historico" | "ganhos";
+
 export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => void }) {
   const ent = user.entregador!;
   const pid = ent.pizzaria_id;
-  const [tab, setTab] = useState<"minhas" | "disponiveis">("minhas");
+  const [aba, setAba] = useState<Aba>("entregas");
+  const [lista, setLista] = useState<"minhas" | "disponiveis">("minhas");
   const [minhas, setMinhas] = useState<BackendPedido[]>([]);
   const [disponiveis, setDisponiveis] = useState<BackendPedido[]>([]);
   const [disponivel, setDisponivel] = useState(!!ent.disponivel);
-  const [resumo, setResumo] = useState<{ entregas_total: number; entregas_hoje: number } | null>(null);
+  const [resumo, setResumo] = useState<ResumoEntregador | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -52,6 +70,7 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
   const vistos = useRef<Set<string> | null>(null);
   const disponivelRef = useRef(disponivel);
   disponivelRef.current = disponivel;
+  const repasseAtivo = !!resumo?.repasse_ativo;
 
   function avisarNovidades(mine: BackendPedido[], livres: BackendPedido[]) {
     const ids = new Set([...mine, ...livres].map((p) => p.id));
@@ -85,6 +104,24 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     if (silent) setRefreshing(false);
   }
 
+  useEffect(() => {
+    setLoading(true);
+    load().finally(() => setLoading(false));
+  }, [pid]);
+
+  useEffect(() => {
+    // O status vem do callback (vale para toda reconexão).
+    const ws = connectWebSocket(pid, (ev) => {
+      if (REFRESH_EVENTS.includes(ev.tipo)) load(true);
+    }, setWsOnline);
+    return () => { ws.close(); setWsOnline(false); };
+  }, [pid]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => load(true), 30_000);
+    return () => window.clearInterval(interval);
+  }, [pid]);
+
   // Turno ligado = GPS ligado. No app, a posição segue com a tela desligada (a
   // notificação fixa do Android mantém o app vivo e as entregas continuam chegando).
   useEffect(() => {
@@ -103,14 +140,20 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     versaoNovaDisponivel().then(setVersaoNova).catch(() => {});
   }, []);
 
-  // Tela usada no celular, muitas vezes andando: tudo ~12% maior (as medidas do
-  // Tailwind são em rem). No teste real, textos e botões ficaram pequenos demais.
-  useEffect(() => {
-    const raiz = document.documentElement;
-    const antes = raiz.style.fontSize;
-    raiz.style.fontSize = "112.5%";
-    return () => { raiz.style.fontSize = antes; };
-  }, []);
+  async function toggleDisponivel() {
+    const novo = !disponivel;
+    setDisponivel(novo);
+    setBusyAvailability(true);
+    setErr(null);
+    try {
+      await entregadorApi.setDisponibilidade(pid, novo);
+    } catch {
+      setDisponivel(!novo);
+      setErr("Não foi possível alterar seu turno. Tente de novo.");
+    } finally {
+      setBusyAvailability(false);
+    }
+  }
 
   async function abrirRota() {
     setRotaAberta(true);
@@ -130,40 +173,6 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     setConfirmando(null);
     setMinhas((m) => m.filter((x) => x.id !== p.id));
     await load(true);
-  }
-
-  useEffect(() => {
-    setLoading(true);
-    load().finally(() => setLoading(false));
-  }, [pid]);
-
-  useEffect(() => {
-    // O status vem do callback (vale para toda reconexão). Os listeners antigos
-    // ficavam presos à primeira conexão: depois de reconectar, "offline" para sempre.
-    const ws = connectWebSocket(pid, (ev) => {
-      if (REFRESH_EVENTS.includes(ev.tipo)) load(true);
-    }, setWsOnline);
-    return () => { ws.close(); setWsOnline(false); };
-  }, [pid]);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => load(true), 30_000);
-    return () => window.clearInterval(interval);
-  }, [pid]);
-
-  async function toggleDisponivel() {
-    const novo = !disponivel;
-    setDisponivel(novo);
-    setBusyAvailability(true);
-    setErr(null);
-    try {
-      await entregadorApi.setDisponibilidade(pid, novo);
-    } catch {
-      setDisponivel(!novo);
-      setErr("Não foi possível alterar sua disponibilidade.");
-    } finally {
-      setBusyAvailability(false);
-    }
   }
 
   async function avancar(p: BackendPedido) {
@@ -194,7 +203,7 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     setErr(null);
     setDisponiveis((d) => d.filter((x) => x.id !== p.id));
     setMinhas((m) => [{ ...p, entregador_id: ent.id }, ...m]);
-    setTab("minhas");
+    setLista("minhas");
     try {
       await entregadorApi.pegar(pid, p.id);
       await load(true);
@@ -210,116 +219,120 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
     () => [...minhas].sort((a, b) => (PRIORITY[a.status] ?? 10) - (PRIORITY[b.status] ?? 10)),
     [minhas],
   );
-  const lista = tab === "minhas" ? minhasOrdenadas : disponiveis;
+  const cards = lista === "minhas" ? minhasOrdenadas : disponiveis;
   const emRota = minhas.filter((p) => p.status === "a_caminho").length;
   const prontas = minhas.filter((p) => p.status === "pronto_entrega").length;
 
   return (
-    <div className="min-h-screen bg-[#080b10] text-white">
-      <div className="mx-auto min-h-screen max-w-2xl pb-12">
-        <header className="sticky top-0 z-20 border-b border-white/10 bg-[#0b0f16]/95 px-4 pb-4 pt-4 backdrop-blur-xl sm:px-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="grid w-11 h-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 shadow-lg shadow-orange-950/50"><Bike className="w-5 h-5" /></span>
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-300">Central do entregador</p>
-                <h1 className="truncate text-lg font-black leading-tight">{ent.nome}</h1>
-              </div>
+    <div className="min-h-screen bg-[#07090d] text-white">
+      <div className="mx-auto min-h-screen max-w-lg pb-28">
+        {/* Topo */}
+        <header className="sticky top-0 z-20 bg-[#07090d]/95 px-4 pt-4 pb-3 backdrop-blur-xl" style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}>
+          <div className="flex items-center gap-3">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 text-xl font-black">
+              {ent.nome.slice(0, 1).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm text-slate-400">Olá,</p>
+              <h1 className="truncate text-xl font-black leading-tight">{ent.nome}</h1>
             </div>
-            <div className="flex items-center gap-1">
-              <span title={wsOnline ? "Atualizações ao vivo" : "Atualização automática"} className={`mr-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${wsOnline ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-slate-500"}`}>
-                <Signal className="w-3 h-3" />{wsOnline ? "Ao vivo" : "30 s"}
-              </span>
-              <button type="button" onClick={onLogout} className="rounded-xl p-2.5 text-slate-500 hover:bg-white/10 hover:text-white" title="Sair"><LogOut className="w-4.5 h-4.5" /></button>
-            </div>
+            <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold", wsOnline ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-slate-400")}>
+              <span className={cn("h-2 w-2 rounded-full", wsOnline ? "bg-emerald-400" : "bg-slate-500")} />
+              {wsOnline ? "Ao vivo" : "Conectando"}
+            </span>
+            <button type="button" onClick={onLogout} className="grid h-11 w-11 place-items-center rounded-2xl text-slate-400 hover:bg-white/10" aria-label="Sair">
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={toggleDisponivel}
-            disabled={busyAvailability}
-            className={cn(
-              "mt-4 flex w-full items-center justify-between rounded-2xl border px-4 py-3.5 text-left transition-all",
-              disponivel
-                ? "border-emerald-400/25 bg-emerald-400/[0.09] shadow-[0_0_30px_rgba(52,211,153,.06)]"
-                : "border-white/10 bg-white/[0.035]",
-            )}
-          >
-            <div className="flex items-center gap-3">
-              <span className={cn("grid w-9 h-9 place-items-center rounded-xl", disponivel ? "bg-emerald-400 text-emerald-950" : "bg-white/5 text-slate-500")}>
-                {busyAvailability ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
-              </span>
-              <div><p className="text-sm font-black">{disponivel ? "Você está disponível" : "Você está indisponível"}</p><p className="mt-0.5 text-sm text-slate-500">{disponivel ? "Pronto para receber novas entregas" : "Toque para iniciar seu turno"}</p></div>
-            </div>
-            <span className={cn("relative w-12 h-7 shrink-0 rounded-full", disponivel ? "bg-emerald-500" : "bg-slate-700")}><span className={cn("absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all", disponivel ? "left-6" : "left-1")} /></span>
-          </button>
         </header>
 
-        <main className="space-y-4 px-4 pt-4 sm:px-6">
-          <section className="grid grid-cols-3 gap-2.5">
-            <Summary icon={PackageCheck} label="Hoje" value={resumo?.entregas_hoje ?? 0} tone="orange" />
-            <Summary icon={Navigation} label="Em rota" value={emRota} tone="blue" />
-            <Summary icon={CheckCircle2} label="Total" value={resumo?.entregas_total ?? 0} tone="green" />
-          </section>
-
+        <main className="space-y-4 px-4">
           {versaoNova && (
-            <button type="button" onClick={() => abrirExterno(APK_URL)} className="flex w-full items-center gap-3 rounded-2xl border border-sky-400/25 bg-sky-400/10 px-4 py-3 text-left">
-              <Download className="w-4 h-4 shrink-0 text-sky-300" />
-              <span className="text-sm"><strong>Nova versão do app ({versaoNova}).</strong> <span className="text-slate-400">Toque para baixar e instalar.</span></span>
+            <button type="button" onClick={() => abrirExterno(APK_URL)} className="flex w-full items-center gap-3 rounded-2xl border border-sky-400/30 bg-sky-400/10 p-4 text-left">
+              <Download className="h-5 w-5 shrink-0 text-sky-300" />
+              <span className="text-base"><strong>Nova versão do app ({versaoNova})</strong><span className="block text-sm text-slate-300">Toque para baixar e instalar.</span></span>
             </button>
           )}
 
-          {err && <div className="flex items-start gap-2 rounded-2xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-200"><AlertCircle className="mt-0.5 w-4 h-4 shrink-0" />{err}</div>}
-
-          {gpsErro && disponivel && (
-            <div className="rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-sm text-amber-200">
-              <p className="flex items-start gap-2"><MapPin className="mt-0.5 w-4 h-4 shrink-0" />{gpsErro}</p>
-              {ehApp() && <button type="button" onClick={() => abrirConfiguracoesDoApp()} className="mt-2 rounded-xl bg-amber-400 px-3 py-1.5 text-xs font-black text-amber-950">Abrir configurações</button>}
+          {err && (
+            <div className="flex items-start gap-3 rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-base text-rose-100">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+              <span className="flex-1">{err}</span>
+              <button type="button" onClick={() => setErr(null)} aria-label="Fechar aviso"><X className="h-5 w-5" /></button>
             </div>
           )}
 
-          {(emRota > 0 || prontas > 0) && (
-            <section className="rounded-2xl border border-orange-400/20 bg-gradient-to-r from-orange-400/10 to-transparent px-4 py-3">
-              <div className="flex items-center gap-3">
-                <span className="grid w-9 h-9 place-items-center rounded-xl bg-orange-400/15 text-orange-300"><Route className="w-4 h-4" /></span>
-                <div className="min-w-0 flex-1"><p className="text-sm font-bold">{emRota ? `${emRota} entrega${emRota > 1 ? "s" : ""} em andamento` : `${prontas} pedido${prontas > 1 ? "s" : ""} pronto${prontas > 1 ? "s" : ""}`}</p><p className="mt-0.5 text-sm text-slate-500">{emRota ? "Conclua a rota atual antes de seguir." : "Retire na pizzaria e inicie a rota."}</p></div>
-                <button type="button" onClick={abrirRota} className="shrink-0 rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white">Ver rota</button>
-              </div>
-            </section>
-          )}
+          {aba === "entregas" && (
+            <>
+              <Turno disponivel={disponivel} busy={busyAvailability} onToggle={toggleDisponivel} />
 
-          <section>
-            <div className="flex items-center gap-2">
-              <div className="grid flex-1 grid-cols-2 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
-                <Tab active={tab === "minhas"} onClick={() => setTab("minhas")} label="Minha rota" count={minhas.length} />
-                <Tab active={tab === "disponiveis"} onClick={() => setTab("disponiveis")} label="Disponíveis" count={disponiveis.length} />
-              </div>
-              <button type="button" onClick={() => load(true)} disabled={refreshing} className="grid w-11 h-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.035] text-slate-400 hover:bg-white/10 hover:text-white" title="Atualizar">
-                <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
-              </button>
-            </div>
-            {tab === "disponiveis" && !disponivel && <p className="mt-2 rounded-xl bg-amber-400/10 px-3 py-2 text-center text-xs font-semibold text-amber-300">Fique disponível para poder assumir uma entrega.</p>}
-          </section>
+              {gpsErro && disponivel && (
+                <div className="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-base text-amber-100">
+                  <p className="flex items-start gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0" />{gpsErro}</p>
+                  {ehApp() && <button type="button" onClick={() => abrirConfiguracoesDoApp()} className="mt-3 h-11 rounded-xl bg-amber-400 px-4 text-sm font-black text-amber-950">Abrir configurações</button>}
+                </div>
+              )}
 
-          <section className="space-y-3">
-            {loading ? <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-orange-400" /></div>
-            : lista.length === 0 ? <Empty tab={tab} />
-            : lista.map((p, index) => (
-                <div key={p.id}>
-                  <DriverCard
-                  pedido={p}
-                  mode={tab}
-                  position={index + 1}
-                  busy={busyId === p.id}
-                  canClaim={disponivel}
-                  onAvancar={() => avancar(p)}
-                  onPegar={() => pegar(p)}
-                />
+              <section className="grid grid-cols-3 gap-3">
+                <Numero label="Hoje" valor={String(resumo?.entregas_hoje ?? 0)} sub={resumo?.entregas_hoje === 1 ? "entrega" : "entregas"} />
+                <Numero label="Em rota" valor={String(emRota)} sub={emRota === 1 ? "pedido" : "pedidos"} destaque={emRota > 0} />
+                {repasseAtivo
+                  ? <Numero label="Ganhos hoje" valor={brl(resumo?.ganhos_hoje ?? 0)} verde />
+                  : <Numero label="Total" valor={String(resumo?.entregas_total ?? 0)} sub="entregas" />}
+              </section>
+
+              {(emRota > 0 || prontas > 0) && (
+                <section className="flex items-center gap-3 rounded-3xl border border-orange-400/25 bg-orange-400/10 p-4">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-orange-400/20 text-orange-300"><Route className="h-6 w-6" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-base font-bold">{emRota ? `${emRota} entrega${emRota > 1 ? "s" : ""} em rota` : `${prontas} pronta${prontas > 1 ? "s" : ""} para retirar`}</p>
+                    <p className="text-sm text-slate-300">{emRota ? "Siga a ordem da rota." : "Retire na pizzaria e inicie a rota."}</p>
                   </div>
-              ))}
-          </section>
+                  <button type="button" onClick={abrirRota} className="h-12 shrink-0 rounded-2xl bg-orange-500 px-4 text-base font-black">Ver rota</button>
+                </section>
+              )}
+
+              <section className="flex items-center gap-2">
+                <div className="grid flex-1 grid-cols-2 rounded-2xl bg-white/[0.05] p-1">
+                  <Segmento ativo={lista === "minhas"} onClick={() => setLista("minhas")} label="Minhas" n={minhas.length} />
+                  <Segmento ativo={lista === "disponiveis"} onClick={() => setLista("disponiveis")} label="Disponíveis" n={disponiveis.length} />
+                </div>
+                <button type="button" onClick={() => load(true)} disabled={refreshing} className="grid h-14 w-14 place-items-center rounded-2xl bg-white/[0.05] text-slate-300" aria-label="Atualizar">
+                  <RefreshCw className={cn("h-5 w-5", refreshing && "animate-spin")} />
+                </button>
+              </section>
+              {lista === "disponiveis" && !disponivel && (
+                <p className="rounded-2xl bg-amber-400/10 p-3 text-center text-base font-semibold text-amber-200">Comece o turno para assumir entregas.</p>
+              )}
+
+              <section className="space-y-4">
+                {loading ? <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-orange-400" /></div>
+                  : cards.length === 0 ? <Vazio lista={lista} />
+                  : cards.map((p) => (
+                    <div key={p.id}>
+                      <CardEntrega
+                        pedido={p}
+                        modo={lista}
+                        busy={busyId === p.id}
+                        podeAssumir={disponivel}
+                        onAvancar={() => avancar(p)}
+                        onPegar={() => pegar(p)}
+                      />
+                    </div>
+                  ))}
+              </section>
+            </>
+          )}
+
+          {aba === "historico" && <Historico pid={pid} />}
+          {aba === "ganhos" && <Ganhos resumo={resumo} pid={pid} />}
+
+          <p className="pt-2 text-center text-xs text-slate-600">Versão da tela {__VERSAO_TELA__}</p>
         </main>
       </div>
+
+      <NavInferior aba={aba} onAba={(a) => { setAba(a); window.scrollTo({ top: 0 }); }} mostrarGanhos={repasseAtivo} ativas={minhas.length} />
+
       {rotaAberta && <RotaSheet rota={rota} carregando={carregandoRota} onFechar={() => setRotaAberta(false)} />}
       {confirmando && (
         <ConfirmarEntrega pedido={confirmando} onFechar={() => setConfirmando(null)} onConfirmar={(c) => confirmarEntrega(confirmando, c)} />
@@ -328,47 +341,336 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
   );
 }
 
+function Turno({ disponivel, busy, onToggle }: { disponivel: boolean; busy: boolean; onToggle: () => void }) {
+  if (!disponivel) {
+    return (
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+        <p className="text-lg font-black">Você está fora do turno</p>
+        <p className="mt-1 text-base text-slate-400">Comece o turno para receber entregas e aparecer para a pizzaria.</p>
+        <button type="button" onClick={onToggle} disabled={busy} className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 text-lg font-black disabled:opacity-60">
+          {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Power className="h-5 w-5" />}Começar turno
+        </button>
+      </section>
+    );
+  }
+  return (
+    <section className="flex items-center gap-4 rounded-3xl border border-emerald-400/25 bg-emerald-400/10 p-4">
+      <span className="relative grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-400 text-emerald-950">
+        <Bike className="h-6 w-6" />
+        <span className="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 animate-pulse rounded-full border-2 border-[#07090d] bg-emerald-300" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-lg font-black text-emerald-100">Você está online</p>
+        <p className="text-sm text-emerald-200/80">Recebendo entregas</p>
+      </div>
+      <button type="button" onClick={onToggle} disabled={busy} className="h-11 shrink-0 rounded-xl border border-white/15 px-3 text-sm font-bold text-slate-200 disabled:opacity-60">
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Encerrar"}
+      </button>
+    </section>
+  );
+}
+
+function Numero({ label, valor, sub, destaque, verde }: { label: string; valor: string; sub?: string; destaque?: boolean; verde?: boolean }) {
+  return (
+    <div className={cn("rounded-2xl p-3.5", destaque ? "bg-sky-400/15" : "bg-white/[0.05]")}>
+      <p className="text-sm text-slate-400">{label}</p>
+      <p className={cn("mt-1 truncate text-2xl font-black leading-tight", verde && "text-emerald-300", destaque && "text-sky-200")}>{valor}</p>
+      {sub && <p className="text-sm text-slate-500">{sub}</p>}
+    </div>
+  );
+}
+
+function Segmento({ ativo, onClick, label, n }: { ativo: boolean; onClick: () => void; label: string; n: number }) {
+  return (
+    <button type="button" onClick={onClick} className={cn("flex h-12 items-center justify-center gap-2 rounded-xl text-base font-bold", ativo ? "bg-orange-500 text-white" : "text-slate-400")}>
+      {label}
+      <span className={cn("min-w-6 rounded-full px-1.5 text-sm", ativo ? "bg-white/25" : "bg-white/10")}>{n}</span>
+    </button>
+  );
+}
+
+function Vazio({ lista }: { lista: "minhas" | "disponiveis" }) {
+  return (
+    <div className="rounded-3xl border border-dashed border-white/15 px-6 py-14 text-center">
+      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-white/[0.05] text-slate-500"><Package className="h-8 w-8" /></span>
+      <p className="mt-4 text-lg font-bold text-slate-200">{lista === "minhas" ? "Nenhuma entrega com você" : "Nenhuma entrega disponível"}</p>
+      <p className="mx-auto mt-1 max-w-xs text-base text-slate-400">
+        {lista === "minhas" ? "As entregas atribuídas a você aparecem aqui na hora." : "Quando um pedido ficar pronto, ele aparece aqui."}
+      </p>
+    </div>
+  );
+}
+
+function CardEntrega({ pedido: p, modo, busy, podeAssumir, onAvancar, onPegar }: {
+  pedido: BackendPedido;
+  modo: "minhas" | "disponiveis";
+  busy: boolean;
+  podeAssumir: boolean;
+  onAvancar: () => void;
+  onPegar: () => void;
+}) {
+  const [itensAbertos, setItensAbertos] = useState(false);
+  const tel = p.cliente?.telefone;
+  const endereco = p.endereco_entrega || "Endereço não informado";
+  const aCaminho = p.status === "a_caminho";
+  const pronto = p.status === "pronto_entrega";
+  const status = STATUS[p.status] ?? { label: p.status, cor: "bg-white/10 text-slate-200" };
+  const n = itemCount(p.itens);
+  const cobrarNaEntrega = p.payment_status !== "paid" && p.payment_status !== "approved";
+
+  return (
+    <article className={cn("overflow-hidden rounded-3xl border bg-[#10141c]", aCaminho ? "border-sky-400/40" : "border-white/10")}>
+      <div className="flex items-center justify-between gap-3 px-5 pt-5">
+        <p className="text-2xl font-black">#{p.numero_pedido ?? "—"}</p>
+        <span className={cn("rounded-full px-3 py-1.5 text-sm font-bold", status.cor)}>{status.label}</span>
+      </div>
+
+      <div className="space-y-4 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-lg font-bold">{p.cliente?.nome || "Cliente"}</p>
+            <p className="text-base text-slate-400">{n} {n === 1 ? "item" : "itens"}</p>
+          </div>
+          {tel && (
+            <button type="button" onClick={() => abrirExterno(`tel:+${tel.replace(/\D/g, "")}`)} className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-400/15 text-emerald-300" aria-label="Ligar para o cliente">
+              <Phone className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+
+        <div className="rounded-2xl bg-white/[0.05] p-4">
+          <p className="flex items-start gap-2.5 text-base font-semibold leading-snug"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-sky-300" />{endereco}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => abrirExterno(mapsUrl(endereco, p.endereco_lat, p.endereco_lon))} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-white/10 text-base font-bold"><Navigation className="h-5 w-5" />Maps</button>
+            <button type="button" onClick={() => abrirExterno(wazeUrl(endereco, p.endereco_lat, p.endereco_lon))} className="flex h-12 items-center justify-center gap-2 rounded-xl bg-[#33ccff] text-base font-black text-[#062a3a]"><Navigation className="h-5 w-5" />Waze</button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between rounded-2xl bg-white/[0.05] p-4">
+          <div>
+            <p className="text-sm text-slate-400">{cobrarNaEntrega ? "Cobrar na entrega" : "Já pago"}</p>
+            <p className="text-base font-bold">{pagamentoLabel(p.forma_pagamento)}</p>
+          </div>
+          <p className={cn("text-2xl font-black", cobrarNaEntrega ? "text-amber-200" : "text-emerald-300")}>{brl(p.valor_total)}</p>
+        </div>
+
+        {p.observacoes && (
+          <p className="rounded-2xl bg-amber-400/10 p-4 text-base leading-snug text-amber-100"><strong>Observação:</strong> {p.observacoes}</p>
+        )}
+
+        <button type="button" onClick={() => setItensAbertos(!itensAbertos)} className="flex w-full items-center justify-between rounded-2xl bg-white/[0.03] px-4 py-3 text-base font-semibold text-slate-300">
+          Itens do pedido
+          <ChevronDown className={cn("h-5 w-5 transition-transform", itensAbertos && "rotate-180")} />
+        </button>
+        {itensAbertos && (
+          <ul className="-mt-2 space-y-2 px-2">
+            {(p.itens || []).map((it, idx) => (
+              <li key={idx} className="flex gap-2 text-base"><span className="font-black text-orange-300">{Number(it.quantidade ?? 1)}×</span><span className="text-slate-200">{it.nome}</span></li>
+            ))}
+          </ul>
+        )}
+
+        {modo === "disponiveis" ? (
+          <Acao icone={Hand} label={podeAssumir ? "Assumir esta entrega" : "Comece o turno para assumir"} busy={busy} disabled={!podeAssumir} onClick={onPegar} tom="laranja" />
+        ) : aCaminho ? (
+          <Acao icone={CheckCircle2} label="Confirmar entrega" busy={busy} onClick={onAvancar} tom="verde" />
+        ) : pronto ? (
+          <Acao icone={Bike} label="Retirei, iniciar rota" busy={busy} onClick={onAvancar} tom="azul" />
+        ) : (
+          <Acao icone={Clock3} label="Aguardando a cozinha" busy={false} disabled onClick={onAvancar} tom="neutro" />
+        )}
+      </div>
+    </article>
+  );
+}
+
+function Acao({ icone: Icone, label, busy, disabled, onClick, tom }: {
+  icone: any; label: string; busy: boolean; disabled?: boolean; onClick: () => void; tom: "laranja" | "azul" | "verde" | "neutro";
+}) {
+  const cores = { laranja: "bg-orange-500 text-white", azul: "bg-sky-400 text-sky-950", verde: "bg-emerald-400 text-emerald-950", neutro: "bg-white/5 text-slate-400" };
+  return (
+    <button type="button" onClick={onClick} disabled={disabled || busy} className={cn("flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-lg font-black", cores[tom], (disabled || busy) && "opacity-60")}>
+      {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icone className="h-5 w-5" />}{label}
+    </button>
+  );
+}
+
+function NavInferior({ aba, onAba, mostrarGanhos, ativas }: { aba: Aba; onAba: (a: Aba) => void; mostrarGanhos: boolean; ativas: number }) {
+  const itens: Array<{ id: Aba; label: string; icone: any }> = [
+    { id: "entregas", label: "Entregas", icone: Package },
+    { id: "historico", label: "Histórico", icone: History },
+    ...(mostrarGanhos ? [{ id: "ganhos" as Aba, label: "Ganhos", icone: Wallet }] : []),
+  ];
+  return (
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-[#0b0e14]/95 backdrop-blur-xl" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+      <div className="mx-auto flex max-w-lg">
+        {itens.map(({ id, label, icone: Icone }) => (
+          <button key={id} type="button" onClick={() => onAba(id)} className={cn("relative flex h-16 flex-1 flex-col items-center justify-center gap-1 text-sm font-semibold", aba === id ? "text-orange-400" : "text-slate-400")}>
+            <Icone className="h-6 w-6" />
+            {label}
+            {id === "entregas" && ativas > 0 && (
+              <span className="absolute right-[calc(50%-1.6rem)] top-2 min-w-5 rounded-full bg-orange-500 px-1 text-center text-xs font-black text-white">{ativas}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+const diaDe = (iso: string | null) => {
+  if (!iso) return "Sem data";
+  const d = new Date(iso);
+  const hoje = new Date();
+  const ontem = new Date(); ontem.setDate(hoje.getDate() - 1);
+  if (d.toDateString() === hoje.toDateString()) return "Hoje";
+  if (d.toDateString() === ontem.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+};
+
+function Historico({ pid }: { pid: string }) {
+  const [dados, setDados] = useState<HistoricoEntregador | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  useEffect(() => {
+    entregadorApi.historico(pid, 30).then(setDados).catch((e) => setErro(e.message || "Não foi possível carregar o histórico."));
+  }, [pid]);
+
+  const grupos = useMemo(() => {
+    const m = new Map<string, EntregaHistorico[]>();
+    for (const e of dados?.entregas ?? []) {
+      const k = diaDe(e.entregue_em);
+      m.set(k, [...(m.get(k) ?? []), e]);
+    }
+    return [...m.entries()];
+  }, [dados]);
+
+  if (erro) return <p className="rounded-2xl bg-rose-400/10 p-4 text-base text-rose-100">{erro}</p>;
+  if (!dados) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-orange-400" /></div>;
+
+  const total = dados.entregas.reduce((s, e) => s + (e.repasse ?? 0), 0);
+  return (
+    <section className="space-y-5">
+      <div>
+        <h2 className="text-2xl font-black">Histórico</h2>
+        <p className="text-base text-slate-400">
+          Últimos 30 dias · {dados.entregas.length} {dados.entregas.length === 1 ? "entrega" : "entregas"}
+          {dados.repasse_ativo && ` · ${brl(total)}`}
+        </p>
+      </div>
+      {grupos.length === 0 ? (
+        <div className="rounded-3xl border border-dashed border-white/15 px-6 py-14 text-center">
+          <History className="mx-auto h-10 w-10 text-slate-500" />
+          <p className="mt-3 text-lg font-bold text-slate-200">Nenhuma entrega ainda</p>
+          <p className="mt-1 text-base text-slate-400">As entregas que você concluir aparecem aqui.</p>
+        </div>
+      ) : grupos.map(([dia, itens]) => (
+        <div key={dia}>
+          <div className="mb-2 flex items-baseline justify-between px-1">
+            <p className="text-base font-bold capitalize text-slate-200">{dia}</p>
+            <p className="text-sm text-slate-400">
+              {itens.length} {itens.length === 1 ? "entrega" : "entregas"}
+              {dados.repasse_ativo && ` · ${brl(itens.reduce((s, e) => s + (e.repasse ?? 0), 0))}`}
+            </p>
+          </div>
+          <ul className="divide-y divide-white/10 overflow-hidden rounded-3xl bg-[#10141c]">
+            {itens.map((e) => (
+              <li key={e.pedido_id} className="flex items-center gap-3 p-4">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-400/15 text-emerald-300"><CheckCircle2 className="h-5 w-5" /></span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-base font-bold">#{e.numero_pedido ?? "—"} · {e.cliente || "Cliente"}</p>
+                  <p className="truncate text-sm text-slate-400">{e.endereco || "Sem endereço"}</p>
+                  <p className="text-sm text-slate-500">
+                    {e.entregue_em ? new Date(e.entregue_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : ""} · {pagamentoLabel(e.forma_pagamento)} {brl(e.valor_total)}
+                  </p>
+                </div>
+                {dados.repasse_ativo && e.repasse != null && (
+                  <p className="shrink-0 text-lg font-black text-emerald-300">+{brl(e.repasse)}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function Ganhos({ resumo, pid }: { resumo: ResumoEntregador | null; pid: string }) {
+  const [atual, setAtual] = useState(resumo);
+  useEffect(() => { entregadorApi.resumo(pid).then(setAtual).catch(() => {}); }, [pid]);
+  const r = atual ?? resumo;
+  if (!r?.repasse_ativo) {
+    return <p className="rounded-2xl bg-white/[0.05] p-5 text-base text-slate-300">A pizzaria não usa valor por entrega no app.</p>;
+  }
+  return (
+    <section className="space-y-4">
+      <h2 className="text-2xl font-black">Ganhos</h2>
+      <div className="rounded-3xl bg-gradient-to-br from-emerald-500/25 to-emerald-500/5 p-6">
+        <p className="text-base text-emerald-100/80">Hoje</p>
+        <p className="mt-1 text-4xl font-black text-emerald-200">{brl(r.ganhos_hoje ?? 0)}</p>
+        <p className="mt-1 text-base text-emerald-100/80">{r.entregas_hoje} {r.entregas_hoje === 1 ? "entrega" : "entregas"}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-2xl bg-white/[0.05] p-4">
+          <p className="text-sm text-slate-400">Últimos 7 dias</p>
+          <p className="mt-1 text-2xl font-black">{brl(r.ganhos_semana ?? 0)}</p>
+          <p className="text-sm text-slate-500">{r.entregas_semana ?? 0} entregas</p>
+        </div>
+        <div className="rounded-2xl bg-white/[0.05] p-4">
+          <p className="text-sm text-slate-400">Total</p>
+          <p className="mt-1 text-2xl font-black">{brl(r.ganhos_total ?? 0)}</p>
+          <p className="text-sm text-slate-500">{r.entregas_total} entregas</p>
+        </div>
+      </div>
+      <div className="rounded-2xl bg-white/[0.05] p-4 text-base text-slate-300">
+        <p>Valor por entrega: <strong className="text-white">{brl(r.repasse_valor ?? 0)}</strong></p>
+        <p className="mt-1 text-sm text-slate-400">O acerto dos valores é feito com a pizzaria.</p>
+      </div>
+    </section>
+  );
+}
+
 /** Paradas em ordem (coleta primeiro, se houver) e os atalhos para o Maps/Waze. */
 function RotaSheet({ rota, carregando, onFechar }: { rota: RotaEntregador | null; carregando: boolean; onFechar: () => void }) {
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 sm:items-center" onClick={onFechar}>
-      <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0e131b] p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70" onClick={onFechar}>
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-[#0e131b] p-5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-300">Sua rota</p>
-            <h2 className="text-lg font-black">{rota ? `${rota.paradas.length} parada${rota.paradas.length === 1 ? "" : "s"} · ~${rota.distancia_km} km` : "Montando a rota…"}</h2>
+            <p className="text-sm font-bold uppercase tracking-wide text-orange-300">Sua rota</p>
+            <h2 className="text-2xl font-black">{rota ? `${rota.paradas.length} parada${rota.paradas.length === 1 ? "" : "s"} · ~${rota.distancia_km} km` : "Montando a rota…"}</h2>
           </div>
-          <button type="button" onClick={onFechar} className="rounded-xl p-2 text-slate-400 hover:bg-white/10" aria-label="Fechar"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onFechar} className="grid h-11 w-11 place-items-center rounded-2xl text-slate-300 hover:bg-white/10" aria-label="Fechar"><X className="h-6 w-6" /></button>
         </div>
         {carregando || !rota ? (
-          <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-orange-400" /></div>
+          <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-orange-400" /></div>
         ) : rota.paradas.length === 0 ? (
-          <p className="py-10 text-center text-sm text-slate-400">Nenhuma entrega pronta ou em rota agora.</p>
+          <p className="py-10 text-center text-base text-slate-400">Nenhuma entrega pronta ou em rota agora.</p>
         ) : (
           <>
-            <ol className="mt-4 space-y-2">
+            <ol className="mt-4 space-y-3">
               {rota.paradas.map((p, i) => (
-                <li key={p.pedido_id || `coleta-${i}`} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
-                  <span className={cn("grid w-7 h-7 shrink-0 place-items-center rounded-lg text-xs font-black", p.tipo === "coleta" ? "bg-orange-500 text-white" : "bg-sky-400 text-sky-950")}>
-                    {p.tipo === "coleta" ? <Store className="w-3.5 h-3.5" /> : i + (rota.paradas[0]?.tipo === "coleta" ? 0 : 1)}
+                <li key={p.pedido_id || `coleta-${i}`} className="flex items-start gap-3 rounded-2xl bg-white/[0.05] p-4">
+                  <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl text-base font-black", p.tipo === "coleta" ? "bg-orange-500 text-white" : "bg-sky-400 text-sky-950")}>
+                    {p.tipo === "coleta" ? <Store className="h-5 w-5" /> : i + (rota.paradas[0]?.tipo === "coleta" ? 0 : 1)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold">{p.tipo === "coleta" ? `Coleta · ${p.nome}` : `#${p.numero_pedido ?? "—"} · ${p.cliente || "Cliente"}`}</p>
-                    <p className="mt-0.5 break-words text-xs text-slate-400">{p.endereco || "Endereço não informado"}</p>
+                    <p className="text-base font-bold">{p.tipo === "coleta" ? `Retirar na ${p.nome}` : `#${p.numero_pedido ?? "—"} · ${p.cliente || "Cliente"}`}</p>
+                    <p className="mt-0.5 break-words text-sm text-slate-300">{p.endereco || "Endereço não informado"}</p>
                     {p.distancia_km != null && <p className="mt-0.5 text-sm text-slate-500">~{p.distancia_km} km da parada anterior</p>}
                   </div>
                   {p.waze_url && (
-                    <button type="button" onClick={() => abrirExterno(p.waze_url!)} className="shrink-0 rounded-xl border border-white/10 px-2.5 py-1.5 text-sm font-bold text-slate-200">Waze</button>
+                    <button type="button" onClick={() => abrirExterno(p.waze_url!)} className="h-11 shrink-0 rounded-xl bg-[#33ccff] px-3 text-sm font-black text-[#062a3a]">Waze</button>
                   )}
                 </li>
               ))}
             </ol>
             {rota.sem_coordenada > 0 && (
-              <p className="mt-3 text-sm text-amber-300">{rota.sem_coordenada} endereço(s) sem localização exata: a ordem delas é a de atribuição.</p>
+              <p className="mt-3 text-sm text-amber-200">{rota.sem_coordenada} endereço(s) sem localização exata: ficaram no fim da lista.</p>
             )}
             {rota.google_maps_url && (
-              <button type="button" onClick={() => abrirExterno(rota.google_maps_url!)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-400 px-4 py-3.5 text-sm font-black text-sky-950">
-                <Navigation className="w-4 h-4" />Abrir rota completa no Google Maps
+              <button type="button" onClick={() => abrirExterno(rota.google_maps_url!)} className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-sky-400 text-lg font-black text-sky-950">
+                <Navigation className="h-5 w-5" />Rota completa no Google Maps
               </button>
             )}
             <p className="mt-2 text-center text-sm text-slate-500">
@@ -408,135 +710,38 @@ function ConfirmarEntrega({ pedido, onFechar, onConfirmar }: {
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70 sm:items-center" onClick={onFechar}>
-      <form className="w-full max-w-md rounded-t-3xl border border-white/10 bg-[#0e131b] p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/70" onClick={onFechar}>
+      <form className="w-full max-w-lg rounded-t-3xl bg-[#0e131b] p-5" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }} onClick={(e) => e.stopPropagation()}
         onSubmit={(e) => { e.preventDefault(); enviar(); }}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">Confirmar entrega</p>
-            <h2 className="text-lg font-black">Pedido #{pedido.numero_pedido ?? "—"} · {pedido.cliente?.nome || "Cliente"}</h2>
+            <p className="text-sm font-bold uppercase tracking-wide text-emerald-300">Confirmar entrega</p>
+            <h2 className="text-2xl font-black">#{pedido.numero_pedido ?? "—"} · {pedido.cliente?.nome || "Cliente"}</h2>
           </div>
-          <button type="button" onClick={onFechar} className="rounded-xl p-2 text-slate-400 hover:bg-white/10" aria-label="Fechar"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onFechar} className="grid h-11 w-11 place-items-center rounded-2xl text-slate-300 hover:bg-white/10" aria-label="Fechar"><X className="h-6 w-6" /></button>
         </div>
         {!semCodigo ? (
           <>
-            <label htmlFor="codigo-entrega" className="mt-4 flex items-center gap-2 text-sm text-slate-300"><KeyRound className="w-4 h-4 text-emerald-300" />Peça ao cliente o código que ele recebeu no WhatsApp</label>
+            <label htmlFor="codigo-entrega" className="mt-5 flex items-start gap-2 text-base text-slate-200"><KeyRound className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />Peça ao cliente o código de 4 números que ele recebeu no WhatsApp.</label>
             <input id="codigo-entrega" inputMode="numeric" autoComplete="one-time-code" maxLength={4} autoFocus value={codigo}
               onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 4))}
-              className="mt-3 w-full rounded-2xl border border-white/15 bg-black/30 py-4 text-center font-mono text-3xl font-black tracking-[0.6em] text-white outline-none focus:border-emerald-400" placeholder="····" />
-            <button type="button" onClick={() => setSemCodigo(true)} className="mt-3 text-xs font-semibold text-slate-400 underline">O cliente não tem o código</button>
+              className="mt-3 w-full rounded-2xl border border-white/15 bg-black/30 py-5 text-center font-mono text-4xl font-black tracking-[0.6em] text-white outline-none focus:border-emerald-400" placeholder="····" />
+            <button type="button" onClick={() => setSemCodigo(true)} className="mt-3 h-11 text-base font-semibold text-slate-300 underline">O cliente não tem o código</button>
           </>
         ) : (
           <>
-            <label htmlFor="motivo-sem-codigo" className="mt-4 block text-sm text-slate-300">Por que está confirmando sem o código? Fica registrado no pedido.</label>
+            <label htmlFor="motivo-sem-codigo" className="mt-5 block text-base text-slate-200">Por que está confirmando sem o código? Fica registrado no pedido.</label>
             <textarea id="motivo-sem-codigo" autoFocus rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)}
               placeholder="Ex.: cliente sem celular, entreguei para o porteiro"
-              className="mt-3 w-full rounded-2xl border border-white/15 bg-black/30 p-3 text-sm text-white outline-none focus:border-amber-400" />
-            <button type="button" onClick={() => setSemCodigo(false)} className="mt-2 text-xs font-semibold text-slate-400 underline">Voltar e digitar o código</button>
+              className="mt-3 w-full rounded-2xl border border-white/15 bg-black/30 p-4 text-base text-white outline-none focus:border-amber-400" />
+            <button type="button" onClick={() => setSemCodigo(false)} className="mt-2 h-11 text-base font-semibold text-slate-300 underline">Voltar e digitar o código</button>
           </>
         )}
-        {erro && <p className="mt-3 rounded-xl bg-rose-400/10 px-3 py-2 text-sm text-rose-200">{erro}</p>}
-        <button type="submit" disabled={!pronto || enviando} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-4 py-3.5 text-sm font-black text-emerald-950 disabled:opacity-50">
-          {enviando ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}Confirmar entrega
+        {erro && <p className="mt-3 rounded-2xl bg-rose-400/10 p-3 text-base text-rose-100">{erro}</p>}
+        <button type="submit" disabled={!pronto || enviando} className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-400 text-lg font-black text-emerald-950 disabled:opacity-50">
+          {enviando ? <Loader2 className="h-5 w-5 animate-spin" /> : <CheckCircle2 className="h-5 w-5" />}Confirmar entrega
         </button>
       </form>
     </div>
   );
-}
-
-function Summary({ icon: Icon, label, value, tone }: { icon: any; label: string; value: number; tone: "orange" | "blue" | "green" }) {
-  const color = { orange: "text-orange-300 bg-orange-400/10", blue: "text-sky-300 bg-sky-400/10", green: "text-emerald-300 bg-emerald-400/10" }[tone];
-  return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3"><span className={cn("grid w-7 h-7 place-items-center rounded-lg", color)}><Icon className="w-3.5 h-3.5" /></span><p className="mt-3 text-xl font-black">{value}</p><p className="text-xs font-bold uppercase tracking-wider text-slate-600">{label}</p></div>;
-}
-
-function Tab({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
-  return <button type="button" onClick={onClick} className={cn("flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition", active ? "bg-orange-500 text-white shadow-lg shadow-orange-950/30" : "text-slate-500 hover:text-slate-300")}><span>{label}</span><span className={cn("rounded-full px-1.5 py-0.5 text-xs", active ? "bg-white/20" : "bg-white/5")}>{count}</span></button>;
-}
-
-function Empty({ tab }: { tab: "minhas" | "disponiveis" }) {
-  return <div className="rounded-3xl border border-dashed border-white/10 px-6 py-16 text-center"><span className="mx-auto grid w-14 h-14 place-items-center rounded-2xl bg-white/[0.035] text-slate-700"><Bike className="w-6 h-6" /></span><p className="mt-4 text-sm font-bold text-slate-300">{tab === "minhas" ? "Sua rota está livre" : "Nenhuma entrega disponível"}</p><p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-slate-600">{tab === "minhas" ? "Novas entregas atribuídas aparecerão aqui automaticamente." : "Assim que um pedido estiver pronto, ele aparecerá nesta lista."}</p></div>;
-}
-
-function DriverCard({ pedido: p, mode, position, busy, canClaim, onAvancar, onPegar }: {
-  pedido: BackendPedido;
-  mode: "minhas" | "disponiveis";
-  position: number;
-  busy: boolean;
-  canClaim: boolean;
-  onAvancar: () => void;
-  onPegar: () => void;
-}) {
-  const tel = p.cliente?.telefone;
-  const endereco = p.endereco_entrega || "Endereço não informado";
-  const aCaminho = p.status === "a_caminho";
-  const pronto = p.status === "pronto_entrega";
-  const aguardando = mode === "minhas" && !aCaminho && !pronto;
-  const pagamento = (p.forma_pagamento || "Não informado").replaceAll("_", " ");
-
-  return (
-    <article className={cn("overflow-hidden rounded-3xl border bg-white/[0.035]", aCaminho ? "border-sky-400/30 shadow-[0_0_35px_rgba(56,189,248,.06)]" : "border-white/10")}>
-      <div className="flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-3.5">
-        <div className="flex items-center gap-2.5"><span className={cn("grid w-7 h-7 place-items-center rounded-lg text-xs font-black", aCaminho ? "bg-sky-400 text-sky-950" : "bg-orange-400/15 text-orange-300")}>{position}</span><div><p className="text-xs font-bold uppercase tracking-wider text-slate-600">Pedido</p><p className="text-sm font-black">#{p.numero_pedido ?? "—"}</p></div></div>
-        <OrderStatusBadge status={p.status} />
-      </div>
-
-      <div className="space-y-4 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0"><p className="text-base font-black">{p.cliente?.nome || "Cliente"}</p><p className="mt-1 text-xs text-slate-500">{itemCount(p.itens)} item{itemCount(p.itens) === 1 ? "" : "s"} no pedido</p></div>
-          {tel && <button type="button" onClick={() => abrirExterno(`tel:+${tel.replace(/\D/g, "")}`)} className="grid w-10 h-10 shrink-0 place-items-center rounded-xl border border-emerald-400/20 bg-emerald-400/10 text-emerald-300" aria-label="Ligar para cliente"><Phone className="w-4 h-4" /></button>}
-        </div>
-
-        <div className="rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] p-3.5">
-          <div className="flex items-start gap-2.5"><MapPin className="mt-0.5 w-4 h-4 shrink-0 text-sky-300" /><p className="flex-1 break-words text-sm font-semibold leading-snug text-slate-200">{endereco}</p></div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => abrirExterno(mapsUrl(endereco, p.endereco_lat, p.endereco_lon))} className="flex items-center justify-center gap-2 rounded-xl bg-sky-400 px-3 py-3 text-sm font-black text-sky-950"><Navigation className="w-4 h-4" />Google Maps</button>
-            <button type="button" onClick={() => abrirExterno(wazeUrl(endereco, p.endereco_lat, p.endereco_lon))} className="flex items-center justify-center gap-2 rounded-xl bg-[#33ccff] px-3 py-3 text-sm font-black text-[#062a3a]"><Navigation className="w-4 h-4" />Waze</button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <Info icon={WalletCards} label="Pagamento" value={pagamento} />
-          <Info icon={PackageCheck} label="Total" value={brl(p.valor_total)} accent />
-        </div>
-
-        <details className="group rounded-2xl border border-white/[0.07] bg-black/20">
-          <summary className="flex cursor-pointer list-none items-center justify-between px-3.5 py-3 text-xs font-bold text-slate-300"><span>Ver itens do pedido</span><span className="text-slate-600 group-open:rotate-180">⌄</span></summary>
-          <ul className="space-y-2 border-t border-white/[0.07] px-3.5 py-3">
-            {(p.itens || []).map((it, idx) => <li key={idx} className="flex items-start gap-2 text-sm"><span className="font-black text-orange-300">{Number(it.quantidade ?? 1)}×</span><span className="text-slate-300">{it.nome}</span></li>)}
-          </ul>
-        </details>
-
-        {p.observacoes && <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.07] px-3 py-2.5 text-xs leading-relaxed text-amber-200"><strong>Observação:</strong> {p.observacoes}</div>}
-
-        <DeliveryProgress status={p.status} />
-
-        {mode === "disponiveis" ? (
-          <ActionButton icon={Hand} label={canClaim ? "Assumir esta entrega" : "Fique disponível para assumir"} busy={busy} disabled={!canClaim} onClick={onPegar} tone="orange" />
-        ) : aCaminho ? (
-          <ActionButton icon={CheckCircle2} label="Confirmar entrega" busy={busy} onClick={onAvancar} tone="green" />
-        ) : pronto ? (
-          <ActionButton icon={Bike} label="Iniciar rota" busy={busy} onClick={onAvancar} tone="blue" />
-        ) : (
-          <ActionButton icon={Clock3} label="Aguardando ficar pronto" busy={false} disabled onClick={onAvancar} tone="neutral" />
-        )}
-        {aguardando && <p className="-mt-2 text-center text-xs text-slate-600">A cozinha atualizará o pedido quando ele estiver liberado.</p>}
-      </div>
-    </article>
-  );
-}
-
-function Info({ icon: Icon, label, value, accent }: { icon: any; label: string; value: string; accent?: boolean }) {
-  return <div className="rounded-xl border border-white/[0.07] bg-black/20 p-3"><Icon className={cn("w-3.5 h-3.5", accent ? "text-emerald-300" : "text-slate-500")} /><p className="mt-2 text-xs font-bold uppercase tracking-wider text-slate-600">{label}</p><p className={cn("mt-0.5 truncate text-xs font-black capitalize", accent ? "text-emerald-300" : "text-slate-200")}>{value}</p></div>;
-}
-
-function DeliveryProgress({ status }: { status: string }) {
-  const step = status === "a_caminho" ? 2 : status === "pronto_entrega" ? 1 : 0;
-  return <div><div className="flex items-center"><ProgressDot active done={step > 0} /><span className={cn("h-px flex-1", step > 0 ? "bg-orange-400" : "bg-white/10")} /><ProgressDot active={step >= 1} done={step > 1} /><span className={cn("h-px flex-1", step > 1 ? "bg-orange-400" : "bg-white/10")} /><ProgressDot active={step >= 2} /></div><div className="mt-2 grid grid-cols-3 text-center text-xs font-bold uppercase tracking-wide text-slate-600"><span>Preparando</span><span>Pronto</span><span>Em rota</span></div></div>;
-}
-function ProgressDot({ active, done }: { active: boolean; done?: boolean }) {
-  return <span className={cn("grid w-5 h-5 place-items-center rounded-full border-2", active ? "border-orange-400 bg-orange-400 text-orange-950" : "border-slate-700 bg-[#0b0f16]")} >{done && <CheckCircle2 className="w-3 h-3" />}</span>;
-}
-function ActionButton({ icon: Icon, label, busy, disabled, onClick, tone }: { icon: any; label: string; busy: boolean; disabled?: boolean; onClick: () => void; tone: "orange" | "blue" | "green" | "neutral" }) {
-  const colors = { orange: "bg-orange-500 text-white", blue: "bg-sky-400 text-sky-950", green: "bg-emerald-400 text-emerald-950", neutral: "bg-white/5 text-slate-600" };
-  return <button type="button" onClick={onClick} disabled={disabled || busy} className={cn("flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-sm font-black shadow-lg disabled:cursor-not-allowed disabled:shadow-none", colors[tone], (disabled || busy) && "opacity-60")}>{busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}{label}</button>;
 }

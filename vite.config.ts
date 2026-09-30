@@ -6,6 +6,13 @@ import {defineConfig} from 'vite';
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
+    // Data/hora do build, exibida no app do entregador: mostra na hora qual
+    // versão da tela o celular carregou (teste real: o app parecia não atualizar).
+    define: {
+      __VERSAO_TELA__: JSON.stringify(
+        new Date().toLocaleString('pt-BR', {timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}),
+      ),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

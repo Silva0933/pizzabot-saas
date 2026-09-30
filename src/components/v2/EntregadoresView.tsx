@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle, Bike, CircleDot, Clock3, Copy, Download, ExternalLink, Link2, Loader2, Lock, Mail, Navigation,
   PackageCheck, Pencil, Phone, Plus, Radio, RefreshCw, Search, ShieldCheck,
-  SlidersHorizontal, Smartphone, Trash2, User, Users,
+  SlidersHorizontal, Smartphone, Trash2, User, Users, Wallet,
 } from "lucide-react";
-import { BackendEntregador, BackendPedido, entregadoresApi, pedidosApi } from "../../lib/api";
+import { BackendEntregador, BackendPedido, EntregadoresResp, entregadoresApi, pedidosApi } from "../../lib/api";
 import { APK_URL } from "../../lib/nativo";
 import { Badge, Button, Field, Input, Modal } from "../ui";
 
@@ -35,6 +35,7 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
   const [saving, setSaving] = useState(false);
   const [formErr, setFormErr] = useState<string | null>(null);
   const [togglingConfig, setTogglingConfig] = useState(false);
+  const [repasse, setRepasse] = useState<{ ativo: boolean; valor: number | null }>({ ativo: false, valor: null });
 
   async function load(silent = false) {
     if (silent) setRefreshing(true);
@@ -46,6 +47,7 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
       ]);
       setLista(drivers.entregadores);
       setAutoatribuicao(drivers.permitir_autoatribuicao);
+      setRepasse({ ativo: !!drivers.repasse_ativo, valor: drivers.repasse_valor ?? null });
       setPedidos(today);
     } catch (e: any) {
       setErr(e.message || "Não foi possível atualizar a operação.");
@@ -322,7 +324,9 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
                       <div className="grid grid-cols-3 gap-2 md:w-[280px]">
                         <SmallStat label="Ativas" value={item.ativas.length} />
                         <SmallStat label="Hoje" value={item.concluidas} />
-                        <SmallStat label="Total" value={e.entregas_concluidas ?? 0} />
+                        {repasse.ativo
+                          ? <SmallStat label="Ganhos hoje" value={brl(e.ganhos_hoje ?? 0)} />
+                          : <SmallStat label="Total" value={e.entregas_concluidas ?? 0} />}
                       </div>
                       <div className="flex items-center gap-1 md:ml-1">
                         <button
@@ -354,6 +358,13 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
         <aside className="space-y-4">
           <AppEntregador />
           <LinkAcessoEntregador />
+
+          <ValorPorEntrega
+            pizzariaId={pizzariaId}
+            ativo={repasse.ativo}
+            valor={repasse.valor}
+            onSalvo={(r) => setRepasse({ ativo: !!r.repasse_ativo, valor: r.repasse_valor ?? null })}
+          />
 
           {/* Distribuição de pedidos */}
           <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
@@ -471,6 +482,104 @@ export function EntregadoresView({ pizzariaId }: { pizzariaId: string }) {
           )}
         </div>
       </Modal>
+    </div>
+  );
+}
+
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** Valor fixo pago ao entregador por entrega. Ligado, o app mostra ganhos e
+ *  histórico com valores; o valor fica congelado em cada entrega concluída. */
+function ValorPorEntrega({ pizzariaId, ativo, valor, onSalvo }: {
+  pizzariaId: string;
+  ativo: boolean;
+  valor: number | null;
+  onSalvo: (r: EntregadoresResp) => void;
+}) {
+  const [texto, setTexto] = useState(valor != null ? valor.toFixed(2).replace(".", ",") : "");
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+  useEffect(() => { setTexto(valor != null ? valor.toFixed(2).replace(".", ",") : ""); }, [valor]);
+
+  const numero = Number(texto.replace(/\./g, "").replace(",", "."));
+  const valido = texto.trim() !== "" && Number.isFinite(numero) && numero >= 0 && numero <= 1000;
+  const mudou = valido && (valor == null || Math.abs(numero - valor) > 0.001);
+
+  async function salvar(novoAtivo: boolean) {
+    if (novoAtivo && !valido) {
+      setMsg({ ok: false, texto: "Informe o valor por entrega antes de ativar." });
+      return;
+    }
+    setSalvando(true);
+    setMsg(null);
+    try {
+      const r = await entregadoresApi.setRepasse(pizzariaId, novoAtivo, valido ? numero : undefined);
+      onSalvo(r);
+      setMsg({ ok: true, texto: novoAtivo ? "Salvo. Os entregadores já veem os ganhos no app." : "Desativado. O app não mostra mais valores." });
+    } catch (e: any) {
+      setMsg({ ok: false, texto: e.message || "Não foi possível salvar." });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#1e293b] bg-[#111622] p-5 shadow-sm">
+      <div className="flex items-start gap-3">
+        <span className="grid w-9 h-9 shrink-0 place-items-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+          <Wallet className="w-4.5 h-4.5" />
+        </span>
+        <div>
+          <h2 className="font-bold text-white text-sm">Valor por entrega</h2>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
+            Quanto o entregador ganha em cada entrega concluída. Ligado, ele vê os ganhos e o histórico no app.
+          </p>
+        </div>
+      </div>
+      <label htmlFor="valor-entrega" className="mt-4 block text-xs font-semibold text-slate-300">Valor fixo por entrega</label>
+      <div className="mt-1.5 flex gap-2">
+        <div className="flex flex-1 items-center rounded-xl border border-[#1e293b] bg-[#161f30] px-3 focus-within:border-emerald-500/50">
+          <span className="text-sm text-slate-400">R$</span>
+          <input
+            id="valor-entrega"
+            inputMode="decimal"
+            value={texto}
+            onChange={(e) => setTexto(e.target.value.replace(/[^\d,.]/g, ""))}
+            placeholder="7,00"
+            className="h-10 w-full bg-transparent px-2 text-sm font-semibold text-white outline-none"
+          />
+        </div>
+        {ativo && mudou && (
+          <button type="button" onClick={() => salvar(true)} disabled={salvando}
+            className="h-10 rounded-xl bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50">
+            Salvar
+          </button>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => salvar(!ativo)}
+        disabled={salvando}
+        className={`mt-3 w-full rounded-xl border p-3.5 text-left transition-all ${
+          ativo ? "border-emerald-500/30 bg-emerald-500/10" : "border-[#1e293b] bg-[#161f30] hover:bg-[#1a253a]"
+        }`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold text-white">{ativo ? "Ativado" : "Desativado"}</p>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {ativo ? `Cada entrega rende ${brl(valor ?? 0)} ao entregador.` : "O app do entregador não mostra valores."}
+            </p>
+          </div>
+          <span className={`relative w-11 h-6 shrink-0 rounded-full transition-colors ${ativo ? "bg-emerald-500" : "bg-slate-700"}`}>
+            <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${ativo ? "translate-x-5" : "translate-x-0.5"}`} />
+          </span>
+        </div>
+      </button>
+      {msg && <p className={`mt-2 text-xs ${msg.ok ? "text-emerald-400" : "text-rose-400"}`}>{msg.texto}</p>}
+      <p className="mt-3 border-t border-[#1e293b] pt-3 text-[11px] leading-relaxed text-slate-500">
+        Mudar o valor vale para as próximas entregas; as já concluídas mantêm o valor da época.
+      </p>
     </div>
   );
 }
@@ -635,7 +744,7 @@ function Metric({
   );
 }
 
-function SmallStat({ label, value }: { label: string; value: number }) {
+function SmallStat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-xl border border-[#1e293b] bg-[#161f30] px-3 py-2 text-center">
       <p className="text-base font-black text-white">{value}</p>

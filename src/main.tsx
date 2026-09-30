@@ -10,17 +10,33 @@ const CardapioPublico = lazy(() =>
   import('./components/v2/CardapioPublico').then((m) => ({default: m.CardapioPublico})),
 );
 const App = lazy(() => import('./App.tsx'));
+// Prévia do app do entregador com dados de exemplo — só em `npm run dev`.
+const DriverPreview = import.meta.env.DEV ? lazy(() => import('./dev/DriverPreview')) : null;
+const emPrevia = DriverPreview && window.location.pathname === '/preview-entregador';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Suspense fallback={null}>
-      {menuMatch ? <CardapioPublico slug={menuMatch[1]} /> : <App />}
+      {emPrevia && DriverPreview ? <DriverPreview /> : menuMatch ? <CardapioPublico slug={menuMatch[1]} /> : <App />}
     </Suspense>
   </StrictMode>,
 );
 
+// App Android do entregador (Capacitor carrega este painel): sem service worker —
+// o cache dele não tem função no app e pode segurar uma tela antiga. Remove o que
+// já foi instalado. A tela também fica maior (medidas em rem): no celular real,
+// login e app estavam pequenos demais.
+const noApp = Boolean((window as any).Capacitor?.isNativePlatform?.());
+if (noApp) {
+  document.documentElement.style.fontSize = '115%';
+  navigator.serviceWorker?.getRegistrations?.()
+    .then((regs) => regs.forEach((r) => r.unregister()))
+    .catch(() => {});
+  window.caches?.keys?.().then((ks) => ks.forEach((k) => window.caches.delete(k))).catch(() => {});
+}
+
 // PWA — register service worker (PRD seção 4 / NFR)
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+if ('serviceWorker' in navigator && import.meta.env.PROD && !noApp) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch((err) => {
       console.warn('Service Worker registration failed:', err);
