@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PizzaBot Entregador</string>
+    <string name="title_activity_main">PizzaBot Entregador</string>
+    <string name="package_name">cc.eu.secretariaai.pizzabot.entregador</string>
+    <string name="custom_url_scheme">cc.eu.secretariaai.pizzabot.entregador</string>
+</resources>

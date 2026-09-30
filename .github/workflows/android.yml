@@ -1,0 +1,131 @@
+# App Android do entregador: gera o APK, testa num emulador e publica no
+# GitHub Releases (link fixo .../releases/latest/download/pizzabot-entregador.apk).
+#
+# Roda só quando muda algo nativo: a interface vem do painel publicado
+# (server.url no capacitor.config.ts) e atualiza sozinha a cada deploy.
+#
+# Assinatura: secrets ANDROID_KEYSTORE_B64 (keystore PKCS12 em base64) e
+# ANDROID_KEYSTORE_PASSWORD. Sem eles, o APK sai com a chave de debug (teste).
+name: Android (app do entregador)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "capacitor.config.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "public/app-offline.html"
+      - ".github/workflows/android.yml"
+      - ".github/scripts/teste-apk-emulador.sh"
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: Gera o APK
+    runs-on: ubuntu-latest
+    outputs:
+      versao: ${{ steps.versao.outputs.versao }}
+      assinatura: ${{ steps.chave.outputs.assinatura }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Versão
+        id: versao
+        run: echo "versao=1.0.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+      - name: Instala dependências
+        run: npm ci
+      - name: Build web (página offline e assets de reserva)
+        run: npm run build
+      - name: Sincroniza o projeto Android
+        run: npx cap sync android
+      - name: Chave de assinatura
+        id: chave
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/entregador.p12"
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/entregador.p12" >> "$GITHUB_ENV"
+            echo "assinatura=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Sem ANDROID_KEYSTORE_B64: APK assinado com a chave de debug."
+            echo "assinatura=debug" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Compila
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon \
+            -PversionCode=${{ github.run_number }} -PversionName=${{ steps.versao.outputs.versao }}
+          cp app/build/outputs/apk/release/app-release.apk ../pizzabot-entregador.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: pizzabot-entregador.apk
+
+  emulador:
+    name: Testa no emulador
+    needs: apk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - name: Habilita KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Emulador Android 14
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash .github/scripts/teste-apk-emulador.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: teste-emulador
+          path: |
+            tela-emulador.png
+            ui.xml
+            logcat.txt
+
+  publicar:
+    name: Publica a release
+    needs: [apk, emulador]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: teste-emulador
+      - name: Cria a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSAO: ${{ needs.apk.outputs.versao }}
+          ASSINATURA: ${{ needs.apk.outputs.assinatura }}
+        run: |
+          gh release create "entregador-v$VERSAO" pizzabot-entregador.apk tela-emulador.png \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest \
+            --title "App do entregador $VERSAO" \
+            --notes "APK do app do entregador PizzaBot (Android 7+). Assinatura: $ASSINATURA. Testado no emulador Android 14 (captura anexada)."
