@@ -13,11 +13,16 @@ const App = lazy(() => import('./App.tsx'));
 // Prévia do app do entregador com dados de exemplo — só em `npm run dev`.
 const DriverPreview = import.meta.env.DEV ? lazy(() => import('./dev/DriverPreview')) : null;
 const emPrevia = DriverPreview && window.location.pathname === '/preview-entregador';
+// Prévia da Central de Ajuda (tela só de conteúdo, sem dados) — só em `npm run dev`.
+const AjudaPreview = import.meta.env.DEV
+  ? lazy(() => import('./components/v2/AjudaView').then((m) => ({default: m.AjudaView})))
+  : null;
+const emPreviaAjuda = AjudaPreview && window.location.pathname === '/preview-ajuda';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Suspense fallback={null}>
-      {emPrevia && DriverPreview ? <DriverPreview /> : menuMatch ? <CardapioPublico slug={menuMatch[1]} /> : <App />}
+      {emPrevia && DriverPreview ? <DriverPreview /> : emPreviaAjuda && AjudaPreview ? <div className="min-h-screen bg-[#0b0e14]"><AjudaPreview /></div> : menuMatch ? <CardapioPublico slug={menuMatch[1]} /> : <App />}
     </Suspense>
   </StrictMode>,
 );
