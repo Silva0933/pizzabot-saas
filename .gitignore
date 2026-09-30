@@ -69,3 +69,10 @@ venv/
 ehthumbs.db
 Desktop.ini
 
+
+# Chave de assinatura do app do entregador e backups dela: o repositório é PÚBLICO.
+.pizzabot-entregador*
+*.7z
+*.p12
+*.jks
+*.keystore
