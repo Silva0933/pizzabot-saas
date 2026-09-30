@@ -18,8 +18,15 @@ const PRIORITY: Record<string, number> = { a_caminho: 0, pronto_entrega: 1, em_p
 
 const mapsUrl = (endereco: string, lat?: number | null, lon?: number | null) =>
   lat != null && lon != null
-    ? `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`
-    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`;
+    ? `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${lat},${lon}`
+    : `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${encodeURIComponent(endereco)}`;
+
+// Um botão só abria direto no Google Maps (teste real: o entregador usa Waze).
+// Cada app tem o seu botão; o link do Waze abre o app quando ele está instalado.
+const wazeUrl = (endereco: string, lat?: number | null, lon?: number | null) =>
+  lat != null && lon != null
+    ? `https://waze.com/ul?ll=${lat},${lon}&navigate=yes`
+    : `https://waze.com/ul?q=${encodeURIComponent(endereco)}&navigate=yes`;
 
 export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => void }) {
   const ent = user.entregador!;
@@ -94,6 +101,15 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
 
   useEffect(() => {
     versaoNovaDisponivel().then(setVersaoNova).catch(() => {});
+  }, []);
+
+  // Tela usada no celular, muitas vezes andando: tudo ~12% maior (as medidas do
+  // Tailwind são em rem). No teste real, textos e botões ficaram pequenos demais.
+  useEffect(() => {
+    const raiz = document.documentElement;
+    const antes = raiz.style.fontSize;
+    raiz.style.fontSize = "112.5%";
+    return () => { raiz.style.fontSize = antes; };
   }, []);
 
   async function abrirRota() {
@@ -206,12 +222,12 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
             <div className="flex min-w-0 items-center gap-3">
               <span className="grid w-11 h-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 shadow-lg shadow-orange-950/50"><Bike className="w-5 h-5" /></span>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300">Central do entregador</p>
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-300">Central do entregador</p>
                 <h1 className="truncate text-lg font-black leading-tight">{ent.nome}</h1>
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <span title={wsOnline ? "Atualizações ao vivo" : "Atualização automática"} className={`mr-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold ${wsOnline ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-slate-500"}`}>
+              <span title={wsOnline ? "Atualizações ao vivo" : "Atualização automática"} className={`mr-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${wsOnline ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-slate-500"}`}>
                 <Signal className="w-3 h-3" />{wsOnline ? "Ao vivo" : "30 s"}
               </span>
               <button type="button" onClick={onLogout} className="rounded-xl p-2.5 text-slate-500 hover:bg-white/10 hover:text-white" title="Sair"><LogOut className="w-4.5 h-4.5" /></button>
@@ -233,7 +249,7 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
               <span className={cn("grid w-9 h-9 place-items-center rounded-xl", disponivel ? "bg-emerald-400 text-emerald-950" : "bg-white/5 text-slate-500")}>
                 {busyAvailability ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
               </span>
-              <div><p className="text-sm font-black">{disponivel ? "Você está disponível" : "Você está indisponível"}</p><p className="mt-0.5 text-[11px] text-slate-500">{disponivel ? "Pronto para receber novas entregas" : "Toque para iniciar seu turno"}</p></div>
+              <div><p className="text-sm font-black">{disponivel ? "Você está disponível" : "Você está indisponível"}</p><p className="mt-0.5 text-sm text-slate-500">{disponivel ? "Pronto para receber novas entregas" : "Toque para iniciar seu turno"}</p></div>
             </div>
             <span className={cn("relative w-12 h-7 shrink-0 rounded-full", disponivel ? "bg-emerald-500" : "bg-slate-700")}><span className={cn("absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all", disponivel ? "left-6" : "left-1")} /></span>
           </button>
@@ -266,7 +282,7 @@ export function DriverApp({ user, onLogout }: { user: UserMe; onLogout: () => vo
             <section className="rounded-2xl border border-orange-400/20 bg-gradient-to-r from-orange-400/10 to-transparent px-4 py-3">
               <div className="flex items-center gap-3">
                 <span className="grid w-9 h-9 place-items-center rounded-xl bg-orange-400/15 text-orange-300"><Route className="w-4 h-4" /></span>
-                <div className="min-w-0 flex-1"><p className="text-sm font-bold">{emRota ? `${emRota} entrega${emRota > 1 ? "s" : ""} em andamento` : `${prontas} pedido${prontas > 1 ? "s" : ""} pronto${prontas > 1 ? "s" : ""}`}</p><p className="mt-0.5 text-[11px] text-slate-500">{emRota ? "Conclua a rota atual antes de seguir." : "Retire na pizzaria e inicie a rota."}</p></div>
+                <div className="min-w-0 flex-1"><p className="text-sm font-bold">{emRota ? `${emRota} entrega${emRota > 1 ? "s" : ""} em andamento` : `${prontas} pedido${prontas > 1 ? "s" : ""} pronto${prontas > 1 ? "s" : ""}`}</p><p className="mt-0.5 text-sm text-slate-500">{emRota ? "Conclua a rota atual antes de seguir." : "Retire na pizzaria e inicie a rota."}</p></div>
                 <button type="button" onClick={abrirRota} className="shrink-0 rounded-xl bg-orange-500 px-3 py-2 text-xs font-black text-white">Ver rota</button>
               </div>
             </section>
@@ -319,7 +335,7 @@ function RotaSheet({ rota, carregando, onFechar }: { rota: RotaEntregador | null
       <div className="max-h-[88vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0e131b] p-5 sm:rounded-3xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-300">Sua rota</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-orange-300">Sua rota</p>
             <h2 className="text-lg font-black">{rota ? `${rota.paradas.length} parada${rota.paradas.length === 1 ? "" : "s"} · ~${rota.distancia_km} km` : "Montando a rota…"}</h2>
           </div>
           <button type="button" onClick={onFechar} className="rounded-xl p-2 text-slate-400 hover:bg-white/10" aria-label="Fechar"><X className="w-5 h-5" /></button>
@@ -339,23 +355,23 @@ function RotaSheet({ rota, carregando, onFechar }: { rota: RotaEntregador | null
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-bold">{p.tipo === "coleta" ? `Coleta · ${p.nome}` : `#${p.numero_pedido ?? "—"} · ${p.cliente || "Cliente"}`}</p>
                     <p className="mt-0.5 break-words text-xs text-slate-400">{p.endereco || "Endereço não informado"}</p>
-                    {p.distancia_km != null && <p className="mt-0.5 text-[11px] text-slate-500">~{p.distancia_km} km da parada anterior</p>}
+                    {p.distancia_km != null && <p className="mt-0.5 text-sm text-slate-500">~{p.distancia_km} km da parada anterior</p>}
                   </div>
                   {p.waze_url && (
-                    <button type="button" onClick={() => abrirExterno(p.waze_url!)} className="shrink-0 rounded-xl border border-white/10 px-2.5 py-1.5 text-[11px] font-bold text-slate-200">Waze</button>
+                    <button type="button" onClick={() => abrirExterno(p.waze_url!)} className="shrink-0 rounded-xl border border-white/10 px-2.5 py-1.5 text-sm font-bold text-slate-200">Waze</button>
                   )}
                 </li>
               ))}
             </ol>
             {rota.sem_coordenada > 0 && (
-              <p className="mt-3 text-[11px] text-amber-300">{rota.sem_coordenada} endereço(s) sem localização exata: a ordem delas é a de atribuição.</p>
+              <p className="mt-3 text-sm text-amber-300">{rota.sem_coordenada} endereço(s) sem localização exata: a ordem delas é a de atribuição.</p>
             )}
             {rota.google_maps_url && (
               <button type="button" onClick={() => abrirExterno(rota.google_maps_url!)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-sky-400 px-4 py-3.5 text-sm font-black text-sky-950">
                 <Navigation className="w-4 h-4" />Abrir rota completa no Google Maps
               </button>
             )}
-            <p className="mt-2 text-center text-[11px] text-slate-500">
+            <p className="mt-2 text-center text-sm text-slate-500">
               {rota.origem === "posicao_atual" ? "Ordem calculada a partir de onde você está." : "Ordem calculada a partir da pizzaria."}
             </p>
           </>
@@ -397,7 +413,7 @@ function ConfirmarEntrega({ pedido, onFechar, onConfirmar }: {
         onSubmit={(e) => { e.preventDefault(); enviar(); }}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">Confirmar entrega</p>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-300">Confirmar entrega</p>
             <h2 className="text-lg font-black">Pedido #{pedido.numero_pedido ?? "—"} · {pedido.cliente?.nome || "Cliente"}</h2>
           </div>
           <button type="button" onClick={onFechar} className="rounded-xl p-2 text-slate-400 hover:bg-white/10" aria-label="Fechar"><X className="w-5 h-5" /></button>
@@ -430,11 +446,11 @@ function ConfirmarEntrega({ pedido, onFechar, onConfirmar }: {
 
 function Summary({ icon: Icon, label, value, tone }: { icon: any; label: string; value: number; tone: "orange" | "blue" | "green" }) {
   const color = { orange: "text-orange-300 bg-orange-400/10", blue: "text-sky-300 bg-sky-400/10", green: "text-emerald-300 bg-emerald-400/10" }[tone];
-  return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3"><span className={cn("grid w-7 h-7 place-items-center rounded-lg", color)}><Icon className="w-3.5 h-3.5" /></span><p className="mt-3 text-xl font-black">{value}</p><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">{label}</p></div>;
+  return <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-3"><span className={cn("grid w-7 h-7 place-items-center rounded-lg", color)}><Icon className="w-3.5 h-3.5" /></span><p className="mt-3 text-xl font-black">{value}</p><p className="text-xs font-bold uppercase tracking-wider text-slate-600">{label}</p></div>;
 }
 
 function Tab({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
-  return <button type="button" onClick={onClick} className={cn("flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition", active ? "bg-orange-500 text-white shadow-lg shadow-orange-950/30" : "text-slate-500 hover:text-slate-300")}><span>{label}</span><span className={cn("rounded-full px-1.5 py-0.5 text-[10px]", active ? "bg-white/20" : "bg-white/5")}>{count}</span></button>;
+  return <button type="button" onClick={onClick} className={cn("flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition", active ? "bg-orange-500 text-white shadow-lg shadow-orange-950/30" : "text-slate-500 hover:text-slate-300")}><span>{label}</span><span className={cn("rounded-full px-1.5 py-0.5 text-xs", active ? "bg-white/20" : "bg-white/5")}>{count}</span></button>;
 }
 
 function Empty({ tab }: { tab: "minhas" | "disponiveis" }) {
@@ -460,7 +476,7 @@ function DriverCard({ pedido: p, mode, position, busy, canClaim, onAvancar, onPe
   return (
     <article className={cn("overflow-hidden rounded-3xl border bg-white/[0.035]", aCaminho ? "border-sky-400/30 shadow-[0_0_35px_rgba(56,189,248,.06)]" : "border-white/10")}>
       <div className="flex items-center justify-between gap-2 border-b border-white/[0.07] px-4 py-3.5">
-        <div className="flex items-center gap-2.5"><span className={cn("grid w-7 h-7 place-items-center rounded-lg text-xs font-black", aCaminho ? "bg-sky-400 text-sky-950" : "bg-orange-400/15 text-orange-300")}>{position}</span><div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-600">Pedido</p><p className="text-sm font-black">#{p.numero_pedido ?? "—"}</p></div></div>
+        <div className="flex items-center gap-2.5"><span className={cn("grid w-7 h-7 place-items-center rounded-lg text-xs font-black", aCaminho ? "bg-sky-400 text-sky-950" : "bg-orange-400/15 text-orange-300")}>{position}</span><div><p className="text-xs font-bold uppercase tracking-wider text-slate-600">Pedido</p><p className="text-sm font-black">#{p.numero_pedido ?? "—"}</p></div></div>
         <OrderStatusBadge status={p.status} />
       </div>
 
@@ -472,7 +488,10 @@ function DriverCard({ pedido: p, mode, position, busy, canClaim, onAvancar, onPe
 
         <div className="rounded-2xl border border-sky-400/15 bg-sky-400/[0.06] p-3.5">
           <div className="flex items-start gap-2.5"><MapPin className="mt-0.5 w-4 h-4 shrink-0 text-sky-300" /><p className="flex-1 break-words text-sm font-semibold leading-snug text-slate-200">{endereco}</p></div>
-          <button type="button" onClick={() => abrirExterno(mapsUrl(endereco, p.endereco_lat, p.endereco_lon))} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-3 py-2.5 text-xs font-black text-sky-950"><Navigation className="w-4 h-4" />Abrir no mapa</button>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => abrirExterno(mapsUrl(endereco, p.endereco_lat, p.endereco_lon))} className="flex items-center justify-center gap-2 rounded-xl bg-sky-400 px-3 py-3 text-sm font-black text-sky-950"><Navigation className="w-4 h-4" />Google Maps</button>
+            <button type="button" onClick={() => abrirExterno(wazeUrl(endereco, p.endereco_lat, p.endereco_lon))} className="flex items-center justify-center gap-2 rounded-xl bg-[#33ccff] px-3 py-3 text-sm font-black text-[#062a3a]"><Navigation className="w-4 h-4" />Waze</button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -500,19 +519,19 @@ function DriverCard({ pedido: p, mode, position, busy, canClaim, onAvancar, onPe
         ) : (
           <ActionButton icon={Clock3} label="Aguardando ficar pronto" busy={false} disabled onClick={onAvancar} tone="neutral" />
         )}
-        {aguardando && <p className="-mt-2 text-center text-[10px] text-slate-600">A cozinha atualizará o pedido quando ele estiver liberado.</p>}
+        {aguardando && <p className="-mt-2 text-center text-xs text-slate-600">A cozinha atualizará o pedido quando ele estiver liberado.</p>}
       </div>
     </article>
   );
 }
 
 function Info({ icon: Icon, label, value, accent }: { icon: any; label: string; value: string; accent?: boolean }) {
-  return <div className="rounded-xl border border-white/[0.07] bg-black/20 p-3"><Icon className={cn("w-3.5 h-3.5", accent ? "text-emerald-300" : "text-slate-500")} /><p className="mt-2 text-[9px] font-bold uppercase tracking-wider text-slate-600">{label}</p><p className={cn("mt-0.5 truncate text-xs font-black capitalize", accent ? "text-emerald-300" : "text-slate-200")}>{value}</p></div>;
+  return <div className="rounded-xl border border-white/[0.07] bg-black/20 p-3"><Icon className={cn("w-3.5 h-3.5", accent ? "text-emerald-300" : "text-slate-500")} /><p className="mt-2 text-xs font-bold uppercase tracking-wider text-slate-600">{label}</p><p className={cn("mt-0.5 truncate text-xs font-black capitalize", accent ? "text-emerald-300" : "text-slate-200")}>{value}</p></div>;
 }
 
 function DeliveryProgress({ status }: { status: string }) {
   const step = status === "a_caminho" ? 2 : status === "pronto_entrega" ? 1 : 0;
-  return <div><div className="flex items-center"><ProgressDot active done={step > 0} /><span className={cn("h-px flex-1", step > 0 ? "bg-orange-400" : "bg-white/10")} /><ProgressDot active={step >= 1} done={step > 1} /><span className={cn("h-px flex-1", step > 1 ? "bg-orange-400" : "bg-white/10")} /><ProgressDot active={step >= 2} /></div><div className="mt-2 grid grid-cols-3 text-center text-[9px] font-bold uppercase tracking-wide text-slate-600"><span>Preparando</span><span>Pronto</span><span>Em rota</span></div></div>;
+  return <div><div className="flex items-center"><ProgressDot active done={step > 0} /><span className={cn("h-px flex-1", step > 0 ? "bg-orange-400" : "bg-white/10")} /><ProgressDot active={step >= 1} done={step > 1} /><span className={cn("h-px flex-1", step > 1 ? "bg-orange-400" : "bg-white/10")} /><ProgressDot active={step >= 2} /></div><div className="mt-2 grid grid-cols-3 text-center text-xs font-bold uppercase tracking-wide text-slate-600"><span>Preparando</span><span>Pronto</span><span>Em rota</span></div></div>;
 }
 function ProgressDot({ active, done }: { active: boolean; done?: boolean }) {
   return <span className={cn("grid w-5 h-5 place-items-center rounded-full border-2", active ? "border-orange-400 bg-orange-400 text-orange-950" : "border-slate-700 bg-[#0b0f16]")} >{done && <CheckCircle2 className="w-3 h-3" />}</span>;
