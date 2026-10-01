@@ -414,6 +414,27 @@ def _fechar(cat, fala, intencao="confirmar_resumo"):
     return registrar.await_count
 
 
+def test_pagar_agora_sem_pagamento_online_explica_em_vez_de_repetir_o_resumo(cat):
+    """Stress de 01/10 (Palazio, sem pagamento online): "pix" → resumo; "quero
+    pagar agora" → o MESMO resumo de novo, sem explicar nada."""
+    est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 1}])
+    est.update({"etapa": "AGUARDANDO_CONFIRMACAO", "pagar_agora": False, "apresentou": True, "pagamento": "pix"})
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=_calc((49.9, 1)))), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"), \
+         patch("app.agent.tools.registrar_pedido", new=AsyncMock()) as registrar:
+        res = asyncio.run(engine.processar(
+            MagicMock(), _ctx_catalogo(), est,
+            {"intencao": "informar_pagamento", "dados": {"forma_pagamento": "pix", "pagar_agora": True}},
+            user_input="quero pagar agora",
+        ))
+    msg = res["decisao"].get("mensagem_pronta") or ""
+    assert msg.startswith("Por aqui não temos pagamento online: o pagamento é feito na retirada")
+    assert res["estado"]["pagar_agora"] is False
+    registrar.assert_not_awaited()
+
+
 def test_negacao_no_resumo_nao_fecha_o_pedido(cat):
     """Agente real (auditoria de 01/10): "Posso fechar o pedido?" → "não preciso de
     troco" → a NLU deu confirmar_resumo e o pedido FECHOU sem o cliente dizer sim."""

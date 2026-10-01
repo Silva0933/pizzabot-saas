@@ -2385,6 +2385,13 @@ async def processar(
     # conversa": força pagar na entrega mesmo que o cliente tenha dito Pix.
     modo_pag = _modo_pagamento(ctx.pizzaria)
     if modo_pag == "desativado":
+        if estado.get("pagar_agora") is True:
+            # "Quero pagar agora" numa loja sem pagamento online: antes o resumo
+            # voltava IDÊNTICO, sem explicar nada (stress de 01/10). Avisa antes.
+            onde_pg = "na retirada" if estado.get("tipo") == "retirada" else "na entrega"
+            decisao["aviso_pagamento"] = (
+                f"Por aqui não temos pagamento online: o pagamento é feito {onde_pg} 😉"
+            )
         estado["pagar_agora"] = False
     falta_pagar_agora = (
         modo_pag != "desativado"
@@ -2764,4 +2771,6 @@ async def processar(
         estado.get("pagamento"), estado.get("pagar_agora"), estado.get("observacoes"),
         troco=estado.get("troco"),
     )
+    if decisao.get("aviso_pagamento"):
+        decisao["mensagem_pronta"] = f"{decisao['aviso_pagamento']} [QUEBRA] {decisao['mensagem_pronta']}"
     return {"decisao": decisao, "estado": estado}
