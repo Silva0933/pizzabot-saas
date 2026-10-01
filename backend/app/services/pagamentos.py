@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import UTC
 from decimal import Decimal
@@ -51,6 +52,22 @@ class CobrancaResult:
 
 class PagamentoError(Exception):
     pass
+
+
+def chave_idempotencia_cobranca(
+    pedido_id: Any, valor: Decimal | float | str, cobranca_anterior: str | None,
+) -> str:
+    """Chave estável da tentativa de cobrança (X-Idempotency-Key do MP).
+
+    Era um uuid4 novo a cada chamada: se o gateway criava o Pix e a resposta se
+    perdia (timeout, queda antes do commit), a nova tentativa ia com outra chave
+    e nascia um SEGUNDO Pix para o mesmo pedido. Derivada do pedido + valor + a
+    cobrança que ele já tinha, a repetição da mesma operação reaproveita o mesmo
+    pagamento; gerar de novo de propósito (pedido já com um Pix, valor alterado)
+    muda a chave e cria outro.
+    """
+    base = f"pizzabot:cobranca:{pedido_id}:{Decimal(str(valor)):.2f}:{cobranca_anterior or 'primeira'}"
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, base))
 
 
 # ============================================
@@ -132,10 +149,11 @@ class MercadoPagoClient:
         telefone: str,
         external_reference: str,
         notification_url: str | None = None,
+        idempotency_key: str | None = None,
     ) -> CobrancaResult:
-        """Cria um pagamento Pix e devolve o copia-e-cola + QR (base64)."""
+        """Cria um pagamento Pix e devolve o copia-e-cola + QR (base64).
+        `idempotency_key`: ver chave_idempotencia_cobranca."""
         import re
-        import uuid as _uuid
         from datetime import datetime, timedelta
 
         first_name = re.sub(r"[^a-zA-ZÀ-ɏ ]", "", (nome_cliente or "Cliente"))[:30].strip() or "Cliente"
@@ -158,19 +176,24 @@ class MercadoPagoClient:
         if notification_url:
             body["notification_url"] = notification_url
 
-        async with httpx.AsyncClient(timeout=15.0) as c:
-            r = await c.post(
-                f"{self.BASE}/v1/payments",
-                json=body,
-                headers={
-                    "Authorization": f"Bearer {self.token}",
-                    "X-Idempotency-Key": str(_uuid.uuid4()),
-                },
-            )
-            if r.is_error:
-                log.error("MP pix error %s: %s", r.status_code, r.text[:300])
-                raise PagamentoError(f"MP pix {r.status_code}: {r.text[:200]}")
-            data = r.json()
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                r = await c.post(
+                    f"{self.BASE}/v1/payments",
+                    json=body,
+                    headers={
+                        "Authorization": f"Bearer {self.token}",
+                        "X-Idempotency-Key": idempotency_key or str(uuid.uuid4()),
+                    },
+                )
+        except httpx.HTTPError as e:
+            # Resultado incerto: o Pix pode ter nascido no MP. A próxima tentativa
+            # usa a MESMA chave e recebe esse pagamento, em vez de criar outro.
+            raise PagamentoError(f"MP pix sem resposta ({type(e).__name__}); resultado incerto") from e
+        if r.is_error:
+            log.error("MP pix error %s: %s", r.status_code, r.text[:300])
+            raise PagamentoError(f"MP pix {r.status_code}: {r.text[:200]}")
+        data = r.json()
 
         poi = ((data.get("point_of_interaction") or {}).get("transaction_data")) or {}
         return CobrancaResult(
@@ -249,6 +272,28 @@ class AsaasClient:
                 raise PagamentoError(f"Asaas customer {r.status_code}: {r.text[:200]}")
             return r.json()["id"]
 
+    async def _cobranca_pendente(
+        self, c: httpx.AsyncClient, external_reference: str, valor: Decimal,
+    ) -> dict[str, Any] | None:
+        """Cobrança Pix PENDENTE deste pedido com este valor, se já existe."""
+        r = await c.get(
+            f"{self.BASE}/payments",
+            params={"externalReference": external_reference, "status": "PENDING"},
+            headers={"access_token": self.key},
+        )
+        if r.is_error:
+            log.warning("Asaas: não consegui listar cobranças do pedido %s (%s)", external_reference, r.status_code)
+            return None
+        for item in (r.json() or {}).get("data") or []:
+            if (
+                str(item.get("externalReference") or "") == external_reference
+                and item.get("billingType") == "PIX"
+                and Decimal(str(item.get("value") or 0)) == Decimal(str(valor)).quantize(Decimal("0.01"))
+                and not item.get("deleted")
+            ):
+                return item
+        return None
+
     async def criar_cobranca_pix(
         self,
         *,
@@ -259,32 +304,40 @@ class AsaasClient:
         external_reference: str,
     ) -> CobrancaResult:
         from datetime import date, timedelta
-        customer_id = await self._criar_cliente(nome=nome_cliente, telefone=telefone)
-        body = {
-            "customer": customer_id,
-            "billingType": "PIX",
-            "value": float(valor),
-            "dueDate": (date.today() + timedelta(days=1)).isoformat(),
-            "description": descricao[:200],
-            "externalReference": external_reference,
-        }
-        async with httpx.AsyncClient(timeout=15.0) as c:
-            r = await c.post(
-                f"{self.BASE}/payments",
-                json=body,
-                headers={"access_token": self.key},
-            )
-            if r.is_error:
-                raise PagamentoError(f"Asaas {r.status_code}: {r.text[:200]}")
-            data = r.json()
-            pid = data["id"]
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as c:
+                # O Asaas não tem chave de idempotência: se uma tentativa anterior
+                # criou a cobrança e a resposta se perdeu, ela está lá, PENDENTE,
+                # com este externalReference. Reaproveita em vez de criar outra.
+                data = await self._cobranca_pendente(c, external_reference, valor)
+                if data is None:
+                    customer_id = await self._criar_cliente(nome=nome_cliente, telefone=telefone)
+                    body = {
+                        "customer": customer_id,
+                        "billingType": "PIX",
+                        "value": float(valor),
+                        "dueDate": (date.today() + timedelta(days=1)).isoformat(),
+                        "description": descricao[:200],
+                        "externalReference": external_reference,
+                    }
+                    r = await c.post(
+                        f"{self.BASE}/payments",
+                        json=body,
+                        headers={"access_token": self.key},
+                    )
+                    if r.is_error:
+                        raise PagamentoError(f"Asaas {r.status_code}: {r.text[:200]}")
+                    data = r.json()
+                pid = data["id"]
 
-            # Busca QR code do Pix
-            r2 = await c.get(
-                f"{self.BASE}/payments/{pid}/pixQrCode",
-                headers={"access_token": self.key},
-            )
-            qr = r2.json() if r2.is_success else {}
+                # Busca QR code do Pix
+                r2 = await c.get(
+                    f"{self.BASE}/payments/{pid}/pixQrCode",
+                    headers={"access_token": self.key},
+                )
+                qr = r2.json() if r2.is_success else {}
+        except httpx.HTTPError as e:
+            raise PagamentoError(f"Asaas sem resposta ({type(e).__name__}); resultado incerto") from e
 
         return CobrancaResult(
             payment_id=pid,

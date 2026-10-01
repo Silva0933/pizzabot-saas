@@ -1597,7 +1597,12 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
     """Núcleo da cobrança: chama o gateway, salva no pedido e envia o QR. Reutilizado."""
     from app.config import get_settings
     from app.services.evolution import evolution
-    from app.services.pagamentos import MercadoPagoClient, PagamentoError, gateway_for
+    from app.services.pagamentos import (
+        MercadoPagoClient,
+        PagamentoError,
+        chave_idempotencia_cobranca,
+        gateway_for,
+    )
 
     gw = gateway_for(ctx.pizzaria)
     if gw is None:
@@ -1618,6 +1623,7 @@ async def _gerar_cobranca(ctx: AgentContext, db: AsyncSession, ped: Pedido, meto
             cob = await gw.criar_pix(
                 valor=ped.valor_total, descricao=descricao, nome_cliente=nome,
                 telefone=ctx.telefone, external_reference=str(ped.id), notification_url=notif,
+                idempotency_key=chave_idempotencia_cobranca(ped.id, ped.valor_total, ped.payment_id),
             )
         else:  # Asaas (só Pix)
             cob = await gw.criar_cobranca_pix(
