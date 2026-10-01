@@ -371,7 +371,11 @@ class TestWebhookFilaFora:
         db.execute = AsyncMock(return_value=res)
         request = MagicMock()
         request.query_params.get = MagicMock(return_value=None)
+        # config_atual lê a config da Evolution no banco REAL pelo engine global: no
+        # CI (Postgres de verdade) o pool ficava preso ao loop deste teste e o teste
+        # de integração seguinte quebrava com "Event loop is closed".
         with patch("app.redis_client.redis.set", new=AsyncMock(return_value=True)), \
+             patch("app.services.evolution.evolution.config_atual", new=AsyncMock(return_value={"webhook_token": ""})), \
              patch("app.routes.webhook._get_or_create_conversa", new=AsyncMock(return_value=conv)), \
              patch("app.services.order_audit.registrar_evento_pedido", new=MagicMock()), \
              patch("app.routes.webhook.enqueue_message", new=AsyncMock(side_effect=ConnectionError("Redis fora"))), \
