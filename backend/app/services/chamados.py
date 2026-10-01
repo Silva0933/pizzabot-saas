@@ -35,34 +35,53 @@ MSG_EXPIRADO = (
 )
 
 _STOP = {
-    "voces", "voce", "vcs", "tem", "tenho", "para", "pra", "com", "sem", "qual", "quais", "como",
-    "onde", "quando", "pode", "posso", "isso", "essa", "esse", "aqui", "tambem", "mais", "muito",
+    "voces", "voce", "vcs", "tem", "tenho", "para", "pra", "pro", "pras", "pros", "com", "qual", "quais",
+    "como", "onde", "quando", "pode", "posso", "isso", "essa", "esse", "aqui", "tambem", "mais", "muito",
     "sabe", "saber", "gostaria", "queria", "quero", "fazem", "faz", "sao", "sera", "seria",
+    "que", "uma", "uns", "umas", "dos", "das", "nos", "nas", "por", "ele", "ela", "eles", "elas",
+    "seu", "sua", "meu", "minha", "ate", "ola", "boa", "bom", "noite", "tarde", "favor", "obrigado", "obrigada",
 }
+# Negação muda a resposta ("com lactose" x "sem lactose"): nunca é descartada.
+_NEGACAO = {"sem", "nao", "nunca", "nenhum", "nenhuma"}
+# Abreviações comuns que a equipe e o cliente escrevem dos dois jeitos.
+_SINONIMOS = {"vr": ("vale", "refeicao"), "va": ("vale", "alimentacao")}
 
 
 def _tokens(texto: str) -> set[str]:
-    """Radicais (5 primeiras letras) das palavras relevantes: "aceita"/"aceitam",
-    "refeição"/"refeições" caem no mesmo radical."""
-    return {t[:5] for t in re.split(r"[^a-z0-9]+", normalizar(texto)) if len(t) >= 4 and t not in _STOP}
+    """Palavras relevantes, por radical (5 primeiras letras: "aceita"/"aceitam",
+    "refeição"/"refeições" caem no mesmo). Palavra curta conta inteira ("sul",
+    "pix"), número conta sempre ("dia 24" x "dia 25") e negação também."""
+    out: set[str] = set()
+    for t in re.split(r"[^a-z0-9]+", normalizar(texto)):
+        for p in _SINONIMOS.get(t, (t,)):
+            if not p:
+                continue
+            if p in _NEGACAO:
+                out.add("nao")
+            elif p.isdigit():
+                out.add(p)
+            elif len(p) >= 3 and p not in _STOP:
+                out.add(p[:5])
+    return out
 
 
 def casar_conhecimento(pergunta: str, itens: list[tuple[str, str]]) -> str | None:
-    """Resposta salva cuja pergunta é parecida com esta (sobreposição de palavras
-    relevantes ≥ 50% e pelo menos uma em comum), ou None."""
+    """Resposta salva para ESTA pergunta, ou None (a atendente pergunta à equipe).
+
+    Casa só quando as palavras relevantes são as mesmas dos dois lados. Antes
+    bastava 50% de sobreposição: a resposta de "Vocês entregam no Centro?" saía
+    para "Vocês entregam no Centro Novo?" e "com lactose" casava com "sem
+    lactose" (achado A10 da análise de 01/10). Errar para o lado de perguntar à
+    equipe custa uma pergunta; errar para o outro é informação falsa ao cliente.
+    Duas respostas salvas diferentes para a mesma pergunta = conflito → None.
+    """
     alvo = _tokens(pergunta)
     if not alvo:
         return None
-    melhor, nota = None, 0.0
-    for p, r in itens:
-        base = _tokens(p)
-        comum = alvo & base
-        if not comum:
-            continue
-        s = len(comum) / len(alvo | base)
-        if s > nota:
-            melhor, nota = r, s
-    return melhor if nota >= 0.5 else None
+    respostas = {r.strip() for p, r in itens if _tokens(p) == alvo and (r or "").strip()}
+    if len(respostas) != 1:
+        return None
+    return respostas.pop()
 
 
 async def buscar_conhecimento(db: AsyncSession, pizzaria_id: Any, pergunta: str) -> str | None:
@@ -162,11 +181,40 @@ async def responder(
     return ch
 
 
+# Número seguido destas unidades não é dinheiro ("30 minutos", "2 km", "3 pizzas").
+_UNIDADE_NAO_MONETARIA = re.compile(
+    r"\s*(?:min\b|minutos?|h\b|hs\b|horas?|km|quil[oô]metros?|metros?|m\b|%|fatias?|peda[cç]os?|"
+    r"pessoas?|unidades?|un\b|cm|litros?|l\b|ml|g\b|kg|anos?|dias?|pizzas?|sabores?|itens?|x\b)",
+    re.IGNORECASE,
+)
+# Palavra de valor logo antes do número, na mesma frase ("a taxa pro Centro fica 8").
+_PALAVRA_DE_VALOR = re.compile(
+    r"(?:taxa|valor|pre[cç]o|custa|custo|cobr\w*|acr[eé]scimo|desconto|adicional|fica|sai por|total)"
+    r"[^\d.!?\n]{0,40}$",
+    re.IGNORECASE,
+)
+
+
 def _precos_da_resposta(resposta: str) -> list[float]:
-    """Valores (R$) ditos pela equipe: são lastro válido para o guard de preço."""
+    """Valores (R$) ditos pela equipe: são lastro válido para o guard de preço.
+
+    Só conta número com cara de dinheiro: "R$ 8", "8 reais", "8,50", ou logo
+    depois de taxa/valor/preço/custa/fica... Antes QUALQUER número virava preço
+    autorizado: "Entregamos em 30 minutos no número 120" liberava a voz a falar
+    "R$ 30" e "R$ 120" (achado A09 da análise de 01/10)."""
     from app.services.price_check import _parse_valor
+    texto = resposta or ""
     out = []
-    for m in re.finditer(r"(?:r\$\s*)?(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:reais)?", resposta or "", re.IGNORECASE):
+    for m in re.finditer(r"(?<![\d.,])(\d{1,4}(?:[.,]\d{1,2})?)(?![\d])", texto):
+        antes, depois = texto[: m.start()], texto[m.end():]
+        com_rs = re.search(r"r\$\s*$", antes, re.IGNORECASE) is not None
+        com_reais = re.match(r"\s*(?:reais|real)\b", depois, re.IGNORECASE) is not None
+        if not (com_rs or com_reais):
+            if _UNIDADE_NAO_MONETARIA.match(depois):
+                continue
+            centavos = re.search(r"[.,]\d{2}$", m.group(1)) is not None
+            if not (centavos or _PALAVRA_DE_VALOR.search(antes)):
+                continue
         v = _parse_valor(m.group(1))
         if v is not None:
             out.append(round(float(v), 2))

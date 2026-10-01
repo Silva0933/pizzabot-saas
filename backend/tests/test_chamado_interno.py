@@ -28,6 +28,29 @@ class TestConhecimento:
         assert chamados.casar_conhecimento("fazem festa de aniversário?", itens) is None
         assert chamados.casar_conhecimento("oi", itens) is None
 
+    def test_bairro_parecido_nao_herda_a_resposta(self):
+        """A10: a resposta de "Centro" saía para "Centro Novo" (2 de 3 palavras em comum)."""
+        itens = [("Vocês entregam no Centro?", "Entregamos sim, taxa de R$ 5.")]
+        assert chamados.casar_conhecimento("Vocês entregam no Centro Novo?", itens) is None
+        assert chamados.casar_conhecimento("entregam no centro?", itens) == "Entregamos sim, taxa de R$ 5."
+        # e ao contrário: a resposta do bairro específico não vale para o genérico
+        itens2 = [("Entregam no Centro Novo?", "Não entregamos lá.")]
+        assert chamados.casar_conhecimento("Entregam no Centro?", itens2) is None
+
+    def test_negacao_muda_a_pergunta(self):
+        itens = [("tem pizza com lactose?", "Todas levam queijo com lactose.")]
+        assert chamados.casar_conhecimento("tem pizza sem lactose?", itens) is None
+        itens2 = [("tem pizza sem lactose?", "Não temos opção sem lactose.")]
+        assert chamados.casar_conhecimento("tem pizza com lactose?", itens2) is None
+
+    def test_numero_diferente_nao_casa(self):
+        itens = [("abrem dia 24?", "No dia 24 abrimos até 22h.")]
+        assert chamados.casar_conhecimento("abrem dia 25?", itens) is None
+
+    def test_respostas_em_conflito_nao_escolhe(self):
+        itens = [("aceitam pix?", "Aceitamos."), ("aceita pix?", "Só na entrega.")]
+        assert chamados.casar_conhecimento("vocês aceitam pix?", itens) is None
+
 
 class TestQuandoAbrir:
     def _pode(self, texto, **dados):
@@ -137,6 +160,20 @@ class TestResposta:
 
     def test_precos_da_equipe_sao_lastro(self):
         assert 8.0 in chamados._precos_da_resposta("a taxa pro Cohatrac é R$ 8,00")
+
+    def test_valor_com_cara_de_dinheiro_conta(self):
+        assert chamados._precos_da_resposta("A taxa pro Centro Novo é 8 reais") == [8.0]
+        assert chamados._precos_da_resposta("fica 15 a borda recheada") == [15.0]
+        assert chamados._precos_da_resposta("a de calabresa sai 12,50") == [12.5]
+
+    def test_prazo_endereco_e_quantidade_nao_viram_preco(self):
+        """A09: qualquer número virava preço autorizado — "30 minutos" e o "nº 120"
+        liberavam a voz a falar R$ 30 e R$ 120."""
+        assert chamados._precos_da_resposta("Entregamos em 30 minutos no número 120, sem taxa extra.") == []
+        assert chamados._precos_da_resposta("a pizza fica pronta em 40 min") == []
+        assert chamados._precos_da_resposta("a família serve 4 pessoas, são 12 fatias") == []
+        assert chamados._precos_da_resposta("liga no 98 98888-7777 que a gente resolve") == []
+        assert chamados._precos_da_resposta("a taxa é 8 e chega em 40 minutos") == [8.0]
 
 
 class TestPrazo:
