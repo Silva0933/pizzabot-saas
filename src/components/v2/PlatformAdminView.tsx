@@ -2516,9 +2516,9 @@ function LLMConfigCard() {
                         <option value="gemini">Google Gemini</option>
                         <option value="openrouter">OpenRouter</option>
                         <option value="openai">OpenAI</option>
-                        <option value="anthropic">Anthropic</option>
-                        <option value="groq">Groq</option>
-                        <option value="ollama">Ollama (Local)</option>
+                        {/* Só os provedores que o backend implementa (LLM_PROVIDERS em
+                            routes/admin.py). Anthropic/Groq/Ollama apareciam aqui e só
+                            falhavam ao salvar — modelo deles vai pelo OpenRouter. */}
                       </select>
                       <ChevronDown className="w-3.5 h-3.5 text-ink-muted absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>

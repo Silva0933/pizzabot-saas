@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, BookOpen, Bot, Clock3, Loader2, MessageSquare, Plus, Send, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookOpen, Bot, Clock3, Loader2, MessageSquare, Plus, RefreshCw, Send, Trash2, UserRound } from "lucide-react";
 import { Chamado, ItemConhecimento, chamadosApi, conhecimentoApi } from "../../lib/api";
 
 // ============================================
@@ -47,9 +47,15 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
   const [chamados, setChamados] = useState<Chamado[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [ativoId, setAtivoId] = useState<string | null>(null);
+  // Falha ao carregar não pode virar "Nenhuma dúvida": a equipe acharia que não
+  // há cliente esperando (achado A13 da análise de 01/10, reproduzido com a API em 503).
+  const [falhou, setFalhou] = useState(false);
+  const [sincronizadoEm, setSincronizadoEm] = useState<Date | null>(null);
 
   function carregar() {
-    return chamadosApi.list(pizzariaId).then(setChamados).catch(() => {});
+    return chamadosApi.list(pizzariaId)
+      .then((l) => { setChamados(l); setFalhou(false); setSincronizadoEm(new Date()); })
+      .catch(() => setFalhou(true));
   }
 
   useEffect(() => {
@@ -88,8 +94,25 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
           </h2>
           <p className="mt-1 text-xs text-ink-muted">Dúvidas e problemas que ela trouxe para você resolver.</p>
         </div>
+        {falhou && (
+          <div role="alert" className="flex items-start gap-2 border-b border-rose-500/30 bg-rose-950/30 px-4 py-3 text-xs text-rose-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">Não consegui carregar as dúvidas da atendente.</p>
+              <p className="mt-0.5 text-rose-300/80">
+                {sincronizadoEm
+                  ? `Mostrando o que veio às ${hora(sincronizadoEm.toISOString())} — pode haver cliente esperando.`
+                  : "Pode haver cliente esperando resposta."}
+              </p>
+            </div>
+            <button type="button" onClick={() => { carregar(); }}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/40 px-2 py-1 font-semibold hover:bg-rose-900/40">
+              <RefreshCw className="h-3.5 w-3.5" /> Tentar de novo
+            </button>
+          </div>
+        )}
         <div className="flex-1 divide-y divide-[#1e293b]/40 overflow-y-auto">
-          {ordenados.length === 0 && (
+          {ordenados.length === 0 && !falhou && (
             <div className="p-8 text-center text-sm text-ink-muted">
               <Bot className="mx-auto mb-2 h-8 w-8 opacity-30" />
               Nenhuma dúvida da atendente por enquanto.
@@ -158,7 +181,10 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
   onRespondido: () => void;
 }) {
   const [resposta, setResposta] = useState("");
-  const [salvar, setSalvar] = useState(chamado.motivo === "sem_resposta");
+  // Desmarcado por padrão: o que for salvo a atendente repete sozinha para
+  // perguntas iguais. Resposta de um caso só ("hoje acabou a massa") não pode
+  // virar regra da loja sem a equipe escolher (achado A10 da análise de 01/10).
+  const [salvar, setSalvar] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const fimRef = useRef<HTMLDivElement>(null);
@@ -254,7 +280,7 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
           </div>
           <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-ink-muted">
             <input type="checkbox" checked={salvar} onChange={(e) => setSalvar(e.target.checked)} className="h-4 w-4 accent-amber-500" />
-            Salvar como conhecimento (da próxima vez ela responde sozinha)
+            Salvar como conhecimento — vale sempre: ela repete esta resposta para perguntas iguais
           </label>
         </div>
       )}
