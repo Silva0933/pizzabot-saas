@@ -44,16 +44,19 @@ async def registrar_alerta(
                 "tipo": tipo, "nivel": nivel, "detalhe": detalhe[:1000],
             },
         )
-        # Avisa o painel admin em tempo real (se houver alguém ouvindo).
-        try:
-            from app.services.broadcaster import broadcaster
-            await broadcaster.publish(
-                pizzaria_id,
-                {"tipo": "alerta.plataforma", "pizzaria_id": str(pizzaria_id) if pizzaria_id else None,
-                 "payload": {"tipo": tipo, "nivel": nivel}},
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        # Avisa o painel da pizzaria em tempo real (se houver alguém ouvindo).
+        # Alerta global (sem pizzaria) não publica: o canal virava `ws:pizzaria:None`,
+        # que o listener descarta. O admin acompanha pela consulta da lista/badge.
+        if pizzaria_id:
+            try:
+                from app.services.broadcaster import broadcaster
+                await broadcaster.publish(
+                    pizzaria_id,
+                    {"tipo": "alerta.plataforma", "pizzaria_id": str(pizzaria_id),
+                     "payload": {"tipo": tipo, "nivel": nivel}},
+                )
+            except Exception:  # noqa: BLE001
+                pass
     except Exception as e:  # noqa: BLE001
         log.debug("Falha ao gravar alerta (ignorado): %s", e)
 
