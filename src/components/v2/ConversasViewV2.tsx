@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Loader2, Send, Bot, BotOff, AlertCircle, MessageSquare, User,
+  Loader2, Send, Bot, BotOff, AlertCircle, AlertTriangle, MessageSquare, User,
   Bell, X, ArrowLeft, Search,
 } from "lucide-react";
 import {
@@ -94,7 +94,7 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abr
           origem: p.origem || "cliente",
           tipo: p.tipo || "texto",
           conteudo: p.conteudo || "",
-          metadata: {},
+          metadata: p.metadata || {},
           created_at: p.created_at || new Date().toISOString(),
         };
         setMensagens((prev) => {
@@ -128,7 +128,10 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abr
       const p = liveEvent.payload;
       setMensagens((prev) =>
         prev.map((m) =>
-          m.id === p?.mensagem_id ? { ...m, conteudo: p.conteudo ?? m.conteudo, tipo: p.tipo ?? m.tipo } : m,
+          m.id === p?.mensagem_id
+            ? { ...m, conteudo: p.conteudo ?? m.conteudo, tipo: p.tipo ?? m.tipo,
+                metadata: p.metadata ? { ...m.metadata, ...p.metadata } : m.metadata }
+            : m,
         ),
       );
       setConversas((prev) =>
@@ -504,6 +507,17 @@ export function ConversasViewV2({ pizzariaId, liveEvent, onConversationOpen, abr
                         <div className={`text-xs mt-1 text-right font-medium ${isCliente ? "text-ink-muted" : "text-orange-100"}`}>
                           {new Date(m.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
                         </div>
+                        {/* Texto gerado não é prova de envio: a resposta que a
+                            Evolution recusou aparecia aqui como se o cliente a
+                            tivesse recebido (A05, análise de 01/10). */}
+                        {m.origem === "bot" && ["falhou", "parcial"].includes(m.metadata?.envio?.status) && (
+                          <div role="status" className="mt-1.5 flex items-center gap-1 rounded-md bg-rose-950/70 px-2 py-1 text-xs font-semibold text-rose-200">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            {m.metadata.envio.status === "falhou"
+                              ? "Não chegou ao cliente — responda por aqui"
+                              : `Chegou só em parte (${m.metadata.envio.partes_enviadas}/${m.metadata.envio.partes_total})`}
+                          </div>
+                        )}
                       </div>
                     </div>
                   );

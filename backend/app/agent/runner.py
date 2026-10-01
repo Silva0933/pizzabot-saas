@@ -779,102 +779,133 @@ async def process_and_reply(
     except Exception as e:  # noqa: BLE001
         log.debug("Falha no validador de preço (ignorado): %s", e)
 
-    # Envia pelo WhatsApp
+    # Envia pelo WhatsApp e guarda o que DE FATO saiu (envio["status"]):
+    # enviado | parcial | falhou | interrompido (humano assumiu no meio).
     try:
-        if pizz.instancia:
-            from app.agent.behavior import delivery_options
-            delivery_cfg = delivery_options(personalidade)
+        if not pizz.instancia:
+            raise RuntimeError("pizzaria sem instância do WhatsApp conectada")
+        from app.agent.behavior import delivery_options
+        delivery_cfg = delivery_options(personalidade)
 
-            async def _bot_ainda_pode_enviar() -> bool:
-                if conv is None:
-                    return True
-                ativo = (await db.execute(
-                    select(Conversa.bot_ativo).where(Conversa.id == conv.id)
-                )).scalar_one_or_none()
-                return bool(ativo)
+        async def _bot_ainda_pode_enviar() -> bool:
+            if conv is None:
+                return True
+            ativo = (await db.execute(
+                select(Conversa.bot_ativo).where(Conversa.id == conv.id)
+            )).scalar_one_or_none()
+            return bool(ativo)
 
-            await send_humanized_text(
-                evolution=evolution,
-                instancia=pizz.instancia,
-                numero=telefone,
-                texto=result.texto,
-                can_send=_bot_ainda_pode_enviar,
-                **delivery_cfg,
-            )
-    except Exception as e:
-        log.exception("Falha enviando pelo Evolution: %s", e)
+        envio = (await send_humanized_text(
+            evolution=evolution,
+            instancia=pizz.instancia,
+            numero=telefone,
+            texto=result.texto,
+            can_send=_bot_ainda_pode_enviar,
+            **delivery_cfg,
+        )).como_dict()
+    except Exception as e:  # noqa: BLE001
+        envio = {"status": "falhou", "partes_enviadas": 0, "partes_total": 0, "erro": f"{type(e).__name__}: {e}"[:300]}
+    if envio["status"] in ("falhou", "parcial"):
+        log.error("Resposta não chegou inteira ao cliente (%s): %s", envio["status"], envio.get("erro"))
         try:
             from app.services.alertas import registrar_alerta_seguro
-            await registrar_alerta_seguro(tipo="falha_envio", pizzaria_id=pizzaria_id, nivel="error",
-                                          detalhe=f"Falha ao enviar pelo WhatsApp (Evolution): {e}")
+            await registrar_alerta_seguro(
+                tipo="falha_envio", pizzaria_id=pizzaria_id, nivel="error",
+                detalhe=(f"Resposta {envio['status']} pelo WhatsApp ({envio['partes_enviadas']}/"
+                         f"{envio['partes_total']} partes) para {telefone}: {envio.get('erro')}"),
+            )
         except Exception:  # noqa: BLE001
             pass
 
-    # Salva como mensagem do bot
+    # Salva como mensagem do bot. Daqui em diante NADA lança: a resposta já saiu
+    # (ou já foi registrada como falha), e uma exceção faria o lote ser tentado de
+    # novo — o cliente receberia a mesma resposta duas vezes.
     if conv:
-        msg = Mensagem(
-            conversa_id=conv.id,
-            pizzaria_id=pizzaria_id,
-            origem="bot",
-            tipo="texto",
-            conteudo=result.texto,
-            metadata_json={
-                "iter": result.iteracoes,
-                "tool_calls": result.tool_calls,
-                "agent_trace": result.trace,
-            },
-        )
-        db.add(msg)
-        conv.last_message = result.texto
-        conv.last_timestamp = datetime.now(UTC)
-        # ---- Reset unread_count quando bot responde ----
-        conv.unread_count = 0
-        await db.commit()
-
-        # Broadcast nova mensagem do bot
-        await broadcaster.publish(
-            pizzaria_id,
-            {
-                "tipo": "mensagem.nova",
-                "pizzaria_id": str(pizzaria_id),
-                "payload": {
-                    "conversa_id": str(conv.id),
-                    "mensagem_id": str(msg.id),
-                    "telefone": telefone,
-                    "conteudo": result.texto,
-                    "origem": "bot",
-                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
+        try:
+            msg = Mensagem(
+                conversa_id=conv.id,
+                pizzaria_id=pizzaria_id,
+                origem="bot",
+                tipo="texto",
+                conteudo=result.texto,
+                metadata_json={
+                    "iter": result.iteracoes,
+                    "tool_calls": result.tool_calls,
+                    "agent_trace": result.trace,
+                    "envio": envio,
                 },
-            },
-        )
+            )
+            db.add(msg)
+            conv.last_message = result.texto
+            conv.last_timestamp = datetime.now(UTC)
+            # Só zera as não lidas se o cliente recebeu a resposta inteira: a que
+            # não saiu deixa a conversa pedindo atenção no painel.
+            if envio["status"] == "enviado":
+                conv.unread_count = 0
+            await db.commit()
 
-        # ---- Broadcast conversa.atualizada (unread_count resetado) ----
-        await broadcaster.publish(
-            pizzaria_id,
-            {
-                "tipo": "conversa.atualizada",
-                "pizzaria_id": str(pizzaria_id),
-                "payload": {
-                    "conversa_id": str(conv.id),
-                    "telefone": telefone,
-                    "unread_count": 0,
-                    "last_message": result.texto,
-                    "bot_ativo": conv.bot_ativo,
-                    "status": conv.status,
+            # Broadcast nova mensagem do bot
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "mensagem.nova",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "mensagem_id": str(msg.id),
+                        "telefone": telefone,
+                        "conteudo": result.texto,
+                        "origem": "bot",
+                        "metadata": {"envio": envio},
+                        "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                    },
                 },
-            },
-        )
+            )
+
+            # ---- Broadcast conversa.atualizada (unread_count resetado) ----
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "conversa.atualizada",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {
+                        "conversa_id": str(conv.id),
+                        "telefone": telefone,
+                        "unread_count": conv.unread_count,
+                        "last_message": result.texto,
+                        "bot_ativo": conv.bot_ativo,
+                        "status": conv.status,
+                    },
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            log.exception("Resposta enviada (%s) mas não registrada no histórico: %s", envio["status"], e)
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from app.services.alertas import registrar_alerta_seguro
+                await registrar_alerta_seguro(
+                    tipo="falha_registro", pizzaria_id=pizzaria_id, nivel="error",
+                    detalhe=f"Resposta ao {telefone} ({envio['status']}) não foi gravada no histórico: {e}",
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     # ---- Broadcast pedido.novo se registrar_pedido foi chamada ----
     if "registrar_pedido" in result.tool_calls:
-        await broadcaster.publish(
-            pizzaria_id,
-            {
-                "tipo": "pedido.novo",
-                "pizzaria_id": str(pizzaria_id),
-                "payload": {"telefone": telefone},
-            },
-        )
+        try:
+            await broadcaster.publish(
+                pizzaria_id,
+                {
+                    "tipo": "pedido.novo",
+                    "pizzaria_id": str(pizzaria_id),
+                    "payload": {"telefone": telefone},
+                },
+            )
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha ao avisar o painel do pedido novo: %s", e)
 
     # ---- Lembrete de confirmação ----
     # Se o FSM mostrou o resumo e está esperando o "ok", agenda UM follow-up: se o
@@ -927,4 +958,5 @@ async def process_and_reply(
         "iteracoes": result.iteracoes,
         "tool_calls": result.tool_calls,
         "trace": result.trace,
+        "envio": envio,
     }
