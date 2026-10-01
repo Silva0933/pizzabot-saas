@@ -54,14 +54,27 @@ class TestPrecoNaoConfiaNoCliente:
 
     def test_soma_apenas_adicionais_cadastrados(self):
         prod = FakeProduto(id="p1", nome="Pizza", preco=50)
-        adicionais = {"borda catupiry": Decimal("8")}
+        adicionais = {"Borda Catupiry": Decimal("8")}
+        itens = [ItemPedidoIn(
+            produto_id="p1", nome="Pizza", quantidade=1, preco_unit=0, adicionais=["borda catupiry"],
+        )]
+        itens_json, subtotal = _recalcular_itens(itens, _map(prod), adicionais)
+        assert subtotal == Decimal("58")  # 50 + 8, preço do cadastro
+        assert itens_json[0]["adicionais"] == ["Borda Catupiry"]   # nome exato do cadastro
+
+    def test_adicional_que_nao_existe_mais_recusa_em_vez_de_sumir(self):
+        """Antes o "fantasma" era descartado em silêncio: com a página aberta desde
+        antes de a loja tirar a borda, o cliente via o preço com ela e o pedido
+        saía sem a borda e mais barato. Agora o checkout recusa e explica."""
+        prod = FakeProduto(id="p1", nome="Pizza", preco=50)
         itens = [ItemPedidoIn(
             produto_id="p1", nome="Pizza", quantidade=1, preco_unit=0,
             adicionais=["Borda Catupiry", "Adicional Fantasma"],
         )]
-        itens_json, subtotal = _recalcular_itens(itens, _map(prod), adicionais)
-        assert subtotal == Decimal("58")  # 50 + 8; o "fantasma" é descartado
-        assert itens_json[0]["adicionais"] == ["Borda Catupiry"]
+        with pytest.raises(HTTPException) as exc:
+            _recalcular_itens(itens, _map(prod), {"Borda Catupiry": Decimal("8")})
+        assert exc.value.status_code == 400
+        assert "Adicional Fantasma" in exc.value.detail and "Atualize a página" in exc.value.detail
 
     def test_adicionais_especificos_do_produto_opcoes(self):
         prod = FakeProduto(
@@ -234,6 +247,7 @@ def test_adicional_de_outro_produto_nao_aparece_para_quem_nao_tem_proprios():
     )
     # Tudo que a tela oferece ao hambúrguer o checkout aceita e cobra.
     itens = [ItemPedidoIn(produto_id="b1", nome="X-Burger", quantidade=1, adicionais=["Bacon"])]
-    itens_json, subtotal = _recalcular_itens(itens, _map(burger, pizza), {"bacon": Decimal("5")})
+    # Como o checkout chama em produção: a lista de adicionais da pizzaria.
+    itens_json, subtotal = _recalcular_itens(itens, _map(burger, pizza), [{"nome": "Bacon", "preco": 5}])
     assert subtotal == Decimal("35")
     assert itens_json[0]["adicionais"] == ["Bacon"]

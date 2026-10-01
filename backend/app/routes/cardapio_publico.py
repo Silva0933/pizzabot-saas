@@ -203,9 +203,19 @@ def _recalcular_itens(
                 )
             if str(sid) not in ids:
                 ids.append(str(sid))
-        # Adicional que não pertence ao produto é descartado (a tela só oferece os válidos).
+        # Adicional que não pertence (mais) ao produto: recusa com motivo. Antes era
+        # descartado em silêncio — com a página aberta desde antes de a loja tirar
+        # a borda, o cliente via o preço com ela e o pedido saía sem a borda e mais
+        # barato (auditoria de 01/10).
         validos = {cat_norm(a.nome) for a in cat.adicionais_de(prod)}
-        adicionais_validos = [a for a in (item.adicionais or []) if cat_norm(a) in validos]
+        invalidos = [a for a in (item.adicionais or []) if cat_norm(a) not in validos]
+        if invalidos:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"{', '.join(invalidos)} não está mais disponível para {item.nome}. "
+                "Atualize a página e escolha de novo.",
+            )
+        adicionais_validos = list(item.adicionais or [])
         try:
             pi = cat.precificar(ids, item.tamanho, adicionais_validos)
         except ErroItem as e:
@@ -220,7 +230,7 @@ def _recalcular_itens(
             "preco_unit": float(pi.preco_unit),
             "tamanho": pi.tamanho,
             "observacao": item.observacao,
-            "adicionais": adicionais_validos,
+            "adicionais": pi.adicionais,      # nomes exatos do cadastro
         }
         if len(sabores) > 1:
             linha["sabores"] = [s.nome for s in sabores]
