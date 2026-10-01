@@ -379,6 +379,42 @@ def test_porta_barra_pedido_invalido_e_nao_registra(cat):
     assert res["estado"]["validador_recusas"] == 1
 
 
+def test_frase_de_pedido_nao_vale_como_sim_para_o_cardapio(cat):
+    """Auditoria de 01/10: a saudação oferece o cardápio; o cliente diz "quero uma
+    Quatro Queijos grande, quanto fica?" e a NLU não extrai o item — o "quero"
+    contava como "sim, manda o cardápio". Aceite de oferta é resposta curta."""
+    def _rodar(fala, intencao):
+        est = engine.estado_inicial()
+        est.update({"apresentou": True, "cardapio_ofertado": True})
+        envio = AsyncMock(return_value={"ok": True})
+        with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+             patch("app.agent.tools.enviar_cardapio_arquivo", new=envio), \
+             patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+             patch("app.services.chamados.buscar_conhecimento", new=AsyncMock(return_value=None)), \
+             patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"):
+            asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), est,
+                                         {"intencao": intencao, "dados": {}}, user_input=fala))
+        return envio.await_count
+
+    assert _rodar("quero uma quatro queijos grande, quanto fica?", "duvida_geral") == 0
+    assert _rodar("quero sim", "duvida_geral") == 1
+    assert _rodar("sim", "confirmar_resumo") == 1
+
+
+def test_releitura_da_nlu_so_em_frase_de_pedido_sem_itens():
+    from app.agent.fsm.pipeline import _pedido_sem_itens
+    vazio = {"intencao": "duvida_geral", "dados": {"produtos": [], "_ops_itens": []}}
+    assert _pedido_sem_itens(vazio, "quero uma Quatro Queijos grande, quanto fica?") is True
+    assert _pedido_sem_itens(vazio, "me vê uma calabresa") is True
+    assert _pedido_sem_itens(vazio, "quero ver o cardápio") is False        # é cardápio
+    assert _pedido_sem_itens(vazio, "não quero mais nada") is False         # negação
+    assert _pedido_sem_itens(vazio, "quanto custa a brasa?") is False       # sem verbo de pedido
+    com_item = {"intencao": "adicionar_item", "dados": {"produtos": [{"nome": "x"}]}}
+    assert _pedido_sem_itens(com_item, "quero uma calabresa grande") is False
+    humano = {"intencao": "falar_humano", "dados": {}}
+    assert _pedido_sem_itens(humano, "quero falar com alguém agora") is False
+
+
 def test_pergunta_de_preco_da_meia_nao_anota_e_responde_o_valor(cat):
     """Agente real (auditoria de 01/10): "quanto fica uma pizza meia X meia Y
     grande?" virava adicionar_item — "✅ Anotei" + "o sistema informa o valor"."""

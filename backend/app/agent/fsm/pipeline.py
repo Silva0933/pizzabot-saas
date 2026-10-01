@@ -274,6 +274,28 @@ def contextualizar_voz(
     return msg_pronta, pergunta_fixa
 
 
+_VERBO_PEDIDO_NLU_RE = re.compile(
+    r"\b(quero|queria|vou querer|manda|mande|me v[eê]|me d[aá]|traz|anota|coloca|bota|faz (uma|um))\b",
+    re.IGNORECASE,
+)
+
+
+def _pedido_sem_itens(res_nlu: dict[str, Any] | None, user_input: str) -> bool:
+    """A frase pede algo (verbo de pedido + mais palavras), mas a NLU não trouxe
+    item nem operação. Fora disto (cardápio, atendente, negação) não relê."""
+    if not res_nlu:
+        return False
+    dados = res_nlu.get("dados") or {}
+    if dados.get("produtos") or dados.get("_ops_itens"):
+        return False
+    if res_nlu.get("intencao") not in (None, "duvida_geral", "adicionar_item", "conversa_fiada", "pedir_cardapio"):
+        return False
+    t = (user_input or "").lower()
+    if re.search(r"card[aá]pio|menu|atendente|humano|\bn[aã]o\b", t):
+        return False
+    return bool(_VERBO_PEDIDO_NLU_RE.search(t)) and len(re.findall(r"\w+", t)) >= 3
+
+
 def exigir_texto_da_voz(texto: str | None, pergunta_fixa: str | None) -> str:
     """A voz não produziu nada aproveitável (truncada nas 2 tentativas, provedores
     fora) e não há pergunta fixa para mandar: o turno falha e a fila tenta de novo
@@ -409,6 +431,19 @@ async def run_fsm_agent(
             res_nlu, nlu_provider_usado, nlu_model_usado = await com_failover(
                 _nlu_cmd, cfg=cfg, model=nlu_model
             )
+            # Frase de pedido ("quero uma Quatro Queijos grande, quanto fica?") e a
+            # NLU voltou SEM item nenhum: na auditoria de 01/10, de duas execuções
+            # da mesma frase uma extraía e a outra não (e a atendente mandava o
+            # cardápio). Uma segunda leitura, só nesse caso, resolve a variação.
+            if _pedido_sem_itens(res_nlu, user_input):
+                try:
+                    res_2, prov_2, mdl_2 = await com_failover(_nlu_cmd, cfg=cfg, model=nlu_model)
+                    d2 = res_2.get("dados") or {}
+                    if d2.get("produtos") or d2.get("_ops_itens"):
+                        log.info("NLU sem itens numa frase de pedido; a 2ª leitura extraiu: %r", user_input[:80])
+                        res_nlu, nlu_provider_usado, nlu_model_usado = res_2, prov_2, mdl_2
+                except Exception as e_2:  # noqa: BLE001
+                    log.debug("2ª leitura da NLU falhou (segue a 1ª): %s", e_2)
             nlu_modo = f"comandos:{res_nlu.get('_modo')}"
         except Exception as e:  # noqa: BLE001
             log.warning("NLU de comandos indisponível (%s) — usando a NLU livre", str(e)[:200])

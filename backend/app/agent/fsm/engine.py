@@ -1594,6 +1594,10 @@ async def processar(
         and not estado.get("cardapio_enviado")
         and not estado["carrinho"]
         and not dados.get("produtos")  # "quero uma calabresa" NÃO é pedir o cardápio
+        # Aceite da oferta é resposta CURTA ("sim", "quero", "pode mandar"). Quando
+        # a NLU não extraía o produto de "quero uma Quatro Queijos grande, quanto
+        # fica?", o "quero" valia como "sim, manda o cardápio" (auditoria de 01/10).
+        and len(_re.findall(r"\w+", user_input or "")) <= 5
         # "sim", "pode", "quero", "manda" — aceite em qualquer forma comum
         and (_eh_confirmacao(intencao, user_input) or _afirmou_upsell(intencao, user_input))
     )
