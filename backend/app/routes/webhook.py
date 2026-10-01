@@ -295,6 +295,12 @@ async def evolution_webhook(
         _tokens = {_gs().evolution_webhook_token or ""}
     _tokens.discard("")
     from app.services.secrets import token_confere
+    if not _tokens and _gs().is_production:
+        # Fail-open era de propósito para o setup inicial, mas em produção um token
+        # apagado por engano deixava qualquer um POSTar "mensagens de cliente" que
+        # o agente responderia. A prontidão (/admin/prontidao) já aponta o motivo.
+        log.error("Webhook rejeitado: produção sem token do webhook da Evolution configurado")
+        return {"ignored": "sem_token_configurado"}
     if _tokens and not token_confere(request.query_params.get("token"), _tokens):
         log.warning("Webhook rejeitado: token inválido (instance=%s)", payload.instance)
         return {"ignored": "bad_token"}

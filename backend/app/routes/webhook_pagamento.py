@@ -367,6 +367,11 @@ async def webhook_asaas_plataforma(
         log.warning("Webhook plataforma rejeitado: token inválido")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido")
     if not token:
+        if _settings.is_production:
+            # Este webhook confia no corpo (renova plano, reativa suspensa): sem
+            # token em produção, qualquer POST "pagava" a assinatura de uma loja.
+            log.error("Webhook plataforma rejeitado: produção sem token configurado")
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Webhook sem token configurado")
         log.warning("ASAAS_PLATFORM_WEBHOOK_TOKEN vazio — webhook SEM autenticação")
 
     body = await request.json()
