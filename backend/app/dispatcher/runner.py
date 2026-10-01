@@ -126,32 +126,48 @@ async def _handle(entry_id: str, conv: str | None, sem: asyncio.Semaphore) -> No
         try:
             pid_uuid = _uuid.UUID(pid)
             pending = await drain_pending(pid_uuid, tel)
-            if pending:
+            if not pending:
+                await confirm_processed(pid_uuid, tel)
+            else:
                 t0 = time.monotonic()
-                # Áudio chega como "[áudio]": transcreve aqui, fora do webhook.
-                from app.services.transcricao import transcrever_pendentes
-                await transcrever_pendentes(pid_uuid, pending)
-                conteudo = "\n".join(p["conteudo"] for p in pending if p.get("conteudo"))
-                if conteudo.strip():
-                    from app.agent.runner import process_and_reply
-                    from app.db import AsyncSessionLocal
+                erro: BaseException | None = None
+                try:
+                    # Áudio chega como "[áudio]": transcreve aqui, fora do webhook.
+                    from app.services.transcricao import transcrever_pendentes
+                    await transcrever_pendentes(pid_uuid, pending)
+                    conteudo = "\n".join(p["conteudo"] for p in pending if p.get("conteudo"))
+                    if conteudo.strip():
+                        from app.agent.runner import process_and_reply
+                        from app.db import AsyncSessionLocal
 
-                    async with AsyncSessionLocal() as db:
-                        try:
-                            await process_and_reply(db, pid_uuid, tel, conteudo)
-                        except Exception as e:  # noqa: BLE001
-                            log.exception("Dispatcher: agente falhou (pid=%s tel=%s): %s", pid, tel, e)
+                        async with AsyncSessionLocal() as db:
                             try:
-                                await db.rollback()
-                            except Exception:  # noqa: BLE001
-                                pass
+                                await process_and_reply(db, pid_uuid, tel, conteudo)
+                            except Exception:
+                                try:
+                                    await db.rollback()
+                                except Exception:  # noqa: BLE001
+                                    pass
+                                raise
+                except Exception as e:  # noqa: BLE001
+                    log.exception("Dispatcher: lote sem desfecho (pid=%s tel=%s): %s", pid, tel, e)
+                    erro = e
                 dur = time.monotonic() - t0
                 _durations.append(dur)
                 log.info(
-                    "Dispatcher: conversa processada pid=%s tel=%s msgs=%d dur=%.2fs",
-                    pid, tel, len(pending), dur,
+                    "Dispatcher: conversa processada pid=%s tel=%s msgs=%d dur=%.2fs ok=%s",
+                    pid, tel, len(pending), dur, erro is None,
                 )
-            await confirm_processed(pid_uuid, tel)
+                # O lote só sai do inflight com desfecho gravado. Antes saía sempre
+                # (confirm no fim, mesmo após exceção): o cliente ficava sem
+                # resposta e ninguém era avisado (A07, análise de 01/10).
+                from app.services.recuperacao import lote_concluido, lote_falhou
+                if erro is None:
+                    await lote_concluido(pid_uuid, tel)
+                else:
+                    espera = await lote_falhou(pid_uuid, tel, erro)
+                    if espera is not None:
+                        await rearm_dispatcher(pid, tel, espera)
         finally:
             try:
                 await redis.delete(lock_key)

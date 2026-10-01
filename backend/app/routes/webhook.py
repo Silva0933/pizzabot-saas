@@ -361,6 +361,10 @@ async def evolution_webhook(
         return {"ignored": "no_phone"}
 
     conteudo, tipo, metadata = _extract_content(data)
+    # O número como veio do WhatsApp: é ele que nomeia as chaves da fila (a
+    # conversa pode estar gravada com a variante sem/com o 9º dígito). O
+    # reconciliador usa para achar o lote desta mensagem.
+    metadata["telefone_jid"] = telefone
     evolution_msg_id = key.get("id")
     push_name = data.get("pushName")
 
@@ -541,25 +545,38 @@ async def evolution_webhook(
             # Fora do horário: responde UMA mensagem e NÃO aciona a IA.
             await _responder_fora_horario(db, pizz, conv, telefone)
         else:
-            await enqueue_message(
-                pizzaria_id=pizz.id,
-                telefone=telefone,
-                mensagem_id=msg.id,
-                conteudo=conteudo,
-                metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo, "midia": midia_audio},
-            )
-            midia_audio = None  # quem transcreve agora é o worker/dispatcher
-            if getattr(pizz, "usar_dispatcher", False):
-                # Etapa 1: arma no ZSET de prazos; o serviço dispatcher drena.
-                from app.services.queue import arm_dispatcher
-                await arm_dispatcher(pizz.id, telefone)
-            else:
-                # Caminho Celery: agenda flush alinhado ao debounce base (+ folga).
-                from app.services.queue import DEBOUNCE_SECONDS
-                from app.workers.tasks import flush_conversation
-                flush_conversation.apply_async(
-                    args=[str(pizz.id), telefone],
-                    countdown=DEBOUNCE_SECONDS + 0.5,
+            # A mensagem JÁ está gravada. Se o Redis/broker falhar aqui, lançar
+            # faria a Evolution reentregar — e a reentrega cairia no dedup como
+            # duplicada: mensagem aceita e nunca processada (A06, análise de
+            # 01/10). Agora fica registrada e o reconciliador do beat a recupera.
+            try:
+                await enqueue_message(
+                    pizzaria_id=pizz.id,
+                    telefone=telefone,
+                    mensagem_id=msg.id,
+                    conteudo=conteudo,
+                    metadata={"evolution_msg_id": evolution_msg_id, "tipo": tipo, "midia": midia_audio},
+                )
+                midia_audio = None  # quem transcreve agora é o worker/dispatcher
+                if getattr(pizz, "usar_dispatcher", False):
+                    # Etapa 1: arma no ZSET de prazos; o serviço dispatcher drena.
+                    from app.services.queue import arm_dispatcher
+                    await arm_dispatcher(pizz.id, telefone)
+                else:
+                    # Caminho Celery: agenda flush alinhado ao debounce base (+ folga).
+                    from app.services.queue import DEBOUNCE_SECONDS
+                    from app.workers.tasks import flush_conversation
+                    flush_conversation.apply_async(
+                        args=[str(pizz.id), telefone],
+                        countdown=DEBOUNCE_SECONDS + 0.5,
+                    )
+            except Exception as e:  # noqa: BLE001
+                log.error("Mensagem %s gravada mas fora da fila (o reconciliador recupera): %s", msg.id, e)
+                from app.services.alertas import registrar_alerta_seguro
+                await registrar_alerta_seguro(
+                    tipo="falha_fila", pizzaria_id=pizz.id, nivel="error",
+                    detalhe=f"Mensagem de {telefone} gravada mas não entrou na fila ({type(e).__name__}: {e}). "
+                            "O reconciliador tenta de novo em até 2 min.",
                 )
     elif conteudo:
         # Conversa com um humano: a IA não responde, mas o que o cliente disse
@@ -583,22 +600,27 @@ async def evolution_webhook(
         _TAREFAS_FUNDO.add(tarefa)
         tarefa.add_done_callback(_TAREFAS_FUNDO.discard)
 
-    await broadcaster.publish(
-        pizz.id,
-        {
-            "tipo": "mensagem.nova",
-            "pizzaria_id": str(pizz.id),
-            "payload": {
-                "conversa_id": str(conv.id),
-                "mensagem_id": str(msg.id),
-                "telefone": telefone,
-                "nome": push_name,
-                "conteudo": conteudo,
-                "tipo": tipo,
-                "origem": "cliente",
-                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+    # Depois do commit nada pode lançar: a reentrega da Evolution gravaria a
+    # mensagem de novo (com o Redis fora, o dedup também está fora).
+    try:
+        await broadcaster.publish(
+            pizz.id,
+            {
+                "tipo": "mensagem.nova",
+                "pizzaria_id": str(pizz.id),
+                "payload": {
+                    "conversa_id": str(conv.id),
+                    "mensagem_id": str(msg.id),
+                    "telefone": telefone,
+                    "nome": push_name,
+                    "conteudo": conteudo,
+                    "tipo": tipo,
+                    "origem": "cliente",
+                    "created_at": msg.created_at.isoformat() if msg.created_at else None,
+                },
             },
-        },
-    )
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao avisar o painel da mensagem %s: %s", msg.id, e)
 
     return {"ok": True, "conversa_id": str(conv.id), "mensagem_id": str(msg.id)}

@@ -82,4 +82,11 @@ celery_app.conf.beat_schedule = {
         # atendimento humano (o cliente nunca fica esperando para sempre).
         "schedule": 60.0,
     },
+    "reconciliar-atendimento": {
+        "task": "pizzabot.reconciliar_atendimento",
+        # A cada 2 min: mensagem de cliente sem resposta e sem lote andando volta
+        # para a fila (1x) ou vai para humano; resposta recusada pela Evolution é
+        # reenviada. Ver services/recuperacao.py.
+        "schedule": 120.0,
+    },
 }

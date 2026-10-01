@@ -271,6 +271,39 @@ async def _expirar_chamados_async() -> dict:
             pass
 
 
+@celery_app.task(name="pizzabot.reconciliar_atendimento")
+def reconciliar_atendimento() -> dict:
+    return asyncio.run(_reconciliar_atendimento_async())
+
+
+async def _reconciliar_atendimento_async() -> dict:
+    from app.db import AsyncSessionLocal, engine
+    from app.services.recuperacao import reconciliar
+    try:
+        async with AsyncSessionLocal() as db:
+            return {"ok": True, **(await reconciliar(db))}
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha no reconciliador do atendimento: %s", e)
+        return {"ok": False, "erro": str(e)}
+    finally:
+        try:
+            await engine.dispose()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services.evolution import evolution
+            await evolution.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            # asyncio.run cria um loop novo por task: o client Redis global fica
+            # preso ao loop anterior se não for fechado.
+            from app.redis_client import redis
+            await redis.aclose()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 @celery_app.task(name="pizzabot.encerrar_rascunhos_abandonados")
 def encerrar_rascunhos_abandonados() -> dict:
     return asyncio.run(_encerrar_rascunhos_async())

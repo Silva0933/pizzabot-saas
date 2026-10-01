@@ -381,10 +381,12 @@ async def _enviar_nps_async(pedido_id: uuid.UUID) -> dict:
 async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
     from app.agent.runner import process_and_reply
     from app.db import AsyncSessionLocal, engine
-    from app.services.queue import confirm_processed, drain_pending, should_flush_now
+    from app.services.queue import drain_pending, should_flush_now
 
     has_lock = False
     drained = False
+    concluido = False      # desfecho gravado (resposta, handoff ou "não responder" de propósito)
+    erro: BaseException | None = None
     try:
         can_flush, wait = await should_flush_now(pizzaria_id, telefone)
         if not can_flush:
@@ -409,41 +411,55 @@ async def _flush_async(pizzaria_id: uuid.UUID, telefone: str, task) -> dict:
         has_lock = True
 
         pending = await drain_pending(pizzaria_id, telefone)
-        drained = True  # a partir daqui o lote está no inflight; o finally o libera
+        drained = True  # a partir daqui o lote está no inflight
         if not pending:
+            concluido = True
             return {"empty": True}
 
-        # Áudio chega como "[áudio]": transcreve aqui, fora do webhook.
-        from app.services.transcricao import transcrever_pendentes
-        await transcrever_pendentes(pizzaria_id, pending)
+        try:
+            # Áudio chega como "[áudio]": transcreve aqui, fora do webhook.
+            from app.services.transcricao import transcrever_pendentes
+            await transcrever_pendentes(pizzaria_id, pending)
 
-        # Concatena as msgs batched
-        conteudo = "\n".join(item["conteudo"] for item in pending if item.get("conteudo"))
-        if not conteudo.strip():
-            return {"empty_content": True}
+            # Concatena as msgs batched
+            conteudo = "\n".join(item["conteudo"] for item in pending if item.get("conteudo"))
+            if not conteudo.strip():
+                concluido = True
+                return {"empty_content": True}
 
-        log.info(
-            "Flush → agente: pizzaria=%s tel=%s msgs=%d",
-            pizzaria_id, telefone, len(pending),
-        )
+            log.info(
+                "Flush → agente: pizzaria=%s tel=%s msgs=%d",
+                pizzaria_id, telefone, len(pending),
+            )
 
-        async with AsyncSessionLocal() as db:
-            try:
-                result = await process_and_reply(db, pizzaria_id, telefone, conteudo)
-                return result
-            except Exception as e:
-                log.exception("Agente falhou: %s", e)
-                await db.rollback()
-                return {"ok": False, "erro": str(e)}
+            async with AsyncSessionLocal() as db:
+                try:
+                    result = await process_and_reply(db, pizzaria_id, telefone, conteudo)
+                except Exception:
+                    await db.rollback()
+                    raise
+            concluido = True
+            return result
+        except Exception as e:  # noqa: BLE001
+            log.exception("Lote sem desfecho (pizzaria=%s tel=%s): %s", pizzaria_id, telefone, e)
+            erro = e
+            return {"ok": False, "erro": str(e)}
     finally:
-        # Libera o lote inflight: chegando neste finally, a mensagem já foi tratada
-        # (respondida ou falha tratada). Só um crash DURO do worker — que não roda
-        # este finally — preserva o inflight pra reprocessamento numa reentrega.
+        # O lote só sai do inflight com desfecho gravado. Antes este finally o
+        # liberava sempre, inclusive depois de exceção: o cliente ficava sem
+        # resposta e ninguém era avisado (A07, análise de 01/10). Agora a exceção
+        # mantém o lote e agenda nova tentativa; esgotadas, vai para humano.
         if drained:
+            from app.services.recuperacao import lote_concluido, lote_falhou
             try:
-                await confirm_processed(pizzaria_id, telefone)
-            except Exception:
-                pass
+                if concluido:
+                    await lote_concluido(pizzaria_id, telefone)
+                elif erro is not None:
+                    espera = await lote_falhou(pizzaria_id, telefone, erro)
+                    if espera is not None:
+                        flush_conversation.apply_async(args=[str(pizzaria_id), telefone], countdown=espera)
+            except Exception as e_fim:  # noqa: BLE001
+                log.warning("Desfecho do lote não registrado (o reconciliador retoma): %s", e_fim)
         if has_lock:
             try:
                 from app.redis_client import redis
