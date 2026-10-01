@@ -697,6 +697,10 @@ export interface Chamado {
   resposta: string | null;
   respondido_em: string | null;
   created_at: string;
+  /** Entrega da resposta ao cliente (null = chamado antigo, anterior à migration 039). */
+  entrega_status?: "pendente" | "enviando" | "enviado" | "falhou" | "humano" | null;
+  entrega_erro?: string | null;
+  entregue_em?: string | null;
 }
 
 export interface ItemConhecimento {

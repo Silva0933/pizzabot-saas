@@ -236,13 +236,24 @@ def expirar_chamados() -> dict:
 
 async def _expirar_chamados_async() -> dict:
     from app.db import AsyncSessionLocal, engine
-    from app.services.chamados import expirar_vencidos
+    from app.services.chamados import expirar_vencidos, retomar_entregas
+    out: dict = {"ok": True}
     try:
         async with AsyncSessionLocal() as db:
-            return {"ok": True, "expirados": await expirar_vencidos(db)}
+            out["expirados"] = await expirar_vencidos(db)
     except Exception as e:  # noqa: BLE001
         log.exception("Falha ao expirar chamados: %s", e)
-        return {"ok": False, "erro": str(e)}
+        out.update(ok=False, erro_expirar=str(e))
+    # Resposta da equipe que não chegou ao cliente (task perdida, worker caiu,
+    # Evolution fora): entrega de novo ou, esgotadas as tentativas, vai para humano.
+    try:
+        async with AsyncSessionLocal() as db:
+            out.update(await retomar_entregas(db))
+    except Exception as e:  # noqa: BLE001
+        log.exception("Falha ao retomar entregas de chamados: %s", e)
+        out.update(ok=False, erro_entregas=str(e))
+    try:
+        return out
     finally:
         try:
             await engine.dispose()
@@ -251,6 +262,11 @@ async def _expirar_chamados_async() -> dict:
         try:
             from app.services.evolution import evolution
             await evolution.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.redis_client import redis
+            await redis.aclose()
         except Exception:  # noqa: BLE001
             pass
 

@@ -499,6 +499,12 @@ class ChamadoInterno(Base):
     respondido_por: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
     respondido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Entrega da resposta ao cliente (migration 039): pendente | enviando | enviado | falhou | humano
+    entrega_status: Mapped[str | None] = mapped_column(String(20))
+    entrega_tentativas: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    entrega_atualizada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    entrega_erro: Mapped[str | None] = mapped_column(Text)
+    entregue_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ConhecimentoLoja(Base):

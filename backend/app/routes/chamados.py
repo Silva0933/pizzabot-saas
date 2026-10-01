@@ -1,6 +1,7 @@
 """API do painel para os chamados internos da atendente e a base de conhecimento."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
@@ -14,6 +15,7 @@ from app.db import get_db
 from app.deps import membership
 from app.models import ChamadoInterno, ConhecimentoLoja, Conversa
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/pizzarias/{pizzaria_id}", tags=["chamados"])
 
 
@@ -29,6 +31,10 @@ class ChamadoOut(BaseModel):
     resposta: str | None
     respondido_em: datetime | None
     created_at: datetime
+    # Entrega da resposta ao cliente: pendente | enviando | enviado | falhou | humano
+    entrega_status: str | None = None
+    entrega_erro: str | None = None
+    entregue_em: datetime | None = None
 
 
 class ResponderIn(BaseModel):
@@ -72,6 +78,7 @@ async def listar_chamados(
             id=ch.id, conversa_id=ch.conversa_id, telefone=ch.telefone, cliente_nome=nome,
             pergunta=ch.pergunta, motivo=ch.motivo, contexto=ch.contexto or {}, status=ch.status,
             resposta=ch.resposta, respondido_em=ch.respondido_em, created_at=ch.created_at,
+            entrega_status=ch.entrega_status, entrega_erro=ch.entrega_erro, entregue_em=ch.entregue_em,
         )
         for ch, nome in rows
     ]
@@ -96,12 +103,22 @@ async def responder_chamado(
     if ch is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Chamado não encontrado ou já encerrado.")
     # A voz leva a resposta ao cliente no worker (não segura a requisição do painel).
-    entregar_resposta_chamado.delay(str(ch.id))
-    await broadcaster.publish(pizzaria_id, {
-        "tipo": "chamado.respondido", "pizzaria_id": str(pizzaria_id),
-        "payload": {"chamado_id": str(ch.id), "conversa_id": str(ch.conversa_id) if ch.conversa_id else None},
-    })
-    return {"ok": True, "status": ch.status, "conhecimento_salvo": body.salvar_conhecimento}
+    # A resposta já está gravada com entrega 'pendente': se o broker estiver fora,
+    # o beat entrega depois — não derruba a requisição (antes virava 500 com a
+    # resposta já salva, e ninguém mais publicava a task).
+    try:
+        entregar_resposta_chamado.delay(str(ch.id))
+    except Exception as e:  # noqa: BLE001
+        log.warning("Task de entrega do chamado %s não publicada (o beat retoma): %s", ch.id, e)
+    try:
+        await broadcaster.publish(pizzaria_id, {
+            "tipo": "chamado.respondido", "pizzaria_id": str(pizzaria_id),
+            "payload": {"chamado_id": str(ch.id), "conversa_id": str(ch.conversa_id) if ch.conversa_id else None},
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao avisar o painel do chamado respondido: %s", e)
+    return {"ok": True, "status": ch.status, "entrega_status": ch.entrega_status,
+            "conhecimento_salvo": body.salvar_conhecimento}
 
 
 @router.get("/conhecimento", response_model=list[ConhecimentoOut])

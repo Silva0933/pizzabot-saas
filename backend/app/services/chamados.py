@@ -173,6 +173,10 @@ async def responder(
     ch.resposta = resposta.strip()[:2000]
     ch.respondido_por = usuario_id
     ch.respondido_em = datetime.now(UTC)
+    # A intenção de levar a resposta ao cliente nasce NA MESMA transação: se o
+    # broker cair antes da task ser publicada, o beat acha o 'pendente' e entrega.
+    ch.entrega_status = "pendente"
+    ch.entrega_atualizada_em = ch.respondido_em
     if salvar_conhecimento:
         db.add(ConhecimentoLoja(
             pizzaria_id=pizzaria_id, pergunta=ch.pergunta, resposta=ch.resposta, origem_chamado_id=ch.id,
@@ -232,19 +236,113 @@ async def _limpar_pendente(db: AsyncSession, pizzaria_id: Any, telefone: str) ->
         log.debug("Não limpei o chamado pendente do estado: %s", e)
 
 
+# Entrega da resposta (migration 039). Tentativas antes de desistir e passar a
+# conversa para um humano; e quanto tempo um 'enviando' pode ficar parado até o
+# beat concluir que o worker morreu no meio e retomar.
+MAX_TENTATIVAS_ENTREGA = 3
+ENVIANDO_TRAVADO_MIN = 3
+PENDENTE_RETOMAR_S = 60
+
+
+async def _pegar_para_entregar(db: AsyncSession, chamado_id: uuid.UUID) -> int | None:
+    """Trava a entrega para ESTE worker (UPDATE condicional). Devolve o número da
+    tentativa, ou None se outro já está entregando / já foi entregue. Antes não
+    havia trava: a task duplicada mandava a resposta duas vezes."""
+    from sqlalchemy import or_, update
+
+    from app.models import ChamadoInterno
+    agora = datetime.now(UTC)
+    tentativa = (await db.execute(
+        update(ChamadoInterno)
+        .where(
+            ChamadoInterno.id == chamado_id,
+            ChamadoInterno.status == "respondido",
+            or_(
+                ChamadoInterno.entrega_status == "pendente",
+                (ChamadoInterno.entrega_status == "enviando")
+                & (ChamadoInterno.entrega_atualizada_em < agora - timedelta(minutes=ENVIANDO_TRAVADO_MIN)),
+            ),
+        )
+        .values(
+            entrega_status="enviando",
+            entrega_tentativas=ChamadoInterno.entrega_tentativas + 1,
+            entrega_atualizada_em=agora,
+        )
+        .returning(ChamadoInterno.entrega_tentativas)
+    )).scalar_one_or_none()
+    await db.commit()
+    return tentativa
+
+
+async def _publicar(pizzaria_id: Any, evento: dict[str, Any]) -> None:
+    from app.services.broadcaster import broadcaster
+    try:
+        await broadcaster.publish(pizzaria_id, evento)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Falha ao avisar o painel (%s): %s", evento.get("tipo"), e)
+
+
+async def _desistir_da_entrega(db: AsyncSession, ch: Any, conv: Any, erro: str) -> None:
+    """Esgotou as tentativas: a conversa vai para um humano, com aviso no painel.
+    O cliente não fica esperando uma resposta que nunca vai chegar."""
+    from app.models import Mensagem
+    from app.services.alertas import registrar_alerta
+    ch.entrega_status = "falhou"
+    ch.entrega_erro = erro[:500]
+    ch.entrega_atualizada_em = datetime.now(UTC)
+    if conv is not None:
+        conv.bot_ativo = False
+        conv.status = "humano_necessario"
+        db.add(Mensagem(
+            conversa_id=conv.id, pizzaria_id=ch.pizzaria_id, origem="sistema", tipo="texto",
+            conteudo=(f"⚠️ A resposta do chamado (\"{ch.pergunta[:150]}\") não chegou ao cliente. "
+                      "Atendimento transferido para humano — responda por aqui."),
+            metadata_json={"trigger": "chamado_entrega_falhou", "chamado_id": str(ch.id), "erro": erro[:300]},
+        ))
+    await registrar_alerta(
+        db, tipo="falha_envio", pizzaria_id=ch.pizzaria_id, nivel="error",
+        detalhe=f"Resposta do chamado {ch.id} não entregue após {ch.entrega_tentativas} tentativas: {erro[:300]}",
+    )
+    await db.commit()
+    if conv is not None:
+        await _publicar(ch.pizzaria_id, {
+            "tipo": "atendimento.humano", "pizzaria_id": str(ch.pizzaria_id),
+            "payload": {"conversa_id": str(conv.id), "telefone": ch.telefone, "cliente_nome": conv.cliente_nome,
+                        "motivo": "Resposta do chamado não chegou ao cliente"},
+        })
+    await _publicar(ch.pizzaria_id, {
+        "tipo": "chamado.respondido", "pizzaria_id": str(ch.pizzaria_id),
+        "payload": {"chamado_id": str(ch.id), "conversa_id": str(conv.id) if conv else None},
+    })
+
+
+def _marcar_humano(ch: Any) -> None:
+    ch.contexto = {**(ch.contexto or {}), "mensagem_ao_cliente": None, "humano_assumiu": True}
+    ch.entrega_status = "humano"
+    ch.entrega_atualizada_em = datetime.now(UTC)
+
+
 async def entregar_resposta(db: AsyncSession, chamado_id: uuid.UUID) -> dict[str, Any]:
-    """Leva a resposta da equipe ao cliente pela voz da atendente (worker)."""
+    """Leva a resposta da equipe ao cliente pela voz da atendente (worker e beat).
+
+    Antes o chamado já aparecia "Resolvido" ao ser respondido, e uma falha aqui
+    (broker, Evolution, worker) só virava `{ok: false}` no log — o cliente nunca
+    recebia a resposta (A04, análise de 01/10). Agora: trava para um só worker,
+    falha de envio volta para 'pendente' (o beat tenta de novo) e, esgotadas as
+    tentativas, a conversa vai para um humano."""
     from app.agent.failover import com_failover
     from app.agent.fsm import voice
     from app.agent.fsm.guard import blindar
     from app.agent.memory import append_turn
     from app.models import ChamadoInterno, Conversa, Mensagem, PersonalidadeAtendente, Pizzaria
     from app.services.app_config import get_llm_config, modelo_para_plano
-    from app.services.broadcaster import broadcaster
     from app.services.evolution import evolution
 
-    ch = (await db.execute(select(ChamadoInterno).where(ChamadoInterno.id == chamado_id))).scalar_one_or_none()
-    if ch is None or ch.status != "respondido" or not ch.resposta:
+    tentativa = await _pegar_para_entregar(db, chamado_id)
+    if tentativa is None:
+        return {"ok": False, "motivo": "ja_em_entrega_ou_entregue"}
+    ch = (await db.execute(select(ChamadoInterno).where(ChamadoInterno.id == chamado_id))).scalar_one()
+    if not ch.resposta:
         return {"ok": False, "motivo": "sem_resposta"}
     pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == ch.pizzaria_id))).scalar_one()
     conv = (await db.execute(select(Conversa).where(Conversa.id == ch.conversa_id))).scalar_one_or_none() \
@@ -252,8 +350,12 @@ async def entregar_resposta(db: AsyncSession, chamado_id: uuid.UUID) -> dict[str
     await _limpar_pendente(db, pizz.id, ch.telefone)
     if conv is not None and not conv.bot_ativo:
         # Um humano assumiu a conversa: ele fala direto com o cliente.
-        ch.contexto = {**(ch.contexto or {}), "mensagem_ao_cliente": None, "humano_assumiu": True}
+        _marcar_humano(ch)
         await db.commit()
+        await _publicar(pizz.id, {
+            "tipo": "chamado.respondido", "pizzaria_id": str(pizz.id),
+            "payload": {"chamado_id": str(ch.id), "conversa_id": str(conv.id)},
+        })
         return {"ok": False, "motivo": "humano_assumiu"}
     personalidade = (await db.execute(
         select(PersonalidadeAtendente).where(PersonalidadeAtendente.pizzaria_id == pizz.id)
@@ -294,32 +396,110 @@ async def entregar_resposta(db: AsyncSession, chamado_id: uuid.UUID) -> dict[str
         texto = f"Confirmei aqui com a equipe: {ch.resposta}"
     texto = texto.replace("[QUEBRA]", "\n\n")
 
-    if pizz.instancia:
+    # A voz leva alguns segundos: o atendente pode ter assumido nesse meio-tempo.
+    if conv is not None:
+        ainda_bot = (await db.execute(select(Conversa.bot_ativo).where(Conversa.id == conv.id))).scalar_one_or_none()
+        if not ainda_bot:
+            _marcar_humano(ch)
+            await db.commit()
+            return {"ok": False, "motivo": "humano_assumiu"}
+
+    try:
+        if not pizz.instancia:
+            raise RuntimeError("pizzaria sem instância do WhatsApp conectada")
         await evolution.send_text(instancia=pizz.instancia, numero=ch.telefone, texto=texto)
-    await append_turn(db, pizz.id, ch.telefone, role="assistant", content=texto)
+    except Exception as e:  # noqa: BLE001
+        erro = f"{type(e).__name__}: {e}"
+        log.warning("Resposta do chamado %s não enviada (tentativa %s): %s", ch.id, tentativa, erro)
+        if tentativa >= MAX_TENTATIVAS_ENTREGA:
+            await _desistir_da_entrega(db, ch, conv, erro)
+            return {"ok": False, "motivo": "falhou", "erro": erro}
+        ch.entrega_status = "pendente"      # o beat tenta de novo
+        ch.entrega_erro = erro[:500]
+        ch.entrega_atualizada_em = datetime.now(UTC)
+        await db.commit()
+        await _publicar(pizz.id, {          # o chat interno mostra "tentando de novo"
+            "tipo": "chamado.respondido", "pizzaria_id": str(pizz.id),
+            "payload": {"chamado_id": str(ch.id), "conversa_id": str(conv.id) if conv else None},
+        })
+        return {"ok": False, "motivo": "vai_tentar_de_novo", "erro": erro}
+
+    # Saiu: grava JÁ, antes de qualquer outra coisa — se o resto falhar, o beat
+    # não pode achar que ainda falta enviar (o cliente receberia duas vezes).
+    agora = datetime.now(UTC)
+    ch.entrega_status = "enviado"
+    ch.entregue_em = agora
+    ch.entrega_erro = None
+    ch.entrega_atualizada_em = agora
     # O chat interno mostra o que a atendente disse ao cliente com a resposta da
     # equipe: o dono vê que ela resolveu (reatribui o dict: JSONB não rastreia mutação).
     ch.contexto = {**(ch.contexto or {}), "mensagem_ao_cliente": texto}
     msg = None
     if conv is not None:
         msg = Mensagem(conversa_id=conv.id, pizzaria_id=pizz.id, origem="bot", tipo="texto", conteudo=texto,
-                       metadata_json={"trigger": "chamado_respondido", "chamado_id": str(ch.id)})
+                       metadata_json={"trigger": "chamado_respondido", "chamado_id": str(ch.id),
+                                      "envio": {"status": "enviado", "partes_enviadas": 1, "partes_total": 1}})
         db.add(msg)
         conv.last_message = texto
-        conv.last_timestamp = datetime.now(UTC)
+        conv.last_timestamp = agora
     await db.commit()
+    try:
+        await append_turn(db, pizz.id, ch.telefone, role="assistant", content=texto)
+        await db.commit()
+    except Exception as e:  # noqa: BLE001
+        log.warning("Memória da resposta do chamado não gravada: %s", e)
     if conv is not None and msg is not None:
-        await broadcaster.publish(pizz.id, {
+        await _publicar(pizz.id, {
             "tipo": "mensagem.nova", "pizzaria_id": str(pizz.id),
             "payload": {"conversa_id": str(conv.id), "mensagem_id": str(msg.id), "telefone": ch.telefone,
                         "conteudo": texto, "origem": "bot",
                         "created_at": msg.created_at.isoformat() if msg.created_at else None},
         })
-    await broadcaster.publish(pizz.id, {
+    await _publicar(pizz.id, {
         "tipo": "chamado.respondido", "pizzaria_id": str(pizz.id),
         "payload": {"chamado_id": str(ch.id), "conversa_id": str(conv.id) if conv else None},
     })
     return {"ok": True, "texto": texto}
+
+
+async def retomar_entregas(db: AsyncSession) -> dict[str, int]:
+    """Beat: resposta de chamado que ficou para trás (task não publicada, worker
+    caiu no meio, Evolution fora) é entregue de novo; esgotadas as tentativas, a
+    conversa vai para um humano."""
+    from sqlalchemy import or_
+
+    from app.models import ChamadoInterno, Conversa
+    agora = datetime.now(UTC)
+    atrasados = (await db.execute(
+        select(ChamadoInterno.id).where(
+            ChamadoInterno.status == "respondido",
+            or_(
+                (ChamadoInterno.entrega_status == "pendente")
+                & (ChamadoInterno.entrega_atualizada_em < agora - timedelta(seconds=PENDENTE_RETOMAR_S)),
+                (ChamadoInterno.entrega_status == "enviando")
+                & (ChamadoInterno.entrega_atualizada_em < agora - timedelta(minutes=ENVIANDO_TRAVADO_MIN)),
+            ),
+        ).order_by(ChamadoInterno.entrega_atualizada_em).limit(20)
+    )).scalars().all()
+    out = {"retomados": 0, "desistidos": 0}
+    for chamado_id in atrasados:
+        ch = (await db.execute(select(ChamadoInterno).where(ChamadoInterno.id == chamado_id))).scalar_one()
+        if ch.entrega_tentativas >= MAX_TENTATIVAS_ENTREGA:
+            conv = (await db.execute(select(Conversa).where(Conversa.id == ch.conversa_id))).scalar_one_or_none() \
+                if ch.conversa_id else None
+            await _desistir_da_entrega(db, ch, conv, ch.entrega_erro or "o worker caiu durante a entrega")
+            out["desistidos"] += 1
+            continue
+        try:
+            await entregar_resposta(db, chamado_id)
+            out["retomados"] += 1
+        except Exception as e:  # noqa: BLE001
+            log.exception("Retomada da entrega do chamado %s falhou: %s", chamado_id, e)
+            try:
+                await db.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+    return out
 
 
 async def expirar_vencidos(db: AsyncSession) -> int:
@@ -329,20 +509,31 @@ async def expirar_vencidos(db: AsyncSession) -> int:
     from app.services.broadcaster import broadcaster
     from app.services.evolution import evolution
 
-    abertos = (await db.execute(
-        select(ChamadoInterno).where(
+    candidatos = (await db.execute(
+        select(ChamadoInterno.id, ChamadoInterno.pizzaria_id, ChamadoInterno.created_at).where(
             ChamadoInterno.status == "aberto",
             ChamadoInterno.created_at < datetime.now(UTC) - timedelta(minutes=2),
         )
-    )).scalars().all()
+    )).all()
     expirados = 0
     prazo_cache: dict[Any, int] = {}
-    for ch in abertos:
-        if ch.pizzaria_id not in prazo_cache:
+    for chamado_id, pizzaria_id, criado_em in candidatos:
+        if pizzaria_id not in prazo_cache:
             pers = (await db.execute(select(PersonalidadeAtendente).where(
-                PersonalidadeAtendente.pizzaria_id == ch.pizzaria_id))).scalar_one_or_none()
-            prazo_cache[ch.pizzaria_id] = get_behavior(pers).handoff.chamado_timeout_min
-        if ch.created_at > datetime.now(UTC) - timedelta(minutes=prazo_cache[ch.pizzaria_id]):
+                PersonalidadeAtendente.pizzaria_id == pizzaria_id))).scalar_one_or_none()
+            prazo_cache[pizzaria_id] = get_behavior(pers).handoff.chamado_timeout_min
+        if criado_em > datetime.now(UTC) - timedelta(minutes=prazo_cache[pizzaria_id]):
+            continue
+        # Trava a linha e reconfere que segue 'aberto'. SKIP LOCKED: o chamado que
+        # a equipe está respondendo agora (travado pelo `responder`) fica de fora.
+        # Antes a expiração lia sem trava e podia gravar 'expirado' por cima de
+        # uma resposta recém-commitada (A04, análise de 01/10).
+        ch = (await db.execute(
+            select(ChamadoInterno).where(
+                ChamadoInterno.id == chamado_id, ChamadoInterno.status == "aberto",
+            ).with_for_update(skip_locked=True)
+        )).scalar_one_or_none()
+        if ch is None:
             continue
         ch.status = "expirado"
         pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == ch.pizzaria_id))).scalar_one()

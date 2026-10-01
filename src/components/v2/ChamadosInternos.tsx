@@ -26,6 +26,25 @@ function haQuanto(iso: string): string {
   return `há ${Math.round(min / 60)} h`;
 }
 
+/** Situação do chamado como a equipe precisa ver. Responder não é resolver: só
+ *  "Resolvido" depois que a resposta chegou ao cliente (A04, análise de 01/10). */
+function situacao(c: Chamado): { rotulo: string; texto: string; ponto: string } {
+  if (c.status === "aberto") return { rotulo: "Esperando sua resposta", texto: "text-amber-300", ponto: "animate-pulse bg-amber-400" };
+  if (c.status === "expirado") return { rotulo: "Expirou — foi para atendimento humano", texto: "text-ink-muted", ponto: "bg-slate-600" };
+  if (c.status !== "respondido") return { rotulo: c.status, texto: "text-ink-muted", ponto: "bg-slate-600" };
+  switch (c.entrega_status) {
+    case "pendente":
+    case "enviando":
+      return { rotulo: "Resposta recebida — enviando ao cliente", texto: "text-sky-300", ponto: "animate-pulse bg-sky-400" };
+    case "falhou":
+      return { rotulo: "Não chegou ao cliente — foi para atendimento humano", texto: "text-rose-300", ponto: "bg-rose-500" };
+    case "humano":
+      return { rotulo: "Resolvido pelo atendente", texto: "text-emerald-400", ponto: "bg-emerald-500" };
+    default:
+      return { rotulo: "Resolvido", texto: "text-emerald-400", ponto: "bg-emerald-500" };
+  }
+}
+
 /** Quantos chamados estão esperando resposta (badge da aba). */
 export function useChamadosAbertos(pizzariaId: string, liveEvent?: { tipo: string } | null): number {
   const [n, setN] = useState(0);
@@ -120,23 +139,20 @@ export function ChatInterno({ pizzariaId, liveEvent, onAbrirConversa }: {
           )}
           {ordenados.map((c) => {
             const aberto = c.status === "aberto";
+            const sit = situacao(c);
             return (
               <button key={c.id} type="button" onClick={() => setAtivoId(c.id)}
                 className={`flex w-full gap-3 px-4 py-3.5 text-left transition-colors ${
                   c.id === ativo?.id ? "border-l-2 border-l-amber-500 bg-surface-muted" : aberto ? "bg-amber-950/20 hover:bg-amber-950/30" : "hover:bg-[#131926]"
                 }`}>
-                <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
-                  aberto ? "animate-pulse bg-amber-400" : c.status === "respondido" ? "bg-emerald-500" : "bg-slate-600"
-                }`} />
+                <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${sit.ponto}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-xs font-semibold text-white">{c.cliente_nome || c.telefone}</span>
                     <span className="shrink-0 text-xs text-ink-muted">{haQuanto(c.created_at)}</span>
                   </div>
                   <p className="mt-0.5 truncate text-xs text-ink-muted">{c.pergunta}</p>
-                  <p className={`mt-0.5 text-xs font-semibold ${aberto ? "text-amber-300" : c.status === "respondido" ? "text-emerald-400" : "text-ink-muted"}`}>
-                    {aberto ? "Esperando sua resposta" : c.status === "respondido" ? "Resolvido" : "Expirou — foi para atendimento humano"}
-                  </p>
+                  <p className={`mt-0.5 text-xs font-semibold ${sit.texto}`}>{sit.rotulo}</p>
                 </div>
               </button>
             );
@@ -250,9 +266,23 @@ function FioChamado({ pizzariaId, chamado, onVoltar, onAbrirConversa, onRespondi
             </Balao>
           ) : chamado.contexto?.humano_assumiu ? (
             <p className="text-center text-xs text-ink-muted">Um atendente já tinha assumido a conversa — responda o cliente por lá.</p>
+          ) : chamado.entrega_status === "falhou" ? (
+            <div role="alert" className="flex items-start gap-2 rounded-xl border border-rose-500/30 bg-rose-950/30 px-3 py-2 text-xs text-rose-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+              <div>
+                <p className="font-semibold">Não consegui enviar sua resposta ao cliente.</p>
+                <p className="mt-0.5 text-rose-300/80">
+                  A conversa foi para atendimento humano — responda o cliente por lá.
+                  {chamado.entrega_erro ? ` (${chamado.entrega_erro.slice(0, 120)})` : ""}
+                </p>
+              </div>
+            </div>
           ) : (
             <p className="flex items-center justify-center gap-1.5 text-center text-xs text-ink-muted">
-              <Loader2 className="h-3 w-3 animate-spin" /> A atendente está passando a resposta para o cliente…
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {chamado.entrega_erro
+                ? "O envio falhou, tentando de novo…"
+                : "A atendente está passando a resposta para o cliente…"}
             </p>
           )
         )}

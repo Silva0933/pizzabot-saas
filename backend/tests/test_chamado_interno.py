@@ -182,16 +182,21 @@ class TestPrazo:
         conv = SimpleNamespace(id=ch.conversa_id, bot_ativo=True, status="bot_ativo", cliente_nome="Ana")
         pizz = SimpleNamespace(id=ch.pizzaria_id, instancia="loja")
 
-        def _res(valor, lista=False):
+        def _res(valor, linhas=None):
             r = MagicMock()
-            r.scalars.return_value.all.return_value = valor if lista else []
+            r.all.return_value = linhas or []
             r.scalar_one_or_none.return_value = valor
             r.scalar_one.return_value = valor
             return r
 
         db = AsyncMock()
         db.add = MagicMock()
-        db.execute = AsyncMock(side_effect=[_res([ch], lista=True), _res(None), _res(pizz), _res(conv)])
+        db.execute = AsyncMock(side_effect=[
+            _res(None, linhas=[(ch.id, ch.pizzaria_id, ch.created_at)]),   # candidatos
+            _res(None),                                                     # personalidade
+            _res(ch),                                                       # trava a linha (segue aberto)
+            _res(pizz), _res(conv),
+        ])
         evo = MagicMock()
         evo.send_text = AsyncMock()
         with patch("app.services.evolution.evolution", new=evo), \
