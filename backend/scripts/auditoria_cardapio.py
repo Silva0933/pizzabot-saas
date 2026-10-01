@@ -417,6 +417,16 @@ def roteiros_da_loja(cat, formas=None) -> list[Roteiro]:
             Turno(f"quanto fica uma pizza meia {curto(x.nome)} meia {curto(y.nome)} {TAM_EXTENSO.get(_n(t), t)}?",
                   [chk_preco_na_fala(preco_meia)]),
         ]))
+        # Pede E pergunta o preço na mesma frase: anota e responde o valor
+        preco_x = x.tamanho(t)[1] if x.tamanho(t) else None
+        if preco_x is not None:
+            out.append(Roteiro("pede_e_pergunta_preco", [
+                Turno("oi"),
+                Turno(f"quero uma {curto(x.nome)} {TAM_EXTENSO.get(_n(t), t)}, quanto fica?",
+                      [chk_preco_na_fala(preco_x), chk_nao_fala("pelo sistema", "o sistema informa", "aparece no sistema")]),
+                Turno(f"e quanto fica se for meia {curto(x.nome)} meia {curto(y.nome)}?",
+                      [chk_preco_na_fala(preco_meia)]),
+            ]))
         # Troca de tamanho da meia já anotada: o carrinho acompanha e repreça
         tams_comuns = [tt for tt, _ in x.tamanhos if y.tamanho(tt) is not None]
         if len(tams_comuns) >= 2:

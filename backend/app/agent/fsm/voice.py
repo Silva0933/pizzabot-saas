@@ -84,8 +84,11 @@ def montar_comando(*, personalidade, pizzaria_nome: str, decisao: dict[str, Any]
     # pedido, o sistema já calculou os preços e eles estão nos FATOS — a regra
     # geral proibia citá-los e o modelo (que obedece) respondia "o preço está
     # no cardápio". O guard continua conferindo cada valor com precos_validos.
-    pode_citar_valor = bool(decisao.get("precos_validos")) and decisao.get("acao") in (
-        "responder_duvida", "pedido_atualizado",
+    # Também quando o cliente perguntou o preço ao pedir ("quero uma brasa grande,
+    # quanto fica?"): sem isto a voz respondia "o valor aparece pelo sistema".
+    pode_citar_valor = bool(decisao.get("precos_validos")) and (
+        decisao.get("acao") in ("responder_duvida", "pedido_atualizado")
+        or bool(decisao.get("cliente_perguntou_preco"))
     )
     regra_valores = (
         "Se o cliente perguntou preço/valor/taxa, informe o valor EXATAMENTE como aparece nos FATOS acima "

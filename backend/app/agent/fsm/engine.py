@@ -821,6 +821,64 @@ _CONFIRMA_RE = _re.compile(
 )
 
 
+# Pergunta de preço × pedido ("quanto fica a meia X?" × "quero a meia X").
+_PERGUNTA_PRECO_RE = _re.compile(
+    r"\b(quanto (fica|custa|[eé]|sai|t[aá]|vai ficar|vai sair|seria|que [eé])|qual (o|[eé] o) "
+    r"(valor|pre[cç]o)|qto|quantos reais|pre[cç]o d[aeo])\b",
+    _re.IGNORECASE,
+)
+_VERBO_PEDIDO_RE = _re.compile(
+    r"\b(quero|queria|vou querer|manda|mande|me v[eê]|anota|coloca|bota|faz (uma|um|pra)|"
+    r"pode (mandar|fazer|ser|colocar|anotar)|traz|vou levar|fecha)\b",
+    _re.IGNORECASE,
+)
+
+
+async def _fatos_preco_perguntado(db, ctx, perguntados: list[dict[str, Any]]) -> tuple[str | None, list[float]]:
+    """Preço pela regra única do catálogo para cada item perguntado. Com tamanho:
+    o valor exato (meia = regra da loja, + adicionais). Sem tamanho: o valor de
+    cada tamanho que existe em todos os sabores."""
+    from app.agent.fsm.catalogo import ErroItem, carregar_catalogo
+    try:
+        cat = await carregar_catalogo(db, ctx.pizzaria)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Catálogo indisponível para o preço perguntado: %s", e)
+        return None, []
+    partes: list[str] = []
+    precos: list[float] = []
+
+    def brl(v) -> str:
+        return f"R$ {float(v):.2f}".replace(".", ",")
+
+    for p in perguntados:
+        ids = [str(x) for x in (p.get("sabores_ids") or []) if x] or ([str(p["produto_id"])] if p.get("produto_id") else [])
+        if not ids:
+            continue
+        ads = [str(a) for a in (p.get("adicionais") or [])]
+        tamanhos = [p.get("tamanho")] if p.get("tamanho") else []
+        if not tamanhos:
+            principal = cat.por_id(ids[0])
+            tamanhos = [n for n, _ in (principal.tamanhos if principal else [])] or [None]
+        valores = []
+        for t in tamanhos:
+            try:
+                pi = cat.precificar(ids, t, ads)
+            except ErroItem as e:
+                if len(tamanhos) == 1:
+                    partes.append(f"Não dá: {e}")
+                continue
+            valores.append(f"{pi.nome}: {brl(pi.preco_unit)}")
+            precos.append(float(pi.preco_unit))
+        if valores:
+            regra = ""
+            if len(ids) > 1:
+                p0 = cat.por_id(ids[0])
+                regra = (" (meio a meio cobra a média dos sabores)" if p0 and p0.meia_calculo == "media"
+                         else " (meio a meio cobra o valor do sabor mais caro)")
+            partes.append("; ".join(valores) + regra)
+    return ("; ".join(partes) or None), precos
+
+
 # Frase que começa negando não é um "sim" — só se trouxer o "pode fechar" junto.
 _NEGA_NO_INICIO_RE = _re.compile(r"^\s*(n[aã]o|nao|n|nem|nunca|negativo)\b", _re.IGNORECASE)
 _CONFIRMA_EXPLICITO_RE = _re.compile(
@@ -1286,6 +1344,40 @@ async def processar(
         "acao": "conversar", "fatos": [], "proxima_pergunta": None,
         "enviar_cardapio": False, "dados": {},
     }
+
+    # "Quanto fica uma meia Quatro Queijos meia Portuguesa grande?" é PERGUNTA de
+    # preço, não pedido: a NLU às vezes dava adicionar_item, a pizza entrava no
+    # carrinho ("✅ Anotei") e a voz, proibida de citar valor ao anotar, dizia "o
+    # sistema informa o valor" (auditoria de 01/10). Sem verbo de pedido, nada é
+    # anotado e o preço EXATO sai da regra do catálogo (inclusive o da meia).
+    if (
+        intencao == "adicionar_item"
+        and dados.get("produtos")
+        and _PERGUNTA_PRECO_RE.search(user_input or "")
+        and not _VERBO_PEDIDO_RE.search(user_input or "")
+    ):
+        perguntados = [p for p in dados.get("produtos") or [] if isinstance(p, dict)]
+        dados["produtos"] = []
+        intencao = "duvida_geral"
+        txt_preco, precos_preco = await _fatos_preco_perguntado(db, ctx, perguntados)
+        if txt_preco:
+            decisao["fatos"].append("Preço EXATO do que o cliente perguntou (responda com este valor): " + txt_preco)
+            decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *precos_preco]
+    elif (
+        intencao == "adicionar_item"
+        and dados.get("produtos")
+        and _PERGUNTA_PRECO_RE.search(user_input or "")
+    ):
+        # "Quero uma brasa grande, quanto fica?": anota E responde o valor. Antes a
+        # voz, proibida de citar valor ao anotar, dizia "o valor aparece pelo
+        # sistema" — sem responder a pergunta.
+        txt_preco, precos_preco = await _fatos_preco_perguntado(
+            db, ctx, [p for p in dados["produtos"] if isinstance(p, dict)],
+        )
+        if txt_preco:
+            decisao["fatos"].append("O cliente também perguntou o preço — responda com este valor: " + txt_preco)
+            decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *precos_preco]
+            decisao["cliente_perguntou_preco"] = True
     # Avisos das checagens determinísticas da NLU de comandos (ex.: o cliente
     # disse "3 sabores" e a pizza aceita 2 — o item não foi anotado).
     decisao["fatos"].extend(str(f) for f in (dados.get("_fatos_nlu") or []) if f)
@@ -2046,7 +2138,9 @@ async def processar(
             pv.append(round(float(calc.get("valor_total") or 0), 2))
             if calc.get("taxa_entrega"):
                 pv.append(round(float(calc["taxa_entrega"]), 2))
-            decisao["precos_validos"] = [v for v in pv if v > 0]
+            # União (não substituição): preço que o cliente perguntou neste turno
+            # também é lastro, senão o guard o trocava por "(valor a confirmar)".
+            decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *[v for v in pv if v > 0]]
             # Espelha o pedido em construção no card do painel (Kanban "Novos") em
             # tempo real — itens/total/entrega/pagamento conforme vão sendo coletados.
             if getattr(ctx, "simulation", False) is not True:

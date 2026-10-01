@@ -379,6 +379,26 @@ def test_porta_barra_pedido_invalido_e_nao_registra(cat):
     assert res["estado"]["validador_recusas"] == 1
 
 
+def test_pergunta_de_preco_da_meia_nao_anota_e_responde_o_valor(cat):
+    """Agente real (auditoria de 01/10): "quanto fica uma pizza meia X meia Y
+    grande?" virava adicionar_item — "✅ Anotei" + "o sistema informa o valor"."""
+    est = engine.estado_inicial()
+    est["apresentou"] = True
+    produtos = [{"nome": "pizza", "sabores_meia": ["Pizza Brasa", "Pizza Margherita"],
+                 "sabores_ids": ["id-brasa", "id-marg"], "tamanho": "G", "qtd": 1, "adicionais": []}]
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.services.chamados.buscar_conhecimento", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"):
+        res = asyncio.run(engine.processar(
+            MagicMock(), _ctx_catalogo(), est, {"intencao": "adicionar_item", "dados": {"produtos": produtos}},
+            user_input="quanto fica uma pizza meia brasa meia margherita grande?",
+        ))
+    assert res["estado"]["carrinho"] == []
+    assert any("R$ 64,90" in f and "sabor mais caro" in f for f in res["decisao"]["fatos"])
+    assert 64.9 in res["decisao"]["precos_validos"]
+
+
 def _fechar(cat, fala, intencao="confirmar_resumo"):
     est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 1}])
     est.update({"etapa": "AGUARDANDO_CONFIRMACAO", "pagar_agora": False, "apresentou": True,
