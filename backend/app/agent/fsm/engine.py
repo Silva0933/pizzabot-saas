@@ -459,6 +459,37 @@ def _online(pagamento: str | None) -> bool:
     return (pagamento or "") in ("pix", "cartao")
 
 
+_NOME_FORMA = {"dinheiro": "dinheiro", "cartao": "cartão", "pix": "Pix"}
+
+
+def _formas_aceitas(pizz) -> list[str] | None:
+    """Formas que a loja cadastrou (dinheiro/cartao/pix), ou None se não cadastrou
+    nenhuma — aí vale o padrão de antes (não restringe)."""
+    bruto = getattr(pizz, "formas_pagamento_aceitas", None) or []
+    formas: list[str] = []
+    for f in bruto:
+        n = _normalizar_txt(str(f))
+        chave = "pix" if "pix" in n else ("dinheiro" if "dinheiro" in n else (
+            "cartao" if any(x in n for x in ("cartao", "credito", "debito")) else None))
+        if chave and chave not in formas:
+            formas.append(chave)
+    return formas or None
+
+
+def _opcoes_pagamento(pizz, modo_pag: str, local: str) -> str:
+    """"dinheiro, cartão ou Pix na entrega" — das formas CADASTRADAS. Antes era fixo
+    ("dinheiro ou cartão" com o online desligado): a Fornalha, que aceita Pix,
+    nunca ouvia o Pix oferecido, e uma loja sem cartão ouviria cartão (auditoria
+    de 01/10)."""
+    formas = _formas_aceitas(pizz)
+    if formas is None:
+        return ("dinheiro ou cartão " + local) if modo_pag == "desativado" else "pix, cartão ou dinheiro"
+    ordem = [f for f in ("dinheiro", "cartao", "pix") if f in formas]
+    nomes = [_NOME_FORMA[f] for f in ordem]
+    txt = nomes[0] if len(nomes) == 1 else ", ".join(nomes[:-1]) + " ou " + nomes[-1]
+    return f"{txt} {local}" if modo_pag == "desativado" else txt
+
+
 def _modo_pagamento(pizz) -> str:
     """Modo de pagamento na conversa: 'automatico' | 'manual' | 'desativado'.
     Default 'automatico' (comportamento histórico)."""
@@ -821,11 +852,25 @@ _CARDAPIO_RE = _re.compile(
 )
 
 
+# Pergunta sobre a regra de meio a meio ("quais sabores posso fazer meio a meio?",
+# "pode fazer pizza de dois sabores?") — não é pedido de cardápio nem de item.
+_PERGUNTA_REGRA_MEIA_RE = _re.compile(
+    r"(\b(quais|qual|que|quantos)\b.*\b(meia|meio\s*a\s*meio|metade|dois\s+sabores|2\s+sabores)\b"
+    r"|\b(meia|meio\s*a\s*meio|metade|dois\s+sabores|2\s+sabores)\b.*\?\s*$"
+    r"|\b(pode|posso|d[aá]|faz|fazem|aceita|aceitam)\b.*\b(meia|meio\s*a\s*meio|metade|dois\s+sabores|2\s+sabores)\b.*\?)",
+    _re.IGNORECASE,
+)
+
+
 def _quer_cardapio(intencao: str | None, texto: str, dados: dict[str, Any]) -> bool:
+    if dados.get("quer_cardapio") is False:
+        return False
     if intencao == "pedir_cardapio":
         return True
     if dados.get("quer_cardapio") is True:
         return True
+    if _PERGUNTA_REGRA_MEIA_RE.search(texto or "") and not _re.search(r"card[aá]pio|menu", texto or "", _re.IGNORECASE):
+        return False
     return bool(_CARDAPIO_RE.search(texto or ""))
 
 
@@ -922,8 +967,12 @@ async def _pos_venda(
         forma = _forma_do_texto(dados, t)
         if not forma:
             estado["aguardando_forma_pos_venda"] = True
+            formas_pv = (
+                "dinheiro, cartão ou Pix" if _formas_aceitas(ctx.pizzaria) is None
+                else _opcoes_pagamento(ctx.pizzaria, "desativado", "").strip()
+            )
             return {"acao": "pos_venda_pagamento",
-                    "texto": f"Sem problema! {onde.capitalize()} você prefere pagar em dinheiro, cartão ou Pix?"}
+                    "texto": f"Sem problema! {onde.capitalize()} você prefere pagar em {formas_pv}?"}
         estado.pop("aguardando_forma_pos_venda", None)
         from app.agent.tools import atualizar_pedido
         r = await atualizar_pedido(ctx, db, nova_forma_pagamento=forma, pagar_na_entrega=True)
@@ -1195,6 +1244,21 @@ async def processar(
 
     intencao = nlu.get("intencao")
     dados = nlu.get("dados") or {}
+
+    # "Quais sabores posso fazer meio a meio?" é pergunta sobre a REGRA, não pedido
+    # de cardápio: o "quais ... sabor" casava com o pedido de cardápio e a
+    # atendente mandava o cardápio inteiro, que nem diz quem aceita meia
+    # (auditoria de 01/10). Sem "cardápio/menu" na frase, vira dúvida e a resposta
+    # sai de Catalogo.fatos_regras.
+    if (
+        intencao in ("pedir_cardapio", "adicionar_item", None)
+        and not dados.get("produtos")
+        and not dados.get("_ops_itens")
+        and _PERGUNTA_REGRA_MEIA_RE.search(user_input or "")
+        and not _re.search(r"card[aá]pio|menu", user_input or "", _re.IGNORECASE)
+    ):
+        intencao = "duvida_geral"
+        dados["quer_cardapio"] = False
 
     # A oferta do cardápio vale SÓ para a resposta imediatamente seguinte. Antes o
     # flag ligava na saudação e nunca desligava: um "é isso mesmo" dez mensagens
@@ -1672,6 +1736,20 @@ async def processar(
         for p in (dados.get("produtos") or []) if isinstance(p, dict)
     ]
     itens_do_turno = [n for n in itens_do_turno if n]
+
+    # Forma de pagamento que a loja NÃO aceita não entra no pedido: a voz diz
+    # quais aceita. Antes qualquer pix/cartão/dinheiro era anotado, mesmo fora do
+    # cadastro da loja (auditoria de 01/10).
+    forma_pedida = dados.get("forma_pagamento")
+    aceitas = _formas_aceitas(ctx.pizzaria)
+    if forma_pedida in ("pix", "cartao", "dinheiro") and aceitas is not None and forma_pedida not in aceitas:
+        dados.pop("forma_pagamento", None)
+        dados.pop("pagar_agora", None)
+        local_p = "na retirada" if estado.get("tipo") == "retirada" else "na entrega"
+        decisao["fatos"].append(
+            f"A loja NÃO aceita {_NOME_FORMA[forma_pedida]}. Diga isso com gentileza e pergunte qual destas o "
+            f"cliente prefere: {_opcoes_pagamento(ctx.pizzaria, _modo_pagamento(ctx.pizzaria), local_p)}."
+        )
 
     # Funde dados extraídos no estado
     _aplicar_nlu(estado, dados)
@@ -2498,11 +2576,8 @@ async def processar(
         taxa = float(calc.get("taxa_entrega") or 0.0) if calc else 0.0
         # Em 'desativado' não há pagamento online: ofereça só na entrega/retirada.
         local = "na retirada" if estado.get("tipo") == "retirada" else "na entrega"
-        formas_txt = (
-            f"a forma de pagamento (dinheiro ou cartão {local})"
-            if modo_pag == "desativado"
-            else "a forma de pagamento (pix, cartão ou dinheiro)"
-        )
+        opcoes = _opcoes_pagamento(ctx.pizzaria, modo_pag, local)
+        formas_txt = f"a forma de pagamento ({opcoes}) — só essas opções"
         if calc and calc.get("ok") and estado.get("tipo") == "delivery":
             # Valor e bairro saem PRONTOS do backend, como o resumo. Antes isto era
             # uma instrução para a LLM ("informe a taxa... use EXATAMENTE esse nome de
@@ -2510,7 +2585,6 @@ async def processar(
             # modelo copiava a meta-instrução para o cliente, e cortava o "R$" porque
             # as regras gerais da voz proíbem citar valor. Valor é dado crítico.
             taxa_str = f"R$ {taxa:.2f}".replace(".", ",") if taxa > 0 else "grátis"
-            opcoes = ("dinheiro ou cartão " + local) if modo_pag == "desativado" else "pix, cartão ou dinheiro"
             frase_taxa = (
                 f"A entrega para *{bairro}* sai por {taxa_str} 🛵" if taxa > 0
                 else f"A entrega para *{bairro}* é grátis 🛵"

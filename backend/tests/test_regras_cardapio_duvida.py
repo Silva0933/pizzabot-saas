@@ -74,6 +74,34 @@ class TestMeioAMeio:
         assert PALAZIO.fatos_regras("que horas vocês abrem?", [])[0] is None
 
 
+def test_quais_sabores_meio_a_meio_responde_a_regra_e_nao_manda_cardapio():
+    """Agente real: "quais sabores posso fazer meio a meio?" virava pedir_cardapio
+    ("quais ... sabor") e ia o cardápio inteiro, que nem diz quem aceita meia."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.agent.fsm import engine
+
+    ctx = MagicMock()
+    ctx.pizzaria = SimpleNamespace(id="fornalha", configuracoes={}, formas_pagamento_aceitas=[], nome="Fornalha",
+                                   modo_pagamento_online="desativado", horario_funcionamento={}, endereco=None,
+                                   endereco_maps_url=None, tempo_entrega_min=None, tempo_retirada_min=None,
+                                   taxa_entrega_fixa=None, taxas_bairro=[], promocoes=[], cupons=[])
+    ctx.simulation = True
+    est = engine.estado_inicial()
+    est["apresentou"] = True
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=FORNALHA)), \
+         patch("app.services.chamados.buscar_conhecimento", new=AsyncMock(return_value=None)):
+        res = asyncio.run(engine.processar(
+            MagicMock(), ctx, est, {"intencao": "pedir_cardapio", "dados": {"quer_cardapio": True}},
+            user_input="quais sabores posso fazer meio a meio?",
+        ))
+    d = res["decisao"]
+    assert d["acao"] == "responder_duvida" and not d.get("enviar_cardapio")
+    assert any("MEIO A MEIO" in f and "Pizza Brasa" in f for f in d["fatos"])
+
+
 class TestAdicionais:
     def test_loja_sem_adicional_diz_que_nao_tem(self):
         txt, precos = PALAZIO.fatos_regras("vocês têm borda recheada?", [])
