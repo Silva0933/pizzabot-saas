@@ -297,6 +297,11 @@ def chk_total_resumo(cat, itens):
     return chk_fala(brl(total), desc=f"resumo com total R$ {brl(total)}")
 
 
+def chk_nao_registrou(res, estado, texto):
+    acoes = [e.get("action") for e in ((res.trace or {}).get("events") or [])]
+    return Checagem("registrar_pedido" not in acoes, f"NÃO fechou o pedido sem um sim (ações={acoes})")
+
+
 def chk_pedido_registrado(res, estado, texto):
     eventos = (res.trace or {}).get("events") or []
     acoes = [e.get("action") for e in eventos]
@@ -402,7 +407,7 @@ def roteiros_da_loja(cat, formas=None) -> list[Roteiro]:
             Turno("não, só isso"),
             Turno("vou retirar"),
             Turno("dinheiro", [chk_total_resumo(cat, [([x.id, y.id], t, [])])]),
-            Turno("não preciso de troco"),
+            Turno("não preciso de troco", [chk_nao_registrou]),
             Turno("sim, pode fechar", [chk_pedido_registrado]),
         ]))
         # Preço da meia perguntado (sem pedir)
@@ -545,7 +550,7 @@ def roteiros_da_loja(cat, formas=None) -> list[Roteiro]:
         Turno("não, só isso"),
         Turno("vou retirar", chk_pag),
         Turno("dinheiro", [chk_total_resumo(cat, [([a.id], tam_a, [])])]),
-        Turno("não preciso de troco"),
+        Turno("não preciso de troco", [chk_nao_registrou]),
         Turno("sim, pode fechar", [chk_pedido_registrado]),
     ]))
     return out

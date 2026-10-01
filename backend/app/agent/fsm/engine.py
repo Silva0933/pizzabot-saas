@@ -821,10 +821,24 @@ _CONFIRMA_RE = _re.compile(
 )
 
 
+# Frase que começa negando não é um "sim" — só se trouxer o "pode fechar" junto.
+_NEGA_NO_INICIO_RE = _re.compile(r"^\s*(n[aã]o|nao|n|nem|nunca|negativo)\b", _re.IGNORECASE)
+_CONFIRMA_EXPLICITO_RE = _re.compile(
+    r"\b(pode (fechar|confirmar|mandar|finalizar|seguir)|fecha (o pedido|a[ií])?|confirm\w*|finaliz\w*)\b",
+    _re.IGNORECASE,
+)
+
+
 def _eh_confirmacao(intencao: str | None, texto: str) -> bool:
+    t = (texto or "").strip().lower()
+    # Agente real (auditoria de 01/10): resumo "Posso fechar o pedido?" → cliente
+    # "não preciso de troco" → a NLU às vezes dava confirmar_resumo e o pedido
+    # FECHAVA sem o cliente ter dito sim. Negação no início só confirma com o
+    # "pode fechar/confirma" explícito ("não tenho troco, pode fechar").
+    if _NEGA_NO_INICIO_RE.match(t) and not _CONFIRMA_EXPLICITO_RE.search(t):
+        return False
     if intencao == "confirmar_resumo":
         return True
-    t = (texto or "").strip().lower()
     return bool(_CONFIRMA_RE.match(t)) and len(t) <= 25
 
 

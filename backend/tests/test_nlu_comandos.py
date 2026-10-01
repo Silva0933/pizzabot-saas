@@ -379,6 +379,30 @@ def test_porta_barra_pedido_invalido_e_nao_registra(cat):
     assert res["estado"]["validador_recusas"] == 1
 
 
+def _fechar(cat, fala, intencao="confirmar_resumo"):
+    est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 1}])
+    est.update({"etapa": "AGUARDANDO_CONFIRMACAO", "pagar_agora": False, "apresentou": True,
+                "pagamento": "dinheiro"})
+    registrar = AsyncMock(return_value={"ok": True, "numero_pedido": 7, "valor_total": 49.9})
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=_calc((49.9, 1)))), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"), \
+         patch("app.agent.tools.registrar_pedido", new=registrar):
+        asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), est,
+                                     {"intencao": intencao, "dados": {}}, user_input=fala))
+    return registrar.await_count
+
+
+def test_negacao_no_resumo_nao_fecha_o_pedido(cat):
+    """Agente real (auditoria de 01/10): "Posso fechar o pedido?" → "não preciso de
+    troco" → a NLU deu confirmar_resumo e o pedido FECHOU sem o cliente dizer sim."""
+    assert _fechar(cat, "não preciso de troco") == 0
+    assert _fechar(cat, "não") == 0
+    assert _fechar(cat, "não tenho troco, pode fechar") == 1
+    assert _fechar(cat, "sim") == 1
+
+
 def test_tamanho_que_nao_existe_sai_do_item_e_nao_e_anunciado(cat):
     """Auditoria de 01/10 (agente real): "meia brasa meia margherita pequena" →
     "✅ Anotei: Meia Brasa / Meia Margherita (P)" + "P não existe para a Brasa".
