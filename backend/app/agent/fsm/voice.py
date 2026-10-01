@@ -43,7 +43,7 @@ _FIM_FRASE = re.compile(r"[.!?…][\"')\]]?(?=\s|$)")
 def _salvar_truncado(texto: str) -> str:
     """Última linha de defesa: se o texto está truncado, corta de volta até a
     ÚLTIMA frase completa. Se não houver nenhuma, devolve "" — melhor mandar nada
-    (o pipeline manda um 'pode repetir?' seguro) do que um fragmento sem sentido."""
+    (o turno falha e a fila tenta de novo sozinha) do que um fragmento sem sentido."""
     t = (texto or "").replace(QUEBRA, " ").strip()
     if not t:
         return ""
@@ -186,7 +186,7 @@ async def gerar_voz(
         else:
             # Nenhuma completa → NUNCA envia o fragmento. Salva a mais longa
             # cortando na última frase fechada; se não der, devolve "" (o
-            # pipeline manda um 'pode repetir?' seguro).
+            # turno falha e a fila tenta de novo sozinha).
             candidatas = [c for c in (texto2, texto) if c]
             base = max(candidatas, key=len) if candidatas else ""
             salvo = _salvar_truncado(base)

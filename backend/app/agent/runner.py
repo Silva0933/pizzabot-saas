@@ -298,75 +298,15 @@ async def _run_openai_agent(
     )
 
 
-# Falhas do FSM por conversa: a 1ª em FALHAS_JANELA_S pede para repetir; a 2ª vai
-# para a equipe (caminho de exceção do process_and_reply).
-FALHAS_JANELA_S = 900
-MSG_REPETIR = "Opa, me enrolei aqui 😅 Pode me mandar sua última mensagem de novo?"
+class FalhaTransitoria(Exception):
+    """O turno do FSM falhou ANTES de responder (timeout da IA, catálogo fora,
+    validador sem dados). Sobe até a fila, que mantém o lote e tenta de novo
+    sozinha com a mesma mensagem; esgotadas as tentativas, a conversa vai para
+    um humano (services/recuperacao.lote_falhou).
 
-
-def _chave_falhas(pizzaria_id: uuid.UUID, telefone: str) -> str:
-    return f"fsm:falhas:{pizzaria_id}:{telefone}"
-
-
-async def _primeira_falha_recente(pizzaria_id: uuid.UUID, telefone: str) -> bool:
-    """Conta a falha; True se é a primeira na janela. Sem Redis, trata como
-    primeira (melhor pedir para repetir do que desligar o bot à toa)."""
-    try:
-        from app.redis_client import redis
-        chave = _chave_falhas(pizzaria_id, telefone)
-        n = await redis.incr(chave)
-        await redis.expire(chave, FALHAS_JANELA_S)
-        return int(n) <= 1
-    except Exception as e:  # noqa: BLE001
-        log.debug("Contador de falhas do FSM indisponível: %s", e)
-        return True
-
-
-async def _limpar_falhas(pizzaria_id: uuid.UUID, telefone: str) -> None:
-    try:
-        from app.redis_client import redis
-        await redis.delete(_chave_falhas(pizzaria_id, telefone))
-    except Exception:  # noqa: BLE001
-        pass
-
-
-async def _pedir_para_repetir(
-    db: AsyncSession, pizz: Any, conv: Conversa | None,
-    pizzaria_id: uuid.UUID, telefone: str, erro: BaseException,
-) -> dict[str, Any]:
-    """1ª falha do FSM: pede para o cliente repetir, sem desligar o bot."""
-    try:
-        from app.services.alertas import registrar_alerta_seguro
-        await registrar_alerta_seguro(
-            tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="warning",
-            detalhe=f"FSM falhou ({type(erro).__name__}: {str(erro)[:200]}); cliente convidado a repetir.",
-        )
-    except Exception:  # noqa: BLE001
-        pass
-    try:
-        if pizz.instancia:
-            await evolution.send_text(instancia=pizz.instancia, numero=telefone, texto=MSG_REPETIR)
-    except Exception as e_send:  # noqa: BLE001
-        log.warning("Falha ao enviar o pedido de repetição: %s", e_send)
-    if conv:
-        msg = Mensagem(
-            conversa_id=conv.id, pizzaria_id=pizzaria_id, origem="bot", tipo="texto",
-            conteudo=MSG_REPETIR, metadata_json={"erro_ia": f"{type(erro).__name__}", "retentativa": True},
-        )
-        db.add(msg)
-        conv.last_message = MSG_REPETIR
-        conv.last_timestamp = datetime.now(UTC)
-        await db.commit()
-        await broadcaster.publish(pizzaria_id, {
-            "tipo": "mensagem.nova",
-            "pizzaria_id": str(pizzaria_id),
-            "payload": {
-                "conversa_id": str(conv.id), "mensagem_id": str(msg.id), "telefone": telefone,
-                "conteudo": MSG_REPETIR, "origem": "bot",
-                "created_at": msg.created_at.isoformat() if msg.created_at else datetime.now(UTC).isoformat(),
-            },
-        })
-    return {"ok": False, "motivo": "fsm_falhou_retentativa", "erro": f"{type(erro).__name__}"}
+    Antes a 1ª falha mandava "Opa, me enrolei aqui 😅 Pode me mandar sua última
+    mensagem de novo?" — estranho para o cliente, já que a mensagem dele está
+    gravada e o problema é nosso. Agora ele só vê o "digitando…" durar mais."""
 
 
 async def process_and_reply(
@@ -492,18 +432,24 @@ async def process_and_reply(
             except Exception as e_fsm:  # noqa: BLE001  (inclui TimeoutError)
                 # Sem agente legado como plano B: ele não conhece o carrinho do FSM
                 # e, entrando no turno de fechamento pela metade, podia gerar outro
-                # pedido/Pix. 1ª falha → pede para repetir (o registro é idempotente,
-                # o "sim" repetido acha o mesmo pedido); 2ª seguida → equipe.
+                # pedido/Pix. A fila tenta de novo com a MESMA mensagem (o registro
+                # é idempotente: o "sim" repetido acha o mesmo pedido); esgotadas
+                # as tentativas, a conversa vai para a equipe.
                 log.exception("Pipeline FSM falhou (%s): %s", type(e_fsm).__name__, e_fsm)
-                if await _primeira_falha_recente(pizzaria_id, telefone):
-                    try:
-                        await db.rollback()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    return await _pedir_para_repetir(db, pizz, conv, pizzaria_id, telefone, e_fsm)
-                raise
-            if result is not None:
-                await _limpar_falhas(pizzaria_id, telefone)
+                try:
+                    await db.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    from app.services.alertas import registrar_alerta_seguro
+                    await registrar_alerta_seguro(
+                        tipo="falha_ia", pizzaria_id=pizzaria_id, nivel="warning",
+                        detalhe=(f"FSM falhou ({type(e_fsm).__name__}: {str(e_fsm)[:200]}); "
+                                 "tentando de novo sozinho com a mesma mensagem."),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                raise FalhaTransitoria(f"{type(e_fsm).__name__}: {e_fsm}") from e_fsm
         if result is None:  # flag off, ou provedor de LLM sem suporte ao FSM
             # Teto de tempo no agente legado também: sem isso uma única chamada de
             # LLM lenta (timeout HTTP de 60s) já estouraria o lock de flush e
@@ -512,6 +458,8 @@ async def process_and_reply(
                 run_agent(db, pizzaria_id, telefone, user_input),
                 timeout=LEGACY_TIMEOUT_SECONDS,
             )
+    except FalhaTransitoria:
+        raise
     except Exception as e:
         import traceback
         tb = traceback.format_exc()

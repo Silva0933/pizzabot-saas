@@ -461,6 +461,15 @@ class TestGuardDeProduto:
     def test_produto_do_contexto_pode(self):
         assert produtos_sem_lastro("Sua Brasa sai rapidinho!", self.NOMES, "1x Pizza Brasa (G)") == []
 
+    def test_voz_vazia_falha_o_turno_em_vez_de_pedir_para_repetir(self):
+        """Mandava "Pode repetir, por favor?" — a mensagem do cliente está gravada,
+        o problema é nosso: o turno falha e a fila tenta de novo sozinha."""
+        from app.agent.fsm.pipeline import exigir_texto_da_voz
+        with pytest.raises(RuntimeError):
+            exigir_texto_da_voz("", None)
+        assert exigir_texto_da_voz("", "Vai ser entrega ou retirada?") == ""   # a pergunta fixa segue
+        assert exigir_texto_da_voz("Claro!", None) == "Claro!"
+
     def test_insistiu_no_produto_sem_lastro_a_frase_sai(self):
         """A08: se a voz cita o produto de novo depois de refazer, antes só havia
         alerta e o texto ia como estava. Agora as frases com ele saem."""

@@ -99,7 +99,6 @@ def _rodar(*, send_text, commit=None):
     resultado.trace = {}
 
     with patch("app.agent.fsm.pipeline.run_fsm_agent", new=AsyncMock(return_value=resultado)), \
-         patch("app.agent.runner._limpar_falhas", new=AsyncMock()), \
          patch("app.agent.behavior.delivery_options", return_value={}), \
          patch("app.services.humanized_delivery.asyncio.sleep", new=AsyncMock()), \
          patch("app.agent.runner.evolution.send_presence", new=AsyncMock()), \

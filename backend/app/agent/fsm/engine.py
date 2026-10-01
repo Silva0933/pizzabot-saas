@@ -2182,7 +2182,8 @@ async def processar(
             # Sem catálogo não há conferência — e "não consegui validar" não pode
             # virar "aprovado". Antes a lista de violações ficava vazia e o pedido
             # seguia para resumo/registro sem passar pela porta (A08, análise de
-            # 01/10). Falha o turno: 1ª vez o cliente repete, 2ª vai para a equipe.
+            # 01/10). Falha o turno: a fila tenta de novo sozinha com a mesma
+            # mensagem; esgotadas as tentativas, a conversa vai para a equipe.
             log.error("Catálogo indisponível na porta do pedido (pizzaria=%s): %s", getattr(ctx.pizzaria, "id", "?"), e)
             raise RuntimeError("catálogo indisponível na porta do pedido") from e
         violacoes = validar_pedido(cat_val, estado, calc)

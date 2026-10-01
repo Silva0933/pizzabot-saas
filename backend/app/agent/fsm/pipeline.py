@@ -274,6 +274,16 @@ def contextualizar_voz(
     return msg_pronta, pergunta_fixa
 
 
+def exigir_texto_da_voz(texto: str | None, pergunta_fixa: str | None) -> str:
+    """A voz não produziu nada aproveitável (truncada nas 2 tentativas, provedores
+    fora) e não há pergunta fixa para mandar: o turno falha e a fila tenta de novo
+    sozinha (runner.FalhaTransitoria). Antes ia "Pode repetir, por favor? 😊" —
+    estranho para o cliente: a mensagem dele está gravada e o problema é nosso."""
+    if not texto and not pergunta_fixa:
+        raise RuntimeError("voz sem texto aproveitável")
+    return texto or ""
+
+
 async def refazer_voz_pelo_preco(texto, correcoes, *, comando, validos, gerar, blindar_fn):
     """Preço inventado pela voz: refaz UMA vez, com os valores válidos explícitos,
     antes de mandar "(valor a confirmar)" — o marcador soava robótico mesmo quando
@@ -577,17 +587,16 @@ async def run_fsm_agent(
             )
 
         (texto, voz_usage), provider_usado, model_usado = await com_failover(_voz, cfg=cfg, model=model)
-        if not texto:
-            texto = "" if pergunta_fixa else "Pode repetir, por favor? 😊"
+        texto = exigir_texto_da_voz(texto, pergunta_fixa)
         # Guard de PRODUTO (camada 4): a voz só cita produto do cardápio que o
         # sistema trouxe no turno (carrinho, confirmação, fatos, oferta). Citou
         # outro → refaz uma vez proibindo; se insistir, as frases com o produto
         # saem do texto e o painel recebe alerta.
         #
         # Falha do PRÓPRIO guard (catálogo não carregou) não deixa o texto seguir
-        # sem conferência: a exceção sobe e o runner trata como falha do turno (1ª
-        # vez pede para o cliente repetir; 2ª vai para a equipe). Antes o texto
-        # ia como veio — "falha de validador não é validação aprovada" (A08).
+        # sem conferência: a exceção sobe, o turno falha e a fila tenta de novo
+        # sozinha; esgotadas as tentativas, a conversa vai para a equipe. Antes o
+        # texto ia como veio — "falha de validador não é validação aprovada" (A08).
         from app.agent.fsm.catalogo import carregar_catalogo
         from app.agent.fsm.guard import produtos_sem_lastro, remover_frases_com_produtos
         nomes_cat = [p.nome for p in (await carregar_catalogo(db, ctx.pizzaria)).produtos]

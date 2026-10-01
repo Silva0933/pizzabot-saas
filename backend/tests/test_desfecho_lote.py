@@ -177,6 +177,54 @@ class TestLoteFalhou:
         assert f"inflight:{PID}:{TEL}" in r.dados
 
 
+class TestEscalar:
+    def test_cliente_recebe_aviso_de_transferencia_e_conversa_vai_para_humano(self):
+        """Esgotadas as tentativas: o cliente é avisado que a equipe vai responder
+        (nunca "me manda de novo" — a mensagem dele está gravada)."""
+        pizz = MagicMock()
+        pizz.instancia = "inst1"
+        conv = MagicMock()
+        conv.id = uuid.uuid4()
+        conv.bot_ativo = True
+        conv.cliente_nome = "Ana"
+        db = MagicMock()
+        db.add = MagicMock()
+        db.commit = AsyncMock()
+        resultados = iter([pizz, conv, None])
+
+        async def _exec(*_a, **_k):
+            r = MagicMock()
+            v = next(resultados)
+            r.scalar_one.return_value = v
+            r.scalar_one_or_none.return_value = v
+            r.scalars.return_value.first.return_value = v
+            return r
+
+        db.execute = _exec
+
+        class _Sessao:
+            async def __aenter__(self):
+                return db
+
+            async def __aexit__(self, *a):
+                return False
+
+        evo = MagicMock()
+        evo.send_text = AsyncMock()
+        with patch("app.db.AsyncSessionLocal", new=lambda: _Sessao()), \
+             patch("app.services.evolution.evolution", new=evo), \
+             patch("app.agent.behavior.handoff_message", return_value="Vou chamar alguém da equipe 😊"), \
+             patch("app.services.alertas.registrar_alerta", new=AsyncMock()) as alerta, \
+             patch("app.services.broadcaster.broadcaster.publish", new=AsyncMock()):
+            ok = asyncio.run(recuperacao.escalar_sem_resposta(PID, TEL, motivo="falha técnica"))
+        assert ok is True
+        assert evo.send_text.await_args.kwargs["texto"] == "Vou chamar alguém da equipe 😊"
+        assert conv.bot_ativo is False and conv.status == "humano_necessario"
+        assert db.add.call_args.args[0].origem == "sistema"
+        assert alerta.await_args.kwargs["tipo"] == "sem_resposta"
+        db.commit.assert_awaited()
+
+
 # --------------------------------------------------------------------------- #
 # Worker Celery
 # --------------------------------------------------------------------------- #
