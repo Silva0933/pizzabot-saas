@@ -12,6 +12,7 @@ Fluxo:
   8. Retorna 200 imediato (Evolution não pode esperar)
 """
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -140,11 +141,17 @@ def _extract_content(data: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
 
 
 
+# Pergunta informativa que a IA pode responder com a loja fechada. Casa pelo
+# INÍCIO da palavra: por substring, "calabresa" continha "abre" e qualquer
+# pedido de calabresa fora do horário ia para a IA. E "cardápio" com acento
+# nunca casava com "cardap".
+_INFO_FORA_HORARIO_RE = re.compile(r"\b(card[aá]p|menu|hor[aá]rio|abre|abrem|aberto|funciona|endere[cç]o|taxa)")
+
+
 def _pode_responder_fora_horario_com_ia(texto: str) -> bool:
     t = (texto or "").lower()
-    termos_info = ("cardap", "menu", "horario", "horário", "abre", "funciona", "endereco", "endereço", "taxa")
     termos_fechamento = ("fechar pedido", "confirmar pedido", "pode fechar", "quero pedir", "entrega")
-    return any(x in t for x in termos_info) and not any(x in t for x in termos_fechamento)
+    return bool(_INFO_FORA_HORARIO_RE.search(t)) and not any(x in t for x in termos_fechamento)
 
 
 async def _get_or_create_conversa(
