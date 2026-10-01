@@ -1798,6 +1798,33 @@ async def processar(
                 observacoes=estado.get("observacoes"),
                 bairro_confirmado=estado.get("endereco_bairro"),
             )
+        # Tamanho que não existe para o item (ex.: meia Brasa/Margherita no P, e a
+        # Brasa não tem P): o item fica, SEM o tamanho, e a voz pergunta entre os
+        # que existem. Antes o tamanho recusado ficava no item e o sistema dizia
+        # "✅ Anotei: ... (P)" junto com "P não existe" (auditoria de 01/10).
+        tentativas_tam = 0
+        while not calc.get("ok") and isinstance(calc.get("tamanho_invalido"), dict) and tentativas_tam < 3:
+            tentativas_tam += 1
+            info = calc["tamanho_invalido"]
+            alvo_tam = next((it for it in estado["carrinho"] if it.get("iid") and it.get("iid") == info.get("iid")), None)
+            if alvo_tam is None:
+                break
+            alvo_tam["tamanho"] = None
+            _descongelar(alvo_tam)
+            decisao["fatos"].append(
+                f"O tamanho {info.get('tamanho')} NÃO existe para {info.get('produto') or 'esse item'}: o item foi "
+                f"anotado SEM tamanho. Diga isso em uma frase e pergunte qual tamanho, entre: {info.get('opcoes')}."
+            )
+            calc = await _calcular_pedido(
+                ctx, db,
+                itens=estado["carrinho"],
+                tipo=tipo_calc,
+                forma_pagamento=estado.get("pagamento") or "dinheiro",
+                pagar_agora=bool(estado.get("pagar_agora")),
+                endereco_entrega=estado.get("endereco"),
+                observacoes=estado.get("observacoes"),
+                bairro_confirmado=estado.get("endereco_bairro"),
+            )
         if not calc.get("ok"):
             # Se for erro de item/sabor não encontrado no cardápio, removemos do carrinho
             prod_inv = calc.get("produto_invalido") or calc.get("sabor_invalido")
@@ -1821,8 +1848,9 @@ async def processar(
             if meia_inv:
                 estado["carrinho"] = [it for it in estado["carrinho"] if (it.get("sabores") or []) != meia_inv]
                 decisao["fatos"].append(
-                    "Esse meio a meio NÃO pode ser feito e foi tirado do pedido. Explique o motivo "
-                    "ao cliente e pergunte se ele quer os sabores como pizzas inteiras ou outra combinação."
+                    "Esse meio a meio NÃO pode ser feito e NADA foi anotado (não diga 'anotado'/'anotei'). "
+                    f"Motivo: {calc.get('erro') or 'regra do cardápio'}. Explique ao cliente e pergunte se ele "
+                    "quer os sabores como pizzas inteiras ou outra combinação."
                 )
 
             # Pendência: item não encontrado / falta tamanho / taxa não cadastrada.
@@ -1963,6 +1991,21 @@ async def processar(
                 "simpatia que não consegue mudar o valor; só cite cupom/promoção se estiverem nos fatos. "
                 "NÃO cite preço de nenhum produto."
             )
+        # Pergunta de meio a meio / bordas e adicionais: a regra do cadastro vai
+        # inteira, com o "não" dito explicitamente. Antes a voz completava o vazio
+        # ("Sim, pode ser meio a meio" numa loja sem meia; "vou confirmar se temos
+        # borda" sem chamado nenhum) — auditoria de 01/10.
+        if not pechincha:
+            try:
+                from app.agent.fsm.catalogo import carregar_catalogo
+                cat_r = await carregar_catalogo(db, ctx.pizzaria)
+                citados_r = [p for p in (cat_r.por_id(i) for i in (dados.get("_citados") or [])) if p is not None]
+                txt_r, precos_r = cat_r.fatos_regras(user_input or "", citados_r)
+                if txt_r:
+                    decisao["fatos"].append("Regras do cardápio (responda exatamente isto): " + txt_r)
+                    decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *precos_r]
+            except Exception as e:  # noqa: BLE001
+                log.warning("Regras do cardápio para a dúvida falharam: %s", e)
         # Produto que não existe no catálogo ("tem fanta?"): resposta do sistema.
         nao_enc = [x for x in (dados.get("_nao_encontrados") or []) if isinstance(x, dict)]
         if nao_enc and not pechincha and intencao == "duvida_geral":

@@ -379,6 +379,28 @@ def test_porta_barra_pedido_invalido_e_nao_registra(cat):
     assert res["estado"]["validador_recusas"] == 1
 
 
+def test_tamanho_que_nao_existe_sai_do_item_e_nao_e_anunciado(cat):
+    """Auditoria de 01/10 (agente real): "meia brasa meia margherita pequena" →
+    "✅ Anotei: Meia Brasa / Meia Margherita (P)" + "P não existe para a Brasa".
+    O tamanho recusado ficava no item. Agora o item fica SEM tamanho (a voz
+    pergunta entre os que existem) e a confirmação não mostra o (P)."""
+    from app.agent.fsm.confirmacao import confirmacao_do_turno
+    est = engine.estado_inicial()
+    est.update({"apresentou": True})
+    est["carrinho"] = [{"iid": "I1", "nome": "pizza", "sabores": ["Pizza Brasa", "Pizza Margherita"],
+                        "sabores_ids": ["id-brasa", "id-marg"], "tamanho": "P", "qtd": 1}]
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"):
+        res = asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), est,
+                                           {"intencao": "conversa_fiada", "dados": {}}, user_input="pequena"))
+    item = res["estado"]["carrinho"][0]
+    assert item["tamanho"] is None and item["sabores_ids"] == ["id-brasa", "id-marg"]
+    assert any("NÃO existe" in f and "M, G" in f for f in res["decisao"]["fatos"])
+    anuncio = confirmacao_do_turno([], res["estado"]["carrinho"]) or ""
+    assert "(P)" not in anuncio
+
+
 def test_porta_sem_catalogo_nao_aprova_o_pedido(cat):
     """A08: o catálogo não carregou na porta → a lista de violações ficava vazia
     e o pedido seguia para o registro SEM conferência. Agora o turno falha (o

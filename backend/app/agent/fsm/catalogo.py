@@ -28,6 +28,12 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 _TTL_SEGUNDOS = 60.0
+
+# Pergunta sobre meio a meio / adicionais (texto já normalizado: sem acento).
+_PERGUNTA_MEIA_RE = re.compile(r"\b(meia|meio\s*a\s*meio|metade|dois\s+sabores|2\s+sabores|mais\s+de\s+um\s+sabor)\b")
+_PERGUNTA_ADICIONAL_RE = re.compile(
+    r"\b(borda|bordas|adiciona\w*|complement\w*|extras?|acrescent\w*|recheada|recheio)\b"
+)
 _cache: dict[str, tuple[float, Catalogo]] = {}
 
 
@@ -282,8 +288,79 @@ class Catalogo:
                 precos += [float(a.preco) for a in ads[:8] if a.preco > 0]
             if p.aceita_meia():
                 partes.append("aceita meio a meio")
+            elif p.tamanhos and "pizza" in normalizar(p.categoria):
+                # Dizer só quando ACEITA deixava o "não" implícito: perguntado se a
+                # pizza da Palazio (todas só inteiras) podia ser meia, a voz
+                # respondia "sim" (auditoria de 01/10).
+                partes.append("NÃO aceita meio a meio (só inteira)")
             linhas.append(" ".join(partes))
         return "; ".join(linhas), precos
+
+    def fatos_regras(self, pergunta: str, citados: list[ProdutoCat]) -> tuple[str | None, list[float]]:
+        """Regras do cadastro para pergunta sobre MEIO A MEIO ou ADICIONAIS/BORDAS,
+        ditas por inteiro — inclusive o "não". Sem isto a voz preenchia o vazio:
+        "Sim, a The Pizza pode ser meio a meio" numa loja em que nenhuma pizza
+        aceita, e "vou confirmar se temos borda" (sem chamado nenhum) numa loja
+        sem borda cadastrada. Devolve (texto, preços citáveis)."""
+        t = normalizar(pergunta)
+        partes: list[str] = []
+        precos: list[float] = []
+        pizzas = [p for p in self.produtos if "pizza" in normalizar(p.categoria)]
+
+        if _PERGUNTA_MEIA_RE.search(t) and pizzas:
+            aceitam = [p for p in pizzas if p.aceita_meia()]
+            alvo = [p for p in citados if p in pizzas]
+            if not aceitam:
+                partes.append(
+                    "MEIO A MEIO: esta loja NÃO faz pizza meio a meio — todas as pizzas são só inteiras. "
+                    "Diga isso com clareza e NÃO ofereça meio a meio."
+                )
+            elif alvo:
+                for p in alvo:
+                    if p.aceita_meia():
+                        partes.append(
+                            f"{p.nome}: ACEITA meio a meio (até {p.meia_max_sabores} sabores, com outro sabor que "
+                            "também aceite e no mesmo tamanho)."
+                        )
+                    else:
+                        partes.append(f"{p.nome}: NÃO aceita meio a meio — só inteira.")
+            else:
+                regra = "a média dos sabores" if aceitam[0].meia_calculo == "media" else "o do sabor mais caro"
+                limite = min(p.meia_max_sabores for p in aceitam)
+                partes.append(
+                    f"MEIO A MEIO: pode, até {limite} sabores, com estes: {', '.join(p.nome for p in aceitam)}. "
+                    f"O preço é {regra}."
+                )
+                nao = [p.nome for p in pizzas if not p.aceita_meia()]
+                if nao:
+                    partes.append(f"NÃO aceitam meio a meio: {', '.join(nao)}.")
+
+        if _PERGUNTA_ADICIONAL_RE.search(t):
+            def _lista(ads: list[Adicional]) -> str:
+                return ", ".join(f"{a.nome} (+R$ {a.preco:.2f})".replace(".", ",") if a.preco else a.nome for a in ads)
+
+            if citados:
+                for p in citados:
+                    ads = self.adicionais_de(p)
+                    if ads:
+                        partes.append(f"Adicionais/bordas de {p.nome}: {_lista(ads)}.")
+                        precos += [float(a.preco) for a in ads if a.preco > 0]
+                    else:
+                        partes.append(f"{p.nome} NÃO tem adicionais nem bordas no cardápio.")
+            else:
+                vistos: dict[str, Adicional] = {}
+                for a in [*self.adicionais_globais, *(a for p in self.produtos for a in p.adicionais)]:
+                    vistos.setdefault(normalizar(a.nome), a)
+                if not vistos:
+                    partes.append(
+                        "ADICIONAIS/BORDAS: esta loja NÃO tem adicionais nem bordas no cardápio. Diga que não "
+                        "temos — não invente e não prometa confirmar."
+                    )
+                else:
+                    ads = list(vistos.values())
+                    partes.append(f"ADICIONAIS/BORDAS do cardápio (só estes): {_lista(ads)}.")
+                    precos += [float(a.preco) for a in ads if a.preco > 0]
+        return ("; ".join(partes) or None), precos
 
     def da_categoria(self, categoria: str) -> list[ProdutoCat]:
         alvo = normalizar(categoria)

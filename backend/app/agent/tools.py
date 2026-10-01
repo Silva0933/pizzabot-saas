@@ -911,6 +911,15 @@ async def _calcular_pedido(
                     return {"ok": False, "erro": str(e), "meia_invalida": list(it.get("sabores") or [])}
                 if e.tipo == "produto_invalido":
                     return {"ok": False, "erro": str(e), "produto_invalido": it.get("nome") or ""}
+                if e.tipo == "tamanho_invalido":
+                    # Diz QUAL item: o engine tira o tamanho que não existe dele. Sem
+                    # isso o item ficava no carrinho com o tamanho recusado e o
+                    # sistema anunciava "✅ Anotei: Meia Brasa / Meia Margherita (P)"
+                    # na mesma mensagem em que dizia que P não existe (auditoria 01/10).
+                    return {"ok": False, "erro": str(e), "tamanho_invalido": {
+                        "iid": it.get("iid"), "tamanho": tamanho,
+                        "produto": e.extra.get("produto"), "opcoes": e.extra.get("opcoes"),
+                    }}
                 return {"ok": False, "erro": str(e)}
             valor_itens_total += float(pi.preco_unit) * qtd
             itens_norm.append({"nome": pi.nome, "quantidade": qtd, "preco_unit": float(pi.preco_unit)})
