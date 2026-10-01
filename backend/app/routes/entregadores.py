@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import delete, desc, func, select, text
+from sqlalchemy import delete, desc, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password, revogar_sessoes
@@ -431,20 +431,43 @@ async def pegar_pedido(
     if not pizz.permitir_autoatribuicao_entregador:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "A pizzaria não permite pegar pedidos livres.")
 
-    p = (
+    # UPDATE condicional = um único vencedor. Antes lia o pedido, conferia
+    # "sem entregador" e gravava: dois entregadores tocando "pegar" juntos liam o
+    # mesmo estado, ambos recebiam OK e o último sobrescrevia o primeiro (que
+    # saía para uma entrega que não era mais dele). Também barra pedido que não
+    # está mais disponível (cancelado, já saiu, retirada) — antes só via o entregador.
+    ganhou = (
         await db.execute(
-            select(Pedido).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+            update(Pedido)
+            .where(
+                Pedido.id == pedido_id,
+                Pedido.pizzaria_id == pizzaria_id,
+                Pedido.entregador_id.is_(None),
+                Pedido.tipo == "delivery",
+                Pedido.status.in_(DISPONIVEL_STATUS),
+            )
+            .values(entregador_id=ent.id, atribuido_em=datetime.now(UTC))
+            .returning(Pedido.id)
         )
     ).scalar_one_or_none()
-    if not p:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
-    if p.entregador_id is not None:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Pedido já tem entregador.")
-
-    p.entregador_id = ent.id
-    p.atribuido_em = datetime.now(UTC)
+    if ganhou is None:
+        atual = (
+            await db.execute(
+                select(Pedido.entregador_id).where(Pedido.id == pedido_id, Pedido.pizzaria_id == pizzaria_id)
+            )
+        ).one_or_none()
+        if atual is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Pedido não encontrado")
+        if atual[0] is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Pedido já tem entregador.")
+        raise HTTPException(status.HTTP_409_CONFLICT, "Pedido não está mais disponível para entrega.")
     await db.commit()
-    await db.refresh(p)
+
+    p = (
+        await db.execute(
+            select(Pedido).where(Pedido.id == pedido_id).execution_options(populate_existing=True)
+        )
+    ).scalar_one()
     await _broadcast_atribuicao(pizzaria_id, p)
     return p
 
