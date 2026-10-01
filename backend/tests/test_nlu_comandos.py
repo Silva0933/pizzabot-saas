@@ -379,6 +379,24 @@ def test_porta_barra_pedido_invalido_e_nao_registra(cat):
     assert res["estado"]["validador_recusas"] == 1
 
 
+def test_porta_sem_catalogo_nao_aprova_o_pedido(cat):
+    """A08: o catálogo não carregou na porta → a lista de violações ficava vazia
+    e o pedido seguia para o registro SEM conferência. Agora o turno falha (o
+    runner pede para o cliente repetir; na 2ª vez vai para a equipe)."""
+    est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 1}])
+    est.update({"etapa": "AGUARDANDO_CONFIRMACAO", "pagar_agora": False, "apresentou": True})
+    registrar = AsyncMock()
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=_calc((49.9, 1)))), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(side_effect=OSError("banco fora"))), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"), \
+         patch("app.agent.tools.registrar_pedido", new=registrar), \
+         pytest.raises(RuntimeError, match="catálogo indisponível"):
+        asyncio.run(engine.processar(MagicMock(), _ctx_catalogo(), est,
+                                     {"intencao": "confirmar_resumo", "dados": {}}, user_input="sim"))
+    assert not registrar.await_count
+
+
 # ---------------- Camada 5: conferência humana ----------------
 def test_mensagem_de_fechamento_com_conferencia_nao_promete_prazo():
     msg = engine._montar_registro_msg(42, "40 min", None, False, revisao=True)
@@ -442,6 +460,15 @@ class TestGuardDeProduto:
 
     def test_produto_do_contexto_pode(self):
         assert produtos_sem_lastro("Sua Brasa sai rapidinho!", self.NOMES, "1x Pizza Brasa (G)") == []
+
+    def test_insistiu_no_produto_sem_lastro_a_frase_sai(self):
+        """A08: se a voz cita o produto de novo depois de refazer, antes só havia
+        alerta e o texto ia como estava. Agora as frases com ele saem."""
+        from app.agent.fsm.guard import remover_frases_com_produtos
+        texto = "Entendi! A Pizza Calabresa média sai por R$ 46,90. Vai querer mais alguma coisa?"
+        assert remover_frases_com_produtos(texto, ["Pizza Calabresa"]) == "Entendi! Vai querer mais alguma coisa?"
+        assert remover_frases_com_produtos("Quer um pudim?", ["Pudim"]) == ""
+        assert remover_frases_com_produtos("Tudo certo!", ["Pudim"]) == "Tudo certo!"
 
     def test_nome_curto_nao_da_falso_alarme(self):
         # "pudim" tem só 5 letras e é o nome inteiro: citar sem contexto é citar o produto.

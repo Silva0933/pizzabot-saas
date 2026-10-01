@@ -581,85 +581,98 @@ async def run_fsm_agent(
             texto = "" if pergunta_fixa else "Pode repetir, por favor? 😊"
         # Guard de PRODUTO (camada 4): a voz só cita produto do cardápio que o
         # sistema trouxe no turno (carrinho, confirmação, fatos, oferta). Citou
-        # outro → refaz uma vez proibindo; se insistir, alerta no painel.
-        try:
-            from app.agent.fsm.catalogo import carregar_catalogo
-            from app.agent.fsm.guard import produtos_sem_lastro
-            nomes_cat = [p.nome for p in (await carregar_catalogo(db, ctx.pizzaria)).produtos]
-            lastro = f"{comando}\n{confirmacao or ''}"
-            fora = produtos_sem_lastro(texto, nomes_cat, lastro)
-            if fora:
-                log.warning("Voz citou produto sem lastro %s — refazendo", fora)
-                comando_2 = comando + (
-                    "\n\nATENÇÃO: NÃO cite estes produtos (o cliente não falou deles e o sistema não os "
-                    f"trouxe): {', '.join(fora)}."
-                )
-
-                async def _voz2(prov: str, key: str, mdl: str):
-                    return await voice.gerar_voz(
-                        provider=prov, api_key=key, model=mdl, comando=comando_2,
-                        reasoning=cfg.get("voz_reasoning") or None,
-                    )
-
-                (texto_2, _u2), _p2, _m2 = await com_failover(_voz2, cfg=cfg, model=model)
-                fora_2 = produtos_sem_lastro(texto_2 or "", nomes_cat, lastro) if texto_2 else fora
-                if texto_2 and not fora_2:
-                    texto = texto_2
-                correcoes["produtos_sem_lastro"] = fora_2 or []
-                if fora_2:
-                    from app.services.alertas import registrar_alerta
-                    await registrar_alerta(
-                        db, tipo="produto_suspeito", pizzaria_id=pizzaria_id, nivel="warning",
-                        detalhe=f"IA citou produto sem lastro {fora_2} mesmo após refazer. input='{user_input[:80]}'",
-                    )
-        except Exception as e:  # noqa: BLE001
-            log.debug("Guard de produto falhou (texto segue): %s", e)
-        # BLINDAGEM (Pilar 3): guard-rail determinístico sobre o texto da LLM —
-        # remove saudação repetida e neutraliza qualquer preço sem lastro.
-        try:
-            from app.agent.fsm.guard import blindar, remover_eco_confirmacao
-            persona = getattr(ctx.personalidade, "nome", None) or "Camila"
-            validos = decisao.get("precos_validos") or []
-            texto_voz, correcoes_blindagem = blindar(
-                texto, ja_apresentou=ja_apresentou, precos_validos=validos, persona_nome=persona,
+        # outro → refaz uma vez proibindo; se insistir, as frases com o produto
+        # saem do texto e o painel recebe alerta.
+        #
+        # Falha do PRÓPRIO guard (catálogo não carregou) não deixa o texto seguir
+        # sem conferência: a exceção sobe e o runner trata como falha do turno (1ª
+        # vez pede para o cliente repetir; 2ª vai para a equipe). Antes o texto
+        # ia como veio — "falha de validador não é validação aprovada" (A08).
+        from app.agent.fsm.catalogo import carregar_catalogo
+        from app.agent.fsm.guard import produtos_sem_lastro, remover_frases_com_produtos
+        nomes_cat = [p.nome for p in (await carregar_catalogo(db, ctx.pizzaria)).produtos]
+        lastro = f"{comando}\n{confirmacao or ''}"
+        fora = produtos_sem_lastro(texto, nomes_cat, lastro)
+        if fora:
+            log.warning("Voz citou produto sem lastro %s — refazendo", fora)
+            comando_2 = comando + (
+                "\n\nATENÇÃO: NÃO cite estes produtos (o cliente não falou deles e o sistema não os "
+                f"trouxe): {', '.join(fora)}."
             )
-            if correcoes_blindagem.get("precos_neutralizados"):
-                async def _gerar(cmd: str) -> str:
-                    async def _voz3(prov: str, key: str, mdl: str):
-                        return await voice.gerar_voz(
-                            provider=prov, api_key=key, model=mdl, comando=cmd,
-                            reasoning=cfg.get("voz_reasoning") or None,
-                        )
-                    (t, _u), _p, _m = await com_failover(_voz3, cfg=cfg, model=model)
-                    return t
 
-                texto_voz, correcoes_blindagem = await refazer_voz_pelo_preco(
-                    texto_voz, correcoes_blindagem, comando=comando, validos=validos, gerar=_gerar,
-                    blindar_fn=lambda t: blindar(
-                        t, ja_apresentou=ja_apresentou, precos_validos=validos, persona_nome=persona,
-                    ),
+            async def _voz2(prov: str, key: str, mdl: str):
+                return await voice.gerar_voz(
+                    provider=prov, api_key=key, model=mdl, comando=comando_2,
+                    reasoning=cfg.get("voz_reasoning") or None,
                 )
-            texto = texto_voz
-            # Antes o retorno sobrescrevia `correcoes` e o trace perdia o produto sem lastro.
-            correcoes.update(correcoes_blindagem)
-            # O sistema já mostrou "✅ Anotei: 1x Fanta 1L": a voz não repete ("Fanta
-            # 1L anotada.", "Tirei, sim.") — teste com o agente real, 29/09.
-            texto, removeu_eco = remover_eco_confirmacao(texto, confirmacao)
-            if removeu_eco:
-                correcoes["eco_removido"] = True
-            if correcoes.get("precos_neutralizados"):
-                # Pilar 5: preço inventado é sinal grave → alerta no painel.
+
+            texto_2 = ""
+            try:
+                (texto_2, _u2), _p2, _m2 = await com_failover(_voz2, cfg=cfg, model=model)
+            except Exception as e:  # noqa: BLE001
+                log.warning("Refazer a voz pelo produto falhou (%s); tirando as frases do texto", e)
+            fora_2 = produtos_sem_lastro(texto_2 or "", nomes_cat, lastro) if texto_2 else fora
+            if texto_2 and not fora_2:
+                texto = texto_2
+            else:
+                # Insistiu (ou não deu para refazer): o produto sem lastro NÃO vai
+                # ao cliente. Antes só alertava e o texto original seguia.
+                texto = remover_frases_com_produtos(texto, fora) or (
+                    "" if pergunta_fixa else "Posso te ajudar com mais alguma coisa? 😊"
+                )
+                correcoes["frases_com_produto_removidas"] = True
+            correcoes["produtos_sem_lastro"] = fora_2 or []
+            if fora_2:
                 from app.services.alertas import registrar_alerta
                 await registrar_alerta(
-                    db, tipo="preco_suspeito", pizzaria_id=pizzaria_id, nivel="warning",
-                    detalhe=(
-                        f"IA citou preço sem lastro {correcoes['precos_neutralizados']} "
-                        f"(válidos: {decisao.get('precos_validos')}); neutralizado. "
-                        f"Acao={decisao.get('acao')} input='{user_input[:80]}'"
-                    ),
+                    db, tipo="produto_suspeito", pizzaria_id=pizzaria_id, nivel="warning",
+                    detalhe=f"IA citou produto sem lastro {fora_2} mesmo após refazer; frases removidas. "
+                            f"input='{user_input[:80]}'",
                 )
-        except Exception as e:  # noqa: BLE001
-            log.debug("Guard FSM falhou (texto segue como veio): %s", e)
+        # BLINDAGEM (Pilar 3): guard-rail determinístico sobre o texto da LLM —
+        # remove saudação repetida e neutraliza qualquer preço sem lastro. Também
+        # sem "except: segue o texto original": se o blindar quebrar, o turno falha.
+        from app.agent.fsm.guard import blindar, remover_eco_confirmacao
+        persona = getattr(ctx.personalidade, "nome", None) or "Camila"
+        validos = decisao.get("precos_validos") or []
+        texto_voz, correcoes_blindagem = blindar(
+            texto, ja_apresentou=ja_apresentou, precos_validos=validos, persona_nome=persona,
+        )
+        if correcoes_blindagem.get("precos_neutralizados"):
+            async def _gerar(cmd: str) -> str:
+                async def _voz3(prov: str, key: str, mdl: str):
+                    return await voice.gerar_voz(
+                        provider=prov, api_key=key, model=mdl, comando=cmd,
+                        reasoning=cfg.get("voz_reasoning") or None,
+                    )
+                (t, _u), _p, _m = await com_failover(_voz3, cfg=cfg, model=model)
+                return t
+
+            texto_voz, correcoes_blindagem = await refazer_voz_pelo_preco(
+                texto_voz, correcoes_blindagem, comando=comando, validos=validos, gerar=_gerar,
+                blindar_fn=lambda t: blindar(
+                    t, ja_apresentou=ja_apresentou, precos_validos=validos, persona_nome=persona,
+                ),
+            )
+        texto = texto_voz
+        # Antes o retorno sobrescrevia `correcoes` e o trace perdia o produto sem lastro.
+        correcoes.update(correcoes_blindagem)
+        # O sistema já mostrou "✅ Anotei: 1x Fanta 1L": a voz não repete ("Fanta
+        # 1L anotada.", "Tirei, sim.") — teste com o agente real, 29/09.
+        texto, removeu_eco = remover_eco_confirmacao(texto, confirmacao)
+        if removeu_eco:
+            correcoes["eco_removido"] = True
+        if correcoes.get("precos_neutralizados"):
+            # Pilar 5: preço inventado é sinal grave → alerta no painel.
+            from app.services.alertas import registrar_alerta
+            await registrar_alerta(
+                db, tipo="preco_suspeito", pizzaria_id=pizzaria_id, nivel="warning",
+                detalhe=(
+                    f"IA citou preço sem lastro {correcoes['precos_neutralizados']} "
+                    f"(válidos: {decisao.get('precos_validos')}); neutralizado. "
+                    f"Acao={decisao.get('acao')} input='{user_input[:80]}'"
+                ),
+            )
     if pergunta_fixa:
         texto = f"{texto.strip()}\n\n{pergunta_fixa}" if texto.strip() else pergunta_fixa
     texto = texto.replace(QUEBRA, "\n\n")

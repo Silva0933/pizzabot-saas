@@ -239,7 +239,11 @@ class TestRespostaDePagamentoNaoViraObservacao:
         nlu = {"intencao": "informar_pagamento", "dados": {"pagar_agora": False, "observacoes": obs}}
         calc = AsyncMock(return_value=_calc_ok(
             [{"nome": "Pizza Calabresa (G)", "quantidade": 1, "preco_unit": 59.9}], 59.9))
-        with patch("app.agent.tools._calcular_pedido", new=calc):
+        # A porta do pedido precisa do catálogo (sem ele o turno falha — A08);
+        # aqui o assunto é a observação, então o validador aprova.
+        with patch("app.agent.tools._calcular_pedido", new=calc), \
+             patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=MagicMock())), \
+             patch("app.agent.fsm.validador.validar_pedido", return_value=[]):
             return asyncio.run(engine.processar(db, ctx, self._estado_pagamento(), nlu, user_input=obs))
 
     def test_na_hora_de_pegar_nao_vira_observacao(self):

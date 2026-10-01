@@ -2179,9 +2179,13 @@ async def processar(
         try:
             cat_val = await carregar_catalogo(db, ctx.pizzaria)
         except Exception as e:  # noqa: BLE001
+            # Sem catálogo não há conferência — e "não consegui validar" não pode
+            # virar "aprovado". Antes a lista de violações ficava vazia e o pedido
+            # seguia para resumo/registro sem passar pela porta (A08, análise de
+            # 01/10). Falha o turno: 1ª vez o cliente repete, 2ª vai para a equipe.
             log.error("Catálogo indisponível na porta do pedido (pizzaria=%s): %s", getattr(ctx.pizzaria, "id", "?"), e)
-            cat_val = None
-        violacoes = validar_pedido(cat_val, estado, calc) if cat_val is not None else []
+            raise RuntimeError("catálogo indisponível na porta do pedido") from e
+        violacoes = validar_pedido(cat_val, estado, calc)
         divergentes = iids_com_preco_divergente(violacoes)
         if divergentes:
             for it in estado["carrinho"]:

@@ -224,3 +224,14 @@ def produtos_sem_lastro(texto: str, nomes_catalogo: list[str], contexto: str) ->
         if any(_cita(t, c) for c in chaves) and not any(_cita(ctx, c) for c in chaves):
             fora.append(nome)
     return fora
+
+
+def remover_frases_com_produtos(texto: str, nomes: list[str]) -> str:
+    """Tira do texto as frases que citam estes produtos (a voz insistiu em
+    produto sem lastro mesmo depois de refazer). Antes só alertava e o texto ia
+    como estava. Pode devolver vazio — quem chama decide o que dizer."""
+    chaves = [c for nome in nomes for c in _chaves_produto(nome)]
+    if not texto or not chaves:
+        return texto
+    mantidas = [f for f in _FRASE_RE.findall(texto) if not any(_cita(_norm(f), c) for c in chaves)]
+    return "".join(mantidas).strip()
