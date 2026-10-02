@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { pedidosApi, BackendPedido, PedidoEvento } from "../../lib/api";
 import { ORDER_STATUS_LIST, orderStatusLabel } from "../../lib/orderStatus";
+import { adicionaisForaDoNome } from "../../lib/itensPedido";
 import { Modal, Button } from "../ui";
 
 interface Props {
@@ -474,11 +475,13 @@ export function HistoricoPedidos({ pizzariaId }: Props) {
                       </span>
                       <div className="min-w-0">
                         <p className="font-bold text-sm text-white">{item.nome}</p>
-                        {item.adicionais && item.adicionais.length > 0 && (
+                        {/* Pedido do WhatsApp já traz o adicional no nome ("Pizza Brasa (G) + Queijo extra"):
+                            a etiqueta só aparece para o que o nome não mostra. */}
+                        {adicionaisForaDoNome(item).length > 0 && (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {item.adicionais.map((a: any, aIdx: number) => (
+                            {adicionaisForaDoNome(item).map((a: any, aIdx: number) => (
                               <span key={aIdx} className="text-xs font-semibold bg-surface text-ink-muted border border-line px-2 py-0.5 rounded-md">
-                                + {typeof a === "string" ? a : a.nome}
+                                + {a}
                               </span>
                             ))}
                           </div>

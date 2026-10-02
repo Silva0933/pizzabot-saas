@@ -7,6 +7,7 @@ import {
 import {
   ApiError, ClientePainel, ClientePainelDetalhe, ClientePainelPedido, clientesApi,
 } from "../../lib/api";
+import { adicionaisForaDoNome } from "../../lib/itensPedido";
 
 type Props = { pizzariaId: string };
 
@@ -473,8 +474,8 @@ function PedidoItem({ pedido, aberto, onToggle }: { pedido: ClientePainelPedido;
               <div key={i} className="flex items-start justify-between gap-3 text-xs">
                 <span className="text-ink">
                   <b className="text-orange-400">{qtd}×</b> {item.nome || "Item"}
-                  {item.adicionais && item.adicionais.length > 0 && (
-                    <span className="block text-xs text-ink-muted">+ {item.adicionais.join(", ")}</span>
+                  {adicionaisForaDoNome(item).length > 0 && (
+                    <span className="block text-xs text-ink-muted">+ {adicionaisForaDoNome(item).join(", ")}</span>
                   )}
                 </span>
                 <span className="font-semibold text-ink shrink-0">{unit > 0 ? money(unit * qtd) : "—"}</span>

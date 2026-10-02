@@ -834,6 +834,29 @@ def _pedido_fingerprint(
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _estrutura_item(it: dict[str, Any]) -> dict[str, Any]:
+    """Os mesmos campos que o pedido do cardápio grava (produto_id, sabores_ids,
+    sabores, tamanho, adicionais). O pedido do WhatsApp guardava só o nome: no
+    "pedir de novo" do cardápio a pizza sem tamanho e a meia (nome que não é de
+    produto) saíam como "indisponível" (auditoria de 01/10). Item sem ID do
+    catálogo não ganha estrutura."""
+    ids = [str(x) for x in (it.get("sabores_ids") or []) if x] or (
+        [str(it["produto_id"])] if it.get("produto_id") else []
+    )
+    if not ids:
+        return {}
+    out: dict[str, Any] = {"produto_id": ids[0]}
+    if len(ids) > 1:
+        out["sabores_ids"] = ids
+        if it.get("sabores"):
+            out["sabores"] = [str(s) for s in it["sabores"]]
+    if it.get("tamanho"):
+        out["tamanho"] = str(it["tamanho"])
+    if it.get("adicionais"):
+        out["adicionais"] = [str(a) for a in it["adicionais"]]
+    return out
+
+
 async def _calcular_pedido(
     ctx: AgentContext,
     db: AsyncSession,
@@ -885,6 +908,7 @@ async def _calcular_pedido(
                 "nome": it["nome_congelado"],
                 "quantidade": qtd,
                 "preco_unit": float(_pc),
+                **_estrutura_item(it),
             })
             continue
 
@@ -922,7 +946,11 @@ async def _calcular_pedido(
                     }}
                 return {"ok": False, "erro": str(e)}
             valor_itens_total += float(pi.preco_unit) * qtd
-            itens_norm.append({"nome": pi.nome, "quantidade": qtd, "preco_unit": float(pi.preco_unit)})
+            itens_norm.append({
+                "nome": pi.nome, "quantidade": qtd, "preco_unit": float(pi.preco_unit),
+                **_estrutura_item({**it, "tamanho": pi.tamanho, "adicionais": pi.adicionais,
+                                   "sabores": pi.sabores}),
+            })
             continue
 
         # Caso 1: Pizza combinada (sabores múltiplos)
