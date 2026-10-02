@@ -435,6 +435,28 @@ def test_pergunta_de_preco_da_meia_nao_anota_e_responde_o_valor(cat):
     assert 64.9 in res["decisao"]["precos_validos"]
 
 
+def test_pergunta_de_preco_sem_tamanho_usa_o_do_carrinho(cat):
+    """Auditoria (rodada 6): "quero uma Brasa grande" e depois "e quanto fica se
+    for meia brasa meia margherita?" — respondia com os preços do P."""
+    est = engine.estado_inicial()
+    est["apresentou"] = True
+    est["carrinho"] = [{"iid": "I1", "nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "G", "qtd": 1}]
+    produtos = [{"nome": "pizza", "sabores_meia": ["Pizza Brasa", "Pizza Margherita"],
+                 "sabores_ids": ["id-brasa", "id-marg"], "tamanho": None, "qtd": 1, "adicionais": []}]
+    with patch("app.agent.tools.pedido_ativo_do_cliente", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.catalogo.carregar_catalogo", new=AsyncMock(return_value=cat)), \
+         patch("app.agent.tools._calcular_pedido", new=AsyncMock(return_value=_calc((64.9, 1)))), \
+         patch("app.services.chamados.buscar_conhecimento", new=AsyncMock(return_value=None)), \
+         patch("app.agent.fsm.engine._modo_pagamento", return_value="desativado"):
+        res = asyncio.run(engine.processar(
+            MagicMock(), _ctx_catalogo(), est, {"intencao": "adicionar_item", "dados": {"produtos": produtos}},
+            user_input="e quanto fica se for meia brasa meia margherita?",
+        ))
+    fato = next(f for f in res["decisao"]["fatos"] if "Preço EXATO" in f)
+    assert "(G): R$ 64,90" in fato and "(M)" not in fato
+    assert len(res["estado"]["carrinho"]) == 1          # pergunta não anota
+
+
 def _fechar(cat, fala, intencao="confirmar_resumo"):
     est = _estado_pronto([{"nome": "Pizza Brasa", "produto_id": "id-brasa", "tamanho": "M", "qtd": 1}])
     est.update({"etapa": "AGUARDANDO_CONFIRMACAO", "pagar_agora": False, "apresentou": True,

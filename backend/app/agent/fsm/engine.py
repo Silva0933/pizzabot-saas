@@ -834,18 +834,29 @@ _VERBO_PEDIDO_RE = _re.compile(
 )
 
 
-async def _fatos_preco_perguntado(db, ctx, perguntados: list[dict[str, Any]]) -> tuple[str | None, list[float]]:
+async def _fatos_preco_perguntado(
+    db, ctx, perguntados: list[dict[str, Any]], carrinho: list[dict[str, Any]] | None = None,
+) -> tuple[str | None, list[float], str | None]:
     """Preço pela regra única do catálogo para cada item perguntado. Com tamanho:
-    o valor exato (meia = regra da loja, + adicionais). Sem tamanho: o valor de
-    cada tamanho que existe em todos os sabores."""
+    o valor exato (meia = regra da loja, + adicionais). Sem tamanho: o do item
+    desses sabores que já está no carrinho ("quero a quatro queijos grande" →
+    "e se for meia com portuguesa?" é a G); senão, o de cada tamanho.
+
+    Devolve (fato para a voz, preços citáveis, frase PRONTA). A frase pronta sai
+    quando cada item perguntado tem UM valor certo: aí a resposta de preço não
+    passa pela LLM — ela misturava o preço da meia com o de um sabor inteiro
+    ("fica R$ 68,90 ou R$ 66,90", auditoria de 01/10), e o guard não pega porque
+    os dois valores existem no cardápio."""
     from app.agent.fsm.catalogo import ErroItem, carregar_catalogo
     try:
         cat = await carregar_catalogo(db, ctx.pizzaria)
     except Exception as e:  # noqa: BLE001
         log.warning("Catálogo indisponível para o preço perguntado: %s", e)
-        return None, []
+        return None, [], None
     partes: list[str] = []
     precos: list[float] = []
+    exatos: list[str] = []
+    todos_exatos = bool(perguntados)
 
     def brl(v) -> str:
         return f"R$ {float(v):.2f}".replace(".", ",")
@@ -853,9 +864,17 @@ async def _fatos_preco_perguntado(db, ctx, perguntados: list[dict[str, Any]]) ->
     for p in perguntados:
         ids = [str(x) for x in (p.get("sabores_ids") or []) if x] or ([str(p["produto_id"])] if p.get("produto_id") else [])
         if not ids:
+            todos_exatos = False
             continue
         ads = [str(a) for a in (p.get("adicionais") or [])]
         tamanhos = [p.get("tamanho")] if p.get("tamanho") else []
+        if not tamanhos:
+            for it in carrinho or []:
+                ids_it = [str(x) for x in (it.get("sabores_ids") or [])] or (
+                    [str(it["produto_id"])] if it.get("produto_id") else [])
+                if it.get("tamanho") and set(ids_it) & set(ids):
+                    tamanhos = [it["tamanho"]]
+                    break
         if not tamanhos:
             principal = cat.por_id(ids[0])
             tamanhos = [n for n, _ in (principal.tamanhos if principal else [])] or [None]
@@ -869,14 +888,24 @@ async def _fatos_preco_perguntado(db, ctx, perguntados: list[dict[str, Any]]) ->
                 continue
             valores.append(f"{pi.nome}: {brl(pi.preco_unit)}")
             precos.append(float(pi.preco_unit))
+        regra = ""
+        if len(ids) > 1:
+            p0 = cat.por_id(ids[0])
+            regra = (" (meio a meio cobra a média dos sabores)" if p0 and p0.meia_calculo == "media"
+                     else " (meio a meio cobra o valor do sabor mais caro)")
         if valores:
-            regra = ""
-            if len(ids) > 1:
-                p0 = cat.por_id(ids[0])
-                regra = (" (meio a meio cobra a média dos sabores)" if p0 and p0.meia_calculo == "media"
-                         else " (meio a meio cobra o valor do sabor mais caro)")
             partes.append("; ".join(valores) + regra)
-    return ("; ".join(partes) or None), precos
+        if len(tamanhos) == 1 and len(valores) == 1:
+            nome_v, valor_v = valores[0].rsplit(": ", 1)
+            exatos.append(f"{nome_v} fica {valor_v}" + (" — no meio a meio vale o preço do sabor mais caro"
+                                                        if regra and "mais caro" in regra else
+                                                        " — no meio a meio vale a média dos sabores" if regra else ""))
+        else:
+            todos_exatos = False
+    frase = None
+    if todos_exatos and exatos:
+        frase = (exatos[0] + " 😊") if len(exatos) == 1 else chr(10).join(f"• {x}" for x in exatos)
+    return ("; ".join(partes) or None), precos, frase
 
 
 # Frase que começa negando não é um "sim" — só se trouxer o "pode fechar" junto.
@@ -1359,10 +1388,14 @@ async def processar(
         perguntados = [p for p in dados.get("produtos") or [] if isinstance(p, dict)]
         dados["produtos"] = []
         intencao = "duvida_geral"
-        txt_preco, precos_preco = await _fatos_preco_perguntado(db, ctx, perguntados)
+        txt_preco, precos_preco, frase_preco = await _fatos_preco_perguntado(
+            db, ctx, perguntados, estado.get("carrinho"),
+        )
         if txt_preco:
             decisao["fatos"].append("Preço EXATO do que o cliente perguntou (responda com este valor): " + txt_preco)
             decisao["precos_validos"] = [*(decisao.get("precos_validos") or []), *precos_preco]
+        if frase_preco:
+            decisao["preco_pronto"] = frase_preco
     elif (
         intencao == "adicionar_item"
         and dados.get("produtos")
@@ -1371,8 +1404,8 @@ async def processar(
         # "Quero uma brasa grande, quanto fica?": anota E responde o valor. Antes a
         # voz, proibida de citar valor ao anotar, dizia "o valor aparece pelo
         # sistema" — sem responder a pergunta.
-        txt_preco, precos_preco = await _fatos_preco_perguntado(
-            db, ctx, [p for p in dados["produtos"] if isinstance(p, dict)],
+        txt_preco, precos_preco, _frase = await _fatos_preco_perguntado(
+            db, ctx, [p for p in dados["produtos"] if isinstance(p, dict)], estado.get("carrinho"),
         )
         if txt_preco:
             decisao["fatos"].append("O cliente também perguntou o preço — responda com este valor: " + txt_preco)
@@ -2162,6 +2195,12 @@ async def processar(
     )
     if responder_como_duvida:
         decisao["acao"] = "responder_duvida"
+        if decisao.get("preco_pronto"):
+            # Preço perguntado com valor único e certo: texto fixo do backend.
+            decisao["mensagem_pronta"] = decisao["preco_pronto"]
+            decisao["mensagem_pronta_acao"] = "responder_duvida"
+            estado["apresentou"] = True
+            return {"decisao": decisao, "estado": estado}
         decisao["fatos"].append(_fatos_pizzaria(ctx.pizzaria))
         # "Quanto é a entrega pro Cohatrac?" — sem a tabela de taxas nos fatos a voz
         # chutava um valor e o guard trocava por "(valor a confirmar)".
