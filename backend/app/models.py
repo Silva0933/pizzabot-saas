@@ -129,6 +129,10 @@ class Pizzaria(Base):
     whatsapp_estado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Início do uso do número no sistema: define o aquecimento (migration 036).
     whatsapp_conectado_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Tipo de conexão (migration 040): 'qrcode' (Baileys) | 'cloud_api' (API oficial da Meta).
+    whatsapp_tipo: Mapped[str] = mapped_column(String(20), default="qrcode", nullable=False)
+    # Credenciais da Cloud API (token CIFRADO) e o modelo usado fora da janela de 24 h.
+    whatsapp_cloud: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     gateway_pagamento: Mapped[str] = mapped_column(String, default="mercadopago", nullable=False)
     mp_access_token: Mapped[str | None] = mapped_column(Text)
     # Id da conta vendedora no Mercado Pago (GET /users/me). É o que liga o

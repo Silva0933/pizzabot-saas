@@ -28,6 +28,7 @@ from app.schemas import EvolutionWebhookPayload
 from app.services.broadcaster import broadcaster
 from app.services.evolution import evolution
 from app.services.queue import enqueue_message
+from app.services.whatsapp_cloud import eh_instancia_cloud
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -326,21 +327,29 @@ async def evolution_webhook(
     if payload.event not in (None, "messages.upsert"):
         return {"ignored": payload.event}
 
-    data = payload.data or {}
+    if not payload.instance:
+        return {"ignored": "no_instance"}
+    if eh_instancia_cloud(payload.instance):
+        # Nome de instância da API oficial vindo pela Evolution: não é dela.
+        return {"ignored": "instancia_api_oficial"}
+    return await processar_mensagem(db, payload.instance, payload.data or {})
+
+
+async def processar_mensagem(db: AsyncSession, instancia: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Uma mensagem do cliente no formato messages.upsert da Evolution. A API
+    oficial (webhook_cloud) converte a da Meta para este formato e entra aqui:
+    o atendimento é o mesmo nas duas conexões."""
     key = data.get("key") or {}
     if key.get("fromMe"):
         # Ignora ecos das nossas próprias mensagens
         return {"ignored": "fromMe"}
 
-    if not payload.instance:
-        return {"ignored": "no_instance"}
-
     # ---- localiza pizzaria pela instância ----
     pizz = (
-        await db.execute(select(Pizzaria).where(Pizzaria.instancia == payload.instance))
+        await db.execute(select(Pizzaria).where(Pizzaria.instancia == instancia))
     ).scalar_one_or_none()
     if not pizz:
-        log.warning("Webhook para instância desconhecida: %s", payload.instance)
+        log.warning("Webhook para instância desconhecida: %s", instancia)
         return {"ignored": "unknown_instance"}
 
     # Pizzaria suspensa pelo admin (ex.: inadimplência): atendimento 100% desligado.
@@ -386,12 +395,12 @@ async def evolution_webhook(
         from app.redis_client import redis as _redis
         try:
             primeiro = await _redis.set(
-                f"wh:seen:{payload.instance}:{evolution_msg_id}", "1", nx=True, ex=600,
+                f"wh:seen:{instancia}:{evolution_msg_id}", "1", nx=True, ex=600,
             )
             if not primeiro:
                 log.info("Webhook duplicado ignorado (evolution_id=%s)", evolution_msg_id)
                 return {"ignored": "duplicate", "evolution_id": evolution_msg_id}
-            dedup_key = f"wh:seen:{payload.instance}:{evolution_msg_id}"
+            dedup_key = f"wh:seen:{instancia}:{evolution_msg_id}"
         except Exception as e:  # noqa: BLE001
             log.debug("Falha no dedup de webhook (seguindo sem dedup): %s", e)
 
@@ -631,3 +640,147 @@ async def evolution_webhook(
         log.warning("Falha ao avisar o painel da mensagem %s: %s", msg.id, e)
 
     return {"ok": True, "conversa_id": str(conv.id), "mensagem_id": str(msg.id)}
+
+
+# ============================================
+# API oficial do WhatsApp (Cloud API da Meta)
+# ============================================
+async def _primeira_na_hora(chave: str) -> bool:
+    try:
+        from app.redis_client import redis as _redis
+        return bool(await _redis.set(chave, "1", nx=True, ex=3600))
+    except Exception as e:  # noqa: BLE001
+        log.debug("Sem Redis para limitar o alerta (%s): só o log fica", e)
+        return False
+
+
+async def _pizzaria_por_id(db: AsyncSession, pizzaria_id: str) -> Pizzaria | None:
+    try:
+        pid = uuid.UUID(str(pizzaria_id))
+    except ValueError:
+        return None
+    return (await db.execute(select(Pizzaria).where(Pizzaria.id == pid))).scalar_one_or_none()
+
+
+@router.get("/whatsapp-cloud/{pizzaria_id}")
+async def whatsapp_cloud_verificar(pizzaria_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Verificação do webhook pela Meta (botão "Verificar e salvar" no app):
+    devolve o hub.challenge se o token de verificação for o desta loja."""
+    from fastapi.responses import PlainTextResponse
+
+    from app.services.secrets import token_confere
+
+    q = request.query_params
+    pizz = await _pizzaria_por_id(db, pizzaria_id)
+    cfg = dict((pizz.whatsapp_cloud if pizz else None) or {})
+    if q.get("hub.mode") != "subscribe" or not cfg.get("verify_token") \
+            or not token_confere(q.get("hub.verify_token"), {cfg["verify_token"]}):
+        log.warning("Verificação do webhook da API oficial recusada (pizzaria=%s)", pizzaria_id)
+        return PlainTextResponse("token de verificação inválido", status_code=403)
+    # Marca que a Meta já fala com este endereço: o painel só deixa ativar a API
+    # oficial depois disso (senão a loja ficaria surda até alguém perceber).
+    cfg["webhook_verificado_em"] = datetime.now(UTC).isoformat()
+    pizz.whatsapp_cloud = cfg
+    await db.commit()
+    log.info("Webhook da API oficial verificado pela Meta (pizzaria=%s)", pizz.id)
+    return PlainTextResponse(q.get("hub.challenge") or "")
+
+
+@router.post("/whatsapp-cloud/{pizzaria_id}")
+async def whatsapp_cloud_receber(pizzaria_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Mensagens e avisos de entrega da Meta. A assinatura é conferida com o App
+    Secret da loja ANTES de ler o conteúdo; cada mensagem entra no mesmo fluxo
+    das que vêm pela Evolution (processar_mensagem)."""
+    import json
+
+    from fastapi.responses import JSONResponse
+
+    from app.services import whatsapp_cloud as wc
+    from app.services.secrets import decrypt_secret
+
+    corpo = await request.body()
+    pizz = await _pizzaria_por_id(db, pizzaria_id)
+    if not pizz:
+        return {"ignored": "pizzaria_desconhecida"}
+    cfg = dict(pizz.whatsapp_cloud or {})
+    if not wc.assinatura_confere(decrypt_secret(cfg.get("app_secret")), corpo,
+                                 request.headers.get("x-hub-signature-256")):
+        log.warning("Webhook da API oficial com assinatura inválida (pizzaria=%s)", pizz.id)
+        if wc.eh_cloud(pizz) and await _primeira_na_hora(f"wa:cloud:assinatura:{pizz.id}"):
+            # Um alerta por hora: quem martela o endpoint com POST forjado não
+            # pode encher a lista de alertas da plataforma.
+            from app.services.alertas import registrar_alerta_seguro
+            await registrar_alerta_seguro(
+                tipo="whatsapp_assinatura_invalida", pizzaria_id=pizz.id, nivel="error",
+                detalhe=("Chegou mensagem da API oficial com assinatura inválida. Se não for "
+                         "tentativa de fraude, o App Secret salvo não é o do app da Meta."),
+            )
+        return JSONResponse({"ignored": "assinatura_invalida"}, status_code=401)
+    if not wc.eh_cloud(pizz) or not pizz.instancia:
+        # Credenciais salvas mas a loja ainda está no QR Code (ou voltou para ele).
+        return {"ignored": "api_oficial_inativa"}
+
+    try:
+        payload = json.loads(corpo or b"{}")
+    except ValueError:
+        return {"ignored": "json_invalido"}
+
+    # Em variáveis: um rollback no meio (falha ao marcar entrega) expira o objeto
+    # e ler atributo dele depois viraria lazy-load fora do contexto async.
+    pid, instancia, numero_loja = pizz.id, pizz.instancia, str(cfg.get("phone_number_id") or "")
+    processadas = 0
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes") or []:
+            if change.get("field") != "messages":
+                continue
+            value = change.get("value") or {}
+            numero_id = str((value.get("metadata") or {}).get("phone_number_id") or "")
+            if numero_id != numero_loja:
+                log.warning("API oficial: mensagem para outro número (%s) no webhook da pizzaria %s",
+                            numero_id, pid)
+                continue
+            contatos = {str(c.get("wa_id")): (c.get("profile") or {}).get("name")
+                        for c in value.get("contacts") or []}
+            for m in value.get("messages") or []:
+                data = wc.mensagem_para_evolution(m, contatos)
+                if data is None:
+                    continue
+                await wc.guardar_ultima_recebida(pid, str(m.get("from")), str(m.get("id")))
+                await processar_mensagem(db, instancia, data)
+                processadas += 1
+            for st in value.get("statuses") or []:
+                if st.get("status") == "failed":
+                    await _registrar_falha_cloud(db, pid, st)
+    return {"ok": True, "mensagens": processadas}
+
+
+async def _registrar_falha_cloud(db: AsyncSession, pizzaria_id: uuid.UUID, st: dict[str, Any]) -> None:
+    """Na API oficial a Meta aceita o envio e só depois avisa que não entregou.
+    Marca a resposta no painel ("Não chegou ao cliente") e alerta a loja."""
+    from app.services.whatsapp_cloud import motivo_falha
+
+    motivo = motivo_falha(st)
+    wamid = str(st.get("id") or "")
+    telefone = str(st.get("recipient_id") or "")
+    log.warning("API oficial: mensagem %s não entregue a %s: %s", wamid, telefone, motivo)
+    try:
+        if wamid:
+            await db.execute(text("""
+                UPDATE public.mensagens
+                SET metadata = jsonb_set(
+                    jsonb_set(metadata, '{envio,status}',
+                              to_jsonb(CASE WHEN COALESCE((metadata->'envio'->>'partes_total')::int, 1) > 1
+                                            THEN 'parcial' ELSE 'falhou' END)),
+                    '{envio,erro}', to_jsonb(CAST(:motivo AS text)))
+                WHERE pizzaria_id = :pid
+                  AND metadata->'envio'->'ids' @> jsonb_build_array(CAST(:wamid AS text))
+            """), {"motivo": f"Meta: {motivo}"[:300], "pid": str(pizzaria_id), "wamid": wamid})
+            await db.commit()
+    except Exception as e:  # noqa: BLE001
+        await db.rollback()
+        log.warning("Falha ao marcar mensagem %s como não entregue: %s", wamid, e)
+    from app.services.alertas import registrar_alerta_seguro
+    await registrar_alerta_seguro(
+        tipo="falha_envio", pizzaria_id=pizzaria_id, nivel="warning",
+        detalhe=f"Mensagem da API oficial não chegou a {telefone}: {motivo}.",
+    )

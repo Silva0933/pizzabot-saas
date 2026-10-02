@@ -1063,7 +1063,7 @@ async def get_evolution(
             log.warning("Falha ao listar instâncias da Evolution: %s", e)
 
     rows = (await db.execute(text("""
-        SELECT id, nome, instancia, whatsapp_estado
+        SELECT id, nome, instancia, whatsapp_estado, whatsapp_tipo
         FROM public.pizzarias
         ORDER BY nome
     """))).fetchall()
@@ -1076,6 +1076,8 @@ async def get_evolution(
             "estado_salvo": r[3],
             "existe_na_evolution": bool(r[2]) and (r[2] or "").lower() in por_nome,
             "estado_evolution": (por_nome.get((r[2] or "").lower()) or {}).get("estado"),
+            # API oficial não tem instância na Evolution: o estado é o salvo pelo monitor.
+            "api_oficial": r[4] == "cloud_api",
         }
         for r in rows
     ]

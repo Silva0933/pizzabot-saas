@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field, field_serializer
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import hash_password
@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import current_user, membership, require_platform_admin
 from app.models import Entregador, EquipePizzaria, Pizzaria, Usuario
+from app.services import whatsapp_cloud
 from app.services.evolution import EvolutionError, evolution
 from app.services.secrets import encrypt_secret, looks_masked, mask_secret
 
@@ -78,6 +79,7 @@ class PizzariaOut(BaseModel):
     slug: str | None = None
     instancia: str | None
     whatsapp_estado: str | None = None
+    whatsapp_tipo: str = "qrcode"   # qrcode (Evolution) | cloud_api (API oficial)
     plano: str
     bot_ativo_global: bool
     alertas_sonoros: bool = True
@@ -432,6 +434,13 @@ async def update_pizzaria(
                 )).scalar_one_or_none()
                 if dup:
                     raise HTTPException(status.HTTP_409_CONFLICT, f"O slug '{v}' já está em uso por outra pizzaria.")
+            if k == "instancia" and v != pizz.instancia and (
+                whatsapp_cloud.eh_cloud(pizz) or whatsapp_cloud.eh_instancia_cloud(v)
+            ):
+                # A instância da API oficial é gerida pelas rotas /whatsapp/api-oficial:
+                # trocá-la à mão desligaria o envio (ou mandaria pela Meta sem credencial).
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                    "A instância da API oficial não pode ser alterada por aqui.")
             setattr(pizz, k, v)
 
     # Token do MP novo → descobre e guarda o id da conta vendedora. É o que liga
@@ -740,6 +749,13 @@ async def whatsapp_conectar(
     ).scalar_one_or_none()
     if not pizz:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    if whatsapp_cloud.eh_cloud(pizz):
+        # Trocar de conexão no meio deixaria a loja surda até o QR ser lido:
+        # desativar a API oficial é um passo explícito do dono.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Esta loja está na API oficial do WhatsApp. Desative a API oficial antes de conectar por QR Code.",
+        )
 
     from app.services.app_config import get_evolution_config
 
@@ -752,6 +768,8 @@ async def whatsapp_conectar(
         )
 
     base = _slugify(body.instancia or pizz.instancia or pizz.nome)
+    # O prefixo é o que marca instância da API oficial (services/whatsapp_cloud).
+    base = base.removeprefix(whatsapp_cloud.PREFIXO_INSTANCIA) or "pizzaria"
     instancia = await _unique_instancia(db, base, pizz.id)
     webhook_url = _settings.public_base_url.rstrip("/") + "/webhook/evolution"
 
@@ -841,6 +859,8 @@ async def whatsapp_qrcode(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
     if not pizz.instancia:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Instância ainda não criada.")
+    if whatsapp_cloud.eh_cloud(pizz):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A API oficial do WhatsApp não usa QR Code.")
     try:
         conn = await evolution.connect_instance(instancia=pizz.instancia)
         state = await evolution.connection_state(instancia=pizz.instancia)
@@ -863,3 +883,263 @@ async def whatsapp_qrcode(
         "state": state,
         "conectado": state == "open",
     }
+
+
+# ============================================
+# WhatsApp — API oficial (Cloud API da Meta)
+# ============================================
+# Opção separada da Evolution: a Meta chama o PizzaBot direto
+# (/webhook/whatsapp-cloud/{id}) e o envio sai pela Graph API
+# (services/whatsapp_cloud). Fluxo do dono: salvar credenciais → colar a URL e o
+# token de verificação no app da Meta → ativar (só depois que a Meta verificou).
+class ApiOficialIn(BaseModel):
+    phone_number_id: str
+    waba_id: str
+    token: str | None = None        # vazio = mantém o salvo
+    app_secret: str | None = None   # vazio = mantém o salvo
+
+
+class ModeloIn(BaseModel):
+    nome: str | None = None         # vazio = sem modelo
+    idioma: str | None = None
+
+
+async def _pizzaria_ou_404(db: AsyncSession, pizzaria_id: uuid.UUID) -> Pizzaria:
+    pizz = (await db.execute(select(Pizzaria).where(Pizzaria.id == pizzaria_id))).scalar_one_or_none()
+    if not pizz:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Pizzaria não encontrada")
+    return pizz
+
+
+def _api_oficial_resposta(pizz: Pizzaria) -> dict:
+    return {
+        **whatsapp_cloud.config_publica(pizz),
+        "tipo": pizz.whatsapp_tipo or "qrcode",
+        "instancia": pizz.instancia,
+        "estado": pizz.whatsapp_estado,
+        "webhook_url": f"{_settings.public_base_url.rstrip('/')}/webhook/whatsapp-cloud/{pizz.id}",
+        "webhook_campo": "messages",
+    }
+
+
+def _erro_meta(e: Exception) -> HTTPException:
+    return HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+_CAMPOS_MODELO = ("modelo_nome", "modelo_idioma", "modelo_parametros", "modelo_texto")
+
+
+@router.get("/{pizzaria_id}/whatsapp/api-oficial")
+async def api_oficial_ver(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    return _api_oficial_resposta(await _pizzaria_ou_404(db, pizzaria_id))
+
+
+@router.put("/{pizzaria_id}/whatsapp/api-oficial")
+async def api_oficial_salvar(
+    pizzaria_id: uuid.UUID,
+    body: ApiOficialIn,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Valida as credenciais na Meta, inscreve o app na conta do WhatsApp
+    Business e guarda tudo (token e App Secret cifrados). Não troca a conexão:
+    isso é o /ativar, depois que a Meta verificou o webhook."""
+    import secrets as _secrets
+
+    from app.services.secrets import decrypt_secret, encrypt_secret
+
+    pizz = await _pizzaria_ou_404(db, pizzaria_id)
+    cfg = dict(pizz.whatsapp_cloud or {})
+    phone_number_id = re.sub(r"\D", "", body.phone_number_id or "")
+    waba_id = re.sub(r"\D", "", body.waba_id or "")
+    token = (body.token or "").strip() or decrypt_secret(cfg.get("token"))
+    app_secret = (body.app_secret or "").strip() or decrypt_secret(cfg.get("app_secret"))
+    if not phone_number_id or not waba_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Informe o ID do número de telefone e o ID da conta do WhatsApp Business (só números).")
+    if not token:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o token de acesso permanente.")
+    if not app_secret:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Informe a chave secreta do app (App Secret): sem ela não há como "
+                            "confirmar que as mensagens vêm mesmo da Meta.")
+
+    # Um número da Meta atende uma loja só: com dois cadastros, as mensagens
+    # cairiam no webhook que a Meta tivesse configurado e a outra ficaria muda.
+    outra = (await db.execute(text("""
+        SELECT nome FROM public.pizzarias
+        WHERE id <> :pid AND whatsapp_cloud->>'phone_number_id' = :num
+        LIMIT 1
+    """), {"pid": str(pizz.id), "num": phone_number_id})).first()
+    if outra:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Este número da API oficial já está cadastrado em outra loja.")
+
+    try:
+        info = await whatsapp_cloud.validar_numero(token, phone_number_id)
+        await whatsapp_cloud.inscrever_app(token, waba_id)
+    except whatsapp_cloud.CloudApiErro as e:
+        raise _erro_meta(e) from e
+
+    if cfg.get("phone_number_id") and cfg.get("phone_number_id") != phone_number_id:
+        # Outro número: o modelo aprovado era da conta antiga.
+        for k in _CAMPOS_MODELO:
+            cfg.pop(k, None)
+    cfg.update({
+        "phone_number_id": phone_number_id,
+        "waba_id": waba_id,
+        "token": encrypt_secret(token),
+        "app_secret": encrypt_secret(app_secret),
+        "verify_token": cfg.get("verify_token") or _secrets.token_urlsafe(24),
+        **info,
+        "salvo_em": datetime.now(UTC).isoformat(),
+    })
+    pizz.whatsapp_cloud = cfg
+    await db.commit()
+    whatsapp_cloud.invalidar(pizz.instancia)
+    return _api_oficial_resposta(pizz)
+
+
+@router.post("/{pizzaria_id}/whatsapp/api-oficial/ativar")
+async def api_oficial_ativar(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Passa a loja para a API oficial. A conexão por QR Code (Evolution) desta
+    loja é desligada: um número atendendo pelos dois caminhos responderia em dobro."""
+    from app.services.whatsapp_status import aplicar_estado_conexao
+
+    pizz = await _pizzaria_ou_404(db, pizzaria_id)
+    cfg = dict(pizz.whatsapp_cloud or {})
+    cred = whatsapp_cloud.credencial_de(pizz.id, cfg)
+    if cred is None or not cfg.get("app_secret"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Salve as credenciais da API oficial primeiro.")
+    if not cfg.get("webhook_verificado_em"):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "A Meta ainda não verificou o webhook. No app da Meta, em WhatsApp → Configuração, cole a URL "
+            "e o token de verificação, clique em \"Verificar e salvar\" e assine o campo \"messages\".",
+        )
+    try:
+        estado = await whatsapp_cloud.estado(cred)
+    except whatsapp_cloud.CloudApiErro as e:
+        raise _erro_meta(e) from e
+    if estado != "open":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "A Meta recusou o token salvo. Gere um novo e salve de novo.")
+
+    antiga = pizz.instancia
+    if antiga and not whatsapp_cloud.eh_instancia_cloud(antiga):
+        try:
+            await evolution.delete_instance(instancia=antiga)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Falha ao desligar a instância %s da Evolution ao ativar a API oficial: %s", antiga, e)
+
+    base = whatsapp_cloud.PREFIXO_INSTANCIA + _slugify(pizz.nome).removeprefix(whatsapp_cloud.PREFIXO_INSTANCIA)
+    pizz.instancia = await _unique_instancia(db, base, pizz.id)
+    pizz.whatsapp_tipo = "cloud_api"
+    await aplicar_estado_conexao(db, pizz, "open")
+    await db.commit()
+    whatsapp_cloud.invalidar(pizz.instancia)
+    log.info("Pizzaria %s ativou a API oficial do WhatsApp (instância %s)", pizz.id, pizz.instancia)
+    return _api_oficial_resposta(pizz)
+
+
+def _desligar_api_oficial(pizz: Pizzaria) -> None:
+    if not whatsapp_cloud.eh_cloud(pizz):
+        return
+    whatsapp_cloud.invalidar(pizz.instancia)
+    pizz.whatsapp_tipo = "qrcode"
+    pizz.instancia = None
+    # Sem alerta de "desconectado": foi o dono que desligou.
+    pizz.whatsapp_estado = "close"
+    pizz.whatsapp_estado_em = datetime.now(UTC)
+
+
+@router.post("/{pizzaria_id}/whatsapp/api-oficial/desativar")
+async def api_oficial_desativar(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Volta a loja para o QR Code (precisa conectar de novo). As credenciais
+    ficam salvas para reativar com um clique."""
+    pizz = await _pizzaria_ou_404(db, pizzaria_id)
+    _desligar_api_oficial(pizz)
+    await db.commit()
+    return _api_oficial_resposta(pizz)
+
+
+@router.delete("/{pizzaria_id}/whatsapp/api-oficial")
+async def api_oficial_remover(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Apaga as credenciais da API oficial (e desativa, se estiver ativa)."""
+    pizz = await _pizzaria_ou_404(db, pizzaria_id)
+    _desligar_api_oficial(pizz)
+    pizz.whatsapp_cloud = {}
+    await db.commit()
+    return _api_oficial_resposta(pizz)
+
+
+@router.get("/{pizzaria_id}/whatsapp/api-oficial/modelos")
+async def api_oficial_modelos(
+    pizzaria_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> list[dict]:
+    """Modelos aprovados na conta da Meta (para escolher o de atualização)."""
+    pizz = await _pizzaria_ou_404(db, pizzaria_id)
+    cfg = dict(pizz.whatsapp_cloud or {})
+    cred = whatsapp_cloud.credencial_de(pizz.id, cfg)
+    if cred is None or not cfg.get("waba_id"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Salve as credenciais da API oficial primeiro.")
+    try:
+        return await whatsapp_cloud.modelos_aprovados(cred.token, cfg["waba_id"])
+    except whatsapp_cloud.CloudApiErro as e:
+        raise _erro_meta(e) from e
+
+
+@router.put("/{pizzaria_id}/whatsapp/api-oficial/modelo")
+async def api_oficial_modelo(
+    pizzaria_id: uuid.UUID,
+    body: ModeloIn,
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(membership),
+) -> dict:
+    """Modelo usado fora da janela de 24 h (confirmação do cardápio, status do
+    pedido). Variáveis: {{1}} = mensagem, ou {{1}} = nome e {{2}} = mensagem."""
+    pizz = await _pizzaria_ou_404(db, pizzaria_id)
+    cfg = dict(pizz.whatsapp_cloud or {})
+    if not (body.nome or "").strip():
+        for k in _CAMPOS_MODELO:
+            cfg.pop(k, None)
+    else:
+        cred = whatsapp_cloud.credencial_de(pizz.id, cfg)
+        if cred is None or not cfg.get("waba_id"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Salve as credenciais da API oficial primeiro.")
+        try:
+            modelos = await whatsapp_cloud.modelos_aprovados(cred.token, cfg["waba_id"])
+        except whatsapp_cloud.CloudApiErro as e:
+            raise _erro_meta(e) from e
+        nome, idioma = body.nome.strip(), (body.idioma or "").strip()
+        modelo = next((m for m in modelos if m["nome"] == nome and (not idioma or m["idioma"] == idioma)), None)
+        if not modelo:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Modelo não encontrado entre os aprovados da conta.")
+        if not modelo["compativel"] or modelo["parametros"] > whatsapp_cloud.MAX_PARAMETROS_MODELO:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Use um modelo sem mídia no cabeçalho e com até 2 variáveis: {{1}} = mensagem, "
+                "ou {{1}} = nome do cliente e {{2}} = mensagem.",
+            )
+        cfg.update({"modelo_nome": modelo["nome"], "modelo_idioma": modelo["idioma"],
+                    "modelo_parametros": modelo["parametros"], "modelo_texto": modelo["texto"]})
+    pizz.whatsapp_cloud = cfg
+    await db.commit()
+    whatsapp_cloud.invalidar(pizz.instancia)
+    return _api_oficial_resposta(pizz)

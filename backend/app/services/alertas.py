@@ -20,6 +20,8 @@ TIPOS = (
     # Integração WhatsApp: instância de uma pizzaria caiu vs. a Evolution
     # inteira fora do ar (esse é global — derruba TODAS as pizzarias).
     "whatsapp_desconectado", "evolution_offline",
+    # API oficial: webhook da Meta com assinatura que não confere (App Secret errado ou fraude).
+    "whatsapp_assinatura_invalida",
 )
 
 

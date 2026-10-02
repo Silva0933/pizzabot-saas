@@ -14,6 +14,7 @@ import {
   Bike, ChevronDown, Volume2,
 } from "lucide-react";
 import { AttendantPage } from "./AttendantPage";
+import { WhatsAppApiOficial } from "./WhatsAppApiOficial";
 import {
   BackendPizzaria, BackendPedido, pizzariasApi, pedidosApi, conversasApi, WhatsAppConnect,
   MP_WEBHOOK_URL,
@@ -193,7 +194,11 @@ function ConfigGeral({
             .map((t) => ({ bairro: (t.bairro || "").trim(), taxa: Number(t.taxa) || 0 }))
             .filter((t) => t.bairro)
         : form.taxas_bairro;
-      const r = await pizzariasApi.update(pizzaria.id, { ...form, taxas_bairro: taxas });
+      const { instancia, ...resto } = form;
+      // A instância só vai se o dono a editou: conectar (QR ou API oficial) troca
+      // a instância no servidor e o formulário aberto ainda tem a antiga.
+      const patch = instancia !== pizzaria.instancia ? { ...resto, instancia } : resto;
+      const r = await pizzariasApi.update(pizzaria.id, { ...patch, taxas_bairro: taxas });
       onUpdated(r);
       setSavedAt(Date.now());
     } catch (e: any) { setErr(e.message); }
@@ -310,7 +315,9 @@ function ConfigGeral({
             <Card icon={<Smartphone className="w-4 h-4" />} title="Instância / Bot Global" accent="emerald">
               <div className="grid md:grid-cols-2 gap-3">
                 <Field label="Instância Evolution">
-                  <input value={form.instancia ?? ""} onChange={(e) => setField("instancia", e.target.value)} className={inputCls}/>
+                  <input value={form.instancia ?? ""} onChange={(e) => setField("instancia", e.target.value)} className={inputCls}
+                    disabled={pizzaria.whatsapp_tipo === "cloud_api"}
+                    title={pizzaria.whatsapp_tipo === "cloud_api" ? "A loja está na API oficial do WhatsApp" : undefined}/>
                 </Field>
                 <label className="flex items-center gap-2.5 text-xs text-ink-muted mt-6 cursor-pointer">
                   <input type="checkbox" checked={form.bot_ativo_global ?? false}
@@ -516,11 +523,15 @@ function WhatsAppCard({
 }) {
   const [state, setState] = useState<string>("loading");
   const [open, setOpen] = useState(false);
+  // Duas conexões separadas: Evolution (QR Code) e API oficial da Meta.
+  const [tipo, setTipo] = useState<"qrcode" | "cloud_api">(pizzaria.whatsapp_tipo || "qrcode");
+  const [aba, setAba] = useState<"qrcode" | "oficial">(tipo === "cloud_api" ? "oficial" : "qrcode");
   const [qr, setQr] = useState<WhatsAppConnect | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const [qrErr, setQrErr] = useState<string | null>(null);
 
   const conectado = state === "open";
+  const oficial = tipo === "cloud_api";
 
   async function loadStatus() {
     try {
@@ -530,8 +541,8 @@ function WhatsAppCard({
   }
   useEffect(() => { loadStatus(); /* eslint-disable-next-line */ }, [pizzaria.id]);
 
-  async function openConnect() {
-    setOpen(true); setQr(null); setQrErr(null); setLoadingQr(true);
+  async function conectarQr() {
+    setQr(null); setQrErr(null); setLoadingQr(true);
     try {
       const res = await pizzariasApi.whatsappConectar(pizzaria.id);
       setQr(res); setState(res.state);
@@ -547,22 +558,38 @@ function WhatsAppCard({
     setLoadingQr(false);
   }
 
+  function abrir() {
+    setOpen(true);
+    if (oficial) { setAba("oficial"); return; }
+    setAba("qrcode");
+    conectarQr();
+  }
+  function irParaQr() {
+    setAba("qrcode");
+    // Na API oficial o QR não se aplica (o painel explica como voltar).
+    if (!oficial && !qr && !loadingQr && !conectado) conectarQr();
+  }
+
   useEffect(() => {
     if (autoOpen) {
-      openConnect();
+      abrir();
       onOpened?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpen]);
 
-  // Polling enquanto o modal está aberto e não conectou
+  // Polling enquanto o QR está na tela e não conectou
   useEffect(() => {
-    if (!open || conectado) return;
+    if (!open || conectado || oficial || aba !== "qrcode") return;
     const t = setInterval(loadStatus, 3500);
     const q = setInterval(refreshQr, 28000);
     return () => { clearInterval(t); clearInterval(q); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, conectado]);
+  }, [open, conectado, oficial, aba]);
+
+  const abaCls = (ativa: boolean) =>
+    `flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+      ativa ? "bg-surface text-ink border border-line" : "text-ink-muted hover:text-ink"}`;
 
   return (
     <div className={`rounded-xl p-5 border  flex items-center gap-4 ${
@@ -576,27 +603,31 @@ function WhatsAppCard({
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-white flex items-center gap-1.5">
           WhatsApp
+          <span className="text-[11px] font-medium text-ink-subtle">· {oficial ? "API oficial" : "Evolution (QR Code)"}</span>
           {state === "loading" && <Loader2 className="w-3.5 h-3.5 animate-spin text-ink-muted" />}
         </p>
         <p className={`text-xs ${conectado ? "text-emerald-400" : "text-amber-400"}`}>
           {state === "loading" ? "Verificando conexão…"
             : conectado ? "Conectado e recebendo mensagens"
+            : oficial ? "A Meta recusou o token — reconfigure a API oficial"
             : "Desconectado — escaneie o QR para ativar"}
         </p>
       </div>
-      <button onClick={openConnect}
+      <button onClick={abrir}
         className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 flex items-center gap-1.5 transition-colors ${
           conectado ? "bg-surface hover:bg-surface-muted text-ink border border-line" : "bg-emerald-600 hover:bg-emerald-500 text-white "
         }`}>
-        <QrCode className="w-4 h-4" />
-        {conectado ? "Reconectar" : "Conectar"}
+        {oficial ? <SettingsIcon className="w-4 h-4" /> : <QrCode className="w-4 h-4" />}
+        {oficial ? "Gerenciar" : conectado ? "Reconectar" : "Conectar"}
       </button>
 
-      {/* Modal QR */}
+      {/* Modal de conexão: Evolution (QR) ou API oficial */}
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 animate-fade-in"
           onClick={() => setOpen(false)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="negocio-whatsapp-title" className="bg-surface border border-line rounded-xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-labelledby="negocio-whatsapp-title"
+            className={`bg-surface border border-line rounded-xl shadow-2xl w-full overflow-hidden flex flex-col max-h-[92vh] ${aba === "oficial" ? "max-w-lg" : "max-w-sm"}`}
+            onClick={(e) => e.stopPropagation()}>
             <div className="relative px-5 py-4 bg-surface-muted border-b border-line text-white">
               <button onClick={() => setOpen(false)} aria-label="Fechar conexão do WhatsApp" className="absolute right-3 top-3 p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-surface-elevated transition-colors">
                 <X className="w-4 h-4" />
@@ -610,9 +641,25 @@ function WhatsAppCard({
                   <p className="text-xs text-ink-muted truncate">{pizzaria.nome}</p>
                 </div>
               </div>
+              <div role="tablist" className="mt-3 flex gap-1 p-1 rounded-xl bg-surface-elevated/60">
+                <button role="tab" aria-selected={aba === "qrcode"} onClick={irParaQr} className={abaCls(aba === "qrcode")}>
+                  Evolution API (QR Code)
+                </button>
+                <button role="tab" aria-selected={aba === "oficial"} onClick={() => setAba("oficial")} className={abaCls(aba === "oficial")}>
+                  API oficial (Meta)
+                </button>
+              </div>
             </div>
-            <div className="p-5">
-              {conectado ? (
+            <div className="p-5 overflow-y-auto">
+              {aba === "oficial" ? (
+                <WhatsAppApiOficial pizzariaId={pizzaria.id}
+                  onTipoMudou={(t) => { setTipo(t); setQr(null); loadStatus(); }} />
+              ) : oficial ? (
+                <div className="text-center py-6 text-sm text-ink-muted">
+                  <p>Esta loja está conectada pela <strong className="text-ink">API oficial</strong>.</p>
+                  <p className="mt-2 text-xs">Para usar o QR Code, desative a API oficial na outra aba.</p>
+                </div>
+              ) : conectado ? (
                 <div className="text-center py-6">
                   <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/20 grid place-items-center mx-auto mb-3">
                     <CheckCircle2 className="w-9 h-9 text-emerald-400" />
@@ -624,7 +671,7 @@ function WhatsAppCard({
                 <div className="text-center py-6">
                   <WifiOff className="w-10 h-10 text-red-400 mx-auto mb-3" />
                   <p className="text-sm text-red-400 font-medium">{qrErr}</p>
-                  <button onClick={openConnect} className="mt-4 px-4 py-2 text-sm bg-surface-muted hover:bg-surface-elevated text-white rounded-xl font-medium inline-flex items-center gap-1.5">
+                  <button onClick={conectarQr} className="mt-4 px-4 py-2 text-sm bg-surface-muted hover:bg-surface-elevated text-white rounded-xl font-medium inline-flex items-center gap-1.5">
                     <RefreshCw className="w-4 h-4" /> Tentar de novo
                   </button>
                 </div>

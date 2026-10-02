@@ -29,6 +29,13 @@ def _only_digits(s: str) -> str:
     return "".join(ch for ch in s if ch.isdigit())
 
 
+def _oficial(instancia: str | None) -> bool:
+    """Instância da API oficial (services/whatsapp_cloud): vai direto na Meta.
+    Todo o código que envia continua chamando este cliente — o desvio é aqui."""
+    from app.services.whatsapp_cloud import eh_instancia_cloud
+    return eh_instancia_cloud(instancia)
+
+
 class EvolutionClient:
     """
     Wrapper minimalista da Evolution API v2.
@@ -218,12 +225,17 @@ class EvolutionClient:
 
     async def connect_instance(self, *, instancia: str) -> dict[str, Any]:
         """Dispara a conexão e retorna o QR Code (campo `base64`)."""
+        if _oficial(instancia):
+            raise EvolutionError("A API oficial do WhatsApp não usa QR Code.")
         c = await self._http()
         r = await c.get(f"/instance/connect/{instancia}")
         return self._unwrap(r)
 
     async def connection_state(self, *, instancia: str) -> str:
         """Retorna o estado: 'open' (conectado), 'connecting' ou 'close'."""
+        if _oficial(instancia):
+            from app.services import whatsapp_cloud
+            return await whatsapp_cloud.estado(await whatsapp_cloud.credencial(instancia))
         c = await self._http()
         r = await c.get(f"/instance/connectionState/{instancia}")
         data = self._unwrap(r)
@@ -232,6 +244,9 @@ class EvolutionClient:
 
     async def set_webhook(self, *, instancia: str, webhook_url: str) -> dict[str, Any]:
         """(Re)configura o webhook de uma instância existente."""
+        if _oficial(instancia):
+            # O webhook da API oficial é configurado no app da Meta, não aqui.
+            return {"api_oficial": True}
         c = await self._http()
         r = await c.post(
             f"/webhook/set/{instancia}",
@@ -241,6 +256,8 @@ class EvolutionClient:
 
     async def delete_instance(self, *, instancia: str) -> dict[str, Any]:
         """Remove a instância da Evolution (logout + delete)."""
+        if _oficial(instancia):
+            return {"api_oficial": True}
         c = await self._http()
         try:
             await c.delete(f"/instance/logout/{instancia}")
@@ -291,6 +308,9 @@ class EvolutionClient:
 
         from app.services.protecao_whatsapp import aguardar_vez
         await aguardar_vez(instancia, categoria)
+        if _oficial(instancia):
+            from app.services import whatsapp_cloud
+            return await whatsapp_cloud.enviar_texto(await whatsapp_cloud.credencial(instancia), numero, texto)
         c = await self._http()
         r = await c.post(f"/message/sendText/{instancia}", json=body)
         return self._unwrap(r)
@@ -310,6 +330,12 @@ class EvolutionClient:
         """Envia um arquivo (documento/imagem) por URL para o cliente."""
         from app.services.protecao_whatsapp import aguardar_vez
         await aguardar_vez(instancia, categoria)
+        if _oficial(instancia):
+            from app.services import whatsapp_cloud
+            return await whatsapp_cloud.enviar_midia(
+                await whatsapp_cloud.credencial(instancia), numero,
+                media_url=media_url, mediatype=mediatype, filename=filename, caption=caption,
+            )
         body: dict[str, Any] = {
             "number": numero,
             "mediatype": mediatype,   # 'image' | 'document' | 'video' | 'audio'
@@ -327,6 +353,13 @@ class EvolutionClient:
 
     async def get_media_base64(self, *, instancia: str, message: dict[str, Any]) -> str | None:
         """Baixa o conteúdo (base64) de uma mensagem de mídia (áudio/imagem)."""
+        if _oficial(instancia):
+            from app.services import whatsapp_cloud
+            conteudo = message.get("message") or {}
+            midia = next((v for v in conteudo.values() if isinstance(v, dict) and v.get("id")), None)
+            if not midia:
+                return None
+            return await whatsapp_cloud.baixar_midia(await whatsapp_cloud.credencial(instancia), str(midia["id"]))
         c = await self._http()
         r = await c.post(
             f"/chat/getBase64FromMediaMessage/{instancia}",
@@ -362,6 +395,10 @@ class EvolutionClient:
             "delay": delay_ms if delay_ms is not None else 8000,
         }
         try:
+            if _oficial(instancia):
+                # Na API oficial o "digitando…" vai preso à última mensagem do cliente.
+                from app.services import whatsapp_cloud
+                return await whatsapp_cloud.digitando(await whatsapp_cloud.credencial(instancia), numero)
             c = await self._http()
             r = await c.post(f"/chat/sendPresence/{instancia}", json=body)
             return self._unwrap(r)
@@ -382,6 +419,10 @@ class EvolutionClient:
             "key": {"remoteJid": numero, "fromMe": False, "id": message_id},
             "reaction": emoji,
         }
+        if _oficial(instancia):
+            from app.services import whatsapp_cloud
+            return await whatsapp_cloud.enviar_reacao(
+                await whatsapp_cloud.credencial(instancia), numero, message_id, emoji)
         c = await self._http()
         r = await c.post(f"/message/sendReaction/{instancia}", json=body)
         return self._unwrap(r)
@@ -399,6 +440,9 @@ class EvolutionClient:
                 {"remoteJid": numero, "fromMe": False, "id": message_id}
             ]
         }
+        if _oficial(instancia):
+            from app.services import whatsapp_cloud
+            return await whatsapp_cloud.digitando(await whatsapp_cloud.credencial(instancia), numero)
         c = await self._http()
         r = await c.post(f"/chat/markMessageAsRead/{instancia}", json=body)
         return self._unwrap(r)

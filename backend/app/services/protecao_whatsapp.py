@@ -76,6 +76,10 @@ def eh_pedido_para_parar(texto: str | None) -> bool:
 
 
 def em_aquecimento(pizz: Any, agora: datetime | None = None) -> bool:
+    # API oficial: o número é da Meta, sem o risco de banimento do QR Code — o
+    # limite de mensagens é a própria Meta que aplica (qualidade/nível do número).
+    if (getattr(pizz, "whatsapp_tipo", None) or "qrcode") == "cloud_api":
+        return False
     desde = getattr(pizz, "whatsapp_conectado_desde", None)
     if desde is None:
         # Nunca conectou pelo fluxo novo: conservador — trata como número novo.

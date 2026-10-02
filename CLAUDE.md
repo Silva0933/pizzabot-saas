@@ -65,6 +65,12 @@ Infra: Postgres com pgvector + Redis.
 - `services/telefones.py` — o mesmo número chega com e sem o 9º dígito (cardápio ×
   JID do WhatsApp): busca de cliente/conversa/pedido sempre por `mesmo_telefone`
   + `preferir_exato` (+ `.scalars().first()`), nunca `==`.
+- `services/whatsapp_cloud.py` — API oficial do WhatsApp (Cloud API da Meta), opção
+  separada da Evolution (`pizzarias.whatsapp_tipo = cloud_api`). A Meta chama
+  `/webhook/whatsapp-cloud/{id}` (assinatura com o App Secret), a mensagem vira o
+  formato da Evolution e entra em `webhook.processar_mensagem`. A saída continua
+  chamando `evolution.send_*`: instância com prefixo `cloudapi-` é desviada para a
+  Graph API. Fora da janela de 24 h só sai o modelo aprovado da loja.
 - `services/` — Evolution, pagamentos (Mercado Pago/Asaas), billing da
   plataforma, horário, geocoding, transcrição, alertas, `prontidao.py` (auditoria de config).
 - `workers/` — Celery (`tasks.py`) e jobs do beat (`periodic.py`).

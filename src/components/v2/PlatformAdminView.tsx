@@ -1680,6 +1680,7 @@ function AlertasCard({ onCountChange }: { onCountChange?: (count: number) => voi
       falha_pagamento: "Falha Pagamento",
       fatura_vencida: "Fatura Vencida",
       whatsapp_desconectado: "WhatsApp Off",
+      whatsapp_assinatura_invalida: "Assinatura Meta",
       suspensao_indevida: "Suspensão",
       assinatura_vencida: "Assinatura Vencida",
     };
@@ -2245,6 +2246,15 @@ function EvolutionConfigCard() {
                             {pz.instancia || "sem instância"}
                           </p>
                         </div>
+                        {pz.api_oficial ? (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                            pz.estado_salvo === "open"
+                              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                              : "bg-rose-500/15 text-rose-400 border-rose-500/30"
+                          }`}>
+                            API oficial · {pz.estado_salvo === "open" ? "conectada" : "desconectada"}
+                          </span>
+                        ) : (
                         <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
                           !pz.instancia
                             ? "bg-slate-500/15 text-ink-muted border-slate-500/30"
@@ -2266,6 +2276,7 @@ function EvolutionConfigCard() {
                                   ? "conectada"
                                   : pz.estado_evolution || "desconectada"}
                         </span>
+                        )}
                       </div>
                     );
                   })}

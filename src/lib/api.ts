@@ -190,6 +190,7 @@ export interface BackendPizzaria {
   slug?: string | null;
   instancia: string | null;
   whatsapp_estado?: string | null; // 'open' | 'connecting' | 'close'
+  whatsapp_tipo?: "qrcode" | "cloud_api";
   plano: string;
   bot_ativo_global: boolean;
   alertas_sonoros?: boolean;
@@ -346,7 +347,52 @@ export const pizzariasApi = {
     api.get<WhatsAppStatus>(`/pizzarias/${id}/whatsapp/status`),
   whatsappQrcode: (id: string) =>
     api.get<WhatsAppConnect>(`/pizzarias/${id}/whatsapp/qrcode`),
+
+  // WhatsApp / API oficial (Cloud API da Meta)
+  apiOficial: (id: string) =>
+    api.get<ApiOficialConfig>(`/pizzarias/${id}/whatsapp/api-oficial`),
+  apiOficialSalvar: (id: string, body: { phone_number_id: string; waba_id: string; token?: string; app_secret?: string }) =>
+    api.put<ApiOficialConfig>(`/pizzarias/${id}/whatsapp/api-oficial`, body),
+  apiOficialAtivar: (id: string) =>
+    api.post<ApiOficialConfig>(`/pizzarias/${id}/whatsapp/api-oficial/ativar`, {}),
+  apiOficialDesativar: (id: string) =>
+    api.post<ApiOficialConfig>(`/pizzarias/${id}/whatsapp/api-oficial/desativar`, {}),
+  apiOficialRemover: (id: string) =>
+    api.delete<ApiOficialConfig>(`/pizzarias/${id}/whatsapp/api-oficial`),
+  apiOficialModelos: (id: string) =>
+    api.get<ApiOficialModelo[]>(`/pizzarias/${id}/whatsapp/api-oficial/modelos`),
+  apiOficialModelo: (id: string, body: { nome: string | null; idioma?: string | null }) =>
+    api.put<ApiOficialConfig>(`/pizzarias/${id}/whatsapp/api-oficial/modelo`, body),
 };
+
+export interface ApiOficialConfig {
+  ativa: boolean;
+  tipo: "qrcode" | "cloud_api";
+  instancia: string | null;
+  estado: string | null;
+  phone_number_id: string;
+  waba_id: string;
+  token_configurado: boolean;
+  app_secret_configurado: boolean;
+  verify_token: string;
+  webhook_url: string;
+  webhook_campo: string;
+  webhook_verificado_em: string | null;
+  numero_exibicao: string;
+  nome_verificado: string;
+  qualidade: string;
+  modelo_nome: string;
+  modelo_idioma: string;
+  modelo_parametros: number;
+  modelo_texto: string;
+}
+export interface ApiOficialModelo {
+  nome: string;
+  idioma: string;
+  texto: string;
+  parametros: number;
+  compativel: boolean;
+}
 
 export interface WhatsAppQr {
   base64: string | null;
@@ -1132,6 +1178,7 @@ export interface EvolutionPizzaria {
   instancia: string | null;
   estado_salvo: string | null;
   existe_na_evolution: boolean;
+  api_oficial?: boolean;
   estado_evolution: string | null;
 }
 export interface EvolutionConfig {
