@@ -357,6 +357,18 @@ def roteiros_da_loja(cat, formas=None) -> list[Roteiro]:
                   f"{TAM_EXTENSO.get(_n(t2), t2)}", [_chk_duas]),
         ]))
 
+    # Apelidos de tamanho ("família" = GG, "broto" = P): casavam pela inicial
+    gg = next((n for n, _ in a.tamanhos if _n(n) == "gg"), None)
+    pp = next((n for n, _ in a.tamanhos if _n(n) == "p"), None)
+    if gg and pp:
+        def _chk_tams(res, estado, texto, a=a, gg=gg, pp=pp):
+            tams = sorted(_n((a.tamanho(i.get("tamanho")) or ("?",))[0]) for i in _carrinho(estado) if _ids(i) == [a.id])
+            return Checagem(tams == sorted([_n(gg), _n(pp)]), f"{curto(a.nome)} família=GG e broto=P (achou {tams})")
+        out.append(Roteiro("tamanho_por_apelido", [
+            Turno("oi"),
+            Turno(f"quero uma {curto(a.nome)} família e uma {curto(a.nome)} broto", [_chk_tams]),
+        ]))
+
     if a.aceita_meia():
         resp_meia = chk_fala("sim", "pode", "aceita", "da para", "dá pra", "meio a meio", "meia")
         nao_meia = chk_nao_fala("nao fazemos meia", "nao aceita meia", "nao trabalhamos com meia", "so inteira")

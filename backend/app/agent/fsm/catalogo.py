@@ -29,6 +29,16 @@ log = logging.getLogger(__name__)
 
 _TTL_SEGUNDOS = 60.0
 
+# Como o cliente chama cada tamanho (texto normalizado). Um tamanho cadastrado
+# casa com o grupo se o nome dele estiver no grupo ("G" ou "Grande", "GG" ou
+# "Família"...).
+_SINONIMOS_TAMANHO: dict[str, tuple[str, ...]] = {
+    "gg": ("gg", "gigante", "familia", "familiar", "extra grande", "extragrande", "xg", "big"),
+    "g": ("g", "grande"),
+    "m": ("m", "media", "medio"),
+    "p": ("p", "pequena", "pequeno", "broto", "brotinho", "individual", "mini"),
+}
+
 # Pergunta sobre meio a meio / adicionais (texto já normalizado: sem acento).
 _PERGUNTA_MEIA_RE = re.compile(r"\b(meia|meio\s*a\s*meio|metade|dois\s+sabores|2\s+sabores|mais\s+de\s+um\s+sabor)\b")
 _PERGUNTA_ADICIONAL_RE = re.compile(
@@ -77,13 +87,25 @@ class ProdutoCat:
     adicionais: list[Adicional] = field(default_factory=list)
 
     def tamanho(self, t: str | None) -> tuple[str, Decimal] | None:
-        """Tamanho cadastrado que casa com `t` (igual primeiro; depois inicial)."""
+        """Tamanho cadastrado que casa com `t`: igual; depois sinônimo (gigante/
+        família = GG, broto = P...); por último a inicial.
+
+        Só a inicial fazia "gigante" virar G (e não GG) — preço errado — e
+        "família"/"broto" não casarem com nada (auditoria de 01/10). Sinônimo
+        conhecido que a loja não tem devolve None (a atendente pergunta), em vez
+        de cair no "começa com a mesma letra"."""
         if not t or not self.tamanhos:
             return None
         tn = normalizar(t)
         for nome, preco in self.tamanhos:
             if normalizar(nome) == tn:
                 return nome, preco
+        grupo = next((g for g, nomes in _SINONIMOS_TAMANHO.items() if tn in nomes), None)
+        if grupo is not None:
+            for nome, preco in self.tamanhos:
+                if normalizar(nome) in _SINONIMOS_TAMANHO[grupo]:
+                    return nome, preco
+            return None
         for nome, preco in self.tamanhos:
             nn = normalizar(nome)
             if (len(tn) == 1 and nn.startswith(tn)) or (len(nn) == 1 and tn.startswith(nn)):
