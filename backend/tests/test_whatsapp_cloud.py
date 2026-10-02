@@ -22,6 +22,9 @@ import pytest
 
 from app.services import whatsapp_cloud as wc
 
+# Valores FALSOS no formato da Meta (token longo, App Secret de 32 hex).
+TOKEN_FALSO = "EAA" + "x" * 60
+SECRET_FALSO = "0123456789abcdef0123456789abcdef"
 CRED = wc.Credencial(pizzaria_id=uuid.uuid4(), phone_number_id="111", token="tok-falso")
 
 
@@ -342,18 +345,19 @@ class TestRotasPainel:
                                whatsapp_cloud={})
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(first=lambda: None))
-        body = pizzarias.ApiOficialIn(phone_number_id=" 111 ", waba_id="222", token="EAAtoken", app_secret="segredo")
+        body = pizzarias.ApiOficialIn(phone_number_id=" 11122 ", waba_id="22233", token=TOKEN_FALSO,
+                                      app_secret=SECRET_FALSO)
         with patch.object(pizzarias, "_pizzaria_ou_404", new=AsyncMock(return_value=pizz)), \
              patch.object(wc, "validar_numero", new=AsyncMock(return_value={"numero_exibicao": "+55 11 9999-0000",
                                                                             "nome_verificado": "Loja", "qualidade": "GREEN"})), \
              patch.object(wc, "inscrever_app", new=AsyncMock()) as inscrever:
             out = asyncio.run(pizzarias.api_oficial_salvar(pizz.id, body, db, None))
-        inscrever.assert_awaited_once_with("EAAtoken", "222")
+        inscrever.assert_awaited_once_with(TOKEN_FALSO, "22233")
         cfg = pizz.whatsapp_cloud
-        assert cfg["phone_number_id"] == "111" and cfg["token"] != "EAAtoken" and cfg["app_secret"] != "segredo"
+        assert cfg["phone_number_id"] == "11122" and cfg["token"] != TOKEN_FALSO and cfg["app_secret"] != SECRET_FALSO
         assert cfg["verify_token"] and out["verify_token"] == cfg["verify_token"]
         assert out["webhook_url"].endswith(f"/webhook/whatsapp-cloud/{pizz.id}")
-        assert "EAAtoken" not in json.dumps(out) and "segredo" not in json.dumps(out)
+        assert TOKEN_FALSO not in json.dumps(out) and SECRET_FALSO not in json.dumps(out)
 
     def test_salvar_recusa_numero_de_outra_loja(self):
         from fastapi import HTTPException
@@ -362,10 +366,36 @@ class TestRotasPainel:
         pizz = SimpleNamespace(id=uuid.uuid4(), whatsapp_tipo="qrcode", instancia=None, whatsapp_cloud={})
         db = AsyncMock()
         db.execute = AsyncMock(return_value=MagicMock(first=lambda: ("Outra",)))
-        body = pizzarias.ApiOficialIn(phone_number_id="111", waba_id="222", token="t", app_secret="s")
+        body = pizzarias.ApiOficialIn(phone_number_id="11122", waba_id="22233", token=TOKEN_FALSO,
+                                      app_secret=SECRET_FALSO)
         with patch.object(pizzarias, "_pizzaria_ou_404", new=AsyncMock(return_value=pizz)), \
              patch.object(wc, "validar_numero", new=AsyncMock()) as validar:
             with pytest.raises(HTTPException) as e:
                 asyncio.run(pizzarias.api_oficial_salvar(pizz.id, body, db, None))
         assert e.value.status_code == 409
         validar.assert_not_awaited()
+
+    @pytest.mark.parametrize("campos", [
+        # O que o preenchimento automático do navegador pôs no formulário em
+        # produção: e-mail salvo no ID da conta e a senha salva no token.
+        {"waba_id": "fulano.0933@gmail.com"},
+        {"token": "MinhaSenha123"},
+        {"app_secret": "senha-salva-no-navegador"},
+        {"phone_number_id": "abc"},
+    ])
+    def test_formato_errado_nunca_chega_a_meta(self, campos):
+        from fastapi import HTTPException
+
+        from app.routes import pizzarias
+        pizz = SimpleNamespace(id=uuid.uuid4(), whatsapp_tipo="qrcode", instancia=None, whatsapp_cloud={})
+        dados = {"phone_number_id": "11122", "waba_id": "22233", "token": TOKEN_FALSO, "app_secret": SECRET_FALSO}
+        dados.update(campos)
+        with patch.object(pizzarias, "_pizzaria_ou_404", new=AsyncMock(return_value=pizz)), \
+             patch.object(wc, "validar_numero", new=AsyncMock()) as validar, \
+             patch.object(wc, "inscrever_app", new=AsyncMock()) as inscrever:
+            with pytest.raises(HTTPException) as e:
+                asyncio.run(pizzarias.api_oficial_salvar(pizz.id, pizzarias.ApiOficialIn(**dados), AsyncMock(), None))
+        assert e.value.status_code == 400
+        validar.assert_not_awaited()
+        inscrever.assert_not_awaited()
+        assert pizz.whatsapp_cloud == {}

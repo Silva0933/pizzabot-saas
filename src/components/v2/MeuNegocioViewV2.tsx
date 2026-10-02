@@ -11,7 +11,7 @@ import {
   Bot, Settings as SettingsIcon, Sparkles, Save, Loader2,
   Store, Smartphone, CreditCard, Clock, X, QrCode, CheckCircle2,
   RefreshCw, Wifi, WifiOff, History, AlertTriangle, Trash2, Package,
-  Bike, ChevronDown, Volume2,
+  Bike, ChevronDown, Volume2, ShieldCheck,
 } from "lucide-react";
 import { AttendantPage } from "./AttendantPage";
 import { WhatsAppApiOficial } from "./WhatsAppApiOficial";
@@ -564,6 +564,10 @@ function WhatsAppCard({
     setAba("qrcode");
     conectarQr();
   }
+  function abrirOficial() {
+    setOpen(true);
+    setAba("oficial");
+  }
   function irParaQr() {
     setAba("qrcode");
     // Na API oficial o QR não se aplica (o painel explica como voltar).
@@ -613,13 +617,23 @@ function WhatsAppCard({
             : "Desconectado — escaneie o QR para ativar"}
         </p>
       </div>
-      <button onClick={abrir}
-        className={`px-4 py-2 rounded-xl text-sm font-semibold shrink-0 flex items-center gap-1.5 transition-colors ${
-          conectado ? "bg-surface hover:bg-surface-muted text-ink border border-line" : "bg-emerald-600 hover:bg-emerald-500 text-white "
-        }`}>
-        {oficial ? <SettingsIcon className="w-4 h-4" /> : <QrCode className="w-4 h-4" />}
-        {oficial ? "Gerenciar" : conectado ? "Reconectar" : "Conectar"}
-      </button>
+      <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+        <button onClick={abrir}
+          className={`px-4 py-2 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors ${
+            conectado ? "bg-surface hover:bg-surface-muted text-ink border border-line" : "bg-emerald-600 hover:bg-emerald-500 text-white "
+          }`}>
+          {oficial ? <SettingsIcon className="w-4 h-4" /> : <QrCode className="w-4 h-4" />}
+          {oficial ? "Gerenciar" : conectado ? "Reconectar" : "Conectar"}
+        </button>
+        {!oficial && (
+          // A segunda opção de conexão fica à vista: escondida atrás do
+          // "Reconectar" ninguém achava, e abrir por ali já pedia um QR.
+          <button onClick={abrirOficial}
+            className="px-4 py-2 rounded-xl text-sm font-semibold flex items-center justify-center gap-1.5 transition-colors bg-surface hover:bg-surface-muted text-ink border border-line">
+            <ShieldCheck className="w-4 h-4" /> API oficial
+          </button>
+        )}
+      </div>
 
       {/* Modal de conexão: Evolution (QR) ou API oficial */}
       {open && (

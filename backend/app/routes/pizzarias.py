@@ -954,19 +954,30 @@ async def api_oficial_salvar(
 
     pizz = await _pizzaria_ou_404(db, pizzaria_id)
     cfg = dict(pizz.whatsapp_cloud or {})
-    phone_number_id = re.sub(r"\D", "", body.phone_number_id or "")
-    waba_id = re.sub(r"\D", "", body.waba_id or "")
+    # Formato conferido ANTES de falar com a Meta. Antes tirava-se o que não era
+    # dígito: o e-mail que o preenchimento automático do navegador pôs no campo
+    # do ID virava "0933", e a senha salva iria para a Meta como token.
+    phone_number_id = re.sub(r"\s", "", body.phone_number_id or "")
+    waba_id = re.sub(r"\s", "", body.waba_id or "")
     token = (body.token or "").strip() or decrypt_secret(cfg.get("token"))
     app_secret = (body.app_secret or "").strip() or decrypt_secret(cfg.get("app_secret"))
-    if not phone_number_id or not waba_id:
+    if not re.fullmatch(r"\d{5,25}", phone_number_id) or not re.fullmatch(r"\d{5,25}", waba_id):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "Informe o ID do número de telefone e o ID da conta do WhatsApp Business (só números).")
+                            "O ID do número de telefone e o ID da conta do WhatsApp Business têm só números "
+                            "(copie do app da Meta, em WhatsApp → Configuração da API).")
     if not token:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe o token de acesso permanente.")
+    if len(token) < 40 or re.search(r"\s", token):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "Isso não parece um token de acesso da Meta (ele é longo e começa com EAA).")
     if not app_secret:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "Informe a chave secreta do app (App Secret): sem ela não há como "
                             "confirmar que as mensagens vêm mesmo da Meta.")
+    if not re.fullmatch(r"[0-9a-fA-F]{32}", app_secret):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "A chave secreta do app (App Secret) tem 32 caracteres, números e letras de a a f "
+                            "(Configurações do app → Básico).")
 
     # Um número da Meta atende uma loja só: com dois cadastros, as mensagens
     # cairiam no webhook que a Meta tivesse configurado e a outra ficaria muda.

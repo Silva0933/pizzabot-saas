@@ -8,6 +8,10 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, Copy, Loader2, ShieldCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { ApiOficialConfig, ApiOficialModelo, pizzariasApi } from "../../lib/api";
 
+// Desliga o preenchimento automático (navegador e gerenciadores de senha).
+const semAutofill = { autoComplete: "off", "data-1p-ignore": "true", "data-lpignore": "true", "data-form-type": "other" } as const;
+const segredoSemAutofill = { ...semAutofill, autoComplete: "new-password" } as const;
+const SO_DIGITOS = /^\d{5,25}$/;
 const inputCls = "w-full px-3 py-2 bg-surface border border-line rounded-xl text-sm text-ink placeholder-ink-subtle focus:border-orange-500 focus:ring-1 focus:ring-orange-500/20 outline-none transition";
 const MODELO_SUGERIDO = "Olá, {{1}}! Novidade sobre o seu pedido: {{2}} Qualquer dúvida, é só responder esta mensagem.";
 
@@ -103,6 +107,21 @@ export function WhatsAppApiOficial({ pizzariaId, onTipoMudou }: {
   const salvo = cfg.token_configurado && cfg.app_secret_configurado && !!cfg.phone_number_id;
   const podeSalvar = form.phone_number_id.trim() && form.waba_id.trim()
     && (form.token.trim() || cfg.token_configurado) && (form.app_secret.trim() || cfg.app_secret_configurado);
+  // Mesmo com o autofill desligado, confere o formato antes de mandar à Meta:
+  // e-mail no campo de ID ou senha no campo de token não saem daqui.
+  const avisoFormato = (() => {
+    if (form.phone_number_id.trim() && !SO_DIGITOS.test(form.phone_number_id.trim()))
+      return "O ID do número de telefone tem só números.";
+    if (form.waba_id.trim() && !SO_DIGITOS.test(form.waba_id.trim()))
+      return "O ID da conta do WhatsApp Business tem só números.";
+    const tk = form.token.trim();
+    if (tk && (tk.length < 40 || /\s/.test(tk)))
+      return "Isso não parece um token da Meta (ele é longo e começa com EAA).";
+    const sec = form.app_secret.trim();
+    if (sec && !/^[0-9a-fA-F]{32}$/.test(sec))
+      return "A chave secreta do app tem 32 caracteres (números e letras de a a f).";
+    return null;
+  })();
 
   return (
     <div className="space-y-3 text-xs text-ink-muted">
@@ -126,23 +145,23 @@ export function WhatsAppApiOficial({ pizzariaId, onTipoMudou }: {
         <div className="grid sm:grid-cols-2 gap-2">
           <label className="space-y-1">
             <span className="text-[11px] text-ink-subtle">ID do número de telefone</span>
-            <input className={inputCls} inputMode="numeric" value={form.phone_number_id}
+            <input className={inputCls} inputMode="numeric" name="meta-phone-number-id" {...semAutofill} value={form.phone_number_id}
               onChange={(e) => setForm({ ...form, phone_number_id: e.target.value })} placeholder="Phone number ID" />
           </label>
           <label className="space-y-1">
             <span className="text-[11px] text-ink-subtle">ID da conta do WhatsApp Business</span>
-            <input className={inputCls} inputMode="numeric" value={form.waba_id}
+            <input className={inputCls} inputMode="numeric" name="meta-waba-id" {...semAutofill} value={form.waba_id}
               onChange={(e) => setForm({ ...form, waba_id: e.target.value })} placeholder="WhatsApp Business Account ID" />
           </label>
           <label className="space-y-1 sm:col-span-2">
             <span className="text-[11px] text-ink-subtle">Token de acesso permanente (usuário do sistema)</span>
-            <input className={inputCls} type="password" autoComplete="off" value={form.token}
+            <input className={inputCls} type="password" name="meta-access-token" {...segredoSemAutofill} value={form.token}
               onChange={(e) => setForm({ ...form, token: e.target.value })}
               placeholder={cfg.token_configurado ? "•••••• salvo — preencha só para trocar" : "EAAG…"} />
           </label>
           <label className="space-y-1 sm:col-span-2">
             <span className="text-[11px] text-ink-subtle">Chave secreta do app (App Secret)</span>
-            <input className={inputCls} type="password" autoComplete="off" value={form.app_secret}
+            <input className={inputCls} type="password" name="meta-app-secret" {...segredoSemAutofill} value={form.app_secret}
               onChange={(e) => setForm({ ...form, app_secret: e.target.value })}
               placeholder={cfg.app_secret_configurado ? "•••••• salva — preencha só para trocar" : "Configurações do app → Básico"} />
           </label>
@@ -151,7 +170,8 @@ export function WhatsAppApiOficial({ pizzariaId, onTipoMudou }: {
           <p className="text-emerald-400">✓ Número {cfg.numero_exibicao}{cfg.nome_verificado && ` (${cfg.nome_verificado})`}
             {cfg.qualidade && ` · qualidade ${cfg.qualidade}`}</p>
         )}
-        <button type="button" disabled={!podeSalvar || !!ocupado}
+        {avisoFormato && <p className="text-amber-400">{avisoFormato}</p>}
+        <button type="button" disabled={!podeSalvar || !!avisoFormato || !!ocupado}
           onClick={() => executar("salvar", () => pizzariasApi.apiOficialSalvar(pizzariaId, {
             phone_number_id: form.phone_number_id, waba_id: form.waba_id,
             token: form.token || undefined, app_secret: form.app_secret || undefined,
