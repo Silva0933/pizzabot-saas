@@ -1097,6 +1097,40 @@ async def repetir_pedido_conta(
             "imagem_url": getattr(original, "imagem_url", None),
         })
     return {"itens": itens_disponiveis, "indisponiveis": indisponiveis}
+async def _avisar_confirmacao_nao_entregue(
+    pizzaria_id: Any, pedido_id: Any, numero: Any, telefone: str, erro: BaseException,
+) -> None:
+    """A confirmação do pedido do cardápio não chegou ao cliente (número sem
+    WhatsApp, digitado errado, instância fora). Antes era só um warning no log:
+    a loja preparava a pizza sem saber que não conseguia falar com o cliente, que
+    tinha lido "você receberá a confirmação pelo WhatsApp" (teste de 02/10).
+    Agora: alerta + aviso na observação do pedido (aparece no card) + painel."""
+    from app.db import AsyncSessionLocal
+    from app.services.alertas import registrar_alerta
+    from app.services.broadcaster import broadcaster
+
+    sem_whatsapp = '"exists":false' in str(erro).replace(" ", "")
+    motivo = "o número não tem WhatsApp" if sem_whatsapp else "falha no envio pelo WhatsApp"
+    aviso = (f"⚠️ A confirmação por WhatsApp NÃO chegou ao cliente ({motivo}: {telefone}). "
+             "Confirme o pedido por telefone ou confira o número.")
+    try:
+        async with AsyncSessionLocal() as db:
+            ped = (await db.execute(select(Pedido).where(Pedido.id == pedido_id))).scalar_one_or_none()
+            if ped is not None and aviso not in (ped.observacoes or ""):
+                ped.observacoes = f"{ped.observacoes}\n{aviso}".strip() if ped.observacoes else aviso
+            await registrar_alerta(
+                db, tipo="falha_envio", pizzaria_id=pizzaria_id, nivel="error",
+                detalhe=f"Pedido #{numero} do cardápio digital: {aviso}",
+            )
+            await db.commit()
+        await broadcaster.publish(pizzaria_id, {
+            "tipo": "pedido.atualizado", "pizzaria_id": str(pizzaria_id),
+            "payload": {"pedido_id": str(pedido_id), "numero_pedido": numero, "aviso": aviso},
+        })
+    except Exception as e:  # noqa: BLE001
+        log.warning("Não consegui registrar a confirmação não entregue do pedido #%s: %s", numero, e)
+
+
 async def _enviar_confirmacao_whatsapp(
     pizzaria_id: uuid.UUID,
     pedido_id: uuid.UUID,
@@ -1206,6 +1240,7 @@ async def _enviar_confirmacao_whatsapp(
         )
     except Exception as e:
         log.warning("Falha ao enviar confirmação WhatsApp do pedido digital: %s", e)
+        await _avisar_confirmacao_nao_entregue(pizz.id, pedido.id, pedido.numero_pedido, cliente_telefone, e)
         return
 
     # Persiste como mensagem do sistema

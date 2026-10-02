@@ -1515,10 +1515,13 @@ export function CardapioPublico({ slug }: { slug: string }) {
             <h2 className="cdp-confirmacao-title">Pedido #{resultado.numero_pedido}</h2>
             <p className="cdp-confirmacao-sub">
               Recebemos seu pedido! Você receberá a confirmação pelo WhatsApp em instantes.
+              Se ela não chegar, confira o número informado ou fale com a loja.
             </p>
             <div className="cdp-confirmacao-card">
               <div className="cdp-confirmacao-row">
-                <span>Total pago</span>
+                {/* "Total pago" com pagamento em dinheiro/cartão na entrega dizia ao
+                    cliente que ele já tinha pago (teste de 02/10). */}
+                <span>Total do pedido</span>
                 <span className="cdp-confirmacao-price">{fmt(resultado.valor_total)}</span>
               </div>
               {resultado.taxa_entrega > 0 && (
